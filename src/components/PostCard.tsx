@@ -1,12 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import {
-  checkIfLiked,
-  likePost,
-  type Post,
-  unlikePost,
-} from "../services/posts";
+import { useLike } from "../hooks/useLike";
+import { type Post } from "../services/posts";
+import { CommentSection } from "./CommentSection";
 
 type PostCardProps = {
   post: Post;
@@ -36,35 +33,21 @@ const formatTimeAgo = (value: unknown) => {
 export function PostCard({ post, useMock = false }: PostCardProps) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [liked, setLiked] = useState(false);
-  const [likeCount, setLikeCount] = useState(post.likeCount ?? 0);
   const [animating, setAnimating] = useState(false);
+  const [showComments, setShowComments] = useState(false);
+  const [localLiked, setLocalLiked] = useState(false);
+  const [localLikeCount, setLocalLikeCount] = useState(post.likeCount ?? 0);
+  const [localCommentCount, setLocalCommentCount] = useState(
+    post.commentCount ?? 0
+  );
+
+  const { isLiked, likeCount, toggleLike } = useLike(
+    post.id,
+    useMock ? null : user?.uid ?? null,
+    post.likeCount ?? 0
+  );
 
   const timeAgo = useMemo(() => formatTimeAgo(post.createdAt), [post.createdAt]);
-
-  useEffect(() => {
-    let ignore = false;
-
-    const loadLiked = async () => {
-      if (!user || useMock) return;
-      try {
-        const result = await checkIfLiked(post.id, user.uid);
-        if (!ignore) {
-          setLiked(result);
-        }
-      } catch {
-        if (!ignore) {
-          setLiked(false);
-        }
-      }
-    };
-
-    void loadLiked();
-
-    return () => {
-      ignore = true;
-    };
-  }, [post.id, user, useMock]);
 
   const handleLike = async () => {
     if (!user) {
@@ -77,24 +60,49 @@ export function PostCard({ post, useMock = false }: PostCardProps) {
     setTimeout(() => setAnimating(false), 200);
 
     if (useMock) {
-      setLiked((prev) => !prev);
-      setLikeCount((prev) => (liked ? Math.max(0, prev - 1) : prev + 1));
+      setLocalLiked((prev) => {
+        setLocalLikeCount((count) =>
+          prev ? Math.max(0, count - 1) : count + 1
+        );
+        return !prev;
+      });
       return;
     }
 
     try {
-      if (liked) {
-        await unlikePost(post.id, user.uid);
-        setLiked(false);
-        setLikeCount((prev) => Math.max(0, prev - 1));
-      } else {
-        await likePost(post.id, user.uid);
-        setLiked(true);
-        setLikeCount((prev) => prev + 1);
-      }
+      await toggleLike();
     } catch {
       // noop for now
     }
+  };
+
+  const likedState = useMock ? localLiked : isLiked;
+  const likeTotal = useMock ? localLikeCount : likeCount;
+  const commentTotal = localCommentCount;
+
+  const HeartIcon = ({ filled }: { filled: boolean }) => {
+    const gradientId = `heart-${post.id}`;
+    return (
+      <svg
+        className={`h-6 w-6 ${
+          filled ? "text-red-500" : "text-slate-500"
+        }`}
+        viewBox="0 0 24 24"
+        fill={filled ? `url(#${gradientId})` : "none"}
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <defs>
+          <linearGradient id={gradientId} x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0%" stopColor="#a855f7" />
+            <stop offset="100%" stopColor="#ec4899" />
+          </linearGradient>
+        </defs>
+        <path d="M20.8 6.6a5.5 5.5 0 0 0-7.8 0l-1 1-1-1a5.5 5.5 0 1 0-7.8 7.8l1 1L12 21l7.8-5.6 1-1a5.5 5.5 0 0 0 0-7.8Z" />
+      </svg>
+    );
   };
 
   return (
@@ -145,22 +153,26 @@ export function PostCard({ post, useMock = false }: PostCardProps) {
             onClick={handleLike}
             className={`text-2xl transition ${
               animating ? "scale-110" : "scale-100"
-            } ${liked ? "text-red-500" : "text-slate-500"}`}
+            } ${likedState ? "text-red-500" : "text-slate-500"}`}
             aria-label="Like"
           >
-            {liked ? "❤️" : "🤍"}
+            <HeartIcon filled={likedState} />
           </button>
           <button
             type="button"
             className="text-2xl text-slate-500"
             aria-label="Comment"
+            onClick={() => setShowComments((prev) => !prev)}
           >
             💬
           </button>
         </div>
 
         <p className="mt-2 text-sm font-semibold text-slate-900">
-          {likeCount} likes
+          {likeTotal} likes
+        </p>
+        <p className="mt-1 text-xs text-slate-400">
+          {commentTotal} comments
         </p>
 
         <p className="mt-2 text-sm text-slate-700">
@@ -181,6 +193,16 @@ export function PostCard({ post, useMock = false }: PostCardProps) {
             </button>
           ))}
         </div>
+
+        {showComments ? (
+          <CommentSection
+            postId={post.id}
+            commentCount={commentTotal}
+            onCommentAdded={() =>
+              setLocalCommentCount((prev) => prev + 1)
+            }
+          />
+        ) : null}
       </div>
     </article>
   );

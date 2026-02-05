@@ -10,6 +10,7 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  where,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -136,16 +137,50 @@ export async function addComment(
     ...comment,
     createdAt: comment.createdAt ?? serverTimestamp(),
   };
-  const result = await addDoc(commentsRef, payload);
-  return result.id;
+  const postRef = doc(db, "posts", postId);
+  const result = await runTransaction(db, async (transaction) => {
+    const newCommentRef = doc(commentsRef);
+    transaction.set(newCommentRef, payload);
+    transaction.update(postRef, {
+      commentCount: increment(1),
+    });
+    return newCommentRef.id;
+  });
+  return result;
 }
 
 export async function getComments(postId: string): Promise<Comment[]> {
   const commentsRef = collection(db, "posts", postId, "comments");
-  const commentsQuery = query(commentsRef, orderBy("createdAt", "asc"));
+  const commentsQuery = query(commentsRef, orderBy("createdAt", "desc"));
   const snapshot = await getDocs(commentsQuery);
   return snapshot.docs.map((docSnap) => ({
     id: docSnap.id,
     ...(docSnap.data() as Omit<Comment, "id">),
   }));
+}
+
+export async function getPostsByUser(userId: string): Promise<Post[]> {
+  const postsRef = collection(db, "posts");
+  const postsQuery = query(
+    postsRef,
+    where("authorId", "==", userId),
+    orderBy("createdAt", "desc")
+  );
+  const snapshot = await getDocs(postsQuery);
+  return snapshot.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...(docSnap.data() as Omit<Post, "id">),
+  }));
+}
+
+export async function getUserStats(userId: string): Promise<{
+  postCount: number;
+  totalLikes: number;
+}> {
+  const posts = await getPostsByUser(userId);
+  const totalLikes = posts.reduce(
+    (sum, post) => sum + (post.likeCount ?? 0),
+    0
+  );
+  return { postCount: posts.length, totalLikes };
 }
