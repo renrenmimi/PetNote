@@ -1,6 +1,5 @@
 import {
   collection,
-  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -10,6 +9,8 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { createNotification } from "./notifications";
+import { getUserProfile } from "./users";
 
 export async function followUser(
   myUid: string,
@@ -20,6 +21,7 @@ export async function followUser(
   const followerRef = doc(db, "users", targetUid, "followers", myUid);
   const myUserRef = doc(db, "users", myUid);
   const targetUserRef = doc(db, "users", targetUid);
+  let didFollow = false;
 
   await runTransaction(db, async (transaction) => {
     const followSnap = await transaction.get(followingRef);
@@ -37,7 +39,21 @@ export async function followUser(
       { followerCount: increment(1) },
       { merge: true }
     );
+    didFollow = true;
   });
+
+  if (didFollow) {
+    const profile = await getUserProfile(myUid);
+    await createNotification({
+      userId: targetUid,
+      type: "follow",
+      fromUserId: myUid,
+      fromUserName: profile?.displayName || "PetNote User",
+      fromUserAvatar:
+        profile?.avatarUrl || "https://i.pravatar.cc/150?img=12",
+      message: "started following you",
+    });
+  }
 }
 
 export async function unfollowUser(

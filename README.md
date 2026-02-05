@@ -71,3 +71,27 @@ export default defineConfig([
   },
 ])
 ```
+
+## Deployment
+
+### Vercel
+
+1. Visit https://vercel.com
+2. Log in with GitHub
+3. Import `renrenmimi/PetNote`
+4. Add environment variables:
+   - `VITE_FIREBASE_API_KEY`
+   - `VITE_FIREBASE_AUTH_DOMAIN`
+   - `VITE_FIREBASE_PROJECT_ID`
+   - `VITE_FIREBASE_STORAGE_BUCKET`
+   - `VITE_FIREBASE_MESSAGING_SENDER_ID`
+   - `VITE_FIREBASE_APP_ID`
+   - `VITE_CLOUDINARY_CLOUD_NAME`
+   - `VITE_CLOUDINARY_API_KEY`
+5. Deploy
+
+### Local Development
+
+1. `npm install`
+2. Copy `.env.example` to `.env.local` and fill in values
+3. `npm run dev`

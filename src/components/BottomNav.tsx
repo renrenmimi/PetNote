@@ -1,5 +1,6 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import { useNotifications } from "../hooks/useNotifications";
 
 type NavItem = {
   label: string;
@@ -12,6 +13,7 @@ export function BottomNav() {
   const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const { unreadCount } = useNotifications(user?.uid ?? null);
 
   const requireAuth = (path: string) => {
     if (!user) {
@@ -29,7 +31,7 @@ export function BottomNav() {
       icon: "+",
       action: () => requireAuth("/create"),
     },
-    { label: "Alerts", icon: "🔔", action: () => undefined },
+    { label: "Notifications", icon: "🔔", path: "/notifications" },
     {
       label: "Profile",
       icon: "👤",
@@ -46,7 +48,9 @@ export function BottomNav() {
               (item.path === "/profile" &&
                 location.pathname.startsWith("/profile")) ||
               (item.path === "/search" &&
-                location.pathname.startsWith("/search"))
+                location.pathname.startsWith("/search")) ||
+              (item.path === "/notifications" &&
+                location.pathname.startsWith("/notifications"))
             : false;
 
           if (item.action) {
@@ -79,7 +83,14 @@ export function BottomNav() {
                 isActive ? "text-purple-600" : "text-slate-500"
               }`}
             >
-              <span className="text-xl">{item.icon}</span>
+              <span className="relative text-xl">
+                {item.icon}
+                {item.label === "Notifications" && unreadCount > 0 ? (
+                  <span className="absolute -right-2 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                ) : null}
+              </span>
               {item.label}
             </Link>
           );

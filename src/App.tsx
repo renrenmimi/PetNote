@@ -4,6 +4,8 @@ import { RequireAuth } from "./components/RequireAuth";
 import { Create } from "./pages/Create";
 import { Feed } from "./pages/Feed";
 import { Login } from "./pages/Login";
+import { Notifications } from "./pages/Notifications";
+import { PostDetail } from "./pages/PostDetail";
 import { Profile } from "./pages/Profile";
 import { Search } from "./pages/Search";
 import { SignUp } from "./pages/SignUp";
@@ -17,6 +19,7 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<SignUp />} />
         <Route path="/search" element={<Search />} />
+        <Route path="/post/:postId" element={<PostDetail />} />
         <Route
           path="/create"
           element={
@@ -30,6 +33,14 @@ function App() {
           element={
             <RequireAuth>
               <Profile />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/notifications"
+          element={
+            <RequireAuth>
+              <Notifications />
             </RequireAuth>
           }
         />
