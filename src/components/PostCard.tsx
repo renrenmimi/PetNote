@@ -67,8 +67,6 @@ export function PostCard({ post, useMock = false }: PostCardProps) {
 
     setAnimating(true);
     setTimeout(() => setAnimating(false), 200);
-    setShowHeart(true);
-    setTimeout(() => setShowHeart(false), 500);
 
     if (useMock) {
       setLocalLiked((prev) => {
@@ -84,6 +82,14 @@ export function PostCard({ post, useMock = false }: PostCardProps) {
       await toggleLike();
     } catch {
       // noop for now
+    }
+  };
+
+  const handleDoubleLike = async () => {
+    setShowHeart(true);
+    setTimeout(() => setShowHeart(false), 500);
+    if (!likedState) {
+      await handleLike();
     }
   };
 
@@ -153,7 +159,7 @@ export function PostCard({ post, useMock = false }: PostCardProps) {
 
       <div
         className="relative aspect-video w-full bg-slate-100"
-        onDoubleClick={handleLike}
+        onDoubleClick={handleDoubleLike}
       >
         {!imageLoaded ? (
           <div className="absolute inset-0 animate-pulse bg-slate-200" />
@@ -170,6 +176,7 @@ export function PostCard({ post, useMock = false }: PostCardProps) {
             src={post.mediaUrl}
             controls
             className="h-full w-full object-cover"
+            onLoadedData={() => setImageLoaded(true)}
           />
         ) : (
           <img

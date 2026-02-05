@@ -1,7 +1,6 @@
 import {
   addDoc,
   collection,
-  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -13,6 +12,8 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { createNotification } from "./notifications";
+import { getUserProfile } from "./users";
 
 export type Post = {
   id: string;
@@ -85,8 +86,15 @@ export async function getPostById(id: string): Promise<Post | null> {
 export async function likePost(postId: string, userId: string): Promise<void> {
   const postRef = doc(db, "posts", postId);
   const likeRef = doc(db, "posts", postId, "likes", userId);
+  let postData: Post | null = null;
+  let didLike = false;
 
   await runTransaction(db, async (transaction) => {
+    const postSnap = await transaction.get(postRef);
+    if (!postSnap.exists()) {
+      return;
+    }
+    postData = { id: postSnap.id, ...(postSnap.data() as Omit<Post, "id">) };
     const likeSnap = await transaction.get(likeRef);
     if (likeSnap.exists()) {
       return;
@@ -99,7 +107,23 @@ export async function likePost(postId: string, userId: string): Promise<void> {
     transaction.update(postRef, {
       likeCount: increment(1),
     });
+    didLike = true;
   });
+
+  if (didLike && postData && postData.authorId !== userId) {
+    const profile = await getUserProfile(userId);
+    await createNotification({
+      userId: postData.authorId,
+      type: "like",
+      fromUserId: userId,
+      fromUserName: profile?.displayName || "PetNote User",
+      fromUserAvatar:
+        profile?.avatarUrl || "https://i.pravatar.cc/150?img=12",
+      postId,
+      postImage: postData.mediaUrl,
+      message: "liked your post",
+    });
+  }
 }
 
 export async function unlikePost(postId: string, userId: string): Promise<void> {
@@ -138,7 +162,13 @@ export async function addComment(
     createdAt: comment.createdAt ?? serverTimestamp(),
   };
   const postRef = doc(db, "posts", postId);
+  let postData: Post | null = null;
   const result = await runTransaction(db, async (transaction) => {
+    const postSnap = await transaction.get(postRef);
+    if (!postSnap.exists()) {
+      return "";
+    }
+    postData = { id: postSnap.id, ...(postSnap.data() as Omit<Post, "id">) };
     const newCommentRef = doc(commentsRef);
     transaction.set(newCommentRef, payload);
     transaction.update(postRef, {
@@ -146,6 +176,23 @@ export async function addComment(
     });
     return newCommentRef.id;
   });
+  if (
+    result &&
+    postData &&
+    postData.authorId !== comment.authorId
+  ) {
+    await createNotification({
+      userId: postData.authorId,
+      type: "comment",
+      fromUserId: comment.authorId,
+      fromUserName: comment.authorName || "PetNote User",
+      fromUserAvatar:
+        comment.authorAvatar || "https://i.pravatar.cc/150?img=12",
+      postId,
+      postImage: postData.mediaUrl,
+      message: "commented on your post",
+    });
+  }
   return result;
 }
 
