@@ -12,7 +12,8 @@ const mockPosts: Post[] = [
     authorName: "Sarah",
     authorAvatar: "https://i.pravatar.cc/150?img=1",
     text: "My cute puppy enjoying the sunshine! ☀️",
-    mediaUrl: "https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=600",
+    mediaUrl:
+      "https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=600",
     mediaType: "image",
     createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
     likeCount: 42,
@@ -25,7 +26,8 @@ const mockPosts: Post[] = [
     authorName: "Mike",
     authorAvatar: "https://i.pravatar.cc/150?img=2",
     text: "Meet my new kitten! 🐱",
-    mediaUrl: "https://images.unsplash.com/photo-1574158622682-e40e69881006?w=600",
+    mediaUrl:
+      "https://images.unsplash.com/photo-1574158622682-e40e69881006?w=600",
     mediaType: "image",
     createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
     likeCount: 128,
@@ -75,11 +77,11 @@ function FeedSkeleton() {
 
 export function Feed() {
   const { posts, loading, error } = usePosts();
-  const useMock = true;
+  const useMock = false;
 
   const displayPosts = useMemo(
     () => (useMock ? mockPosts : posts),
-    [useMock, posts]
+    [useMock, posts],
   );
 
   return (
