@@ -1,8 +1,37 @@
+import "./App.css";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { RequireAuth } from "./components/RequireAuth";
+import { Create } from "./pages/Create";
+import { Feed } from "./pages/Feed";
+import { Login } from "./pages/Login";
+import { Profile } from "./pages/Profile";
+import { SignUp } from "./pages/SignUp";
+
 function App() {
   return (
-    <div className="min-h-screen bg-pink-100 flex items-center justify-center">
-      <h1 className="text-4xl font-bold text-pink-600">🐾 PetNote</h1>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Feed />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<SignUp />} />
+        <Route
+          path="/create"
+          element={
+            <RequireAuth>
+              <Create />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <RequireAuth>
+              <Profile />
+            </RequireAuth>
+          }
+        />
+      </Routes>
+    </BrowserRouter>
   );
 }
 
