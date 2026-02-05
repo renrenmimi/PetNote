@@ -36,6 +36,28 @@ export type Comment = {
   createdAt?: unknown;
 };
 
+export type CreatePostInput = {
+  authorId: string;
+  authorName: string;
+  authorAvatar: string;
+  text: string;
+  mediaUrl: string;
+  mediaType: "image" | "video";
+  tags: string[];
+};
+
+export async function createPost(data: CreatePostInput): Promise<string> {
+  const postsRef = collection(db, "posts");
+  const payload = {
+    ...data,
+    createdAt: serverTimestamp(),
+    likeCount: 0,
+    commentCount: 0,
+  };
+  const result = await addDoc(postsRef, payload);
+  return result.id;
+}
+
 export async function getPosts(): Promise<Post[]> {
   const postsRef = collection(db, "posts");
   const postsQuery = query(postsRef, orderBy("createdAt", "desc"));
