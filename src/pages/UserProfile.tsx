@@ -1,46 +1,42 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "../hooks/useAuth";
+import { useNavigate, useParams } from "react-router-dom";
 import { UserCard } from "../components/UserCard";
+import { useAuth } from "../hooks/useAuth";
+import { useFollow } from "../hooks/useFollow";
 import { getFollowers, getFollowing } from "../services/follow";
 import { getPostsByUser, getUserStats, type Post } from "../services/posts";
 import { getUserProfile, getUsersByIds, type UserProfile } from "../services/users";
 
-export function Profile() {
+export function UserProfile() {
   const navigate = useNavigate();
-  const { user, signOut } = useAuth();
+  const { userId } = useParams();
+  const { user } = useAuth();
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [stats, setStats] = useState({ postCount: 0, totalLikes: 0 });
   const [loading, setLoading] = useState(true);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
-  const [profileName, setProfileName] = useState<string | null>(null);
-  const [followCounts, setFollowCounts] = useState({
-    followerCount: 0,
-    followingCount: 0,
-  });
   const [modalTitle, setModalTitle] = useState<string | null>(null);
   const [modalUsers, setModalUsers] = useState<UserProfile[]>([]);
 
+  const { isFollowing, toggleFollow, followerCount } = useFollow(userId ?? "");
+
   useEffect(() => {
     let ignore = false;
-    if (!user) return;
+    if (!userId) return;
 
     const load = async () => {
       setLoading(true);
       try {
-        const [postList, userStats, profile] = await Promise.all([
-          getPostsByUser(user.uid),
-          getUserStats(user.uid),
-          getUserProfile(user.uid),
+        const [postList, userStats, profileData] = await Promise.all([
+          getPostsByUser(userId),
+          getUserStats(userId),
+          getUserProfile(userId),
         ]);
         if (ignore) return;
         setPosts(postList);
         setStats(userStats);
-        setProfileName(profile?.displayName || null);
-        setFollowCounts({
-          followerCount: profile?.followerCount ?? 0,
-          followingCount: profile?.followingCount ?? 0,
-        });
+        setProfile(profileData);
       } finally {
         if (!ignore) setLoading(false);
       }
@@ -50,33 +46,31 @@ export function Profile() {
     return () => {
       ignore = true;
     };
-  }, [user]);
+  }, [userId]);
 
   const joinedDate = useMemo(() => {
-    const created = user?.metadata?.creationTime;
-    if (!created) return "Unknown";
-    return new Date(created).toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  }, [user]);
+    if (!profile?.createdAt) return "Unknown";
+    const date =
+      profile.createdAt instanceof Date
+        ? profile.createdAt
+        : typeof profile.createdAt === "object" &&
+          profile.createdAt !== null &&
+          "toDate" in profile.createdAt &&
+          typeof (profile.createdAt as { toDate: () => Date }).toDate ===
+            "function"
+        ? (profile.createdAt as { toDate: () => Date }).toDate()
+        : null;
+    return date
+      ? date.toLocaleDateString(undefined, {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        })
+      : "Unknown";
+  }, [profile?.createdAt]);
 
-  if (!user) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-white">
-        <div className="text-center">
-          <p className="text-sm text-slate-500">Please log in to view profile.</p>
-          <button
-            type="button"
-            onClick={() => navigate("/login")}
-            className="mt-4 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white"
-          >
-            Go to Login
-          </button>
-        </div>
-      </main>
-    );
+  if (!userId) {
+    return null;
   }
 
   return (
@@ -97,38 +91,35 @@ export function Profile() {
       </header>
 
       <main className="mx-auto w-full max-w-md space-y-6 px-4 py-6">
-        <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
+        <section className="rounded-3xl bg-white p-6 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100">
           <div className="flex flex-col items-center text-center">
             <div className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 p-1">
               <img
-                src={user.photoURL || "https://i.pravatar.cc/150?img=12"}
-                alt={user.displayName || "User"}
+                src={profile?.avatarUrl || "https://i.pravatar.cc/150?img=12"}
+                alt={profile?.displayName || "User"}
                 className="h-24 w-24 rounded-full border-4 border-white object-cover"
               />
             </div>
             <h2 className="mt-4 text-xl font-semibold text-slate-900">
-              {profileName || user.displayName || "PetNote User"}
+              {profile?.displayName || "PetNote User"}
             </h2>
-            <p className="text-sm text-slate-400">{user.email}</p>
+            <p className="text-sm text-slate-400">{profile?.email}</p>
 
-            <div className="mt-4 flex w-full items-center justify-center gap-3">
-              <button
-                type="button"
-                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-all duration-200 hover:scale-105 hover:border-purple-300 hover:text-purple-600"
-              >
-                Edit Profile
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  await signOut();
-                  navigate("/login", { replace: true });
-                }}
-                className="rounded-full px-4 py-2 text-sm font-semibold text-red-500 transition-all duration-200 hover:scale-105 hover:bg-red-50"
-              >
-                Sign Out
-              </button>
-            </div>
+            {user?.uid !== userId ? (
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={toggleFollow}
+                  className={`rounded-full px-6 py-2 text-sm font-semibold transition-all duration-200 hover:scale-105 ${
+                    isFollowing
+                      ? "border border-slate-200 text-slate-500"
+                      : "bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-[0_10px_25px_-15px_rgba(168,85,247,0.7)]"
+                  }`}
+                >
+                  {isFollowing ? "Following" : "Follow"}
+                </button>
+              </div>
+            ) : null}
           </div>
 
           <div className="mt-6 grid grid-cols-3 gap-4 text-center">
@@ -141,28 +132,28 @@ export function Profile() {
             <button
               type="button"
               onClick={async () => {
-                const ids = await getFollowers(user.uid);
+                const ids = await getFollowers(userId);
                 const profiles = await getUsersByIds(ids);
                 setModalTitle("Followers");
                 setModalUsers(profiles);
               }}
             >
               <p className="text-lg font-semibold text-slate-900">
-                {followCounts.followerCount}
+                {followerCount}
               </p>
               <p className="text-xs text-slate-400">Followers</p>
             </button>
             <button
               type="button"
               onClick={async () => {
-                const ids = await getFollowing(user.uid);
+                const ids = await getFollowing(userId);
                 const profiles = await getUsersByIds(ids);
                 setModalTitle("Following");
                 setModalUsers(profiles);
               }}
             >
               <p className="text-lg font-semibold text-slate-900">
-                {followCounts.followingCount}
+                {profile?.followingCount ?? 0}
               </p>
               <p className="text-xs text-slate-400">Following</p>
             </button>
@@ -185,7 +176,7 @@ export function Profile() {
 
         <section className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold text-slate-900">My Posts</h3>
+            <h3 className="text-base font-semibold text-slate-900">Posts</h3>
           </div>
 
           {loading ? (
@@ -208,7 +199,7 @@ export function Profile() {
                   key={post.id}
                   type="button"
                   onClick={() => setSelectedPost(post)}
-                  className="aspect-square overflow-hidden rounded-2xl bg-slate-100"
+                  className="aspect-square overflow-hidden rounded-2xl bg-slate-100 transition-all duration-200 hover:scale-[1.02]"
                 >
                   <img
                     src={post.mediaUrl}
@@ -271,11 +262,11 @@ export function Profile() {
                   No users yet
                 </p>
               ) : (
-                modalUsers.map((profile) => (
+                modalUsers.map((profileItem) => (
                   <UserCard
-                    key={profile.id}
-                    user={profile}
-                    currentUid={user.uid}
+                    key={profileItem.id}
+                    user={profileItem}
+                    currentUid={user?.uid ?? null}
                   />
                 ))
               )}

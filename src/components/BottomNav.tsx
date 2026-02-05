@@ -23,7 +23,7 @@ export function BottomNav() {
 
   const items: NavItem[] = [
     { label: "Home", icon: "🏠", path: "/" },
-    { label: "Search", icon: "🔍", action: () => undefined },
+    { label: "Search", icon: "🔍", path: "/search" },
     {
       label: "Create",
       icon: "+",
@@ -42,7 +42,11 @@ export function BottomNav() {
       <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-2">
         {items.map((item) => {
           const isActive = item.path
-            ? location.pathname === item.path
+            ? location.pathname === item.path ||
+              (item.path === "/profile" &&
+                location.pathname.startsWith("/profile")) ||
+              (item.path === "/search" &&
+                location.pathname.startsWith("/search"))
             : false;
 
           if (item.action) {
@@ -51,12 +55,12 @@ export function BottomNav() {
                 key={item.label}
                 type="button"
                 onClick={item.action}
-                className={`flex flex-1 flex-col items-center gap-1 text-xs ${
+                className={`flex flex-1 flex-col items-center gap-1 text-xs transition-all duration-200 active:scale-95 ${
                   isActive ? "text-purple-600" : "text-slate-500"
                 }`}
               >
                 {item.label === "Create" ? (
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-xl font-semibold text-white shadow-md">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-2xl font-semibold text-white shadow-[0_12px_25px_-15px_rgba(168,85,247,0.8)] transition-all duration-200 hover:scale-105">
                     {item.icon}
                   </span>
                 ) : (
@@ -71,7 +75,7 @@ export function BottomNav() {
             <Link
               key={item.label}
               to={item.path || "/"}
-              className={`flex flex-1 flex-col items-center gap-1 text-xs ${
+              className={`flex flex-1 flex-col items-center gap-1 text-xs transition-all duration-200 active:scale-95 ${
                 isActive ? "text-purple-600" : "text-slate-500"
               }`}
             >

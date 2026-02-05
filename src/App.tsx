@@ -5,7 +5,9 @@ import { Create } from "./pages/Create";
 import { Feed } from "./pages/Feed";
 import { Login } from "./pages/Login";
 import { Profile } from "./pages/Profile";
+import { Search } from "./pages/Search";
 import { SignUp } from "./pages/SignUp";
+import { UserProfile } from "./pages/UserProfile";
 
 function App() {
   return (
@@ -14,6 +16,7 @@ function App() {
         <Route path="/" element={<Feed />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<SignUp />} />
+        <Route path="/search" element={<Search />} />
         <Route
           path="/create"
           element={
@@ -30,6 +33,7 @@ function App() {
             </RequireAuth>
           }
         />
+        <Route path="/profile/:userId" element={<UserProfile />} />
       </Routes>
     </BrowserRouter>
   );

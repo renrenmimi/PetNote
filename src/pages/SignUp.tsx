@@ -44,6 +44,8 @@ export function SignUp() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -87,7 +89,7 @@ export function SignUp() {
             <span className="mb-1 block text-sm font-medium text-slate-600">
               Email
             </span>
-            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200">
+            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200">
               <MailIcon />
               <input
                 type="email"
@@ -105,10 +107,10 @@ export function SignUp() {
             <span className="mb-1 block text-sm font-medium text-slate-600">
               Password
             </span>
-            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200">
+            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200">
               <LockIcon />
               <input
-                type="password"
+                type={showPassword ? "text" : "password"}
                 placeholder="At least 6 characters"
                 autoComplete="new-password"
                 className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
@@ -116,6 +118,13 @@ export function SignUp() {
                 onChange={(event) => setPassword(event.target.value)}
                 required
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="text-xs text-slate-400 transition-all duration-200 hover:text-purple-500"
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
             </div>
           </label>
 
@@ -123,10 +132,10 @@ export function SignUp() {
             <span className="mb-1 block text-sm font-medium text-slate-600">
               Confirm password
             </span>
-            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200">
+            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200">
               <LockIcon />
               <input
-                type="password"
+                type={showConfirm ? "text" : "password"}
                 placeholder="Re-enter your password"
                 autoComplete="new-password"
                 className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
@@ -134,6 +143,13 @@ export function SignUp() {
                 onChange={(event) => setConfirmPassword(event.target.value)}
                 required
               />
+              <button
+                type="button"
+                onClick={() => setShowConfirm((prev) => !prev)}
+                className="text-xs text-slate-400 transition-all duration-200 hover:text-purple-500"
+              >
+                {showConfirm ? "Hide" : "Show"}
+              </button>
             </div>
           </label>
 
@@ -146,11 +162,25 @@ export function SignUp() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+            className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
           >
             {loading ? "Creating account..." : "Sign Up"}
           </button>
         </form>
+
+        <div className="my-6 flex items-center gap-3 text-xs text-slate-400">
+          <span className="h-px flex-1 bg-slate-200" />
+          Or continue with
+          <span className="h-px flex-1 bg-slate-200" />
+        </div>
+
+        <button
+          type="button"
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-all duration-200 hover:scale-[1.02] hover:border-purple-200 hover:bg-purple-50"
+        >
+          <span>🟢</span>
+          Continue with Google
+        </button>
 
         <p className="mt-6 text-center text-sm text-slate-500">
           Already have an account?

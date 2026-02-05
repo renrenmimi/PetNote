@@ -1,13 +1,33 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 
 export function Navbar() {
   const { user } = useAuth();
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 4);
+    };
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   return (
-    <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
+    <header
+      className={`sticky top-0 z-20 border-b border-slate-200 bg-white/80 backdrop-blur transition-all duration-200 ${
+        scrolled
+          ? "shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]"
+          : "shadow-none"
+      }`}
+    >
       <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-3">
-        <Link to="/" className="text-lg font-semibold text-slate-900">
+        <Link
+          to="/"
+          className="text-lg font-semibold text-slate-900 transition-transform duration-200 hover:scale-[1.03]"
+        >
           🐾 PetNote
         </Link>
 
@@ -15,7 +35,7 @@ export function Navbar() {
           {!user ? (
             <Link
               to="/login"
-              className="rounded-full border border-purple-200 px-3 py-1.5 text-sm font-semibold text-purple-600 transition hover:border-purple-300 hover:bg-purple-50"
+              className="rounded-full border border-purple-200 px-3 py-1.5 text-sm font-semibold text-purple-600 transition-all duration-200 hover:scale-105 hover:border-purple-300 hover:bg-purple-50"
             >
               Login
             </Link>
@@ -23,7 +43,7 @@ export function Navbar() {
             <>
               <Link
                 to="/create"
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-md transition hover:brightness-110"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-[0_10px_25px_-15px_rgba(168,85,247,0.7)] transition-all duration-200 hover:scale-105 hover:brightness-110"
                 aria-label="Create post"
               >
                 +
