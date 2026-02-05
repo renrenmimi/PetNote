@@ -12,7 +12,7 @@ export function RequireAuth({ children }: RequireAuthProps) {
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <p className="text-lg text-slate-700">加载中...</p>
+        <p className="text-lg text-slate-700">Loading...</p>
       </div>
     );
   }
