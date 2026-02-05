@@ -8,6 +8,8 @@ export type UserProfile = {
   avatarUrl?: string;
   bio?: string;
   createdAt?: unknown;
+  followerCount?: number;
+  followingCount?: number;
 };
 
 export async function getUserProfile(
@@ -30,4 +32,16 @@ export async function updateUserProfile(
 ): Promise<void> {
   const userRef = doc(db, "users", userId);
   await setDoc(userRef, data, { merge: true });
+}
+
+export async function getUsersByIds(
+  ids: string[]
+): Promise<UserProfile[]> {
+  const results = await Promise.all(
+    ids.map(async (id) => {
+      const profile = await getUserProfile(id);
+      return profile;
+    })
+  );
+  return results.filter(Boolean) as UserProfile[];
 }

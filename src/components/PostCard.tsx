@@ -22,12 +22,19 @@ const formatTimeAgo = (value: unknown) => {
       : new Date();
 
   const diff = Date.now() - date.getTime();
-  const minutes = Math.max(1, Math.floor(diff / 60000));
+  const minutes = Math.floor(diff / 60000);
+  if (minutes <= 0) return "Just now";
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days}d ago`;
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 };
 
 export function PostCard({ post, useMock = false }: PostCardProps) {
@@ -40,6 +47,8 @@ export function PostCard({ post, useMock = false }: PostCardProps) {
   const [localCommentCount, setLocalCommentCount] = useState(
     post.commentCount ?? 0
   );
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [showHeart, setShowHeart] = useState(false);
 
   const { isLiked, likeCount, toggleLike } = useLike(
     post.id,
@@ -58,6 +67,8 @@ export function PostCard({ post, useMock = false }: PostCardProps) {
 
     setAnimating(true);
     setTimeout(() => setAnimating(false), 200);
+    setShowHeart(true);
+    setTimeout(() => setShowHeart(false), 500);
 
     if (useMock) {
       setLocalLiked((prev) => {
@@ -106,18 +117,28 @@ export function PostCard({ post, useMock = false }: PostCardProps) {
   };
 
   return (
-    <article className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-100">
+    <article className="overflow-hidden rounded-2xl bg-white shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_45px_-28px_rgba(15,23,42,0.45)]">
       <header className="flex items-center gap-3 px-4 py-3">
-        <img
-          src={post.authorAvatar}
-          alt={post.authorName}
-          className="h-10 w-10 rounded-full object-cover"
-        />
+        <button
+          type="button"
+          onClick={() => navigate(`/profile/${post.authorId}`)}
+          className="transition-transform duration-200 hover:scale-105"
+        >
+          <img
+            src={post.authorAvatar}
+            alt={post.authorName}
+            className="h-10 w-10 rounded-full object-cover"
+          />
+        </button>
         <div className="flex flex-1 items-center justify-between">
           <div>
-            <p className="text-sm font-semibold text-slate-900">
+            <button
+              type="button"
+              onClick={() => navigate(`/profile/${post.authorId}`)}
+              className="text-sm font-semibold text-slate-900 transition-all duration-200 hover:text-purple-600"
+            >
               {post.authorName}
-            </p>
+            </button>
             <p className="text-xs text-slate-500">{timeAgo}</p>
           </div>
           <button
@@ -130,7 +151,20 @@ export function PostCard({ post, useMock = false }: PostCardProps) {
         </div>
       </header>
 
-      <div className="aspect-video w-full bg-slate-100">
+      <div
+        className="relative aspect-video w-full bg-slate-100"
+        onDoubleClick={handleLike}
+      >
+        {!imageLoaded ? (
+          <div className="absolute inset-0 animate-pulse bg-slate-200" />
+        ) : null}
+        {showHeart ? (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <span className="text-6xl text-red-500 animate-[pulse_0.6s_ease-out]">
+              ❤️
+            </span>
+          </div>
+        ) : null}
         {post.mediaType === "video" ? (
           <video
             src={post.mediaUrl}
@@ -141,7 +175,10 @@ export function PostCard({ post, useMock = false }: PostCardProps) {
           <img
             src={post.mediaUrl}
             alt={post.text}
-            className="h-full w-full object-cover"
+            className={`h-full w-full object-cover transition-opacity duration-300 ${
+              imageLoaded ? "opacity-100" : "opacity-0"
+            }`}
+            onLoad={() => setImageLoaded(true)}
           />
         )}
       </div>
@@ -151,7 +188,7 @@ export function PostCard({ post, useMock = false }: PostCardProps) {
           <button
             type="button"
             onClick={handleLike}
-            className={`text-2xl transition ${
+            className={`text-2xl transition-all duration-200 ${
               animating ? "scale-110" : "scale-100"
             } ${likedState ? "text-red-500" : "text-slate-500"}`}
             aria-label="Like"
@@ -160,7 +197,7 @@ export function PostCard({ post, useMock = false }: PostCardProps) {
           </button>
           <button
             type="button"
-            className="text-2xl text-slate-500"
+            className="text-2xl text-slate-500 transition-all duration-200 hover:scale-105"
             aria-label="Comment"
             onClick={() => setShowComments((prev) => !prev)}
           >
@@ -187,7 +224,7 @@ export function PostCard({ post, useMock = false }: PostCardProps) {
             <button
               key={tag}
               type="button"
-              className="rounded-full bg-purple-50 px-2 py-1 font-semibold text-purple-600 hover:bg-purple-100"
+              className="rounded-full bg-purple-50 px-2 py-1 font-semibold text-purple-600 transition-all duration-200 hover:scale-105 hover:bg-purple-100"
             >
               #{tag}
             </button>
