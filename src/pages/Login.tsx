@@ -56,7 +56,7 @@ export function Login() {
       navigate("/", { replace: true });
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "登录失败，请稍后重试";
+        err instanceof Error ? err.message : "Login failed. Please try again.";
       setError(message);
     } finally {
       setLoading(false);
@@ -72,14 +72,14 @@ export function Login() {
             PetNote
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            分享宠物日常的美好瞬间
+            Share your pet's everyday moments
           </p>
         </div>
 
         <form className="space-y-4" onSubmit={handleSubmit}>
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-600">
-              邮箱
+              Email
             </span>
             <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200">
               <MailIcon />
@@ -97,13 +97,13 @@ export function Login() {
 
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-600">
-              密码
+              Password
             </span>
             <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200">
               <LockIcon />
               <input
                 type="password"
-                placeholder="请输入密码"
+                placeholder="Enter your password"
                 autoComplete="current-password"
                 className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
                 value={password}
@@ -124,17 +124,17 @@ export function Login() {
             disabled={loading}
             className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            {loading ? "登录中..." : "登录"}
+            {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>
 
         <p className="mt-6 text-center text-sm text-slate-500">
-          还没有账号？
+          Don't have an account?
           <Link
             to="/signup"
             className="ml-1 font-semibold text-purple-600 hover:text-purple-500"
           >
-            去注册
+            Sign up
           </Link>
         </p>
       </div>

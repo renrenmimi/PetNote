@@ -52,7 +52,7 @@ export function SignUp() {
     setError("");
 
     if (password !== confirmPassword) {
-      setError("两次密码不一致");
+      setError("Passwords do not match");
       return;
     }
 
@@ -62,7 +62,7 @@ export function SignUp() {
       navigate("/", { replace: true });
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "注册失败，请稍后重试";
+        err instanceof Error ? err.message : "Sign up failed. Please try again.";
       setError(message);
     } finally {
       setLoading(false);
@@ -78,14 +78,14 @@ export function SignUp() {
             PetNote
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            创建账号，开始记录宠物成长
+            Create an account to start sharing your pet's story
           </p>
         </div>
 
         <form className="space-y-4" onSubmit={handleSubmit}>
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-600">
-              邮箱
+              Email
             </span>
             <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200">
               <MailIcon />
@@ -103,13 +103,13 @@ export function SignUp() {
 
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-600">
-              密码
+              Password
             </span>
             <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200">
               <LockIcon />
               <input
                 type="password"
-                placeholder="至少 6 位密码"
+                placeholder="At least 6 characters"
                 autoComplete="new-password"
                 className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
                 value={password}
@@ -121,13 +121,13 @@ export function SignUp() {
 
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-600">
-              确认密码
+              Confirm password
             </span>
             <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200">
               <LockIcon />
               <input
                 type="password"
-                placeholder="再次输入密码"
+                placeholder="Re-enter your password"
                 autoComplete="new-password"
                 className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
                 value={confirmPassword}
@@ -148,17 +148,17 @@ export function SignUp() {
             disabled={loading}
             className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            {loading ? "注册中..." : "注册"}
+            {loading ? "Creating account..." : "Sign Up"}
           </button>
         </form>
 
         <p className="mt-6 text-center text-sm text-slate-500">
-          已有账号？
+          Already have an account?
           <Link
             to="/login"
             className="ml-1 font-semibold text-purple-600 hover:text-purple-500"
           >
-            去登录
+            Sign in
           </Link>
         </p>
       </div>
