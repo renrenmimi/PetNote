@@ -15,19 +15,20 @@ import { db } from "./firebase";
 import { createNotification } from "./notifications";
 import { getUserProfile } from "./users";
 
-export type Post = {
-  id: string;
+export interface PostData {
   authorId: string;
   authorName: string;
   authorAvatar: string;
   text: string;
   mediaUrl: string;
   mediaType: "image" | "video";
-  createdAt: unknown;
+  createdAt: any;
   likeCount: number;
   commentCount: number;
   tags: string[];
-};
+}
+
+export type Post = PostData & { id: string };
 
 export type Comment = {
   id?: string;
@@ -38,15 +39,10 @@ export type Comment = {
   createdAt?: unknown;
 };
 
-export type CreatePostInput = {
-  authorId: string;
-  authorName: string;
-  authorAvatar: string;
-  text: string;
-  mediaUrl: string;
-  mediaType: "image" | "video";
-  tags: string[];
-};
+export type CreatePostInput = Omit<
+  PostData,
+  "createdAt" | "likeCount" | "commentCount"
+>;
 
 export async function createPost(data: CreatePostInput): Promise<string> {
   const postsRef = collection(db, "posts");
@@ -66,7 +62,7 @@ export async function getPosts(): Promise<Post[]> {
   const snapshot = await getDocs(postsQuery);
   return snapshot.docs.map((docSnap) => ({
     id: docSnap.id,
-    ...(docSnap.data() as Omit<Post, "id">),
+    ...(docSnap.data() as PostData),
   }));
 }
 
@@ -79,22 +75,21 @@ export async function getPostById(id: string): Promise<Post | null> {
 
   return {
     id: snapshot.id,
-    ...(snapshot.data() as Omit<Post, "id">),
+    ...(snapshot.data() as PostData),
   };
 }
 
 export async function likePost(postId: string, userId: string): Promise<void> {
   const postRef = doc(db, "posts", postId);
   const likeRef = doc(db, "posts", postId, "likes", userId);
-  let postData: Post | null = null;
+  const postSnap = await getDoc(postRef);
+  if (!postSnap.exists()) {
+    return;
+  }
+  const postData = postSnap.data() as PostData;
   let didLike = false;
 
   await runTransaction(db, async (transaction) => {
-    const postSnap = await transaction.get(postRef);
-    if (!postSnap.exists()) {
-      return;
-    }
-    postData = { id: postSnap.id, ...(postSnap.data() as Omit<Post, "id">) };
     const likeSnap = await transaction.get(likeRef);
     if (likeSnap.exists()) {
       return;
@@ -110,7 +105,7 @@ export async function likePost(postId: string, userId: string): Promise<void> {
     didLike = true;
   });
 
-  if (didLike && postData && postData.authorId !== userId) {
+  if (didLike && postData.authorId !== userId) {
     const profile = await getUserProfile(userId);
     await createNotification({
       userId: postData.authorId,
@@ -162,13 +157,12 @@ export async function addComment(
     createdAt: comment.createdAt ?? serverTimestamp(),
   };
   const postRef = doc(db, "posts", postId);
-  let postData: Post | null = null;
+  const postSnap = await getDoc(postRef);
+  if (!postSnap.exists()) {
+    return "";
+  }
+  const postData = postSnap.data() as PostData;
   const result = await runTransaction(db, async (transaction) => {
-    const postSnap = await transaction.get(postRef);
-    if (!postSnap.exists()) {
-      return "";
-    }
-    postData = { id: postSnap.id, ...(postSnap.data() as Omit<Post, "id">) };
     const newCommentRef = doc(commentsRef);
     transaction.set(newCommentRef, payload);
     transaction.update(postRef, {
@@ -176,11 +170,7 @@ export async function addComment(
     });
     return newCommentRef.id;
   });
-  if (
-    result &&
-    postData &&
-    postData.authorId !== comment.authorId
-  ) {
+  if (result && postData.authorId !== comment.authorId) {
     await createNotification({
       userId: postData.authorId,
       type: "comment",
@@ -216,7 +206,7 @@ export async function getPostsByUser(userId: string): Promise<Post[]> {
   const snapshot = await getDocs(postsQuery);
   return snapshot.docs.map((docSnap) => ({
     id: docSnap.id,
-    ...(docSnap.data() as Omit<Post, "id">),
+    ...(docSnap.data() as PostData),
   }));
 }
 
