@@ -12,6 +12,8 @@ type CommentSectionProps = {
   postId: string;
   postAuthorId: string;
   commentCount: number;
+  maxVisible?: number;
+  stickyInput?: boolean;
   onCommentAdded?: () => void;
   onCommentDeleted?: () => void;
 };
@@ -40,6 +42,8 @@ export function CommentSection({
   postId,
   postAuthorId,
   commentCount,
+  maxVisible = 5,
+  stickyInput = false,
   onCommentAdded,
   onCommentDeleted,
 }: CommentSectionProps) {
@@ -81,7 +85,15 @@ export function CommentSection({
     };
   }, [postId]);
 
-  const visibleComments = useMemo(() => comments.slice(0, 5), [comments]);
+  const visibleComments = useMemo(() => {
+    if (!Number.isFinite(maxVisible)) {
+      return comments;
+    }
+    return comments.slice(0, maxVisible);
+  }, [comments, maxVisible]);
+
+  const showViewAll =
+    Number.isFinite(maxVisible) && comments.length > maxVisible;
 
   const handleSend = async () => {
     if (!user) {
@@ -164,7 +176,7 @@ export function CommentSection({
 
   return (
     <section className="mt-3 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
-      <div className="space-y-3">
+      <div className={`space-y-3 ${stickyInput ? "pb-20" : ""}`}>
         {loading ? (
           <p className="text-xs text-slate-400">Loading comments...</p>
         ) : null}
@@ -246,7 +258,7 @@ export function CommentSection({
           );
         })}
 
-        {commentCount > 5 ? (
+        {showViewAll ? (
           <button
             type="button"
             className="text-xs font-semibold text-purple-600 hover:text-purple-500"
@@ -256,51 +268,54 @@ export function CommentSection({
         ) : null}
       </div>
 
-      {replyTarget ? (
-        <div className="mt-3 flex items-center justify-between rounded-xl bg-white px-3 py-2 text-xs text-slate-500 shadow-sm">
-          <span>
-            Replying to <span className="font-semibold">@{replyTarget.authorName}</span>
-          </span>
+      <div className={stickyInput ? "sticky bottom-0 bg-slate-50 pt-3" : ""}>
+        {replyTarget ? (
+          <div className="mt-3 flex items-center justify-between rounded-xl bg-white px-3 py-2 text-xs text-slate-500 shadow-sm">
+            <span>
+              Replying to{" "}
+              <span className="font-semibold">@{replyTarget.authorName}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setReplyTarget(null)}
+              className="text-slate-400 transition-all duration-200 hover:text-slate-600"
+            >
+              ✕
+            </button>
+          </div>
+        ) : null}
+
+        <div className={`${replyTarget ? "mt-3" : "mt-4"} flex items-center gap-2`}>
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder={user ? "Add a comment..." : "Login to comment"}
+            className="flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200"
+            value={text}
+            readOnly={!user}
+            onFocus={() => {
+              if (!user) navigate("/login");
+            }}
+            onClick={() => {
+              if (!user) navigate("/login");
+            }}
+            onChange={(event) => setText(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void handleSend();
+              }
+            }}
+          />
           <button
             type="button"
-            onClick={() => setReplyTarget(null)}
-            className="text-slate-400 transition-all duration-200 hover:text-slate-600"
+            onClick={handleSend}
+            disabled={!user || !text.trim()}
+            className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            ✕
+            Send
           </button>
         </div>
-      ) : null}
-
-      <div className="mt-4 flex items-center gap-2">
-        <input
-          ref={inputRef}
-          type="text"
-          placeholder={user ? "Add a comment..." : "Login to comment"}
-          className="flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200"
-          value={text}
-          readOnly={!user}
-          onFocus={() => {
-            if (!user) navigate("/login");
-          }}
-          onClick={() => {
-            if (!user) navigate("/login");
-          }}
-          onChange={(event) => setText(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              void handleSend();
-            }
-          }}
-        />
-        <button
-          type="button"
-          onClick={handleSend}
-          disabled={!user || !text.trim()}
-          className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Send
-        </button>
       </div>
 
       {commentToDelete ? (

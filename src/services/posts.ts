@@ -12,6 +12,9 @@ import {
   runTransaction,
   serverTimestamp,
   Timestamp,
+  startAfter,
+  type QueryConstraint,
+  type QueryDocumentSnapshot,
   updateDoc,
   where,
   writeBatch,
@@ -138,14 +141,31 @@ export async function updatePost(
   ]);
 }
 
-export async function getPosts(): Promise<Post[]> {
+export async function getPosts(
+  limitCount = 10,
+  lastDoc?: QueryDocumentSnapshot
+): Promise<{
+  posts: Post[];
+  lastDoc: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+}> {
   const postsRef = collection(db, "posts");
-  const postsQuery = query(postsRef, orderBy("createdAt", "desc"));
+  const constraints: QueryConstraint[] = [
+    orderBy("createdAt", "desc"),
+    limit(limitCount),
+  ];
+  if (lastDoc) {
+    constraints.push(startAfter(lastDoc));
+  }
+  const postsQuery = query(postsRef, ...constraints);
   const snapshot = await getDocs(postsQuery);
-  return snapshot.docs.map((docSnap) => ({
+  const posts = snapshot.docs.map((docSnap) => ({
     id: docSnap.id,
     ...(docSnap.data() as PostData),
   }));
+  const nextLastDoc = snapshot.docs[snapshot.docs.length - 1] ?? null;
+  const hasMore = snapshot.docs.length === limitCount;
+  return { posts, lastDoc: nextLastDoc, hasMore };
 }
 
 export async function getPopularPosts(

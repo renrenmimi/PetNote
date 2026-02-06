@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BottomNav } from "../components/BottomNav";
 import { Navbar } from "../components/Navbar";
 import { PetSpotlight } from "../components/PetSpotlight";
@@ -78,9 +78,14 @@ function FeedSkeleton() {
 }
 
 export function Feed() {
-  const { posts, loading, error } = usePosts();
+  const { posts, loading, loadingMore, hasMore, loadMore, refresh, error } =
+    usePosts();
   const useMock = false;
   const [localPosts, setLocalPosts] = useState<Post[]>([]);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const startYRef = useRef(0);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (!useMock) {
@@ -88,17 +93,61 @@ export function Feed() {
     }
   }, [posts, useMock]);
 
+  useEffect(() => {
+    if (useMock) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore) {
+          void loadMore();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    const node = sentinelRef.current;
+    if (node) observer.observe(node);
+
+    return () => observer.disconnect();
+  }, [hasMore, loadMore, loadingMore, useMock]);
+
   const displayPosts = useMemo(
     () => (useMock ? mockPosts : localPosts),
     [useMock, localPosts],
   );
 
+  const pullLabel = refreshing
+    ? "Refreshing..."
+    : pullDistance > 60
+    ? "Release to refresh"
+    : "Pull to refresh";
+
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <Navbar />
 
-      <main className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
-        <p className="text-center text-xs text-slate-400">Pull to refresh</p>
+      <main
+        className="mx-auto w-full max-w-md space-y-4 px-4 py-4"
+        onTouchStart={(event) => {
+          if (window.scrollY > 0) return;
+          startYRef.current = event.touches[0].clientY;
+        }}
+        onTouchMove={(event) => {
+          if (window.scrollY > 0) return;
+          const distance = event.touches[0].clientY - startYRef.current;
+          if (distance > 0) {
+            setPullDistance(Math.min(distance, 80));
+          }
+        }}
+        onTouchEnd={async () => {
+          if (pullDistance > 60) {
+            setRefreshing(true);
+            await refresh();
+            setRefreshing(false);
+          }
+          setPullDistance(0);
+        }}
+      >
+        <p className="text-center text-xs text-slate-400">{pullLabel}</p>
 
         <PetSpotlight />
 
@@ -126,6 +175,18 @@ export function Feed() {
             }
           />
         ))}
+
+        {!useMock ? (
+          <div ref={sentinelRef} className="flex justify-center py-4">
+            {loadingMore ? (
+              <span className="h-6 w-6 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
+            ) : !hasMore && displayPosts.length > 0 ? (
+              <p className="text-xs text-slate-400">
+                You&apos;ve seen all posts 🐾
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </main>
 
       <BottomNav />
