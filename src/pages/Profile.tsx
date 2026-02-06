@@ -2,9 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { UserCard } from "../components/UserCard";
+import { getBookmarkedPosts } from "../services/bookmarks";
 import { getFollowers, getFollowing } from "../services/follow";
 import { deletePost, getPostsByUser, getUserStats, type Post } from "../services/posts";
+import { getPetsByOwner, type Pet } from "../services/pets";
 import { getUserProfile, getUsersByIds, type UserProfile } from "../services/users";
+import { getSpeciesMeta } from "../utils/petHelpers";
 
 export function Profile() {
   const navigate = useNavigate();
@@ -16,6 +19,10 @@ export function Profile() {
   const [profileName, setProfileName] = useState<string | null>(null);
   const [profileAvatar, setProfileAvatar] = useState<string | null>(null);
   const [profileBio, setProfileBio] = useState<string | null>(null);
+  const [pets, setPets] = useState<Pet[]>([]);
+  const [savedPosts, setSavedPosts] = useState<Post[]>([]);
+  const [savedLoading, setSavedLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<"posts" | "saved">("posts");
   const [followCounts, setFollowCounts] = useState({
     followerCount: 0,
     followingCount: 0,
@@ -33,10 +40,11 @@ export function Profile() {
     const load = async () => {
       setLoading(true);
       try {
-        const [postList, userStats, profile] = await Promise.all([
+        const [postList, userStats, profile, petList] = await Promise.all([
           getPostsByUser(user.uid),
           getUserStats(user.uid),
           getUserProfile(user.uid),
+          getPetsByOwner(user.uid),
         ]);
         if (ignore) return;
         setPosts(postList);
@@ -44,6 +52,7 @@ export function Profile() {
         setProfileName(profile?.displayName || null);
         setProfileAvatar(profile?.avatarUrl || null);
         setProfileBio(profile?.bio || null);
+        setPets(petList);
         setFollowCounts({
           followerCount: profile?.followerCount ?? 0,
           followingCount: profile?.followingCount ?? 0,
@@ -58,6 +67,24 @@ export function Profile() {
       ignore = true;
     };
   }, [user]);
+
+  useEffect(() => {
+    let ignore = false;
+    if (!user || activeTab !== "saved") return;
+    const loadSaved = async () => {
+      setSavedLoading(true);
+      try {
+        const saved = await getBookmarkedPosts(user.uid);
+        if (!ignore) setSavedPosts(saved);
+      } finally {
+        if (!ignore) setSavedLoading(false);
+      }
+    };
+    void loadSaved();
+    return () => {
+      ignore = true;
+    };
+  }, [activeTab, user]);
 
   const joinedDate = useMemo(() => {
     const created = user?.metadata?.creationTime;
@@ -200,10 +227,110 @@ export function Profile() {
 
         <section className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold text-slate-900">My Posts</h3>
+            <h3 className="text-base font-semibold text-slate-900">My Pets</h3>
+            {pets.length < 5 ? (
+              <button
+                type="button"
+                onClick={() => navigate("/add-pet")}
+                className="text-xs font-semibold text-purple-600 transition-all duration-200 hover:text-purple-500"
+              >
+                Add Pet
+              </button>
+            ) : null}
           </div>
 
-          {loading ? (
+          {pets.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-center text-sm text-slate-500">
+              Add your first pet! 🐾
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={() => navigate("/add-pet")}
+                  className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-xs font-semibold text-white"
+                >
+                  Add Pet
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-4 overflow-x-auto pb-2">
+              {pets.map((pet) => {
+                const meta = getSpeciesMeta(pet.species);
+                return (
+                  <button
+                    key={pet.id}
+                    type="button"
+                    onClick={() => navigate(`/pet/${pet.id}`)}
+                    className="flex min-w-[90px] flex-col items-center text-center text-xs text-slate-600"
+                  >
+                    <div className={`rounded-full bg-gradient-to-r ${meta.gradient} p-0.5`}>
+                      {pet.avatarUrl ? (
+                        <img
+                          src={pet.avatarUrl}
+                          alt={pet.name}
+                          className="h-14 w-14 rounded-full border-2 border-white object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-white bg-white text-xl">
+                          {meta.emoji}
+                        </div>
+                      )}
+                    </div>
+                    <span className="mt-2 font-semibold text-slate-900">
+                      {pet.name}
+                    </span>
+                    <span className="text-[11px] text-slate-400">
+                      {pet.breed || meta.label}
+                    </span>
+                  </button>
+                );
+              })}
+
+              {pets.length < 5 ? (
+                <button
+                  type="button"
+                  onClick={() => navigate("/add-pet")}
+                  className="flex min-w-[90px] flex-col items-center text-center text-xs text-slate-500"
+                >
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-dashed border-slate-300 text-lg text-slate-400">
+                    +
+                  </div>
+                  <span className="mt-2 text-[11px] text-slate-400">
+                    Add Pet
+                  </span>
+                </button>
+              ) : null}
+            </div>
+          )}
+        </section>
+
+        <section className="space-y-3">
+          <div className="flex items-center gap-6 border-b border-slate-200">
+            <button
+              type="button"
+              onClick={() => setActiveTab("posts")}
+              className={`pb-2 text-sm font-semibold transition-all duration-200 ${
+                activeTab === "posts"
+                  ? "border-b-2 border-purple-500 text-slate-900"
+                  : "text-slate-400 hover:text-slate-600"
+              }`}
+            >
+              Posts
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("saved")}
+              className={`pb-2 text-sm font-semibold transition-all duration-200 ${
+                activeTab === "saved"
+                  ? "border-b-2 border-purple-500 text-slate-900"
+                  : "text-slate-400 hover:text-slate-600"
+              }`}
+            >
+              Saved
+            </button>
+          </div>
+
+          {activeTab === "posts" && loading ? (
             <div className="grid grid-cols-3 gap-2">
               {[1, 2, 3].map((item) => (
                 <div
@@ -212,11 +339,11 @@ export function Profile() {
                 />
               ))}
             </div>
-          ) : posts.length === 0 ? (
+          ) : activeTab === "posts" && posts.length === 0 ? (
             <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500">
               No posts yet
             </div>
-          ) : (
+          ) : activeTab === "posts" ? (
             <div className="grid grid-cols-3 gap-2">
               {posts.map((post) => {
                 const mediaList =
@@ -263,6 +390,56 @@ export function Profile() {
                     ✕
                   </button>
                 </div>
+                );
+              })}
+            </div>
+          ) : savedLoading ? (
+            <div className="grid grid-cols-3 gap-2">
+              {[1, 2, 3].map((item) => (
+                <div
+                  key={item}
+                  className="aspect-square animate-pulse rounded-2xl bg-slate-200"
+                />
+              ))}
+            </div>
+          ) : savedPosts.length === 0 ? (
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500">
+              No saved posts yet
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-2">
+              {savedPosts.map((post) => {
+                const mediaList =
+                  post.media && post.media.length > 0
+                    ? post.media
+                    : post.mediaUrl
+                    ? [{ url: post.mediaUrl, type: post.mediaType || "image" }]
+                    : [];
+                const first = mediaList[0];
+                const isMulti = mediaList.length > 1;
+                const isVideo = first?.type === "video";
+                return (
+                  <button
+                    key={post.id}
+                    type="button"
+                    onClick={() => navigate(`/post/${post.id}`)}
+                    className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100"
+                  >
+                    <img
+                      src={first?.thumbUrl || first?.url || post.mediaUrl}
+                      alt={post.text}
+                      className="h-full w-full object-cover"
+                    />
+                    {isVideo ? (
+                      <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+                        ▶
+                      </span>
+                    ) : isMulti ? (
+                      <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+                        ⧉
+                      </span>
+                    ) : null}
+                  </button>
                 );
               })}
             </div>

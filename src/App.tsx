@@ -1,11 +1,14 @@
 import "./App.css";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { RequireAuth } from "./components/RequireAuth";
+import { AddPet } from "./pages/AddPet";
 import { Create } from "./pages/Create";
+import { EditPost } from "./pages/EditPost";
 import { EditProfile } from "./pages/EditProfile";
 import { Feed } from "./pages/Feed";
 import { Login } from "./pages/Login";
 import { Notifications } from "./pages/Notifications";
+import { PetProfile } from "./pages/PetProfile";
 import { PostDetail } from "./pages/PostDetail";
 import { Profile } from "./pages/Profile";
 import { Search } from "./pages/Search";
@@ -21,11 +24,36 @@ function App() {
         <Route path="/signup" element={<SignUp />} />
         <Route path="/search" element={<Search />} />
         <Route path="/post/:postId" element={<PostDetail />} />
+        <Route path="/pet/:petId" element={<PetProfile />} />
         <Route
           path="/create"
           element={
             <RequireAuth>
               <Create />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/add-pet"
+          element={
+            <RequireAuth>
+              <AddPet />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/edit-pet/:petId"
+          element={
+            <RequireAuth>
+              <AddPet />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/edit-post/:postId"
+          element={
+            <RequireAuth>
+              <EditPost />
             </RequireAuth>
           }
         />

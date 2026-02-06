@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -11,6 +12,7 @@ import {
   runTransaction,
   serverTimestamp,
   Timestamp,
+  updateDoc,
   where,
   writeBatch,
 } from "firebase/firestore";
@@ -33,6 +35,9 @@ export interface PostData {
   mediaUrl?: string;
   mediaType?: "image" | "video";
   media?: MediaItem[];
+  petId?: string;
+  petName?: string;
+  petAvatarUrl?: string;
   createdAt: any;
   likeCount: number;
   commentCount: number;
@@ -61,6 +66,14 @@ export type CreatePostInput = Omit<
   media: MediaItem[];
 };
 
+export type UpdatePostInput = {
+  text: string;
+  tags: string[];
+  petId?: string | null;
+  petName?: string;
+  petAvatarUrl?: string;
+};
+
 const normalizeTags = (tags: string[]) => {
   const set = new Set(
     tags
@@ -86,6 +99,43 @@ export async function createPost(data: CreatePostInput): Promise<string> {
   const result = await addDoc(postsRef, payload);
   await Promise.all(tags.map((tag) => incrementTag(tag)));
   return result.id;
+}
+
+export async function updatePost(
+  postId: string,
+  data: UpdatePostInput
+): Promise<void> {
+  const postRef = doc(db, "posts", postId);
+  const snapshot = await getDoc(postRef);
+  if (!snapshot.exists()) return;
+  const current = snapshot.data() as PostData;
+
+  const nextTags = normalizeTags(data.tags);
+  const prevTags = normalizeTags(current.tags || []);
+  const toAdd = nextTags.filter((tag) => !prevTags.includes(tag));
+  const toRemove = prevTags.filter((tag) => !nextTags.includes(tag));
+
+  const updates: Record<string, unknown> = {
+    text: data.text,
+    tags: nextTags,
+  };
+
+  if (data.petId) {
+    updates.petId = data.petId;
+    updates.petName = data.petName ?? current.petName ?? "";
+    updates.petAvatarUrl = data.petAvatarUrl ?? current.petAvatarUrl ?? "";
+  } else if (data.petId === null) {
+    updates.petId = deleteField();
+    updates.petName = deleteField();
+    updates.petAvatarUrl = deleteField();
+  }
+
+  await updateDoc(postRef, updates);
+
+  await Promise.all([
+    ...toAdd.map((tag) => incrementTag(tag)),
+    ...toRemove.map((tag) => decrementTag(tag)),
+  ]);
 }
 
 export async function getPosts(): Promise<Post[]> {

@@ -3,7 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { uploadMedia } from "../services/cloudinary";
 import { createPost, type MediaItem } from "../services/posts";
+import { getPetsByOwner, type Pet } from "../services/pets";
 import { getUserProfile, type UserProfile } from "../services/users";
+import { getSpeciesMeta } from "../utils/petHelpers";
 
 const MAX_CHARS = 500;
 
@@ -35,6 +37,8 @@ export function Create() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const duplicateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const filesRef = useRef(files);
+  const [pets, setPets] = useState<Pet[]>([]);
+  const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
 
   const remaining = useMemo(
     () => Math.max(0, MAX_CHARS - caption.length),
@@ -45,8 +49,14 @@ export function Create() {
     let ignore = false;
     if (!user) return;
     const load = async () => {
-      const profileData = await getUserProfile(user.uid);
-      if (!ignore) setProfile(profileData);
+      const [profileData, petList] = await Promise.all([
+        getUserProfile(user.uid),
+        getPetsByOwner(user.uid),
+      ]);
+      if (!ignore) {
+        setProfile(profileData);
+        setPets(petList);
+      }
     };
     void load();
     return () => {
@@ -256,7 +266,8 @@ export function Create() {
         const result = await uploadMedia(files[i].file);
         uploaded.push(result);
       }
-      await createPost({
+      const selectedPet = pets.find((petItem) => petItem.id === selectedPetId);
+      const postPayload: Parameters<typeof createPost>[0] = {
         authorId: user.uid,
         authorName:
           profile?.displayName || user.displayName || "PetNote User",
@@ -267,6 +278,14 @@ export function Create() {
         text: caption.trim(),
         media: uploaded,
         tags,
+      };
+      if (selectedPet) {
+        postPayload.petId = selectedPet.id;
+        postPayload.petName = selectedPet.name;
+        postPayload.petAvatarUrl = selectedPet.avatarUrl || "";
+      }
+      await createPost({
+        ...postPayload,
       });
       setSuccess("Posted successfully!");
       setTimeout(() => {
@@ -491,6 +510,66 @@ export function Create() {
             value={caption}
             onChange={(event) => setCaption(event.target.value)}
           />
+        </section>
+
+        <section className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-semibold text-slate-700">
+              Tag a pet
+            </label>
+            <button
+              type="button"
+              onClick={() => navigate("/add-pet")}
+              className="text-xs font-semibold text-purple-600"
+            >
+              Add pet
+            </button>
+          </div>
+          {pets.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-center text-xs text-slate-500">
+              Add your first pet to tag in posts.
+            </div>
+          ) : (
+            <div className="flex gap-3 overflow-x-auto pb-2">
+              {pets.map((petItem) => {
+                const meta = getSpeciesMeta(petItem.species);
+                const selected = selectedPetId === petItem.id;
+                return (
+                  <button
+                    key={petItem.id}
+                    type="button"
+                    onClick={() =>
+                      setSelectedPetId((prev) =>
+                        prev === petItem.id ? null : petItem.id
+                      )
+                    }
+                    className="flex flex-col items-center text-xs text-slate-600"
+                  >
+                    <div
+                      className={`rounded-full bg-gradient-to-r ${meta.gradient} p-0.5 ${
+                        selected ? "ring-2 ring-purple-400 ring-offset-2" : ""
+                      }`}
+                    >
+                      {petItem.avatarUrl ? (
+                        <img
+                          src={petItem.avatarUrl}
+                          alt={petItem.name}
+                          className="h-12 w-12 rounded-full border-2 border-white object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-white bg-white text-lg">
+                          {meta.emoji}
+                        </div>
+                      )}
+                    </div>
+                    <span className="mt-1 max-w-[64px] truncate">
+                      {petItem.name}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </section>
 
         <section className="space-y-2">

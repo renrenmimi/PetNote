@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useLike } from "../hooks/useLike";
+import { useBookmark } from "../hooks/useBookmark";
 import { deletePost, type Post } from "../services/posts";
 import { getUserProfile } from "../services/users";
 import { CommentSection } from "./CommentSection";
@@ -58,11 +59,17 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
   const [hidden, setHidden] = useState(false);
   const [authorName, setAuthorName] = useState(post.authorName);
   const [authorAvatar, setAuthorAvatar] = useState(post.authorAvatar);
+  const [bookmarkAnimating, setBookmarkAnimating] = useState(false);
 
   const { isLiked, likeCount, toggleLike } = useLike(
     post.id,
     useMock ? null : user?.uid ?? null,
     post.likeCount ?? 0
+  );
+
+  const { isBookmarked, toggleBookmark } = useBookmark(
+    post.id,
+    useMock ? null : user?.uid ?? null
   );
 
   const timeAgo = useMemo(() => formatTimeAgo(post.createdAt), [post.createdAt]);
@@ -155,6 +162,21 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
     }
   };
 
+  const handleBookmark = async () => {
+    if (!user) {
+      alert("Please login to save posts");
+      navigate("/login");
+      return;
+    }
+    setBookmarkAnimating(true);
+    setTimeout(() => setBookmarkAnimating(false), 200);
+    try {
+      await toggleBookmark();
+    } catch {
+      // ignore
+    }
+  };
+
   if (hidden) return null;
 
   const HeartIcon = ({ filled }: { filled: boolean }) => {
@@ -182,6 +204,24 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
     );
   };
 
+  const BookmarkIcon = ({ filled }: { filled: boolean }) => {
+    return (
+      <svg
+        className={`h-6 w-6 ${
+          filled ? "text-purple-500" : "text-slate-500"
+        }`}
+        viewBox="0 0 24 24"
+        fill={filled ? "currentColor" : "none"}
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
+      </svg>
+    );
+  };
+
   return (
     <article className="relative overflow-hidden rounded-2xl bg-white shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_45px_-28px_rgba(15,23,42,0.45)]">
       <header className="flex items-center gap-3 px-4 py-3">
@@ -190,21 +230,52 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
           onClick={() => navigate(`/profile/${post.authorId}`)}
           className="transition-transform duration-200 hover:scale-105"
         >
-          <img
-            src={authorAvatar}
-            alt={authorName}
-            className="h-10 w-10 rounded-full object-cover"
-          />
+          <div className="relative">
+            <img
+              src={authorAvatar}
+              alt={authorName}
+              className="h-10 w-10 rounded-full object-cover"
+            />
+            {post.petId ? (
+              <div className="absolute -bottom-1 -right-1 rounded-full bg-white p-0.5">
+                {post.petAvatarUrl ? (
+                  <img
+                    src={post.petAvatarUrl}
+                    alt={post.petName || "Pet"}
+                    className="h-4 w-4 rounded-full object-cover"
+                  />
+                ) : (
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-purple-100 text-[10px] text-purple-600">
+                    🐾
+                  </span>
+                )}
+              </div>
+            ) : null}
+          </div>
         </button>
         <div className="flex flex-1 items-center justify-between">
           <div>
-            <button
-              type="button"
-              onClick={() => navigate(`/profile/${post.authorId}`)}
-              className="text-sm font-semibold text-slate-900 transition-all duration-200 hover:text-purple-600"
-            >
-              {authorName}
-            </button>
+            <div className="flex flex-wrap items-center gap-1">
+              <button
+                type="button"
+                onClick={() => navigate(`/profile/${post.authorId}`)}
+                className="text-sm font-semibold text-slate-900 transition-all duration-200 hover:text-purple-600"
+              >
+                {authorName}
+              </button>
+              {post.petId && post.petName ? (
+                <>
+                  <span className="text-xs text-slate-400">·</span>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/pet/${post.petId}`)}
+                    className="text-xs font-semibold text-purple-600 transition-all duration-200 hover:text-purple-500"
+                  >
+                    with {post.petName}
+                  </button>
+                </>
+              ) : null}
+            </div>
             <p className="text-xs text-slate-500">{timeAgo}</p>
           </div>
           {user?.uid === post.authorId ? (
@@ -219,6 +290,16 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
               </button>
               {menuOpen ? (
                 <div className="absolute right-0 top-8 z-10 w-36 rounded-xl bg-white p-2 text-sm shadow-[0_12px_30px_-20px_rgba(15,23,42,0.5)] ring-1 ring-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      navigate(`/edit-post/${post.id}`);
+                    }}
+                    className="w-full rounded-lg px-3 py-2 text-left text-slate-600 transition-all duration-200 hover:bg-slate-100"
+                  >
+                    Edit Post
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -255,24 +336,36 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
       </div>
 
       <div className="px-4 pb-4 pt-3">
-        <div className="flex items-center gap-4 text-slate-600">
+        <div className="flex items-center justify-between text-slate-600">
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={handleLike}
+              className={`text-2xl transition-all duration-200 ${
+                animating ? "scale-110" : "scale-100"
+              } ${likedState ? "text-red-500" : "text-slate-500"}`}
+              aria-label="Like"
+            >
+              <HeartIcon filled={likedState} />
+            </button>
+            <button
+              type="button"
+              className="text-2xl text-slate-500 transition-all duration-200 hover:scale-105"
+              aria-label="Comment"
+              onClick={() => setShowComments((prev) => !prev)}
+            >
+              💬
+            </button>
+          </div>
           <button
             type="button"
-            onClick={handleLike}
-            className={`text-2xl transition-all duration-200 ${
-              animating ? "scale-110" : "scale-100"
-            } ${likedState ? "text-red-500" : "text-slate-500"}`}
-            aria-label="Like"
+            onClick={handleBookmark}
+            className={`transition-all duration-200 ${
+              bookmarkAnimating ? "scale-110" : "scale-100"
+            }`}
+            aria-label="Save"
           >
-            <HeartIcon filled={likedState} />
-          </button>
-          <button
-            type="button"
-            className="text-2xl text-slate-500 transition-all duration-200 hover:scale-105"
-            aria-label="Comment"
-            onClick={() => setShowComments((prev) => !prev)}
-          >
-            💬
+            <BookmarkIcon filled={isBookmarked} />
           </button>
         </div>
 
