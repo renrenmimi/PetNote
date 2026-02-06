@@ -63,7 +63,11 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
             >
               <span className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 p-[2px]">
                 <img
-                  src={post.mediaUrl}
+                  src={
+                    post.media && post.media.length > 0
+                      ? post.media[0].thumbUrl || post.media[0].url
+                      : post.mediaUrl
+                  }
                   alt={post.authorName}
                   className="h-16 w-16 rounded-full border-2 border-white object-cover"
                 />

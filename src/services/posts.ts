@@ -19,13 +19,20 @@ import { decrementTag, incrementTag } from "./hashtags";
 import { createNotification } from "./notifications";
 import { getUserProfile } from "./users";
 
+export type MediaItem = {
+  url: string;
+  type: "image" | "video";
+  thumbUrl?: string;
+};
+
 export interface PostData {
   authorId: string;
   authorName: string;
   authorAvatar: string;
   text: string;
-  mediaUrl: string;
-  mediaType: "image" | "video";
+  mediaUrl?: string;
+  mediaType?: "image" | "video";
+  media?: MediaItem[];
   createdAt: any;
   likeCount: number;
   commentCount: number;
@@ -49,8 +56,10 @@ export type Comment = {
 
 export type CreatePostInput = Omit<
   PostData,
-  "createdAt" | "likeCount" | "commentCount"
->;
+  "createdAt" | "likeCount" | "commentCount" | "mediaUrl" | "mediaType"
+> & {
+  media: MediaItem[];
+};
 
 const normalizeTags = (tags: string[]) => {
   const set = new Set(
@@ -64,9 +73,12 @@ const normalizeTags = (tags: string[]) => {
 export async function createPost(data: CreatePostInput): Promise<string> {
   const postsRef = collection(db, "posts");
   const tags = normalizeTags(data.tags);
+  const firstMedia = data.media[0];
   const payload = {
     ...data,
     tags,
+    mediaUrl: firstMedia?.url,
+    mediaType: firstMedia?.type,
     createdAt: serverTimestamp(),
     likeCount: 0,
     commentCount: 0,

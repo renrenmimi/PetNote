@@ -218,7 +218,18 @@ export function Profile() {
             </div>
           ) : (
             <div className="grid grid-cols-3 gap-2">
-              {posts.map((post) => (
+              {posts.map((post) => {
+                const mediaList =
+                  post.media && post.media.length > 0
+                    ? post.media
+                    : post.mediaUrl
+                    ? [{ url: post.mediaUrl, type: post.mediaType || "image" }]
+                    : [];
+                const first = mediaList[0];
+                const isMulti = mediaList.length > 1;
+                const isVideo = first?.type === "video";
+
+                return (
                 <div
                   key={post.id}
                   className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100"
@@ -229,11 +240,20 @@ export function Profile() {
                     className="h-full w-full"
                   >
                     <img
-                      src={post.mediaUrl}
+                      src={first?.thumbUrl || first?.url || post.mediaUrl}
                       alt={post.text}
                       className="h-full w-full object-cover"
                     />
                   </button>
+                  {isVideo ? (
+                    <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+                      ▶
+                    </span>
+                  ) : isMulti ? (
+                    <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+                      ⧉
+                    </span>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => setDeleteTarget(post)}
@@ -243,7 +263,8 @@ export function Profile() {
                     ✕
                   </button>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
@@ -259,11 +280,37 @@ export function Profile() {
             >
               Close
             </button>
-            <img
-              src={selectedPost.mediaUrl}
-              alt={selectedPost.text}
-              className="h-full w-full object-cover"
-            />
+            {(() => {
+              const mediaList =
+                selectedPost.media && selectedPost.media.length > 0
+                  ? selectedPost.media
+                  : selectedPost.mediaUrl
+                  ? [
+                      {
+                        url: selectedPost.mediaUrl,
+                        type: selectedPost.mediaType || "image",
+                      },
+                    ]
+                  : [];
+              const first = mediaList[0];
+              if (!first) return null;
+              if (first.type === "video") {
+                return (
+                  <video
+                    src={first.url}
+                    controls
+                    className="h-full w-full object-cover"
+                  />
+                );
+              }
+              return (
+                <img
+                  src={first.url}
+                  alt={selectedPost.text}
+                  className="h-full w-full object-cover"
+                />
+              );
+            })()}
             <div className="p-4 text-sm text-slate-700">
               <span className="font-semibold text-slate-900">
                 {selectedPost.authorName}
