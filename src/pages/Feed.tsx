@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { BottomNav } from "../components/BottomNav";
 import { Navbar } from "../components/Navbar";
+import { PetSpotlight } from "../components/PetSpotlight";
 import { PostCard } from "../components/PostCard";
 import { usePosts } from "../hooks/usePosts";
 import { type Post } from "../services/posts";
@@ -49,14 +50,6 @@ const mockPosts: Post[] = [
   },
 ];
 
-const mockStories = [
-  { id: "s1", name: "Luna", avatar: "https://i.pravatar.cc/150?img=11" },
-  { id: "s2", name: "Milo", avatar: "https://i.pravatar.cc/150?img=12" },
-  { id: "s3", name: "Coco", avatar: "https://i.pravatar.cc/150?img=13" },
-  { id: "s4", name: "Rocky", avatar: "https://i.pravatar.cc/150?img=14" },
-  { id: "s5", name: "Bella", avatar: "https://i.pravatar.cc/150?img=15" },
-  { id: "s6", name: "Ollie", avatar: "https://i.pravatar.cc/150?img=16" },
-];
 
 function FeedSkeleton() {
   return (
@@ -107,35 +100,7 @@ export function Feed() {
       <main className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
         <p className="text-center text-xs text-slate-400">Pull to refresh</p>
 
-        <section className="rounded-2xl bg-white px-4 py-3 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 transition-all duration-200">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-900">Stories</h2>
-            <button
-              type="button"
-              className="text-xs font-semibold text-purple-600 transition-all duration-200 hover:scale-105"
-            >
-              See all
-            </button>
-          </div>
-          <div className="mt-3 flex gap-4 overflow-x-auto pb-1">
-            {mockStories.map((story) => (
-              <button
-                key={story.id}
-                type="button"
-                className="flex flex-col items-center gap-2 transition-all duration-200 hover:scale-105"
-              >
-                <span className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 p-[2px]">
-                  <img
-                    src={story.avatar}
-                    alt={story.name}
-                    className="h-14 w-14 rounded-full border-2 border-white object-cover"
-                  />
-                </span>
-                <span className="text-xs text-slate-600">{story.name}</span>
-              </button>
-            ))}
-          </div>
-        </section>
+        <PetSpotlight />
 
         {loading && !useMock ? <FeedSkeleton /> : null}
 

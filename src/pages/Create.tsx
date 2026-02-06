@@ -17,6 +17,7 @@ export function Create() {
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [converting, setConverting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
@@ -52,13 +53,46 @@ export function Create() {
     };
   }, [user]);
 
-  const handleSelectFile = (nextFile: File | null) => {
+  const handleSelectFile = async (nextFile: File | null) => {
     if (!nextFile) return;
-    if (!nextFile.type.startsWith("image/")) {
+    if (!nextFile.type.startsWith("image/") && !/\.heic$|\.heif$/i.test(nextFile.name)) {
       setError("Please upload an image file.");
       return;
     }
     setError(null);
+
+    const isHeic =
+      nextFile.type === "image/heic" ||
+      nextFile.type === "image/heif" ||
+      /\.heic$/i.test(nextFile.name) ||
+      /\.heif$/i.test(nextFile.name);
+
+    if (isHeic) {
+      try {
+        setConverting(true);
+        const heic2any = (await import("heic2any")).default;
+        const blob = await heic2any({
+          blob: nextFile,
+          toType: "image/jpeg",
+          quality: 0.85,
+        });
+        const outputBlob = Array.isArray(blob) ? blob[0] : blob;
+        const converted = new File(
+          [outputBlob as Blob],
+          nextFile.name.replace(/\.heic$/i, ".jpg").replace(/\.heif$/i, ".jpg"),
+          { type: "image/jpeg" }
+        );
+        setFile(converted);
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to convert image.";
+        setError(message);
+      } finally {
+        setConverting(false);
+      }
+      return;
+    }
+
     setFile(nextFile);
   };
 
@@ -67,7 +101,7 @@ export function Create() {
     setDragActive(false);
     const dropped = event.dataTransfer.files?.[0];
     if (dropped) {
-      handleSelectFile(dropped);
+      void handleSelectFile(dropped);
     }
   };
 
@@ -203,7 +237,7 @@ export function Create() {
             <div className="space-y-2 px-4">
               <div className="text-3xl">📷</div>
               <p className="text-sm font-semibold text-slate-700">
-                Tap to add photo
+                {converting ? "Converting image..." : "Tap to add photo"}
               </p>
               <p className="text-xs text-slate-400">
                 Drag & drop or click to upload
@@ -214,7 +248,7 @@ export function Create() {
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif"
             className="hidden"
             onChange={(event) =>
               handleSelectFile(event.target.files?.[0] ?? null)
