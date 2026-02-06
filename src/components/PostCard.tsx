@@ -5,7 +5,6 @@ import { useLike } from "../hooks/useLike";
 import { useBookmark } from "../hooks/useBookmark";
 import { deletePost, type Post } from "../services/posts";
 import { getUserProfile } from "../services/users";
-import { CommentSection } from "./CommentSection";
 import { MediaCarousel } from "./MediaCarousel";
 
 type PostCardProps = {
@@ -45,12 +44,8 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [animating, setAnimating] = useState(false);
-  const [showComments, setShowComments] = useState(false);
   const [localLiked, setLocalLiked] = useState(false);
   const [localLikeCount, setLocalLikeCount] = useState(post.likeCount ?? 0);
-  const [localCommentCount, setLocalCommentCount] = useState(
-    post.commentCount ?? 0
-  );
   const [showHeart, setShowHeart] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -90,7 +85,7 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
 
   const likedState = useMock ? localLiked : isLiked;
   const likeTotal = useMock ? localLikeCount : likeCount;
-  const commentTotal = localCommentCount;
+  const commentTotal = post.commentCount ?? 0;
 
   useEffect(() => {
     let ignore = false;
@@ -352,7 +347,7 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
               type="button"
               className="text-2xl text-slate-500 transition-all duration-200 hover:scale-105"
               aria-label="Comment"
-              onClick={() => setShowComments((prev) => !prev)}
+              onClick={() => navigate(`/post/${post.id}`)}
             >
               💬
             </button>
@@ -372,9 +367,13 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
         <p className="mt-2 text-sm font-semibold text-slate-900">
           {likeTotal} likes
         </p>
-        <p className="mt-1 text-xs text-slate-400">
+        <button
+          type="button"
+          onClick={() => navigate(`/post/${post.id}`)}
+          className="mt-1 text-xs text-slate-400 transition-all duration-200 hover:text-purple-500"
+        >
           {commentTotal} comments
-        </p>
+        </button>
 
         <p className="mt-2 text-sm text-slate-700">
           <span className="font-semibold text-slate-900">{authorName}</span>{" "}
@@ -394,19 +393,6 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
           ))}
         </div>
 
-        {showComments ? (
-          <CommentSection
-            postId={post.id}
-            postAuthorId={post.authorId}
-            commentCount={commentTotal}
-            onCommentAdded={() =>
-              setLocalCommentCount((prev) => prev + 1)
-            }
-            onCommentDeleted={() =>
-              setLocalCommentCount((prev) => Math.max(0, prev - 1))
-            }
-          />
-        ) : null}
       </div>
 
       {confirmOpen ? (

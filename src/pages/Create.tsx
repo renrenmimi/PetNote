@@ -5,6 +5,7 @@ import { uploadMedia } from "../services/cloudinary";
 import { createPost, type MediaItem } from "../services/posts";
 import { getPetsByOwner, type Pet } from "../services/pets";
 import { getUserProfile, type UserProfile } from "../services/users";
+import { compressImage } from "../utils/imageCompressor";
 import { getSpeciesMeta } from "../utils/petHelpers";
 
 const MAX_CHARS = 500;
@@ -21,6 +22,7 @@ export function Create() {
       type: "image" | "video";
       previewUrl: string;
       duration?: number;
+      sizeLabel?: string;
     }>
   >([]);
   const [caption, setCaption] = useState("");
@@ -28,14 +30,17 @@ export function Create() {
   const [tagInput, setTagInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [converting, setConverting] = useState(false);
+  const [compressing, setCompressing] = useState(false);
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [duplicateToast, setDuplicateToast] = useState<string | null>(null);
   const [duplicateSkipped, setDuplicateSkipped] = useState(0);
+  const [compressToast, setCompressToast] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const duplicateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const compressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const filesRef = useRef(files);
   const [pets, setPets] = useState<Pet[]>([]);
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
@@ -102,6 +107,14 @@ export function Create() {
     const seenIds = new Set(existingIds);
     let skippedDuplicates = 0;
     let lastDuplicateName = "";
+    let startedCompressing = false;
+
+    const beginCompressing = () => {
+      if (startedCompressing) return;
+      startedCompressing = true;
+      setCompressing(true);
+      setCompressToast("Compressing images...");
+    };
 
     for (const rawFile of slice) {
       const rawId = getFileId(rawFile);
@@ -128,6 +141,8 @@ export function Create() {
 
       let file = rawFile;
       let duration: number | undefined;
+      let sizeLabel: string | undefined;
+
       if (isHeic) {
         try {
           setConverting(true);
@@ -150,6 +165,27 @@ export function Create() {
           continue;
         } finally {
           setConverting(false);
+        }
+      }
+
+      if (file.type.startsWith("image/") && file.type !== "image/gif") {
+        try {
+          beginCompressing();
+          const originalSize = file.size;
+          const compressed = await compressImage(file, {
+            maxWidth: 1920,
+            maxHeight: 1920,
+            quality: 0.8,
+            maxSizeMB: 2,
+          });
+          if (compressed.size !== originalSize) {
+            sizeLabel = `${formatBytes(originalSize)} → ${formatBytes(
+              compressed.size
+            )}`;
+          }
+          file = compressed;
+        } catch {
+          setError("Failed to compress image.");
         }
       }
 
@@ -185,6 +221,7 @@ export function Create() {
         type: file.type.startsWith("video/") ? "video" : "image",
         previewUrl,
         duration,
+        sizeLabel,
       });
     }
 
@@ -205,6 +242,16 @@ export function Create() {
       }, 2000);
     } else {
       setDuplicateSkipped(0);
+    }
+
+    if (startedCompressing) {
+      setCompressing(false);
+      if (compressTimerRef.current) {
+        clearTimeout(compressTimerRef.current);
+      }
+      compressTimerRef.current = setTimeout(() => {
+        setCompressToast(null);
+      }, 800);
     }
   };
 
@@ -319,6 +366,9 @@ export function Create() {
       if (duplicateTimerRef.current) {
         clearTimeout(duplicateTimerRef.current);
       }
+      if (compressTimerRef.current) {
+        clearTimeout(compressTimerRef.current);
+      }
     };
   }, []);
 
@@ -338,6 +388,14 @@ export function Create() {
     const minutes = Math.floor(value / 60);
     const seconds = Math.floor(value % 60);
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  };
+
+  const formatBytes = (value: number) => {
+    if (value < 1024) return `${value} B`;
+    const kb = value / 1024;
+    if (kb < 1024) return `${kb.toFixed(1)} KB`;
+    const mb = kb / 1024;
+    return `${mb.toFixed(1)} MB`;
   };
 
   return (
@@ -425,6 +483,11 @@ export function Create() {
                       className="h-full w-full object-cover"
                     />
                   )}
+                  {item.sizeLabel ? (
+                    <span className="absolute bottom-2 left-2 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                      {item.sizeLabel}
+                    </span>
+                  ) : null}
                   <button
                     type="button"
                     onClick={(event) => {
@@ -627,6 +690,14 @@ export function Create() {
         <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
           <div className="rounded-full bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-lg">
             {duplicateToast}
+          </div>
+        </div>
+      ) : null}
+
+      {compressToast || compressing ? (
+        <div className="fixed bottom-16 left-1/2 z-50 -translate-x-1/2">
+          <div className="rounded-full bg-slate-900/90 px-4 py-2 text-xs font-semibold text-white shadow-lg">
+            {compressToast || "Compressing images..."}
           </div>
         </div>
       ) : null}
