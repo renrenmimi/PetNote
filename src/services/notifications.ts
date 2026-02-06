@@ -13,7 +13,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 
-export type NotificationType = "like" | "comment" | "follow";
+export type NotificationType = "like" | "comment" | "follow" | "reply";
 
 export type NotificationItem = {
   id: string;
@@ -23,6 +23,7 @@ export type NotificationItem = {
   fromUserName: string;
   fromUserAvatar: string;
   postId?: string;
+  commentId?: string;
   postImage?: string;
   message: string;
   read: boolean;

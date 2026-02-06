@@ -5,10 +5,12 @@ import {
   getDoc,
   getDocs,
   increment,
+  limit,
   orderBy,
   query,
   runTransaction,
   serverTimestamp,
+  Timestamp,
   where,
   writeBatch,
 } from "firebase/firestore";
@@ -39,6 +41,10 @@ export type Comment = {
   authorAvatar?: string;
   text: string;
   createdAt?: unknown;
+  replyTo?: {
+    commentId: string;
+    authorName: string;
+  };
 };
 
 export type CreatePostInput = Omit<
@@ -73,6 +79,28 @@ export async function createPost(data: CreatePostInput): Promise<string> {
 export async function getPosts(): Promise<Post[]> {
   const postsRef = collection(db, "posts");
   const postsQuery = query(postsRef, orderBy("createdAt", "desc"));
+  const snapshot = await getDocs(postsQuery);
+  return snapshot.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...(docSnap.data() as PostData),
+  }));
+}
+
+export async function getPopularPosts(
+  limitCount = 10,
+  hours = 24
+): Promise<Post[]> {
+  const postsRef = collection(db, "posts");
+  const cutoff = Timestamp.fromDate(
+    new Date(Date.now() - hours * 60 * 60 * 1000)
+  );
+  const postsQuery = query(
+    postsRef,
+    where("createdAt", ">=", cutoff),
+    orderBy("likeCount", "desc"),
+    orderBy("createdAt", "desc"),
+    limit(limitCount)
+  );
   const snapshot = await getDocs(postsQuery);
   return snapshot.docs.map((docSnap) => ({
     id: docSnap.id,
@@ -163,13 +191,17 @@ export async function checkIfLiked(
 
 export async function addComment(
   postId: string,
-  comment: Comment
+  comment: Comment,
+  replyToUserId?: string
 ): Promise<string> {
   const commentsRef = collection(db, "posts", postId, "comments");
-  const payload = {
+  const payload: Comment = {
     ...comment,
     createdAt: comment.createdAt ?? serverTimestamp(),
   };
+  if (!payload.replyTo) {
+    delete payload.replyTo;
+  }
   const postRef = doc(db, "posts", postId);
   const postSnap = await getDoc(postRef);
   if (!postSnap.exists()) {
@@ -185,19 +217,66 @@ export async function addComment(
     return newCommentRef.id;
   });
   if (result && postData.authorId !== comment.authorId) {
+    if (replyToUserId !== postData.authorId) {
+      await createNotification({
+        userId: postData.authorId,
+        type: "comment",
+        fromUserId: comment.authorId,
+        fromUserName: comment.authorName || "PetNote User",
+        fromUserAvatar:
+          comment.authorAvatar || "https://i.pravatar.cc/150?img=12",
+        postId,
+        postImage: postData.mediaUrl,
+        message: "commented on your post",
+        commentId: result,
+      });
+    }
+  }
+  if (replyToUserId && replyToUserId !== comment.authorId) {
     await createNotification({
-      userId: postData.authorId,
-      type: "comment",
+      userId: replyToUserId,
+      type: "reply",
       fromUserId: comment.authorId,
       fromUserName: comment.authorName || "PetNote User",
       fromUserAvatar:
         comment.authorAvatar || "https://i.pravatar.cc/150?img=12",
       postId,
       postImage: postData.mediaUrl,
-      message: "commented on your post",
+      message: "replied to your comment",
+      commentId: result,
     });
   }
   return result;
+}
+
+export async function deleteComment(
+  postId: string,
+  commentId: string
+): Promise<void> {
+  const commentRef = doc(db, "posts", postId, "comments", commentId);
+  const postRef = doc(db, "posts", postId);
+  let didDelete = false;
+
+  await runTransaction(db, async (transaction) => {
+    const commentSnap = await transaction.get(commentRef);
+    if (!commentSnap.exists()) return;
+    transaction.delete(commentRef);
+    transaction.update(postRef, { commentCount: increment(-1) });
+    didDelete = true;
+  });
+
+  if (!didDelete) return;
+  const notificationsRef = collection(db, "notifications");
+  const notificationsQuery = query(
+    notificationsRef,
+    where("postId", "==", postId),
+    where("commentId", "==", commentId)
+  );
+  const snapshot = await getDocs(notificationsQuery);
+  if (snapshot.empty) return;
+  const batch = writeBatch(db);
+  snapshot.docs.forEach((docSnap) => batch.delete(docSnap.ref));
+  await batch.commit();
 }
 
 export async function deletePost(postId: string): Promise<void> {

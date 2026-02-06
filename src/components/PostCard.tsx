@@ -312,9 +312,13 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
         {showComments ? (
           <CommentSection
             postId={post.id}
+            postAuthorId={post.authorId}
             commentCount={commentTotal}
             onCommentAdded={() =>
               setLocalCommentCount((prev) => prev + 1)
+            }
+            onCommentDeleted={() =>
+              setLocalCommentCount((prev) => Math.max(0, prev - 1))
             }
           />
         ) : null}
