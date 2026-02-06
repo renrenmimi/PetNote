@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { CommentSection } from "../components/CommentSection";
 import { MediaCarousel } from "../components/MediaCarousel";
+import { ShareMenu } from "../components/ShareMenu";
 import { useAuth } from "../hooks/useAuth";
 import { useBookmark } from "../hooks/useBookmark";
 import { useFollow } from "../hooks/useFollow";
@@ -39,7 +40,7 @@ const formatTimeAgo = (value: unknown) => {
 export function PostDetail() {
   const navigate = useNavigate();
   const { postId = "" } = useParams();
-  const { user } = useAuth();
+  const { user, isBanned } = useAuth();
   const [post, setPost] = useState<Post | null>(null);
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -48,6 +49,7 @@ export function PostDetail() {
   const [authorName, setAuthorName] = useState<string | null>(null);
   const [authorAvatar, setAuthorAvatar] = useState<string | null>(null);
   const [commentCount, setCommentCount] = useState(0);
+  const [shareOpen, setShareOpen] = useState(false);
   const commentsRef = useRef<HTMLDivElement | null>(null);
 
   const { isLiked, likeCount, toggleLike } = useLike(
@@ -127,6 +129,9 @@ export function PostDetail() {
       navigate("/login");
       return;
     }
+    if (isBanned) {
+      return;
+    }
     await toggleLike();
   };
 
@@ -176,6 +181,21 @@ export function PostDetail() {
       </svg>
     );
   };
+
+  const ShareIcon = () => (
+    <svg
+      className="h-6 w-6 text-slate-500"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M22 2L11 13" />
+      <path d="M22 2L15 22l-4-9-9-4Z" />
+    </svg>
+  );
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
@@ -313,6 +333,14 @@ export function PostDetail() {
                 >
                   💬
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setShareOpen(true)}
+                  className="text-2xl transition-all duration-200 hover:scale-105"
+                  aria-label="Share"
+                >
+                  <ShareIcon />
+                </button>
               </div>
               <button
                 type="button"
@@ -416,6 +444,15 @@ export function PostDetail() {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {post ? (
+        <ShareMenu
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          postId={post.id}
+          text={post.text}
+        />
       ) : null}
     </div>
   );

@@ -21,6 +21,8 @@ export type UserProfile = {
   createdAt?: unknown;
   followerCount?: number;
   followingCount?: number;
+  role?: "admin" | "user";
+  banned?: boolean;
 };
 
 export async function getUserProfile(

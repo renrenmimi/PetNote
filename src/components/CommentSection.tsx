@@ -47,7 +47,7 @@ export function CommentSection({
   onCommentAdded,
   onCommentDeleted,
 }: CommentSectionProps) {
-  const { user } = useAuth();
+  const { user, isBanned } = useAuth();
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -98,6 +98,10 @@ export function CommentSection({
   const handleSend = async () => {
     if (!user) {
       navigate("/login");
+      return;
+    }
+    if (isBanned) {
+      setError("Your account has been suspended.");
       return;
     }
 
@@ -289,17 +293,23 @@ export function CommentSection({
           <input
             ref={inputRef}
             type="text"
-            placeholder={user ? "Add a comment..." : "Login to comment"}
-            className="flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200"
-            value={text}
-            readOnly={!user}
-            onFocus={() => {
-              if (!user) navigate("/login");
-            }}
-            onClick={() => {
-              if (!user) navigate("/login");
-            }}
-            onChange={(event) => setText(event.target.value)}
+          placeholder={
+            isBanned
+              ? "Account suspended"
+              : user
+              ? "Add a comment..."
+              : "Login to comment"
+          }
+          className="flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200"
+          value={text}
+          readOnly={!user || isBanned}
+          onFocus={() => {
+            if (!user) navigate("/login");
+          }}
+          onClick={() => {
+            if (!user) navigate("/login");
+          }}
+          onChange={(event) => setText(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
@@ -307,14 +317,14 @@ export function CommentSection({
               }
             }}
           />
-          <button
-            type="button"
-            onClick={handleSend}
-            disabled={!user || !text.trim()}
-            className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Send
-          </button>
+        <button
+          type="button"
+          onClick={handleSend}
+          disabled={!user || !text.trim() || isBanned}
+          className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Send
+        </button>
         </div>
       </div>
 

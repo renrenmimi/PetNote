@@ -3,9 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useLike } from "../hooks/useLike";
 import { useBookmark } from "../hooks/useBookmark";
+import { blockUser } from "../services/block";
 import { deletePost, type Post } from "../services/posts";
 import { getUserProfile } from "../services/users";
 import { MediaCarousel } from "./MediaCarousel";
+import { ReportModal } from "./ReportModal";
+import { ShareMenu } from "./ShareMenu";
 
 type PostCardProps = {
   post: Post;
@@ -41,7 +44,7 @@ const formatTimeAgo = (value: unknown) => {
 };
 
 export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
-  const { user } = useAuth();
+  const { user, isBanned } = useAuth();
   const navigate = useNavigate();
   const [animating, setAnimating] = useState(false);
   const [localLiked, setLocalLiked] = useState(false);
@@ -55,6 +58,10 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
   const [authorName, setAuthorName] = useState(post.authorName);
   const [authorAvatar, setAuthorAvatar] = useState(post.authorAvatar);
   const [bookmarkAnimating, setBookmarkAnimating] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [blockConfirmOpen, setBlockConfirmOpen] = useState(false);
+  const [blocking, setBlocking] = useState(false);
 
   const { isLiked, likeCount, toggleLike } = useLike(
     post.id,
@@ -86,6 +93,7 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
   const likedState = useMock ? localLiked : isLiked;
   const likeTotal = useMock ? localLikeCount : likeCount;
   const commentTotal = post.commentCount ?? 0;
+  const isOwner = user?.uid === post.authorId;
 
   useEffect(() => {
     let ignore = false;
@@ -106,6 +114,11 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
     if (!user) {
       alert("Please login to like posts");
       navigate("/login");
+      return;
+    }
+    if (isBanned) {
+      setToast({ message: "Your account has been suspended", tone: "error" });
+      setTimeout(() => setToast(null), 2000);
       return;
     }
 
@@ -153,6 +166,21 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
       setToast({ message: "Failed to delete post", tone: "error" });
     } finally {
       setDeleting(false);
+      setTimeout(() => setToast(null), 2000);
+    }
+  };
+
+  const handleBlock = async () => {
+    if (!user || blocking) return;
+    setBlocking(true);
+    try {
+      await blockUser(user.uid, post.authorId);
+      setToast({ message: "User blocked", tone: "success" });
+      setBlockConfirmOpen(false);
+    } catch {
+      setToast({ message: "Failed to block user", tone: "error" });
+    } finally {
+      setBlocking(false);
       setTimeout(() => setToast(null), 2000);
     }
   };
@@ -217,6 +245,21 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
     );
   };
 
+  const ShareIcon = () => (
+    <svg
+      className="h-6 w-6 text-slate-500"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M22 2L11 13" />
+      <path d="M22 2L15 22l-4-9-9-4Z" />
+    </svg>
+  );
+
   return (
     <article className="relative overflow-hidden rounded-2xl bg-white shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_45px_-28px_rgba(15,23,42,0.45)]">
       <header className="flex items-center gap-3 px-4 py-3">
@@ -273,49 +316,82 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
             </div>
             <p className="text-xs text-slate-500">{timeAgo}</p>
           </div>
-          {user?.uid === post.authorId ? (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setMenuOpen((prev) => !prev)}
-                className="text-xl text-slate-400 transition-all duration-200 hover:text-slate-600"
-                aria-label="Post options"
-              >
-                ⋯
-              </button>
-              {menuOpen ? (
-                <div className="absolute right-0 top-8 z-10 w-36 rounded-xl bg-white p-2 text-sm shadow-[0_12px_30px_-20px_rgba(15,23,42,0.5)] ring-1 ring-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      navigate(`/edit-post/${post.id}`);
-                    }}
-                    className="w-full rounded-lg px-3 py-2 text-left text-slate-600 transition-all duration-200 hover:bg-slate-100"
-                  >
-                    Edit Post
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      setConfirmOpen(true);
-                    }}
-                    className="w-full rounded-lg px-3 py-2 text-left text-red-500 transition-all duration-200 hover:bg-red-50"
-                  >
-                    Delete Post
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMenuOpen(false)}
-                    className="mt-1 w-full rounded-lg px-3 py-2 text-left text-slate-600 transition-all duration-200 hover:bg-slate-100"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((prev) => !prev)}
+              className="text-xl text-slate-400 transition-all duration-200 hover:text-slate-600"
+              aria-label="Post options"
+            >
+              ⋯
+            </button>
+            {menuOpen ? (
+              <div className="absolute right-0 top-8 z-10 w-40 rounded-xl bg-white p-2 text-sm shadow-[0_12px_30px_-20px_rgba(15,23,42,0.5)] ring-1 ring-slate-100">
+                {isOwner ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        navigate(`/edit-post/${post.id}`);
+                      }}
+                      className="w-full rounded-lg px-3 py-2 text-left text-slate-600 transition-all duration-200 hover:bg-slate-100"
+                    >
+                      Edit Post
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setConfirmOpen(true);
+                      }}
+                      className="w-full rounded-lg px-3 py-2 text-left text-red-500 transition-all duration-200 hover:bg-red-50"
+                    >
+                      Delete Post
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!user) {
+                          navigate("/login");
+                          return;
+                        }
+                        setMenuOpen(false);
+                        setReportOpen(true);
+                      }}
+                      className="w-full rounded-lg px-3 py-2 text-left text-orange-500 transition-all duration-200 hover:bg-orange-50"
+                    >
+                      Report Post
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!user) {
+                          navigate("/login");
+                          return;
+                        }
+                        setMenuOpen(false);
+                        setBlockConfirmOpen(true);
+                      }}
+                      className="w-full rounded-lg px-3 py-2 text-left text-red-500 transition-all duration-200 hover:bg-red-50"
+                    >
+                      Block User
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen(false)}
+                  className="mt-1 w-full rounded-lg px-3 py-2 text-left text-slate-600 transition-all duration-200 hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </header>
 
@@ -350,6 +426,14 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
               onClick={() => navigate(`/post/${post.id}`)}
             >
               💬
+            </button>
+            <button
+              type="button"
+              className="text-2xl transition-all duration-200 hover:scale-105"
+              aria-label="Share"
+              onClick={() => setShareOpen(true)}
+            >
+              <ShareIcon />
             </button>
           </div>
           <button
@@ -439,6 +523,51 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
           </div>
         </div>
       ) : null}
+
+      {blockConfirmOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)]">
+            <h3 className="text-base font-semibold text-slate-900">
+              Block @{authorName}?
+            </h3>
+            <p className="mt-2 text-sm text-slate-600">
+              They won&apos;t be able to see your posts, and you won&apos;t see
+              theirs.
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setBlockConfirmOpen(false)}
+                className="rounded-full px-4 py-2 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleBlock}
+                disabled={blocking}
+                className="rounded-full bg-red-500 px-4 py-2 text-sm font-semibold text-white transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {blocking ? "Blocking..." : "Block"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <ShareMenu
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        postId={post.id}
+        text={post.text}
+      />
+
+      <ReportModal
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        targetType="post"
+        targetId={post.id}
+      />
     </article>
   );
 }

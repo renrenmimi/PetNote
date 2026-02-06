@@ -5,6 +5,7 @@ import { Navbar } from "../components/Navbar";
 import { PostCard } from "../components/PostCard";
 import { UserCard } from "../components/UserCard";
 import { useAuth } from "../hooks/useAuth";
+import { useBlockedUsers } from "../hooks/useBlockedUsers";
 import {
   getPostsByTag,
   getTrendingTags,
@@ -25,6 +26,7 @@ export function Search() {
   const [trendingTags, setTrendingTags] = useState<Hashtag[]>([]);
   const [tagResults, setTagResults] = useState<Hashtag[]>([]);
   const [selectedTag, setSelectedTag] = useState<Hashtag | null>(null);
+  const { blockedUserIds } = useBlockedUsers(user?.uid ?? null);
 
   const normalizedQuery = useMemo(() => query.trim(), [query]);
 
@@ -90,7 +92,11 @@ export function Search() {
     return () => window.clearTimeout(handle);
   }, [normalizedQuery]);
 
-  const hasResults = posts.length > 0 || users.length > 0;
+  const filteredPosts = useMemo(
+    () => posts.filter((post) => !blockedUserIds.includes(post.authorId)),
+    [blockedUserIds, posts]
+  );
+  const hasResults = filteredPosts.length > 0 || users.length > 0;
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
@@ -192,7 +198,7 @@ export function Search() {
         {selectedTag ? (
           <div className="rounded-2xl bg-white px-4 py-3 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)]">
             <h3 className="text-base font-semibold text-slate-900">
-              #{selectedTag.name} · {selectedTag.postCount || posts.length} posts
+              #{selectedTag.name} · {selectedTag.postCount || filteredPosts.length} posts
             </h3>
           </div>
         ) : null}
@@ -212,11 +218,11 @@ export function Search() {
           </section>
         ) : null}
 
-        {posts.length > 0 ? (
+        {filteredPosts.length > 0 ? (
           <section className="space-y-3">
             <h3 className="text-sm font-semibold text-slate-900">Posts</h3>
             <div className="grid gap-4 sm:grid-cols-2">
-              {posts.map((post) => (
+              {filteredPosts.map((post) => (
                 <PostCard
                   key={post.id}
                   post={post}

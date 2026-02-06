@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { BottomNav } from "../components/BottomNav";
 import { Navbar } from "../components/Navbar";
 import { PetSpotlight } from "../components/PetSpotlight";
 import { PostCard } from "../components/PostCard";
 import { usePosts } from "../hooks/usePosts";
+import { useAuth } from "../hooks/useAuth";
+import { useBlockedUsers } from "../hooks/useBlockedUsers";
+import { getFollowing } from "../services/follow";
 import { type Post } from "../services/posts";
 
 const mockPosts: Post[] = [
@@ -78,20 +82,48 @@ function FeedSkeleton() {
 }
 
 export function Feed() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<"all" | "following">("all");
   const { posts, loading, loadingMore, hasMore, loadMore, refresh, error } =
-    usePosts();
+    usePosts(activeTab, user?.uid ?? null);
   const useMock = false;
   const [localPosts, setLocalPosts] = useState<Post[]>([]);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const startYRef = useRef(0);
   const [pullDistance, setPullDistance] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [followingCount, setFollowingCount] = useState(0);
+  const { blockedUserIds } = useBlockedUsers(user?.uid ?? null);
 
   useEffect(() => {
     if (!useMock) {
       setLocalPosts(posts);
     }
   }, [posts, useMock]);
+
+  useEffect(() => {
+    void refresh();
+  }, [activeTab, refresh]);
+
+  useEffect(() => {
+    if (!user) {
+      setActiveTab("all");
+    }
+  }, [user]);
+
+  useEffect(() => {
+    let ignore = false;
+    if (!user || activeTab !== "following") return;
+    const loadFollowing = async () => {
+      const ids = await getFollowing(user.uid);
+      if (!ignore) setFollowingCount(ids.length);
+    };
+    void loadFollowing();
+    return () => {
+      ignore = true;
+    };
+  }, [activeTab, user]);
 
   useEffect(() => {
     if (useMock) return;
@@ -113,6 +145,11 @@ export function Feed() {
   const displayPosts = useMemo(
     () => (useMock ? mockPosts : localPosts),
     [useMock, localPosts],
+  );
+  const filteredPosts = useMemo(
+    () =>
+      displayPosts.filter((post) => !blockedUserIds.includes(post.authorId)),
+    [blockedUserIds, displayPosts]
   );
 
   const pullLabel = refreshing
@@ -147,6 +184,44 @@ export function Feed() {
           setPullDistance(0);
         }}
       >
+        <div className="sticky top-[56px] z-10 -mx-4 bg-slate-50 px-4 pb-2 pt-1">
+          <div
+            className={`relative border-b border-slate-200 ${
+              user ? "grid grid-cols-2" : "grid grid-cols-1"
+            }`}
+          >
+            <button
+              type="button"
+              onClick={() => setActiveTab("all")}
+              className={`pb-2 text-sm font-semibold transition-all duration-200 ${
+                activeTab === "all"
+                  ? "text-slate-900"
+                  : "text-slate-400 hover:text-slate-600"
+              }`}
+            >
+              For You
+            </button>
+            {user ? (
+              <button
+                type="button"
+                onClick={() => setActiveTab("following")}
+                className={`pb-2 text-sm font-semibold transition-all duration-200 ${
+                  activeTab === "following"
+                    ? "text-slate-900"
+                    : "text-slate-400 hover:text-slate-600"
+                }`}
+              >
+                Following
+              </button>
+            ) : null}
+            <span
+              className={`absolute bottom-0 h-0.5 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300 ${
+                user ? "w-1/2" : "w-full"
+              } ${activeTab === "following" && user ? "translate-x-full" : "translate-x-0"}`}
+            />
+          </div>
+        </div>
+
         <p className="text-center text-xs text-slate-400">{pullLabel}</p>
 
         <PetSpotlight />
@@ -159,13 +234,26 @@ export function Feed() {
           </div>
         ) : null}
 
-        {!loading && displayPosts.length === 0 ? (
-          <div className="rounded-2xl bg-white p-8 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)]">
-            No posts yet, be the first to share your pet!
-          </div>
+        {!loading && filteredPosts.length === 0 ? (
+          activeTab === "following" && user && followingCount === 0 ? (
+            <div className="rounded-2xl bg-white p-8 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)]">
+              <p>Follow some pet lovers to see their posts here! 🐾</p>
+              <button
+                type="button"
+                onClick={() => navigate("/search")}
+                className="mt-4 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-xs font-semibold text-white"
+              >
+                Discover
+              </button>
+            </div>
+          ) : (
+            <div className="rounded-2xl bg-white p-8 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)]">
+              No posts yet, be the first to share your pet!
+            </div>
+          )
         ) : null}
 
-        {displayPosts.map((post) => (
+        {filteredPosts.map((post) => (
           <PostCard
             key={post.id}
             post={post}
@@ -180,7 +268,7 @@ export function Feed() {
           <div ref={sentinelRef} className="flex justify-center py-4">
             {loadingMore ? (
               <span className="h-6 w-6 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
-            ) : !hasMore && displayPosts.length > 0 ? (
+            ) : !hasMore && filteredPosts.length > 0 ? (
               <p className="text-xs text-slate-400">
                 You&apos;ve seen all posts 🐾
               </p>

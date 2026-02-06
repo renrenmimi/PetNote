@@ -12,7 +12,7 @@ const MAX_CHARS = 500;
 
 export function Create() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isBanned } = useAuth();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [files, setFiles] = useState<
     Array<{
@@ -301,6 +301,10 @@ export function Create() {
 
   const handleShare = async () => {
     if (files.length === 0 || !user || loading) return;
+    if (isBanned) {
+      setError("Your account has been suspended.");
+      return;
+    }
     setLoading(true);
     setError(null);
     setSuccess(null);
@@ -414,7 +418,7 @@ export function Create() {
           <button
             type="button"
             onClick={handleShare}
-            disabled={loading || files.length === 0 || converting}
+            disabled={loading || files.length === 0 || converting || isBanned}
             className="flex items-center gap-2 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-1.5 text-sm font-semibold text-white shadow-md transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
           >
             {loading ? (
