@@ -1,32 +1,37 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { BottomNav } from "../components/BottomNav";
 import { Navbar } from "../components/Navbar";
 import { PostCard } from "../components/PostCard";
 import { UserCard } from "../components/UserCard";
 import { useAuth } from "../hooks/useAuth";
 import {
+  getPostsByTag,
   getTrendingTags,
-  searchByTag,
-  searchByText,
-  searchUsers,
-} from "../services/search";
+  searchTags,
+  type Hashtag,
+} from "../services/hashtags";
+import { searchByText, searchUsers } from "../services/search";
 import { type Post } from "../services/posts";
 import { type UserProfile } from "../services/users";
 
 export function Search() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState("");
   const [posts, setPosts] = useState<Post[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(false);
-  const [trendingTags, setTrendingTags] = useState<string[]>([]);
+  const [trendingTags, setTrendingTags] = useState<Hashtag[]>([]);
+  const [tagResults, setTagResults] = useState<Hashtag[]>([]);
+  const [selectedTag, setSelectedTag] = useState<Hashtag | null>(null);
 
   const normalizedQuery = useMemo(() => query.trim(), [query]);
 
   useEffect(() => {
     let ignore = false;
     const loadTags = async () => {
-      const tags = await getTrendingTags();
+      const tags = await getTrendingTags(8);
       if (!ignore) setTrendingTags(tags);
     };
     void loadTags();
@@ -36,24 +41,40 @@ export function Search() {
   }, []);
 
   useEffect(() => {
+    const tagParam = searchParams.get("tag");
+    if (tagParam) {
+      setQuery(`#${tagParam}`);
+      setSelectedTag({ name: tagParam, postCount: 0, lastUsed: null });
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
     if (!normalizedQuery) {
       setPosts([]);
       setUsers([]);
+      setTagResults([]);
+      setSelectedTag(null);
       return;
     }
 
     const handle = window.setTimeout(async () => {
       setLoading(true);
-      const keyword = normalizedQuery.startsWith("#")
-        ? normalizedQuery.slice(1)
-        : normalizedQuery;
+      const keyword = normalizedQuery.replace(/^#/, "").toLowerCase();
 
       try {
-        if (normalizedQuery.startsWith("#")) {
-          const results = await searchByTag(keyword.toLowerCase());
-          setPosts(results);
+        const tags = await searchTags(keyword);
+        setTagResults(tags);
+        const exactTag = tags.find((tag) => tag.name === keyword);
+
+        if (normalizedQuery.startsWith("#") || exactTag) {
+          const postsByTag = await getPostsByTag(keyword);
+          setSelectedTag(
+            exactTag ?? { name: keyword, postCount: postsByTag.length, lastUsed: null }
+          );
+          setPosts(postsByTag);
           setUsers([]);
         } else {
+          setSelectedTag(null);
           const [postResults, userResults] = await Promise.all([
             searchByText(keyword),
             searchUsers(keyword),
@@ -84,7 +105,16 @@ export function Search() {
               placeholder="Search pets, tags, users..."
               className="flex-1 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => {
+                const next = event.target.value;
+                setQuery(next);
+                if (next.startsWith("#")) {
+                  const tagName = next.replace(/^#/, "");
+                  setSearchParams(tagName ? { tag: tagName } : {});
+                } else {
+                  setSearchParams({});
+                }
+              }}
             />
             {query ? (
               <button
@@ -107,16 +137,45 @@ export function Search() {
           <div className="mt-3 flex flex-wrap gap-2">
             {trendingTags.map((tag) => (
               <button
-                key={tag}
+                key={tag.name}
                 type="button"
-                onClick={() => setQuery(`#${tag}`)}
-                className="rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-600 transition-all duration-200 hover:scale-105 hover:bg-purple-100"
+                onClick={() => {
+                  setQuery(`#${tag.name}`);
+                  setSearchParams({ tag: tag.name });
+                }}
+                className="rounded-full bg-gradient-to-r from-purple-100 to-pink-100 px-3 py-1 text-xs font-semibold text-purple-600 transition-all duration-200 hover:scale-105"
               >
-                #{tag}
+                #{tag.name}
               </button>
             ))}
           </div>
         </section>
+
+        {tagResults.length > 0 && !selectedTag ? (
+          <section className="rounded-2xl bg-white px-4 py-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100">
+            <h3 className="text-sm font-semibold text-slate-900">Tags</h3>
+            <div className="mt-3 space-y-2">
+              {tagResults.map((tag) => (
+                <button
+                  key={tag.name}
+                  type="button"
+                  onClick={() => {
+                    setQuery(`#${tag.name}`);
+                    setSearchParams({ tag: tag.name });
+                  }}
+                  className="flex w-full items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-left text-sm text-slate-700 transition-all duration-200 hover:scale-[1.01]"
+                >
+                  <span className="font-semibold text-purple-600">
+                    #{tag.name}
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    {tag.postCount} posts
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         {loading ? (
           <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)]">
@@ -127,6 +186,14 @@ export function Search() {
         {!loading && normalizedQuery && !hasResults ? (
           <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)]">
             No results found for "{normalizedQuery}"
+          </div>
+        ) : null}
+
+        {selectedTag ? (
+          <div className="rounded-2xl bg-white px-4 py-3 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)]">
+            <h3 className="text-base font-semibold text-slate-900">
+              #{selectedTag.name} · {selectedTag.postCount || posts.length} posts
+            </h3>
           </div>
         ) : null}
 
@@ -150,7 +217,13 @@ export function Search() {
             <h3 className="text-sm font-semibold text-slate-900">Posts</h3>
             <div className="grid gap-4 sm:grid-cols-2">
               {posts.map((post) => (
-                <PostCard key={post.id} post={post} />
+                <PostCard
+                  key={post.id}
+                  post={post}
+                  onDeleted={(postId) =>
+                    setPosts((prev) => prev.filter((item) => item.id !== postId))
+                  }
+                />
               ))}
             </div>
           </section>

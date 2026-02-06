@@ -10,8 +10,10 @@ import {
   runTransaction,
   serverTimestamp,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { decrementTag, incrementTag } from "./hashtags";
 import { createNotification } from "./notifications";
 import { getUserProfile } from "./users";
 
@@ -44,15 +46,27 @@ export type CreatePostInput = Omit<
   "createdAt" | "likeCount" | "commentCount"
 >;
 
+const normalizeTags = (tags: string[]) => {
+  const set = new Set(
+    tags
+      .map((tag) => tag.trim().toLowerCase().replace(/^#/, ""))
+      .filter(Boolean)
+  );
+  return Array.from(set);
+};
+
 export async function createPost(data: CreatePostInput): Promise<string> {
   const postsRef = collection(db, "posts");
+  const tags = normalizeTags(data.tags);
   const payload = {
     ...data,
+    tags,
     createdAt: serverTimestamp(),
     likeCount: 0,
     commentCount: 0,
   };
   const result = await addDoc(postsRef, payload);
+  await Promise.all(tags.map((tag) => incrementTag(tag)));
   return result.id;
 }
 
@@ -184,6 +198,40 @@ export async function addComment(
     });
   }
   return result;
+}
+
+export async function deletePost(postId: string): Promise<void> {
+  const postRef = doc(db, "posts", postId);
+  const postSnap = await getDoc(postRef);
+  if (!postSnap.exists()) return;
+  const postData = postSnap.data() as PostData;
+
+  const likesRef = collection(db, "posts", postId, "likes");
+  const commentsRef = collection(db, "posts", postId, "comments");
+  const [likesSnap, commentsSnap] = await Promise.all([
+    getDocs(likesRef),
+    getDocs(commentsRef),
+  ]);
+
+  const deleteInChunks = async (docs: typeof likesSnap.docs) => {
+    const chunkSize = 450;
+    for (let i = 0; i < docs.length; i += chunkSize) {
+      const batch = writeBatch(db);
+      docs.slice(i, i + chunkSize).forEach((docSnap) => {
+        batch.delete(docSnap.ref);
+      });
+      await batch.commit();
+    }
+  };
+
+  await deleteInChunks(likesSnap.docs);
+  await deleteInChunks(commentsSnap.docs);
+
+  const finalBatch = writeBatch(db);
+  finalBatch.delete(postRef);
+  await finalBatch.commit();
+
+  await Promise.all(postData.tags.map((tag) => decrementTag(tag)));
 }
 
 export async function getComments(postId: string): Promise<Comment[]> {

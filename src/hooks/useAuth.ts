@@ -4,9 +4,12 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
+  updateProfile,
   type User,
 } from "firebase/auth";
 import { auth } from "../services/firebase";
+import { createUserProfile } from "../services/users";
+import { generateRandomUsername } from "../utils/randomName";
 
 type UseAuthResult = {
   user: User | null;
@@ -36,6 +39,20 @@ export function useAuth(): UseAuthResult {
 
   const signUp = useCallback(async (email: string, password: string) => {
     const result = await createUserWithEmailAndPassword(auth, email, password);
+    const randomName = generateRandomUsername();
+    const avatarUrl = `https://api.dicebear.com/7.x/thumbs/svg?seed=${result.user.uid}`;
+    await updateProfile(result.user, {
+      displayName: randomName,
+      photoURL: avatarUrl,
+    });
+    await createUserProfile(result.user.uid, {
+      displayName: randomName,
+      avatarUrl,
+      bio: "",
+      email: result.user.email || email,
+      followerCount: 0,
+      followingCount: 0,
+    });
     return result.user;
   }, []);
 

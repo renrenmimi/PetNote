@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BottomNav } from "../components/BottomNav";
 import { Navbar } from "../components/Navbar";
 import { PostCard } from "../components/PostCard";
@@ -87,10 +87,17 @@ function FeedSkeleton() {
 export function Feed() {
   const { posts, loading, error } = usePosts();
   const useMock = false;
+  const [localPosts, setLocalPosts] = useState<Post[]>([]);
+
+  useEffect(() => {
+    if (!useMock) {
+      setLocalPosts(posts);
+    }
+  }, [posts, useMock]);
 
   const displayPosts = useMemo(
-    () => (useMock ? mockPosts : posts),
-    [useMock, posts],
+    () => (useMock ? mockPosts : localPosts),
+    [useMock, localPosts],
   );
 
   return (
@@ -145,7 +152,14 @@ export function Feed() {
         ) : null}
 
         {displayPosts.map((post) => (
-          <PostCard key={post.id} post={post} useMock={useMock} />
+          <PostCard
+            key={post.id}
+            post={post}
+            useMock={useMock}
+            onDeleted={(postId) =>
+              setLocalPosts((prev) => prev.filter((item) => item.id !== postId))
+            }
+          />
         ))}
       </main>
 
