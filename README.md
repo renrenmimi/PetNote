@@ -95,3 +95,12 @@ export default defineConfig([
 1. `npm install`
 2. Copy `.env.example` to `.env.local` and fill in values
 3. `npm run dev`
+
+## Admin Setup
+
+To grant admin access, update your user document in Firestore:
+
+1. Open Firebase Console → Firestore → `users/{uid}`
+2. Add field `role` with value `admin`
+
+Admin users can access the Admin Panel at `/admin`.

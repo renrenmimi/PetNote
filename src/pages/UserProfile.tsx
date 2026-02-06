@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { UserCard } from "../components/UserCard";
 import { useAuth } from "../hooks/useAuth";
+import { useBlockedUsers } from "../hooks/useBlockedUsers";
+import { unblockUser } from "../services/block";
 import { useFollow } from "../hooks/useFollow";
 import { getFollowers, getFollowing } from "../services/follow";
 import { getPostsByUser, getUserStats, type Post } from "../services/posts";
@@ -11,11 +13,11 @@ export function UserProfile() {
   const navigate = useNavigate();
   const { userId } = useParams();
   const { user } = useAuth();
+  const { isBlocked } = useBlockedUsers(user?.uid ?? null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [stats, setStats] = useState({ postCount: 0, totalLikes: 0 });
   const [loading, setLoading] = useState(true);
-  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [modalTitle, setModalTitle] = useState<string | null>(null);
   const [modalUsers, setModalUsers] = useState<UserProfile[]>([]);
 
@@ -73,6 +75,8 @@ export function UserProfile() {
     return null;
   }
 
+  const blocked = user ? isBlocked(userId) : false;
+
   return (
     <div className="min-h-screen bg-white pb-10">
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white">
@@ -91,6 +95,28 @@ export function UserProfile() {
       </header>
 
       <main className="mx-auto w-full max-w-md space-y-6 px-4 py-6">
+        {blocked ? (
+          <section className="rounded-3xl bg-white p-6 text-center shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100">
+            <h2 className="text-base font-semibold text-slate-900">
+              You have blocked this user
+            </h2>
+            <p className="mt-2 text-sm text-slate-500">
+              Unblock to view their profile and posts again.
+            </p>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!user) return;
+                await unblockUser(user.uid, userId);
+              }}
+              className="mt-4 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-all duration-200 hover:scale-105 hover:border-purple-300 hover:text-purple-600"
+            >
+              Unblock
+            </button>
+          </section>
+        ) : null}
+
+        {!blocked ? (
         <section className="rounded-3xl bg-white p-6 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100">
           <div className="flex flex-col items-center text-center">
             <div className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 p-1">
@@ -173,116 +199,68 @@ export function UserProfile() {
             </div>
           </div>
         </section>
+        ) : null}
 
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold text-slate-900">Posts</h3>
-          </div>
+        {!blocked ? (
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold text-slate-900">Posts</h3>
+            </div>
 
-          {loading ? (
-            <div className="grid grid-cols-3 gap-2">
-              {[1, 2, 3].map((item) => (
-                <div
-                  key={item}
-                  className="aspect-square animate-pulse rounded-2xl bg-slate-200"
-                />
-              ))}
-            </div>
-          ) : posts.length === 0 ? (
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500">
-              No posts yet
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 gap-2">
-              {posts.map((post) => {
-                const mediaList =
-                  post.media && post.media.length > 0
-                    ? post.media
-                    : post.mediaUrl
-                    ? [{ url: post.mediaUrl, type: post.mediaType || "image" }]
-                    : [];
-                const first = mediaList[0];
-                const isMulti = mediaList.length > 1;
-                const isVideo = first?.type === "video";
-                return (
-                  <button
-                    key={post.id}
-                    type="button"
-                    onClick={() => setSelectedPost(post)}
+            {loading ? (
+              <div className="grid grid-cols-3 gap-2">
+                {[1, 2, 3].map((item) => (
+                  <div
+                    key={item}
+                    className="aspect-square animate-pulse rounded-2xl bg-slate-200"
+                  />
+                ))}
+              </div>
+            ) : posts.length === 0 ? (
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                No posts yet
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {posts.map((post) => {
+                  const mediaList =
+                    post.media && post.media.length > 0
+                      ? post.media
+                      : post.mediaUrl
+                      ? [{ url: post.mediaUrl, type: post.mediaType || "image" }]
+                      : [];
+                  const first = mediaList[0];
+                  const isMulti = mediaList.length > 1;
+                  const isVideo = first?.type === "video";
+                  return (
+                    <button
+                      key={post.id}
+                      type="button"
+                    onClick={() => navigate(`/post/${post.id}`)}
                     className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100 transition-all duration-200 hover:scale-[1.02]"
                   >
-                    <img
-                      src={first?.thumbUrl || first?.url || post.mediaUrl}
-                      alt={post.text}
-                      className="h-full w-full object-cover"
-                    />
-                    {isVideo ? (
-                      <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
-                        ▶
-                      </span>
-                    ) : isMulti ? (
-                      <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
-                        ⧉
-                      </span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </section>
+                      <img
+                        src={first?.thumbUrl || first?.url || post.mediaUrl}
+                        alt={post.text}
+                        className="h-full w-full object-cover"
+                      />
+                      {isVideo ? (
+                        <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+                          ▶
+                        </span>
+                      ) : isMulti ? (
+                        <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+                          ⧉
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        ) : null}
       </main>
-
-      {selectedPost ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="relative w-full max-w-md overflow-hidden rounded-3xl bg-white">
-            <button
-              type="button"
-              onClick={() => setSelectedPost(null)}
-              className="absolute right-4 top-4 rounded-full bg-white/90 px-3 py-1 text-sm text-slate-600 shadow"
-            >
-              Close
-            </button>
-            {(() => {
-              const mediaList =
-                selectedPost.media && selectedPost.media.length > 0
-                  ? selectedPost.media
-                  : selectedPost.mediaUrl
-                  ? [
-                      {
-                        url: selectedPost.mediaUrl,
-                        type: selectedPost.mediaType || "image",
-                      },
-                    ]
-                  : [];
-              const first = mediaList[0];
-              if (!first) return null;
-              if (first.type === "video") {
-                return (
-                  <video
-                    src={first.url}
-                    controls
-                    className="h-full w-full object-cover"
-                  />
-                );
-              }
-              return (
-                <img
-                  src={first.url}
-                  alt={selectedPost.text}
-                  className="h-full w-full object-cover"
-                />
-              );
-            })()}
-            <div className="p-4 text-sm text-slate-700">
-              <span className="font-semibold text-slate-900">
-                {selectedPost.authorName}
-              </span>{" "}
-              {selectedPost.text}
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {modalTitle ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">

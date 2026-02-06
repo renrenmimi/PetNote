@@ -7,13 +7,17 @@ import {
   updateProfile,
   type User,
 } from "firebase/auth";
-import { auth } from "../services/firebase";
-import { createUserProfile } from "../services/users";
+import { doc, onSnapshot } from "firebase/firestore";
+import { auth, db } from "../services/firebase";
+import { createUserProfile, type UserProfile } from "../services/users";
 import { generateRandomUsername } from "../utils/randomName";
 
 type UseAuthResult = {
   user: User | null;
   loading: boolean;
+  profile: UserProfile | null;
+  profileLoading: boolean;
+  isBanned: boolean;
   signIn: (email: string, password: string) => Promise<User>;
   signUp: (email: string, password: string) => Promise<User>;
   signOut: () => Promise<void>;
@@ -22,6 +26,8 @@ type UseAuthResult = {
 export function useAuth(): UseAuthResult {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
@@ -31,6 +37,29 @@ export function useAuth(): UseAuthResult {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setProfile(null);
+      setProfileLoading(false);
+      return;
+    }
+    setProfileLoading(true);
+    const userRef = doc(db, "users", user.uid);
+    const unsubscribe = onSnapshot(userRef, (snapshot) => {
+      if (!snapshot.exists()) {
+        setProfile(null);
+        setProfileLoading(false);
+        return;
+      }
+      setProfile({
+        id: snapshot.id,
+        ...(snapshot.data() as Omit<UserProfile, "id">),
+      });
+      setProfileLoading(false);
+    });
+    return () => unsubscribe();
+  }, [user]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     const result = await signInWithEmailAndPassword(auth, email, password);
@@ -60,5 +89,14 @@ export function useAuth(): UseAuthResult {
     await firebaseSignOut(auth);
   }, []);
 
-  return { user, loading, signIn, signUp, signOut };
+  return {
+    user,
+    loading,
+    profile,
+    profileLoading,
+    isBanned: !!profile?.banned,
+    signIn,
+    signUp,
+    signOut,
+  };
 }

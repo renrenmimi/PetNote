@@ -22,6 +22,7 @@ import {
 import { db } from "./firebase";
 import { decrementTag, incrementTag } from "./hashtags";
 import { createNotification } from "./notifications";
+import { getFollowing } from "./follow";
 import { getUserProfile } from "./users";
 
 export type MediaItem = {
@@ -201,6 +202,40 @@ export async function getPostById(id: string): Promise<Post | null> {
     id: snapshot.id,
     ...(snapshot.data() as PostData),
   };
+}
+
+export async function getFollowingPosts(
+  userId: string,
+  limitCount = 10,
+  lastDoc?: QueryDocumentSnapshot
+): Promise<{
+  posts: Post[];
+  lastDoc: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+}> {
+  const followingIds = await getFollowing(userId);
+  if (followingIds.length === 0) {
+    return { posts: [], lastDoc: null, hasMore: false };
+  }
+  const targetIds = followingIds.slice(0, 10);
+  const postsRef = collection(db, "posts");
+  const constraints: QueryConstraint[] = [
+    where("authorId", "in", targetIds),
+    orderBy("createdAt", "desc"),
+    limit(limitCount),
+  ];
+  if (lastDoc) {
+    constraints.push(startAfter(lastDoc));
+  }
+  const postsQuery = query(postsRef, ...constraints);
+  const snapshot = await getDocs(postsQuery);
+  const posts = snapshot.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...(docSnap.data() as PostData),
+  }));
+  const nextLastDoc = snapshot.docs[snapshot.docs.length - 1] ?? null;
+  const hasMore = snapshot.docs.length === limitCount;
+  return { posts, lastDoc: nextLastDoc, hasMore };
 }
 
 export async function likePost(postId: string, userId: string): Promise<void> {

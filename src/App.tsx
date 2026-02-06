@@ -1,7 +1,10 @@
 import "./App.css";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { RequireAuth } from "./components/RequireAuth";
+import { RequireAdmin } from "./components/RequireAdmin";
+import { SuspendedBanner } from "./components/SuspendedBanner";
 import { AddPet } from "./pages/AddPet";
+import { AdminPanel } from "./pages/AdminPanel";
 import { Create } from "./pages/Create";
 import { EditPost } from "./pages/EditPost";
 import { EditProfile } from "./pages/EditProfile";
@@ -18,12 +21,21 @@ import { UserProfile } from "./pages/UserProfile";
 function App() {
   return (
     <BrowserRouter>
+      <SuspendedBanner />
       <Routes>
         <Route path="/" element={<Feed />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<SignUp />} />
         <Route path="/search" element={<Search />} />
         <Route path="/post/:postId" element={<PostDetail />} />
+        <Route
+          path="/admin"
+          element={
+            <RequireAdmin>
+              <AdminPanel />
+            </RequireAdmin>
+          }
+        />
         <Route path="/pet/:petId" element={<PetProfile />} />
         <Route
           path="/create"

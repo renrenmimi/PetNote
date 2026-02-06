@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import { useAdmin } from "../hooks/useAdmin";
 import { UserCard } from "../components/UserCard";
 import { getBookmarkedPosts } from "../services/bookmarks";
 import { getFollowers, getFollowing } from "../services/follow";
@@ -12,10 +13,10 @@ import { getSpeciesMeta } from "../utils/petHelpers";
 export function Profile() {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
+  const { isAdmin } = useAdmin();
   const [posts, setPosts] = useState<Post[]>([]);
   const [stats, setStats] = useState({ postCount: 0, totalLikes: 0 });
   const [loading, setLoading] = useState(true);
-  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [profileName, setProfileName] = useState<string | null>(null);
   const [profileAvatar, setProfileAvatar] = useState<string | null>(null);
   const [profileBio, setProfileBio] = useState<string | null>(null);
@@ -160,6 +161,15 @@ export function Profile() {
               >
                 Edit Profile
               </button>
+              {isAdmin ? (
+                <button
+                  type="button"
+                  onClick={() => navigate("/admin")}
+                  className="rounded-full border border-red-200 px-4 py-2 text-sm font-semibold text-red-500 transition-all duration-200 hover:scale-105 hover:border-red-300 hover:bg-red-50"
+                >
+                  Admin Panel
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={async () => {
@@ -363,7 +373,7 @@ export function Profile() {
                 >
                   <button
                     type="button"
-                    onClick={() => setSelectedPost(post)}
+                    onClick={() => navigate(`/post/${post.id}`)}
                     className="h-full w-full"
                   >
                     <img
@@ -446,57 +456,6 @@ export function Profile() {
           )}
         </section>
       </main>
-
-      {selectedPost ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="relative w-full max-w-md overflow-hidden rounded-3xl bg-white">
-            <button
-              type="button"
-              onClick={() => setSelectedPost(null)}
-              className="absolute right-4 top-4 rounded-full bg-white/90 px-3 py-1 text-sm text-slate-600 shadow"
-            >
-              Close
-            </button>
-            {(() => {
-              const mediaList =
-                selectedPost.media && selectedPost.media.length > 0
-                  ? selectedPost.media
-                  : selectedPost.mediaUrl
-                  ? [
-                      {
-                        url: selectedPost.mediaUrl,
-                        type: selectedPost.mediaType || "image",
-                      },
-                    ]
-                  : [];
-              const first = mediaList[0];
-              if (!first) return null;
-              if (first.type === "video") {
-                return (
-                  <video
-                    src={first.url}
-                    controls
-                    className="h-full w-full object-cover"
-                  />
-                );
-              }
-              return (
-                <img
-                  src={first.url}
-                  alt={selectedPost.text}
-                  className="h-full w-full object-cover"
-                />
-              );
-            })()}
-            <div className="p-4 text-sm text-slate-700">
-              <span className="font-semibold text-slate-900">
-                {selectedPost.authorName}
-              </span>{" "}
-              {selectedPost.text}
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {deleteTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
