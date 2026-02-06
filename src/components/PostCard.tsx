@@ -5,6 +5,7 @@ import { useLike } from "../hooks/useLike";
 import { deletePost, type Post } from "../services/posts";
 import { getUserProfile } from "../services/users";
 import { CommentSection } from "./CommentSection";
+import { MediaCarousel } from "./MediaCarousel";
 
 type PostCardProps = {
   post: Post;
@@ -49,7 +50,6 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
   const [localCommentCount, setLocalCommentCount] = useState(
     post.commentCount ?? 0
   );
-  const [imageLoaded, setImageLoaded] = useState(false);
   const [showHeart, setShowHeart] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -66,6 +66,24 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
   );
 
   const timeAgo = useMemo(() => formatTimeAgo(post.createdAt), [post.createdAt]);
+  const mediaItems = useMemo(() => {
+    if (post.media && post.media.length > 0) {
+      return post.media;
+    }
+    if (post.mediaUrl) {
+      return [
+        {
+          url: post.mediaUrl,
+          type: post.mediaType || "image",
+        },
+      ];
+    }
+    return [];
+  }, [post.media, post.mediaType, post.mediaUrl]);
+
+  const likedState = useMock ? localLiked : isLiked;
+  const likeTotal = useMock ? localLikeCount : likeCount;
+  const commentTotal = localCommentCount;
 
   useEffect(() => {
     let ignore = false;
@@ -139,10 +157,6 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
 
   if (hidden) return null;
 
-  const likedState = useMock ? localLiked : isLiked;
-  const likeTotal = useMock ? localLikeCount : likeCount;
-  const commentTotal = localCommentCount;
-
   const HeartIcon = ({ filled }: { filled: boolean }) => {
     const gradientId = `heart-${post.id}`;
     return (
@@ -173,15 +187,15 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
       <header className="flex items-center gap-3 px-4 py-3">
         <button
           type="button"
-            onClick={() => navigate(`/profile/${post.authorId}`)}
-            className="transition-transform duration-200 hover:scale-105"
-          >
-            <img
-              src={authorAvatar}
-              alt={authorName}
-              className="h-10 w-10 rounded-full object-cover"
-            />
-          </button>
+          onClick={() => navigate(`/profile/${post.authorId}`)}
+          className="transition-transform duration-200 hover:scale-105"
+        >
+          <img
+            src={authorAvatar}
+            alt={authorName}
+            className="h-10 w-10 rounded-full object-cover"
+          />
+        </button>
         <div className="flex flex-1 items-center justify-between">
           <div>
             <button
@@ -229,13 +243,8 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
         </div>
       </header>
 
-      <div
-        className="relative aspect-video w-full bg-slate-100"
-        onDoubleClick={handleDoubleLike}
-      >
-        {!imageLoaded ? (
-          <div className="absolute inset-0 animate-pulse bg-slate-200" />
-        ) : null}
+      <div className="relative">
+        <MediaCarousel media={mediaItems} onDoubleTap={handleDoubleLike} />
         {showHeart ? (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <span className="text-6xl text-red-500 animate-[pulse_0.6s_ease-out]">
@@ -243,23 +252,6 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
             </span>
           </div>
         ) : null}
-        {post.mediaType === "video" ? (
-          <video
-            src={post.mediaUrl}
-            controls
-            className="h-full w-full object-cover"
-            onLoadedData={() => setImageLoaded(true)}
-          />
-        ) : (
-          <img
-            src={post.mediaUrl}
-            alt={post.text}
-            className={`h-full w-full object-cover transition-opacity duration-300 ${
-              imageLoaded ? "opacity-100" : "opacity-0"
-            }`}
-            onLoad={() => setImageLoaded(true)}
-          />
-        )}
       </div>
 
       <div className="px-4 pb-4 pt-3">
