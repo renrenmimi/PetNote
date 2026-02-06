@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { uploadImage } from "../services/cloudinary";
 import { createPost } from "../services/posts";
+import { getUserProfile, type UserProfile } from "../services/users";
 
 const MAX_CHARS = 500;
 
@@ -19,6 +20,7 @@ export function Create() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
 
   const remaining = useMemo(
     () => Math.max(0, MAX_CHARS - caption.length),
@@ -36,6 +38,19 @@ export function Create() {
 
     return () => URL.revokeObjectURL(url);
   }, [file]);
+
+  useEffect(() => {
+    let ignore = false;
+    if (!user) return;
+    const load = async () => {
+      const profileData = await getUserProfile(user.uid);
+      if (!ignore) setProfile(profileData);
+    };
+    void load();
+    return () => {
+      ignore = true;
+    };
+  }, [user]);
 
   const handleSelectFile = (nextFile: File | null) => {
     if (!nextFile) return;
@@ -93,9 +108,12 @@ export function Create() {
       const mediaUrl = await uploadImage(file);
       await createPost({
         authorId: user.uid,
-        authorName: user.displayName || "PetNote User",
+        authorName:
+          profile?.displayName || user.displayName || "PetNote User",
         authorAvatar:
-          user.photoURL || "https://i.pravatar.cc/150?img=12",
+          profile?.avatarUrl ||
+          user.photoURL ||
+          "https://i.pravatar.cc/150?img=12",
         text: caption.trim(),
         mediaUrl,
         mediaType: "image",

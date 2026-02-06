@@ -2,6 +2,7 @@ import "./App.css";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { RequireAuth } from "./components/RequireAuth";
 import { Create } from "./pages/Create";
+import { EditProfile } from "./pages/EditProfile";
 import { Feed } from "./pages/Feed";
 import { Login } from "./pages/Login";
 import { Notifications } from "./pages/Notifications";
@@ -33,6 +34,14 @@ function App() {
           element={
             <RequireAuth>
               <Profile />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/edit-profile"
+          element={
+            <RequireAuth>
+              <EditProfile />
             </RequireAuth>
           }
         />

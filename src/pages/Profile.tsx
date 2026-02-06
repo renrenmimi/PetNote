@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { UserCard } from "../components/UserCard";
 import { getFollowers, getFollowing } from "../services/follow";
-import { getPostsByUser, getUserStats, type Post } from "../services/posts";
+import { deletePost, getPostsByUser, getUserStats, type Post } from "../services/posts";
 import { getUserProfile, getUsersByIds, type UserProfile } from "../services/users";
 
 export function Profile() {
@@ -14,12 +14,17 @@ export function Profile() {
   const [loading, setLoading] = useState(true);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [profileName, setProfileName] = useState<string | null>(null);
+  const [profileAvatar, setProfileAvatar] = useState<string | null>(null);
+  const [profileBio, setProfileBio] = useState<string | null>(null);
   const [followCounts, setFollowCounts] = useState({
     followerCount: 0,
     followingCount: 0,
   });
   const [modalTitle, setModalTitle] = useState<string | null>(null);
   const [modalUsers, setModalUsers] = useState<UserProfile[]>([]);
+  const [deleteTarget, setDeleteTarget] = useState<Post | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     let ignore = false;
@@ -37,6 +42,8 @@ export function Profile() {
         setPosts(postList);
         setStats(userStats);
         setProfileName(profile?.displayName || null);
+        setProfileAvatar(profile?.avatarUrl || null);
+        setProfileBio(profile?.bio || null);
         setFollowCounts({
           followerCount: profile?.followerCount ?? 0,
           followingCount: profile?.followingCount ?? 0,
@@ -101,8 +108,12 @@ export function Profile() {
           <div className="flex flex-col items-center text-center">
             <div className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 p-1">
               <img
-                src={user.photoURL || "https://i.pravatar.cc/150?img=12"}
-                alt={user.displayName || "User"}
+                src={
+                  profileAvatar ||
+                  user.photoURL ||
+                  "https://i.pravatar.cc/150?img=12"
+                }
+                alt={profileName || user.displayName || "User"}
                 className="h-24 w-24 rounded-full border-4 border-white object-cover"
               />
             </div>
@@ -110,10 +121,14 @@ export function Profile() {
               {profileName || user.displayName || "PetNote User"}
             </h2>
             <p className="text-sm text-slate-400">{user.email}</p>
+            {profileBio ? (
+              <p className="mt-2 text-sm text-slate-600">{profileBio}</p>
+            ) : null}
 
             <div className="mt-4 flex w-full items-center justify-center gap-3">
               <button
                 type="button"
+                onClick={() => navigate("/edit-profile")}
                 className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-all duration-200 hover:scale-105 hover:border-purple-300 hover:text-purple-600"
               >
                 Edit Profile
@@ -204,18 +219,30 @@ export function Profile() {
           ) : (
             <div className="grid grid-cols-3 gap-2">
               {posts.map((post) => (
-                <button
+                <div
                   key={post.id}
-                  type="button"
-                  onClick={() => setSelectedPost(post)}
-                  className="aspect-square overflow-hidden rounded-2xl bg-slate-100"
+                  className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100"
                 >
-                  <img
-                    src={post.mediaUrl}
-                    alt={post.text}
-                    className="h-full w-full object-cover"
-                  />
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPost(post)}
+                    className="h-full w-full"
+                  >
+                    <img
+                      src={post.mediaUrl}
+                      alt={post.text}
+                      className="h-full w-full object-cover"
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteTarget(post)}
+                    className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-xs text-slate-600 shadow transition-all duration-200 hover:scale-105 hover:text-red-500"
+                    aria-label="Delete post"
+                  >
+                    ✕
+                  </button>
+                </div>
               ))}
             </div>
           )}
@@ -244,6 +271,56 @@ export function Profile() {
               {selectedPost.text}
             </div>
           </div>
+        </div>
+      ) : null}
+
+      {deleteTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)]">
+            <h3 className="text-base font-semibold text-slate-900">
+              Delete Post
+            </h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Are you sure you want to delete this post? This action cannot be
+              undone.
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                className="rounded-full px-4 py-2 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={async () => {
+                  if (!deleteTarget) return;
+                  setDeleting(true);
+                  await deletePost(deleteTarget.id);
+                  setPosts((prev) =>
+                    prev.filter((item) => item.id !== deleteTarget.id)
+                  );
+                  const updatedStats = await getUserStats(user.uid);
+                  setStats(updatedStats);
+                  setDeleteTarget(null);
+                  setToast("Post deleted");
+                  setTimeout(() => setToast(null), 2000);
+                  setDeleting(false);
+                }}
+                className="rounded-full bg-red-500 px-4 py-2 text-sm font-semibold text-white transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {deleting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {toast ? (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-lg">
+          {toast}
         </div>
       ) : null}
 

@@ -1,5 +1,16 @@
-import { doc, getDoc, setDoc } from "firebase/firestore";
-import { db } from "./firebase";
+import { updateProfile } from "firebase/auth";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  setDoc,
+  where,
+  writeBatch,
+  serverTimestamp,
+} from "firebase/firestore";
+import { auth, db } from "./firebase";
 
 export type UserProfile = {
   id: string;
@@ -32,6 +43,44 @@ export async function updateUserProfile(
 ): Promise<void> {
   const userRef = doc(db, "users", userId);
   await setDoc(userRef, data, { merge: true });
+
+  if (auth.currentUser && auth.currentUser.uid === userId) {
+    await updateProfile(auth.currentUser, {
+      displayName: data.displayName ?? auth.currentUser.displayName ?? undefined,
+      photoURL: data.avatarUrl ?? auth.currentUser.photoURL ?? undefined,
+    });
+  }
+
+  if (data.displayName || data.avatarUrl) {
+    const postsRef = collection(db, "posts");
+    const postsQuery = query(postsRef, where("authorId", "==", userId));
+    const snapshot = await getDocs(postsQuery);
+    const batch = writeBatch(db);
+    snapshot.docs.forEach((docSnap) => {
+      batch.update(docSnap.ref, {
+        ...(data.displayName ? { authorName: data.displayName } : {}),
+        ...(data.avatarUrl ? { authorAvatar: data.avatarUrl } : {}),
+      });
+    });
+    await batch.commit();
+  }
+}
+
+export async function createUserProfile(
+  userId: string,
+  data: Omit<UserProfile, "id">
+): Promise<void> {
+  const userRef = doc(db, "users", userId);
+  await setDoc(
+    userRef,
+    {
+      ...data,
+      createdAt: data.createdAt ?? serverTimestamp(),
+      followerCount: data.followerCount ?? 0,
+      followingCount: data.followingCount ?? 0,
+    },
+    { merge: true }
+  );
 }
 
 export async function getUsersByIds(
