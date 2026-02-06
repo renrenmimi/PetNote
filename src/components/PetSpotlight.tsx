@@ -50,7 +50,7 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
         </div>
       ) : posts.length === 0 ? (
         <p className="mt-4 text-sm text-slate-500">
-          Share your pet to get featured! 🐾
+          Share your pet to get featured!
         </p>
       ) : (
         <div className="mt-4 flex gap-4 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

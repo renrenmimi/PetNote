@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import PawIcon from "../components/PawIcon";
 
 function MailIcon() {
   return (
@@ -75,7 +76,9 @@ export function SignUp() {
     <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 px-4">
       <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl">
         <div className="mb-8 text-center">
-          <div className="text-3xl">🐾</div>
+          <div className="flex justify-center">
+            <PawIcon size={48} />
+          </div>
           <h1 className="mt-2 text-2xl font-semibold text-slate-900">
             PetNote
           </h1>

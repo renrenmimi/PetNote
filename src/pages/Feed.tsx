@@ -112,7 +112,7 @@ export function Feed() {
 
         {!loading && displayPosts.length === 0 ? (
           <div className="rounded-2xl bg-white p-8 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)]">
-            No posts yet, be the first to share your pet! 🐾
+            No posts yet, be the first to share your pet!
           </div>
         ) : null}
 

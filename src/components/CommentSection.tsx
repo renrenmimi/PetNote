@@ -95,8 +95,9 @@ export function CommentSection({
     setText("");
 
     const reply = replyTarget;
+    const optimisticId = `local-${Date.now()}`;
     const optimistic: Comment = {
-      id: `local-${Date.now()}`,
+      id: optimisticId,
       authorId: user.uid,
       authorName: user.displayName || "PetNote User",
       authorAvatar: user.photoURL || "https://i.pravatar.cc/100?img=12",
@@ -115,17 +116,24 @@ export function CommentSection({
     setReplyTarget(null);
 
     try {
-      await addComment(
+      const createdId = await addComment(
         postId,
         {
-        authorId: optimistic.authorId,
-        authorName: optimistic.authorName,
-        authorAvatar: optimistic.authorAvatar,
-        text: optimistic.text,
-        replyTo: optimistic.replyTo,
+          authorId: optimistic.authorId,
+          authorName: optimistic.authorName,
+          authorAvatar: optimistic.authorAvatar,
+          text: optimistic.text,
+          replyTo: optimistic.replyTo,
         },
         reply?.authorId
       );
+      if (createdId) {
+        setComments((prev) =>
+          prev.map((item) =>
+            item.id === optimisticId ? { ...item, id: createdId } : item
+          )
+        );
+      }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to post comment";
@@ -162,71 +170,81 @@ export function CommentSection({
         ) : null}
         {error ? <p className="text-xs text-red-500">{error}</p> : null}
 
-        {visibleComments.map((comment) => (
-          <div
-            key={comment.id}
-            className={`flex gap-3 border-b border-slate-200 pb-3 transition-all duration-200 last:border-b-0 last:pb-0 ${
-              removingId === comment.id ? "opacity-0 -translate-x-2" : ""
-            } ${comment.replyTo ? "pl-4" : ""}`}
-          >
-            <img
-              src={comment.authorAvatar || "https://i.pravatar.cc/100?img=12"}
-              alt={comment.authorName}
-              className="h-8 w-8 rounded-full object-cover"
-            />
-            <div className="flex-1">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-900">
-                  {comment.authorName}
-                </span>
-                <div className="flex items-center gap-2 text-[10px] text-slate-400">
-                  {comment.id &&
-                  !comment.id.startsWith("local-") &&
-                  user &&
-                  (user.uid === comment.authorId ||
-                    user.uid === postAuthorId) ? (
+        {visibleComments.map((comment) => {
+          const canDelete =
+            !!user &&
+            (user.uid === comment.authorId || user.uid === postAuthorId);
+
+          return (
+            <div
+              key={comment.id}
+              className={`border-b border-slate-200 pb-3 pt-2 text-left transition-all duration-200 last:border-b-0 ${
+                removingId === comment.id ? "opacity-0 -translate-x-2" : ""
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <img
+                  src={
+                    comment.authorAvatar || "https://i.pravatar.cc/100?img=12"
+                  }
+                  alt={comment.authorName}
+                  className="h-6 w-6 rounded-full object-cover"
+                />
+                <div className="flex-1">
+                  <span className="text-xs font-semibold text-slate-900">
+                    {comment.authorName}
+                  </span>
+
+                  <p className="mt-1 text-left text-xs text-slate-600">
+                    {comment.replyTo ? (
+                      <span className="mr-1 text-purple-600">
+                        @{comment.replyTo.authorName}
+                      </span>
+                    ) : null}
+                    {comment.text}
+                  </p>
+
+                  <div className="mt-2 flex items-center justify-end gap-2 text-[10px] text-slate-400">
+                    <span>{formatTimeAgo(comment.createdAt)}</span>
+                    <span>·</span>
                     <button
                       type="button"
-                      onClick={() => setCommentToDelete(comment)}
-                      className="text-slate-400 transition-all duration-200 hover:text-red-500"
-                      aria-label="Delete comment"
+                      onClick={() => {
+                        if (!user) {
+                          navigate("/login");
+                          return;
+                        }
+                        if (!comment.id) return;
+                        setReplyTarget({
+                          commentId: comment.id,
+                          authorName: comment.authorName,
+                          authorId: comment.authorId,
+                        });
+                        setTimeout(() => inputRef.current?.focus(), 0);
+                      }}
+                      className="font-semibold transition-all duration-200 hover:text-purple-500"
                     >
-                      🗑️
+                      Reply
                     </button>
-                  ) : null}
-                  <span>{formatTimeAgo(comment.createdAt)}</span>
+                    {canDelete ? (
+                      <>
+                        <span>·</span>
+                        <button
+                          type="button"
+                          onClick={() => setCommentToDelete(comment)}
+                          className="transition-all duration-200 hover:text-red-500"
+                          aria-label="Delete comment"
+                        >
+                          🗑️
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
                 </div>
               </div>
-              <p className="text-xs text-slate-600">
-                {comment.replyTo ? (
-                  <span className="mr-1 text-purple-600">
-                    @{comment.replyTo.authorName}
-                  </span>
-                ) : null}
-                {comment.text}
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!user) {
-                    navigate("/login");
-                    return;
-                  }
-                  if (!comment.id) return;
-                  setReplyTarget({
-                    commentId: comment.id,
-                    authorName: comment.authorName,
-                    authorId: comment.authorId,
-                  });
-                  setTimeout(() => inputRef.current?.focus(), 0);
-                }}
-                className="mt-1 text-[10px] font-semibold text-slate-400 transition-all duration-200 hover:text-purple-500"
-              >
-                Reply
-              </button>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         {commentCount > 5 ? (
           <button

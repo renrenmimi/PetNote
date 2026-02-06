@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import PawIcon from "./PawIcon";
 
 export function Navbar() {
   const { user } = useAuth();
@@ -26,9 +27,10 @@ export function Navbar() {
       <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-3">
         <Link
           to="/"
-          className="text-lg font-semibold text-slate-900 transition-transform duration-200 hover:scale-[1.03]"
+          className="flex items-center gap-2 text-lg font-semibold text-slate-900 transition-transform duration-200 hover:scale-[1.03]"
         >
-          🐾 PetNote
+          <PawIcon size={28} />
+          PetNote
         </Link>
 
         <div className="flex items-center gap-3">
