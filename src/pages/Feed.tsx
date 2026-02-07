@@ -4,6 +4,8 @@ import { BottomNav } from "../components/BottomNav";
 import { Navbar } from "../components/Navbar";
 import { OnboardingFlow } from "../components/OnboardingFlow";
 import { PetSpotlight } from "../components/PetSpotlight";
+import { EmailVerificationBanner } from "../components/EmailVerificationBanner";
+import { BirthdayCelebration } from "../components/BirthdayCelebration";
 import { PostCard } from "../components/PostCard";
 import { EmptyState } from "../components/EmptyState";
 import { SkeletonPostCard } from "../components/SkeletonPostCard";
@@ -227,6 +229,8 @@ export function Feed() {
           {pullLabel}
         </p>
 
+        <EmailVerificationBanner />
+        <BirthdayCelebration ownerId={user?.uid ?? null} />
         <PetSpotlight />
 
         {loading && !useMock ? (

@@ -42,9 +42,32 @@ function LockIcon() {
   );
 }
 
+function GoogleIcon() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 48 48" aria-hidden="true">
+      <path
+        fill="#EA4335"
+        d="M24 9.5c3.54 0 6.7 1.22 9.19 3.6l6.87-6.87C35.87 2.38 30.33 0 24 0 14.62 0 6.5 5.38 2.56 13.22l8.02 6.22C12.59 13.09 17.87 9.5 24 9.5z"
+      />
+      <path
+        fill="#4285F4"
+        d="M46.5 24.5c0-1.56-.14-3.06-.4-4.5H24v9h12.65c-.55 2.96-2.18 5.47-4.61 7.16l7.11 5.52c4.16-3.84 6.35-9.5 6.35-17.18z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M10.58 28.87A14.5 14.5 0 0 1 9.5 24c0-1.7.29-3.35.81-4.9l-8.02-6.22A23.98 23.98 0 0 0 0 24c0 3.86.92 7.5 2.56 10.78l8.02-6.91z"
+      />
+      <path
+        fill="#34A853"
+        d="M24 48c6.33 0 11.64-2.08 15.52-5.64l-7.11-5.52c-2 1.35-4.56 2.16-8.41 2.16-6.13 0-11.41-3.59-13.42-8.69l-8.02 6.91C6.5 42.62 14.62 48 24 48z"
+      />
+    </svg>
+  );
+}
+
 export function SignUp() {
   const navigate = useNavigate();
-  const { signUp } = useAuth();
+  const { signUp, signInWithGoogle } = useAuth();
   const { showToast } = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -52,6 +75,7 @@ export function SignUp() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   const validation = useMemo(() => validatePassword(password), [password]);
   const passwordsMatch = password === confirmPassword;
@@ -73,6 +97,20 @@ export function SignUp() {
       showToast(message, "error");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogle = async () => {
+    setGoogleLoading(true);
+    try {
+      await signInWithGoogle();
+      navigate("/", { replace: true });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Google sign-in failed.";
+      showToast(message, "error");
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -178,16 +216,18 @@ export function SignUp() {
 
         <div className="my-6 flex items-center gap-3 text-xs text-slate-400 dark:text-slate-500">
           <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
-          Or continue with
+          Or
           <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
         </div>
 
         <button
           type="button"
-          className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-all duration-200 hover:scale-[1.02] hover:border-purple-200 hover:bg-purple-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-purple-500/10"
+          onClick={handleGoogle}
+          disabled={googleLoading}
+          className="flex w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-all duration-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
         >
-          <span>🟢</span>
-          Continue with Google
+          <GoogleIcon />
+          {googleLoading ? "Connecting..." : "Continue with Google"}
         </button>
 
         <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-300">

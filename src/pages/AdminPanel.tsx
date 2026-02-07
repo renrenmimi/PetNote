@@ -10,6 +10,7 @@ import { type ReportItem } from "../services/report";
 import { getPostById } from "../services/posts";
 import { getUserProfile } from "../services/users";
 import { timeAgo } from "../utils/timeAgo";
+import Avatar from "../components/Avatar";
 
 type ReportPreview = {
   imageUrl?: string;
@@ -198,13 +199,12 @@ export function AdminPanel() {
                   </div>
 
                   <div className="mt-3 flex items-center gap-3">
-                    <img
-                      src={
-                        report.reporterAvatar ||
-                        "https://i.pravatar.cc/100?img=12"
-                      }
+                    <Avatar
+                      src={report.reporterAvatar}
                       alt={report.reporterName}
-                      className="h-8 w-8 rounded-full object-cover"
+                      userId={report.reporterId}
+                      size={32}
+                      className="h-8 w-8"
                     />
                     <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
                       {report.reporterName}
@@ -229,13 +229,12 @@ export function AdminPanel() {
                       </div>
                     ) : report.targetType === "user" ? (
                       <div className="flex items-center gap-3">
-                        <img
-                          src={
-                            preview?.userAvatar ||
-                            "https://i.pravatar.cc/100?img=12"
-                          }
+                        <Avatar
+                          src={preview?.userAvatar}
                           alt={preview?.userName || "User"}
-                          className="h-12 w-12 rounded-full object-cover"
+                          userId={report.targetId}
+                          size={48}
+                          className="h-12 w-12"
                         />
                         <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
                           {preview?.userName || "User"}

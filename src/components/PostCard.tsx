@@ -4,13 +4,15 @@ import { useAuth } from "../hooks/useAuth";
 import { useLike } from "../hooks/useLike";
 import { useBookmark } from "../hooks/useBookmark";
 import { blockUser } from "../services/block";
-import { deletePost, type Post } from "../services/posts";
+import { deletePost, pinPost, unpinPost, type Post } from "../services/posts";
+import { getPetById, isBirthdayToday } from "../services/pets";
 import { getUserProfile } from "../services/users";
 import { MediaCarousel } from "./MediaCarousel";
 import { ReportModal } from "./ReportModal";
 import { ShareMenu } from "./ShareMenu";
 import { timeAgo } from "../utils/timeAgo";
 import { useToast } from "../contexts/ToastContext";
+import Avatar from "./Avatar";
 
 type PostCardProps = {
   post: Post;
@@ -19,7 +21,7 @@ type PostCardProps = {
 };
 
 export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
-  const { user, isBanned } = useAuth();
+  const { user, isBanned, profile } = useAuth();
   const navigate = useNavigate();
   const { showToast } = useToast();
   const [animating, setAnimating] = useState(false);
@@ -37,6 +39,8 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
   const [reportOpen, setReportOpen] = useState(false);
   const [blockConfirmOpen, setBlockConfirmOpen] = useState(false);
   const [blocking, setBlocking] = useState(false);
+  const [pinning, setPinning] = useState(false);
+  const [isBirthday, setIsBirthday] = useState(false);
 
   const { isLiked, likeCount, toggleLike } = useLike(
     post.id,
@@ -69,6 +73,7 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
   const likeTotal = useMock ? localLikeCount : likeCount;
   const commentTotal = post.commentCount ?? 0;
   const isOwner = user?.uid === post.authorId;
+  const isPinned = !!profile?.pinnedPostId && profile.pinnedPostId === post.id;
 
   useEffect(() => {
     let ignore = false;
@@ -84,6 +89,24 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
       ignore = true;
     };
   }, [post.authorId, post.authorName, post.authorAvatar]);
+
+  useEffect(() => {
+    let ignore = false;
+    if (!post.petId) {
+      setIsBirthday(false);
+      return;
+    }
+    const loadPet = async () => {
+      const pet = await getPetById(post.petId as string);
+      if (!ignore) {
+        setIsBirthday(!!pet && isBirthdayToday(pet.birthday));
+      }
+    };
+    void loadPet();
+    return () => {
+      ignore = true;
+    };
+  }, [post.petId]);
 
   const handleLike = async () => {
     if (!user) {
@@ -172,6 +195,27 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
     }
   };
 
+  const handlePinToggle = async () => {
+    if (!user || pinning) return;
+    setPinning(true);
+    try {
+      if (isPinned) {
+        await unpinPost(user.uid);
+        showToast("Post unpinned", "info");
+      } else {
+        await pinPost(user.uid, post.id);
+        showToast("Post pinned to profile", "success");
+      }
+      setMenuOpen(false);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to update pin.";
+      showToast(message, "error");
+    } finally {
+      setPinning(false);
+    }
+  };
+
   if (hidden) return null;
 
   const HeartIcon = ({ filled }: { filled: boolean }) => {
@@ -241,10 +285,12 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
           className="transition-transform duration-200 hover:scale-105"
         >
           <div className="relative">
-            <img
+            <Avatar
               src={authorAvatar}
               alt={authorName}
-              className="h-10 w-10 rounded-full object-cover"
+              userId={post.authorId}
+              size={40}
+              className="h-10 w-10"
             />
             {post.petId ? (
               <div className="absolute -bottom-1 -right-1 rounded-full bg-white p-0.5 dark:bg-slate-800">
@@ -290,6 +336,11 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               {timeLabel}
+              {isBirthday ? (
+                <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-500/20 dark:text-amber-200">
+                  🎂 Birthday!
+                </span>
+              ) : null}
             </p>
           </div>
           <div className="relative">
@@ -305,6 +356,14 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
               <div className="absolute right-0 top-8 z-10 w-40 rounded-xl bg-white p-2 text-sm shadow-[0_12px_30px_-20px_rgba(15,23,42,0.5)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
                 {isOwner ? (
                   <>
+                    <button
+                      type="button"
+                      onClick={handlePinToggle}
+                      disabled={pinning}
+                      className="w-full rounded-lg px-3 py-2 text-left text-slate-600 transition-all duration-200 hover:bg-slate-100 disabled:opacity-60 dark:text-slate-200 dark:hover:bg-slate-700"
+                    >
+                      {isPinned ? "Unpin from Profile" : "Pin to Profile"}
+                    </button>
                     <button
                       type="button"
                       onClick={() => {

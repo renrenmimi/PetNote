@@ -24,6 +24,7 @@ export type UserProfile = {
   role?: "admin" | "user";
   banned?: boolean;
   onboardingComplete?: boolean;
+  pinnedPostId?: string;
 };
 
 export async function getUserProfile(

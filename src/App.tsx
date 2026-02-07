@@ -10,6 +10,7 @@ import { Create } from "./pages/Create";
 import { EditPost } from "./pages/EditPost";
 import { EditProfile } from "./pages/EditProfile";
 import { Feed } from "./pages/Feed";
+import { ForgotPassword } from "./pages/ForgotPassword";
 import { Login } from "./pages/Login";
 import { Notifications } from "./pages/Notifications";
 import { PetProfile } from "./pages/PetProfile";
@@ -27,6 +28,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Feed />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/signup" element={<SignUp />} />
         <Route path="/search" element={<Search />} />
         <Route path="/post/:postId" element={<PostDetail />} />

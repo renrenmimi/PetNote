@@ -4,6 +4,7 @@ import { useAuth } from "../hooks/useAuth";
 import { uploadImage } from "../services/cloudinary";
 import { getUserProfile, updateUserProfile } from "../services/users";
 import { useToast } from "../contexts/ToastContext";
+import Avatar from "../components/Avatar";
 
 const MAX_BIO = 150;
 const MAX_NAME = 30;
@@ -45,7 +46,9 @@ export function EditProfile() {
       setDisplayName(profile?.displayName || user.displayName || "");
       setBio(profile?.bio || "");
       setAvatarPreview(
-        profile?.avatarUrl || user.photoURL || "https://i.pravatar.cc/150?img=12"
+        profile?.avatarUrl ||
+          user.photoURL ||
+          `https://api.dicebear.com/7.x/thumbs/svg?seed=${user.uid}`
       );
     };
     void load();
@@ -129,10 +132,12 @@ export function EditProfile() {
         <section className="rounded-3xl bg-white p-6 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
           <div className="flex flex-col items-center text-center">
             <div className="relative">
-              <img
-                src={avatarPreview || "https://i.pravatar.cc/150?img=12"}
+              <Avatar
+                src={avatarPreview || undefined}
                 alt="Profile"
-                className="h-28 w-28 rounded-full object-cover"
+                userId={user?.uid}
+                size={112}
+                className="h-28 w-28"
               />
               <button
                 type="button"

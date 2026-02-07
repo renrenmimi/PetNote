@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { getBlockedUsers, unblockUser } from "../services/block";
 import { getUsersByIds, type UserProfile } from "../services/users";
+import Avatar from "../components/Avatar";
 
 export function BlockedUsers() {
   const navigate = useNavigate();
@@ -65,10 +66,12 @@ export function BlockedUsers() {
               className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-800"
             >
               <div className="flex items-center gap-3">
-                <img
-                  src={profile.avatarUrl || "https://i.pravatar.cc/100?img=12"}
+                <Avatar
+                  src={profile.avatarUrl || undefined}
                   alt={profile.displayName || "User"}
-                  className="h-10 w-10 rounded-full object-cover"
+                  userId={profile.id}
+                  size={40}
+                  className="h-10 w-10"
                 />
                 <div>
                   <p className="text-sm font-semibold text-slate-900 dark:text-white">

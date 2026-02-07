@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import PawIcon from "./PawIcon";
+import Avatar from "./Avatar";
 
 export function Navbar() {
   const { user } = useAuth();
@@ -51,13 +52,12 @@ export function Navbar() {
                 +
               </Link>
               <Link to="/profile" aria-label="Profile">
-                <img
-                  src={
-                    user.photoURL ||
-                    "https://i.pravatar.cc/100?img=12"
-                  }
+                <Avatar
+                  src={user.photoURL || undefined}
                   alt={user.displayName || "User"}
-                  className="h-9 w-9 rounded-full object-cover"
+                  userId={user.uid}
+                  size={36}
+                  className="h-9 w-9"
                 />
               </Link>
             </>

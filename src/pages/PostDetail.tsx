@@ -4,6 +4,7 @@ import { CommentSection } from "../components/CommentSection";
 import { MediaCarousel } from "../components/MediaCarousel";
 import { ShareMenu } from "../components/ShareMenu";
 import { SkeletonPostCard } from "../components/SkeletonPostCard";
+import Avatar from "../components/Avatar";
 import { useAuth } from "../hooks/useAuth";
 import { useBookmark } from "../hooks/useBookmark";
 import { useFollow } from "../hooks/useFollow";
@@ -237,10 +238,12 @@ export function PostDetail() {
           <div className="space-y-4 rounded-2xl bg-white p-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <img
+                <Avatar
                   src={authorAvatar || post.authorAvatar}
                   alt={authorName || post.authorName}
-                  className="h-10 w-10 rounded-full object-cover"
+                  userId={post.authorId}
+                  size={40}
+                  className="h-10 w-10"
                 />
                 <div>
                   <div className="flex items-center gap-2">

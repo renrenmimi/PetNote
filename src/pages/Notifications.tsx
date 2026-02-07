@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { BottomNav } from "../components/BottomNav";
 import { Navbar } from "../components/Navbar";
 import { EmptyState } from "../components/EmptyState";
+import Avatar from "../components/Avatar";
 import { useAuth } from "../hooks/useAuth";
 import { useNotifications } from "../hooks/useNotifications";
 import { timeAgo } from "../utils/timeAgo";
@@ -65,10 +66,12 @@ export function Notifications() {
                   : "border-purple-100 bg-purple-50 dark:border-purple-500/40 dark:bg-purple-500/10"
               }`}
             >
-              <img
+              <Avatar
                 src={item.fromUserAvatar}
                 alt={item.fromUserName}
-                className="h-12 w-12 rounded-full object-cover"
+                userId={item.fromUserId}
+                size={48}
+                className="h-12 w-12"
               />
               <div className="flex-1">
                 <p className="text-sm text-slate-700 dark:text-slate-200">

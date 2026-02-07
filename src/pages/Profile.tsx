@@ -2,12 +2,21 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useAdmin } from "../hooks/useAdmin";
+import { PostCard } from "../components/PostCard";
 import { UserCard } from "../components/UserCard";
 import { EmptyState } from "../components/EmptyState";
 import { SkeletonProfile } from "../components/SkeletonProfile";
+import Avatar from "../components/Avatar";
 import { getBookmarkedPosts } from "../services/bookmarks";
 import { getFollowers, getFollowing } from "../services/follow";
-import { deletePost, getPostsByUser, getUserStats, type Post } from "../services/posts";
+import {
+  deletePost,
+  getPostById,
+  getPostsByUser,
+  getUserStats,
+  unpinPost,
+  type Post,
+} from "../services/posts";
 import { getPetsByOwner, type Pet } from "../services/pets";
 import { getUserProfile, getUsersByIds, type UserProfile } from "../services/users";
 import { getSpeciesMeta } from "../utils/petHelpers";
@@ -15,7 +24,7 @@ import { useToast } from "../contexts/ToastContext";
 
 export function Profile() {
   const navigate = useNavigate();
-  const { user, signOut } = useAuth();
+  const { user, signOut, profile: authProfile } = useAuth();
   const { isAdmin } = useAdmin();
   const { showToast } = useToast();
   const [posts, setPosts] = useState<Post[]>([]);
@@ -24,6 +33,7 @@ export function Profile() {
   const [profileName, setProfileName] = useState<string | null>(null);
   const [profileAvatar, setProfileAvatar] = useState<string | null>(null);
   const [profileBio, setProfileBio] = useState<string | null>(null);
+  const [pinnedPost, setPinnedPost] = useState<Post | null>(null);
   const [pets, setPets] = useState<Pet[]>([]);
   const [savedPosts, setSavedPosts] = useState<Post[]>([]);
   const [savedLoading, setSavedLoading] = useState(false);
@@ -61,6 +71,14 @@ export function Profile() {
           followerCount: profile?.followerCount ?? 0,
           followingCount: profile?.followingCount ?? 0,
         });
+        if (profile?.pinnedPostId) {
+          const pinned =
+            postList.find((item) => item.id === profile.pinnedPostId) ??
+            (await getPostById(profile.pinnedPostId));
+          setPinnedPost(pinned ?? null);
+        } else {
+          setPinnedPost(null);
+        }
       } finally {
         if (!ignore) setLoading(false);
       }
@@ -71,6 +89,26 @@ export function Profile() {
       ignore = true;
     };
   }, [user]);
+
+  useEffect(() => {
+    let ignore = false;
+    if (!user) return;
+    const pinnedId = authProfile?.pinnedPostId;
+    if (!pinnedId) {
+      setPinnedPost(null);
+      return;
+    }
+    const loadPinned = async () => {
+      const pinned =
+        posts.find((item) => item.id === pinnedId) ??
+        (await getPostById(pinnedId));
+      if (!ignore) setPinnedPost(pinned ?? null);
+    };
+    void loadPinned();
+    return () => {
+      ignore = true;
+    };
+  }, [authProfile?.pinnedPostId, posts, user]);
 
   useEffect(() => {
     let ignore = false;
@@ -99,6 +137,11 @@ export function Profile() {
       day: "numeric",
     });
   }, [user]);
+
+  const gridPosts = useMemo(() => {
+    if (!pinnedPost) return posts;
+    return posts.filter((post) => post.id !== pinnedPost.id);
+  }, [pinnedPost, posts]);
 
   if (!user) {
     return (
@@ -150,14 +193,12 @@ export function Profile() {
         <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
           <div className="flex flex-col items-center text-center">
             <div className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 p-1">
-              <img
-                src={
-                  profileAvatar ||
-                  user.photoURL ||
-                  "https://i.pravatar.cc/150?img=12"
-                }
+              <Avatar
+                src={profileAvatar || user.photoURL || undefined}
                 alt={profileName || user.displayName || "User"}
-                className="h-24 w-24 rounded-full border-4 border-white object-cover dark:border-slate-800"
+                userId={user.uid}
+                size={96}
+                className="h-24 w-24 border-4 border-white dark:border-slate-800"
               />
             </div>
             <h2 className="mt-4 text-xl font-semibold text-slate-900 dark:text-white">
@@ -365,7 +406,7 @@ export function Profile() {
                 />
               ))}
             </div>
-          ) : activeTab === "posts" && posts.length === 0 ? (
+          ) : activeTab === "posts" && posts.length === 0 && !pinnedPost ? (
             <EmptyState
               icon="📷"
               title="No posts yet"
@@ -374,54 +415,73 @@ export function Profile() {
               onAction={() => navigate("/create")}
             />
           ) : activeTab === "posts" ? (
-            <div className="grid grid-cols-3 gap-2">
-              {posts.map((post) => {
-                const mediaList =
-                  post.media && post.media.length > 0
-                    ? post.media
-                    : post.mediaUrl
-                    ? [{ url: post.mediaUrl, type: post.mediaType || "image" }]
-                    : [];
-                const first = mediaList[0];
-                const isMulti = mediaList.length > 1;
-                const isVideo = first?.type === "video";
-
-                return (
-                <div
-                  key={post.id}
-                  className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800"
-                >
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/post/${post.id}`)}
-                    className="h-full w-full"
-                  >
-                    <img
-                      src={first?.thumbUrl || first?.url || post.mediaUrl}
-                      alt={post.text}
-                      className="h-full w-full object-cover"
-                    />
-                  </button>
-                  {isVideo ? (
-                    <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
-                      ▶
-                    </span>
-                  ) : isMulti ? (
-                    <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
-                      ⧉
-                    </span>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => setDeleteTarget(post)}
-                    className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-xs text-slate-600 shadow transition-all duration-200 hover:scale-105 hover:text-red-500 dark:bg-slate-800/90 dark:text-slate-200"
-                    aria-label="Delete post"
-                  >
-                    ✕
-                  </button>
+            <div className="space-y-4">
+              {pinnedPost ? (
+                <div className="relative rounded-2xl border border-purple-200 p-2 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:border-purple-500/40">
+                  <span className="absolute left-4 top-4 z-10 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-2 py-0.5 text-[10px] font-semibold text-white">
+                    📌 Pinned
+                  </span>
+                  <PostCard
+                    post={pinnedPost}
+                    onDeleted={(postId) => {
+                      setPosts((prev) => prev.filter((item) => item.id !== postId));
+                      setPinnedPost(null);
+                    }}
+                  />
                 </div>
-                );
-              })}
+              ) : null}
+
+              {gridPosts.length > 0 ? (
+                <div className="grid grid-cols-3 gap-2">
+                  {gridPosts.map((post) => {
+                    const mediaList =
+                      post.media && post.media.length > 0
+                        ? post.media
+                        : post.mediaUrl
+                        ? [{ url: post.mediaUrl, type: post.mediaType || "image" }]
+                        : [];
+                    const first = mediaList[0];
+                    const isMulti = mediaList.length > 1;
+                    const isVideo = first?.type === "video";
+
+                    return (
+                      <div
+                        key={post.id}
+                        className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/post/${post.id}`)}
+                          className="h-full w-full"
+                        >
+                          <img
+                            src={first?.thumbUrl || first?.url || post.mediaUrl}
+                            alt={post.text}
+                            className="h-full w-full object-cover"
+                          />
+                        </button>
+                        {isVideo ? (
+                          <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+                            ▶
+                          </span>
+                        ) : isMulti ? (
+                          <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+                            ⧉
+                          </span>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => setDeleteTarget(post)}
+                          className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-xs text-slate-600 shadow transition-all duration-200 hover:scale-105 hover:text-red-500 dark:bg-slate-800/90 dark:text-slate-200"
+                          aria-label="Delete post"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
             </div>
           ) : savedLoading ? (
             <div className="grid grid-cols-3 gap-2">
@@ -505,6 +565,10 @@ export function Profile() {
                   if (!deleteTarget) return;
                   setDeleting(true);
                   await deletePost(deleteTarget.id);
+                  if (pinnedPost?.id === deleteTarget.id) {
+                    await unpinPost(user.uid);
+                    setPinnedPost(null);
+                  }
                   setPosts((prev) =>
                     prev.filter((item) => item.id !== deleteTarget.id)
                   );
