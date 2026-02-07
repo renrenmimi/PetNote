@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { PostCard } from "../components/PostCard";
 import { UserCard } from "../components/UserCard";
+import Avatar from "../components/Avatar";
 import { useAuth } from "../hooks/useAuth";
 import { useBlockedUsers } from "../hooks/useBlockedUsers";
 import { unblockUser } from "../services/block";
 import { useFollow } from "../hooks/useFollow";
 import { getFollowers, getFollowing } from "../services/follow";
-import { getPostsByUser, getUserStats, type Post } from "../services/posts";
+import { getPostById, getPostsByUser, getUserStats, type Post } from "../services/posts";
 import { getUserProfile, getUsersByIds, type UserProfile } from "../services/users";
 
 export function UserProfile() {
@@ -16,6 +18,7 @@ export function UserProfile() {
   const { isBlocked } = useBlockedUsers(user?.uid ?? null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [pinnedPost, setPinnedPost] = useState<Post | null>(null);
   const [stats, setStats] = useState({ postCount: 0, totalLikes: 0 });
   const [loading, setLoading] = useState(true);
   const [modalTitle, setModalTitle] = useState<string | null>(null);
@@ -39,6 +42,14 @@ export function UserProfile() {
         setPosts(postList);
         setStats(userStats);
         setProfile(profileData);
+        if (profileData?.pinnedPostId) {
+          const pinned =
+            postList.find((item) => item.id === profileData.pinnedPostId) ??
+            (await getPostById(profileData.pinnedPostId));
+          setPinnedPost(pinned ?? null);
+        } else {
+          setPinnedPost(null);
+        }
       } finally {
         if (!ignore) setLoading(false);
       }
@@ -76,6 +87,10 @@ export function UserProfile() {
   }
 
   const blocked = user ? isBlocked(userId) : false;
+  const gridPosts = useMemo(() => {
+    if (!pinnedPost) return posts;
+    return posts.filter((post) => post.id !== pinnedPost.id);
+  }, [pinnedPost, posts]);
 
   return (
     <div className="min-h-screen bg-white pb-10 dark:bg-slate-900">
@@ -122,10 +137,12 @@ export function UserProfile() {
         <section className="rounded-3xl bg-white p-6 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
           <div className="flex flex-col items-center text-center">
             <div className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 p-1">
-              <img
-                src={profile?.avatarUrl || "https://i.pravatar.cc/150?img=12"}
+              <Avatar
+                src={profile?.avatarUrl || undefined}
                 alt={profile?.displayName || "User"}
-                className="h-24 w-24 rounded-full border-4 border-white object-cover dark:border-slate-800"
+                userId={profile?.id}
+                size={96}
+                className="h-24 w-24 border-4 border-white dark:border-slate-800"
               />
             </div>
             <h2 className="mt-4 text-xl font-semibold text-slate-900 dark:text-white">
@@ -220,46 +237,59 @@ export function UserProfile() {
                   />
                 ))}
               </div>
-            ) : posts.length === 0 ? (
+            ) : posts.length === 0 && !pinnedPost ? (
               <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                 No posts yet
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-2">
-                {posts.map((post) => {
-                  const mediaList =
-                    post.media && post.media.length > 0
-                      ? post.media
-                      : post.mediaUrl
-                      ? [{ url: post.mediaUrl, type: post.mediaType || "image" }]
-                      : [];
-                  const first = mediaList[0];
-                  const isMulti = mediaList.length > 1;
-                  const isVideo = first?.type === "video";
-                  return (
-                    <button
-                    key={post.id}
-                    type="button"
-                    onClick={() => navigate(`/post/${post.id}`)}
-                    className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100 transition-all duration-200 hover:scale-[1.02] dark:bg-slate-800"
-                  >
-                      <img
-                        src={first?.thumbUrl || first?.url || post.mediaUrl}
-                        alt={post.text}
-                        className="h-full w-full object-cover"
-                      />
-                      {isVideo ? (
-                        <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
-                          ▶
-                        </span>
-                      ) : isMulti ? (
-                        <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
-                          ⧉
-                        </span>
-                      ) : null}
-                    </button>
-                  );
-                })}
+              <div className="space-y-4">
+                {pinnedPost ? (
+                  <div className="relative rounded-2xl border border-purple-200 p-2 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:border-purple-500/40">
+                    <span className="absolute left-4 top-4 z-10 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-2 py-0.5 text-[10px] font-semibold text-white">
+                      📌 Pinned
+                    </span>
+                    <PostCard post={pinnedPost} />
+                  </div>
+                ) : null}
+
+                {gridPosts.length > 0 ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    {gridPosts.map((post) => {
+                      const mediaList =
+                        post.media && post.media.length > 0
+                          ? post.media
+                          : post.mediaUrl
+                          ? [{ url: post.mediaUrl, type: post.mediaType || "image" }]
+                          : [];
+                      const first = mediaList[0];
+                      const isMulti = mediaList.length > 1;
+                      const isVideo = first?.type === "video";
+                      return (
+                        <button
+                          key={post.id}
+                          type="button"
+                          onClick={() => navigate(`/post/${post.id}`)}
+                          className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100 transition-all duration-200 hover:scale-[1.02] dark:bg-slate-800"
+                        >
+                          <img
+                            src={first?.thumbUrl || first?.url || post.mediaUrl}
+                            alt={post.text}
+                            className="h-full w-full object-cover"
+                          />
+                          {isVideo ? (
+                            <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+                              ▶
+                            </span>
+                          ) : isMulti ? (
+                            <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+                              ⧉
+                            </span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
               </div>
             )}
           </section>

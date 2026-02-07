@@ -29,6 +29,30 @@ export type Pet = {
   createdAt?: unknown;
 };
 
+const toDate = (value: unknown): Date | null => {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "toDate" in value &&
+    typeof (value as { toDate: () => Date }).toDate === "function"
+  ) {
+    return (value as { toDate: () => Date }).toDate();
+  }
+  return null;
+};
+
+export const isBirthdayToday = (birthday: unknown): boolean => {
+  const date = toDate(birthday);
+  if (!date) return false;
+  const today = new Date();
+  return (
+    date.getMonth() === today.getMonth() &&
+    date.getDate() === today.getDate()
+  );
+};
+
 export async function createPet(
   ownerId: string,
   data: Omit<Pet, "id" | "ownerId" | "createdAt">
@@ -96,4 +120,9 @@ export async function getPostsByPet(petId: string): Promise<Post[]> {
     id: docSnap.id,
     ...(docSnap.data() as PostData),
   }));
+}
+
+export async function getBirthdayPets(ownerId: string): Promise<Pet[]> {
+  const pets = await getPetsByOwner(ownerId);
+  return pets.filter((pet) => isBirthdayToday(pet.birthday));
 }

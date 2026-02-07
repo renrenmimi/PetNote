@@ -9,6 +9,7 @@ import {
 } from "../services/posts";
 import { timeAgo } from "../utils/timeAgo";
 import { useToast } from "../contexts/ToastContext";
+import Avatar from "./Avatar";
 
 type CommentSectionProps = {
   postId: string;
@@ -105,7 +106,9 @@ export function CommentSection({
       id: optimisticId,
       authorId: user.uid,
       authorName: user.displayName || "PetNote User",
-      authorAvatar: user.photoURL || "https://i.pravatar.cc/100?img=12",
+      authorAvatar:
+        user.photoURL ||
+        `https://api.dicebear.com/7.x/thumbs/svg?seed=${user.uid}`,
       text: content,
       createdAt: new Date(),
       replyTo: reply
@@ -190,12 +193,12 @@ export function CommentSection({
               }`}
             >
               <div className="flex items-start gap-3">
-                <img
-                  src={
-                    comment.authorAvatar || "https://i.pravatar.cc/100?img=12"
-                  }
+                <Avatar
+                  src={comment.authorAvatar}
                   alt={comment.authorName}
-                  className="h-6 w-6 rounded-full object-cover"
+                  userId={comment.authorId}
+                  size={24}
+                  className="h-6 w-6"
                 />
                 <div className="flex-1">
                   <span className="text-xs font-semibold text-slate-900 dark:text-white">

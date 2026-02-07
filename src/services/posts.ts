@@ -465,3 +465,13 @@ export async function getUserStats(userId: string): Promise<{
   );
   return { postCount: posts.length, totalLikes };
 }
+
+export async function pinPost(userId: string, postId: string): Promise<void> {
+  const userRef = doc(db, "users", userId);
+  await updateDoc(userRef, { pinnedPostId: postId });
+}
+
+export async function unpinPost(userId: string): Promise<void> {
+  const userRef = doc(db, "users", userId);
+  await updateDoc(userRef, { pinnedPostId: deleteField() });
+}

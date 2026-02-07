@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useFollow } from "../hooks/useFollow";
 import { type UserProfile } from "../services/users";
+import Avatar from "./Avatar";
 
 type UserCardProps = {
   user: UserProfile;
@@ -19,10 +20,12 @@ export function UserCard({ user, currentUid }: UserCardProps) {
         onClick={() => navigate(`/profile/${user.id}`)}
         className="flex items-center gap-3"
       >
-        <img
-          src={user.avatarUrl || "https://i.pravatar.cc/100?img=12"}
+        <Avatar
+          src={user.avatarUrl || undefined}
           alt={user.displayName || "User"}
-          className="h-12 w-12 rounded-full object-cover"
+          userId={user.id}
+          size={48}
+          className="h-12 w-12"
         />
         <div className="text-left">
           <p className="text-sm font-semibold text-slate-900 dark:text-white">

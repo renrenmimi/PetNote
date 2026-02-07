@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { uploadMedia } from "../services/cloudinary";
 import { createPost, type MediaItem } from "../services/posts";
@@ -8,11 +8,13 @@ import { getUserProfile, type UserProfile } from "../services/users";
 import { compressImage } from "../utils/imageCompressor";
 import { getSpeciesMeta } from "../utils/petHelpers";
 import { useToast } from "../contexts/ToastContext";
+import { FILTER_MAP, ImageFilter, type FilterName } from "../components/ImageFilter";
 
 const MAX_CHARS = 2000;
 
 export function Create() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user, isBanned } = useAuth();
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -21,12 +23,17 @@ export function Create() {
       id: string;
       fileId: string;
       file: File;
+      sourceFile: File;
       type: "image" | "video";
       previewUrl: string;
       duration?: number;
       sizeLabel?: string;
     }>
   >([]);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [filtersById, setFiltersById] = useState<Record<string, FilterName>>(
+    {}
+  );
   const [caption, setCaption] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
@@ -66,6 +73,15 @@ export function Create() {
       ignore = true;
     };
   }, [user]);
+
+  useEffect(() => {
+    const petId = searchParams.get("petId");
+    if (!petId || pets.length === 0) return;
+    const exists = pets.some((pet) => pet.id === petId);
+    if (exists) {
+      setSelectedPetId(petId);
+    }
+  }, [pets, searchParams]);
 
   useEffect(() => {
     filesRef.current = files;
@@ -158,6 +174,8 @@ export function Create() {
         }
       }
 
+      const sourceFile = file;
+
       if (file.type.startsWith("image/") && file.type !== "image/gif") {
         try {
           if (!startedCompressing) {
@@ -217,6 +235,7 @@ export function Create() {
         id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
         fileId: rawId,
         file,
+        sourceFile,
         type: file.type.startsWith("video/") ? "video" : "image",
         previewUrl,
         duration,
@@ -226,6 +245,13 @@ export function Create() {
 
     if (nextItems.length > 0) {
       setFiles((prev) => [...prev, ...nextItems]);
+      setFiltersById((prev) => {
+        const next = { ...prev };
+        nextItems.forEach((item) => {
+          next[item.id] = "normal";
+        });
+        return next;
+      });
     }
 
     if (skippedDuplicates > 0) {
@@ -298,7 +324,27 @@ export function Create() {
       const uploaded: MediaItem[] = [];
       for (let i = 0; i < files.length; i += 1) {
         setUploadingIndex(i + 1);
-        const result = await uploadMedia(files[i].file);
+        const current = files[i];
+        let uploadFile = current.file;
+        if (current.type === "image") {
+          const filterName = filtersById[current.id] || "normal";
+          const filterCss = FILTER_MAP[filterName] || "none";
+          if (
+            filterName !== "normal" &&
+            current.sourceFile.type !== "image/gif"
+          ) {
+            uploadFile = await applyFilter(current.sourceFile, filterCss);
+            uploadFile = await compressImage(uploadFile, {
+              maxWidth: 1920,
+              maxHeight: 1920,
+              quality: 0.8,
+              maxSizeMB: 2,
+            });
+          } else if (current.file.type.startsWith("image/")) {
+            uploadFile = current.file;
+          }
+        }
+        const result = await uploadMedia(uploadFile);
         uploaded.push(result);
       }
       const selectedPet = pets.find((petItem) => petItem.id === selectedPetId);
@@ -309,7 +355,7 @@ export function Create() {
         authorAvatar:
           profile?.avatarUrl ||
           user.photoURL ||
-          "https://i.pravatar.cc/150?img=12",
+          `https://api.dicebear.com/7.x/thumbs/svg?seed=${user.uid}`,
         text: caption.trim(),
         media: uploaded,
         tags,
@@ -338,11 +384,24 @@ export function Create() {
 
   const handleRemove = (id: string) => {
     setFiles((prev) => {
-      const target = prev.find((item) => item.id === id);
+      const index = prev.findIndex((item) => item.id === id);
+      const target = prev[index];
       if (target) {
         URL.revokeObjectURL(target.previewUrl);
       }
-      return prev.filter((item) => item.id !== id);
+      const next = prev.filter((item) => item.id !== id);
+      setSelectedIndex((current) => {
+        if (index === -1) return current;
+        if (current > index) return current - 1;
+        if (current === index) return Math.max(0, current - 1);
+        return current;
+      });
+      return next;
+    });
+    setFiltersById((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
     });
   };
 
@@ -353,6 +412,15 @@ export function Create() {
       );
     };
   }, []);
+
+  useEffect(() => {
+    if (selectedIndex >= files.length && files.length > 0) {
+      setSelectedIndex(files.length - 1);
+    }
+    if (files.length === 0) {
+      setSelectedIndex(0);
+    }
+  }, [files.length, selectedIndex]);
 
   const gridCols =
     files.length <= 1
@@ -378,6 +446,48 @@ export function Create() {
     if (kb < 1024) return `${kb.toFixed(1)} KB`;
     const mb = kb / 1024;
     return `${mb.toFixed(1)} MB`;
+  };
+
+  const selectedItem = files[selectedIndex];
+  const selectedFilter =
+    selectedItem && selectedItem.type === "image"
+      ? filtersById[selectedItem.id] || "normal"
+      : "normal";
+
+  const applyFilter = async (file: File, filterCSS: string): Promise<File> => {
+    if (filterCSS === "none") return file;
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("Failed to load image"));
+      img.src = url;
+    });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      URL.revokeObjectURL(url);
+      return file;
+    }
+    ctx.filter = filterCSS;
+    ctx.drawImage(img, 0, 0);
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (result) => {
+          if (result) resolve(result);
+          else reject(new Error("Failed to apply filter"));
+        },
+        "image/jpeg",
+        0.9
+      );
+    });
+    URL.revokeObjectURL(url);
+    const nextName = file.name.replace(/\.\w+$/, ".jpg");
+    return new File([blob], nextName, { type: "image/jpeg" });
   };
 
   return (
@@ -434,11 +544,21 @@ export function Create() {
         >
           {files.length > 0 ? (
             <div className={`grid ${gridCols} auto-rows-fr gap-1 p-3`}>
-              {files.map((item) => (
+              {files.map((item, index) => {
+                const filterCss = FILTER_MAP[filtersById[item.id] || "normal"];
+                const isSelected = index === selectedIndex;
+                return (
                 <div
                   key={item.id}
-                  className="relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
-                  onClick={(event) => event.stopPropagation()}
+                  className={`relative aspect-square overflow-hidden rounded-lg border bg-white dark:bg-slate-900 ${
+                    isSelected
+                      ? "border-purple-400 ring-2 ring-purple-300"
+                      : "border-slate-200 dark:border-slate-700"
+                  }`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setSelectedIndex(index);
+                  }}
                 >
                   {item.type === "video" ? (
                     <>
@@ -465,6 +585,7 @@ export function Create() {
                       src={item.previewUrl}
                       alt="Preview"
                       className="h-full w-full object-cover"
+                      style={{ filter: filterCss }}
                     />
                   )}
                   {item.sizeLabel ? (
@@ -484,7 +605,7 @@ export function Create() {
                     ✕
                   </button>
                 </div>
-              ))}
+              )})}
 
               {files.length < 9 ? (
                 <button
@@ -534,6 +655,19 @@ export function Create() {
               ? ` · ${duplicateSkipped} duplicate(s) skipped`
               : ""}
           </p>
+        ) : null}
+
+        {selectedItem && selectedItem.type === "image" ? (
+          <ImageFilter
+            previewUrl={selectedItem.previewUrl}
+            selected={selectedFilter}
+            onSelect={(filter) =>
+              setFiltersById((prev) => ({
+                ...prev,
+                [selectedItem.id]: filter,
+              }))
+            }
+          />
         ) : null}
 
         <section className="space-y-2">

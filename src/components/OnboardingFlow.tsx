@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import PawIcon from "./PawIcon";
+import Avatar from "./Avatar";
 import { uploadImage } from "../services/cloudinary";
 import { createPet } from "../services/pets";
 import { completeOnboarding } from "../services/users";
@@ -259,10 +260,11 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
                   className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-800"
                 >
                   <div className="flex items-center gap-3">
-                    <img
+                    <Avatar
                       src={item.avatar}
                       alt={item.name}
-                      className="h-10 w-10 rounded-full object-cover"
+                      size={40}
+                      className="h-10 w-10"
                     />
                     <p className="text-sm font-semibold text-slate-900 dark:text-white">
                       {item.name}
