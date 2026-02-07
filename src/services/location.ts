@@ -27,13 +27,18 @@ export async function getCityFromCoords(
   lat: number,
   lng: number
 ): Promise<{ city: string; state: string }> {
+  const apiKey = import.meta.env.VITE_GEOAPIFY_KEY as string | undefined;
+  if (!apiKey) {
+    return { city: "Unknown", state: "" };
+  }
   const res = await fetch(
-    `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`
+    `https://api.geoapify.com/v1/geocode/reverse?lat=${lat}&lon=${lng}&apiKey=${apiKey}`
   );
   const data = await res.json();
+  const props = data?.features?.[0]?.properties || {};
   return {
-    city: data.city || data.locality || "Unknown",
-    state: data.principalSubdivision || "",
+    city: props.city || props.county || "Unknown",
+    state: props.state || "",
   };
 }
 

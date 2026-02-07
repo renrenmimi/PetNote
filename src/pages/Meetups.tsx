@@ -189,6 +189,15 @@ export function Meetups() {
               const distance =
                 "distance" in item ? item.distance : undefined;
               const maxPets = meetup.requirements.maxPets;
+              const visibility = meetup.locationVisibility ?? "participants_only";
+              const cityLabel = [meetup.location.city, meetup.location.state]
+                .filter(Boolean)
+                .join(", ");
+              const canSeeFullAddress =
+                visibility === "everyone" || (user && meetup.organizerId === user.uid);
+              const locationLabel = canSeeFullAddress
+                ? meetup.location.name
+                : cityLabel || "City hidden";
               const progress =
                 maxPets > 0
                   ? Math.min(
@@ -234,7 +243,7 @@ export function Meetups() {
                       📅 {formatDate(meetup.date)} · {formatTime(meetup.date)}
                     </p>
                     <p className="text-xs text-slate-500 dark:text-slate-300">
-                      📍 {meetup.location.name}
+                      📍 {locationLabel}
                     </p>
                     {distance !== undefined ? (
                       <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:bg-blue-500/10 dark:text-blue-200">

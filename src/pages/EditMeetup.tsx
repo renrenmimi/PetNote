@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Timestamp } from "firebase/firestore";
+import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../contexts/ToastContext";
 import { uploadImage } from "../services/cloudinary";
-import { getCurrentLocation, getCityFromCoords } from "../services/location";
 import {
   getMeetupById,
   getParticipants,
@@ -38,11 +38,18 @@ export function EditMeetup() {
   const [duration, setDuration] = useState(60);
   const [locationName, setLocationName] = useState("");
   const [address, setAddress] = useState("");
+  const [locationCity, setLocationCity] = useState("");
+  const [locationState, setLocationState] = useState("");
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
   const [locationStatus, setLocationStatus] = useState<
     "idle" | "success" | "error"
   >("idle");
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [locationError, setLocationError] = useState("");
+  const [locationVisibility, setLocationVisibility] = useState<
+    "everyone" | "participants_only"
+  >("participants_only");
   const [petType, setPetType] = useState<
     MeetupRequirements["petType"]
   >("any");
@@ -82,6 +89,10 @@ export function EditMeetup() {
       setAddress(data.location.address);
       setLat(data.location.lat);
       setLng(data.location.lng);
+      setLocationCity(data.location.city || "");
+      setLocationState(data.location.state || "");
+      setLocationVisibility(data.locationVisibility ?? "participants_only");
+      setLocationStatus("success");
       setPetType(data.requirements.petType);
       setDogSize(data.requirements.dogSize);
       setMaxPets(data.requirements.maxPets);
@@ -98,43 +109,89 @@ export function EditMeetup() {
     };
   }, [meetupId]);
 
-  const handleGeocode = async () => {
-    if (!address.trim()) return;
-    try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
-          address
-        )}&format=json&limit=1`
-      );
-      const data = await res.json();
-      if (data?.[0]) {
-        setLat(Number(data[0].lat));
-        setLng(Number(data[0].lon));
-        setLocationStatus("success");
-      } else {
-        setLocationStatus("error");
-      }
-    } catch {
-      setLocationStatus("error");
-    }
-  };
-
   const handleUseMyLocation = async () => {
+    setLocationLoading(true);
+    setLocationError("");
     try {
       showToast("PetNote needs your location to set meetup coordinates.", "info");
-      const coords = await getCurrentLocation();
-      setLat(coords.lat);
-      setLng(coords.lng);
-      const city = await getCityFromCoords(coords.lat, coords.lng);
-      if (!locationName) {
-        setLocationName(`${city.city} Meetup`);
+      if (!navigator.geolocation) {
+        throw new Error("Geolocation is not supported.");
       }
+      const position = await new Promise<GeolocationPosition>(
+        (resolve, reject) => {
+          let settled = false;
+          let timeoutId = 0;
+          const cleanup = (watchId: number) => {
+            navigator.geolocation.clearWatch(watchId);
+            window.clearTimeout(timeoutId);
+          };
+          const watchId = navigator.geolocation.watchPosition(
+            (pos) => {
+              if (settled) return;
+              settled = true;
+              cleanup(watchId);
+              resolve(pos);
+            },
+            (err) => {
+              if (settled) return;
+              settled = true;
+              cleanup(watchId);
+              reject(err);
+            },
+            {
+              enableHighAccuracy: false,
+              timeout: 15000,
+              maximumAge: 60000,
+            }
+          );
+          timeoutId = window.setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            cleanup(watchId);
+            reject(new Error("timeout"));
+          }, 15000);
+        }
+      );
+      const { latitude, longitude } = position.coords;
+      setLat(latitude);
+      setLng(longitude);
+      const apiKey = import.meta.env.VITE_GEOAPIFY_KEY as string | undefined;
+      if (!apiKey) {
+        setLocationError("Geoapify key is missing. Unable to set address.");
+        setLocationStatus("error");
+        return;
+      }
+      const res = await fetch(
+        `https://api.geoapify.com/v1/geocode/reverse?lat=${latitude}&lon=${longitude}&apiKey=${apiKey}`
+      );
+      const data = await res.json();
+      const props = data?.features?.[0]?.properties || {};
+      const formatted = props.formatted || "";
+      const city = props.city || props.county || "";
+      const state = props.state || "";
+      setLocationName(props.name || props.street || formatted || `${city} Meetup`);
+      setAddress(formatted || `${city}${state ? `, ${state}` : ""}`);
+      setLocationCity(city);
+      setLocationState(state);
       setLocationStatus("success");
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to get location.";
-      showToast(message, "error");
+    } catch (err: any) {
+      if (err?.code === 1) {
+        setLocationError(
+          "Location access denied. Please enable location in your browser settings."
+        );
+      } else if (err?.code === 2) {
+        setLocationError("Unable to determine your location. Please try again.");
+      } else if (err?.code === 3 || err?.message === "timeout") {
+        setLocationError("Location request timed out. Please try again.");
+      } else {
+        setLocationError(
+          "Could not get your location. Please enter address manually."
+        );
+      }
       setLocationStatus("error");
+    }
+    finally {
+      setLocationLoading(false);
     }
   };
 
@@ -152,8 +209,8 @@ export function EditMeetup() {
       showToast("Please choose a date and time.", "error");
       return;
     }
-    if (!locationName.trim() || !address.trim()) {
-      showToast("Please provide location name and address.", "error");
+    if (!address.trim()) {
+      showToast("Please provide a meetup address.", "error");
       return;
     }
     if (lat === null || lng === null) {
@@ -183,6 +240,7 @@ export function EditMeetup() {
         additionalNotes: additionalNotes.trim(),
       };
 
+      const resolvedLocationName = locationName.trim() || address.trim();
       await updateMeetup(meetup.id, {
         title: title.trim(),
         description: description.trim(),
@@ -190,11 +248,14 @@ export function EditMeetup() {
         date: Timestamp.fromDate(start),
         duration,
         location: {
-          name: locationName.trim(),
+          name: resolvedLocationName,
           address: address.trim(),
           lat,
           lng,
+          city: locationCity.trim() || undefined,
+          state: locationState.trim() || undefined,
         },
+        locationVisibility,
         requirements,
       });
       showToast("Meetup updated", "success");
@@ -351,26 +412,37 @@ export function EditMeetup() {
           <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
             Location
           </h2>
-          <input
-            type="text"
-            value={locationName}
-            onChange={(event) => setLocationName(event.target.value)}
-            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-          />
-          <input
-            type="text"
+          <AddressAutocomplete
             value={address}
-            onChange={(event) => setAddress(event.target.value)}
-            onBlur={handleGeocode}
-            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            onChange={(nextValue, location) => {
+              setAddress(nextValue);
+              setLocationError("");
+              if (location) {
+                setLocationName(location.name);
+                setLat(location.lat);
+                setLng(location.lng);
+                setLocationCity(location.city || "");
+                setLocationState(location.state || "");
+                setLocationStatus("success");
+              } else {
+                setLocationName("");
+                setLat(null);
+                setLng(null);
+                setLocationCity("");
+                setLocationState("");
+                setLocationStatus("idle");
+              }
+            }}
+            placeholder="Search for a location"
           />
           <div className="flex items-center gap-3 text-xs">
             <button
               type="button"
               onClick={handleUseMyLocation}
+              disabled={locationLoading}
               className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-all duration-200 hover:border-purple-300 hover:text-purple-600 dark:border-slate-700 dark:text-slate-300"
             >
-              Use My Location
+              {locationLoading ? "Locating..." : "Use My Location"}
             </button>
             <span
               className={`text-xs ${
@@ -384,9 +456,52 @@ export function EditMeetup() {
               {locationStatus === "success"
                 ? "📍 Location set"
                 : locationStatus === "error"
-                ? "⚠️ Could not find location"
+                ? locationError || "⚠️ Could not find location"
                 : ""}
             </span>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+              Address visibility
+            </p>
+            <div className="grid gap-2">
+              {[
+                {
+                  key: "everyone",
+                  title: "🌍 Full address visible to everyone",
+                  description: "Best for public parks or community spots.",
+                },
+                {
+                  key: "participants_only",
+                  title: "🔒 Full address visible to participants only",
+                  description: "Non-participants will only see the city/area.",
+                },
+              ].map((option) => {
+                const selected = locationVisibility === option.key;
+                return (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() =>
+                      setLocationVisibility(
+                        option.key as "everyone" | "participants_only"
+                      )
+                    }
+                    className={`rounded-2xl border px-4 py-3 text-left text-xs transition-all duration-200 ${
+                      selected
+                        ? "border-purple-400 bg-purple-50 text-purple-700"
+                        : "border-slate-200 text-slate-600 hover:border-slate-300 dark:border-slate-700 dark:text-slate-300"
+                    }`}
+                  >
+                    <p className="text-sm font-semibold">{option.title}</p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      {option.description}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </section>
 

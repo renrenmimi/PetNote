@@ -31,6 +31,8 @@ export type MeetupLocation = {
   address: string;
   lat: number;
   lng: number;
+  city?: string;
+  state?: string;
 };
 
 export type MeetupRequirements = {
@@ -59,6 +61,7 @@ export type MeetupData = {
   date: Timestamp;
   duration: number;
   location: MeetupLocation;
+  locationVisibility?: "everyone" | "participants_only";
   requirements: MeetupRequirements;
   status: MeetupStatus;
   participantCount: number;
@@ -87,6 +90,7 @@ export async function createMeetup(data: MeetupData): Promise<string> {
     ...data,
     status: data.status ?? "upcoming",
     participantCount: data.participantCount ?? 0,
+    locationVisibility: data.locationVisibility ?? "participants_only",
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
@@ -316,6 +320,15 @@ export async function joinMeetup(
     };
   }
 
+  const safeUserAvatar =
+    eligibility.userAvatar && eligibility.userAvatar.trim().length > 0
+      ? eligibility.userAvatar
+      : `https://api.dicebear.com/7.x/thumbs/svg?seed=${userId}`;
+  const safePetAvatar =
+    petData.petAvatar && petData.petAvatar.trim().length > 0
+      ? petData.petAvatar
+      : `https://api.dicebear.com/7.x/thumbs/svg?seed=${petData.petId}`;
+
   await runTransaction(db, async (transaction) => {
     const participantSnap = await transaction.get(participantRef);
     if (participantSnap.exists()) return;
@@ -329,10 +342,10 @@ export async function joinMeetup(
       meetupId,
       userId,
       userName: eligibility.userName,
-      userAvatar: eligibility.userAvatar,
+      userAvatar: safeUserAvatar,
       petId: petData.petId,
       petName: petData.petName,
-      petAvatar: petData.petAvatar,
+      petAvatar: safePetAvatar,
       joinedAt: serverTimestamp(),
       status: "confirmed",
     });

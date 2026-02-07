@@ -10,12 +10,7 @@ import { useTheme } from "../contexts/ThemeContext";
 import { useToast } from "../contexts/ToastContext";
 import { PasswordStrengthIndicator } from "../components/PasswordStrengthIndicator";
 import { validatePassword } from "../utils/passwordValidator";
-import {
-  clearUserLocation,
-  getCityFromCoords,
-  getCurrentLocation,
-  saveUserLocation,
-} from "../services/location";
+import { clearUserLocation, getCityFromCoords, saveUserLocation } from "../services/location";
 import {
   deleteAccount,
   getSettings,
@@ -173,14 +168,64 @@ export function Settings() {
     setLocationLoading(true);
     showToast("PetNote needs your location to show nearby meetups.", "info");
     try {
-      const { lat, lng } = await getCurrentLocation();
+      if (!navigator.geolocation) {
+        throw new Error("Geolocation is not supported.");
+      }
+      const position = await new Promise<GeolocationPosition>(
+        (resolve, reject) => {
+          let settled = false;
+          let timeoutId = 0;
+          const cleanup = (watchId: number) => {
+            navigator.geolocation.clearWatch(watchId);
+            window.clearTimeout(timeoutId);
+          };
+          const watchId = navigator.geolocation.watchPosition(
+            (pos) => {
+              if (settled) return;
+              settled = true;
+              cleanup(watchId);
+              resolve(pos);
+            },
+            (err) => {
+              if (settled) return;
+              settled = true;
+              cleanup(watchId);
+              reject(err);
+            },
+            {
+              enableHighAccuracy: false,
+              timeout: 15000,
+              maximumAge: 60000,
+            }
+          );
+          timeoutId = window.setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            cleanup(watchId);
+            reject(new Error("timeout"));
+          }, 15000);
+        }
+      );
+      const { latitude, longitude } = position.coords;
+      const lat = latitude;
+      const lng = longitude;
       const { city, state } = await getCityFromCoords(lat, lng);
       await saveUserLocation(user.uid, { lat, lng, city, state });
       showToast("Location updated", "success");
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to update location.";
-      showToast(message, "error");
+      const error = err as { code?: number; message?: string };
+      if (error?.code === 1) {
+        showToast(
+          "Location access denied. Please enable location in your browser settings.",
+          "error"
+        );
+      } else if (error?.code === 3 || error?.message === "timeout") {
+        showToast("Location request timed out. Please try again.", "error");
+      } else {
+        const message =
+          err instanceof Error ? err.message : "Failed to update location.";
+        showToast(message, "error");
+      }
     } finally {
       setLocationLoading(false);
     }
