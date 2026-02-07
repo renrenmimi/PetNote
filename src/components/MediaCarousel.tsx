@@ -103,12 +103,12 @@ export function MediaCarousel({
   };
 
   if (items.length === 0) {
-    return <div className="aspect-video w-full bg-slate-100" />;
+    return <div className="aspect-video w-full bg-slate-100 dark:bg-slate-800" />;
   }
 
   return (
     <div
-      className="relative w-full overflow-hidden rounded-lg bg-slate-100"
+      className="relative w-full overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -128,7 +128,7 @@ export function MediaCarousel({
           return (
             <div
               key={`${item.url}-${idx}`}
-              className="flex w-full flex-shrink-0 items-center justify-center bg-black/5"
+              className="flex w-full flex-shrink-0 items-center justify-center bg-black/5 dark:bg-white/5"
               onDoubleClick={isVideo ? undefined : onDoubleTap}
             >
               {isVideo ? (
@@ -203,7 +203,7 @@ export function MediaCarousel({
           <button
             type="button"
             onClick={handlePrev}
-            className="absolute left-3 top-1/2 hidden -translate-y-1/2 items-center justify-center rounded-full bg-white/70 px-2 py-1 text-sm text-slate-700 shadow sm:flex"
+            className="absolute left-3 top-1/2 hidden -translate-y-1/2 items-center justify-center rounded-full bg-white/70 px-2 py-1 text-sm text-slate-700 shadow sm:flex dark:bg-slate-700/70 dark:text-white"
             aria-label="Previous"
           >
             ‹
@@ -211,7 +211,7 @@ export function MediaCarousel({
           <button
             type="button"
             onClick={handleNext}
-            className="absolute right-3 top-1/2 hidden -translate-y-1/2 items-center justify-center rounded-full bg-white/70 px-2 py-1 text-sm text-slate-700 shadow sm:flex"
+            className="absolute right-3 top-1/2 hidden -translate-y-1/2 items-center justify-center rounded-full bg-white/70 px-2 py-1 text-sm text-slate-700 shadow sm:flex dark:bg-slate-700/70 dark:text-white"
             aria-label="Next"
           >
             ›

@@ -147,7 +147,7 @@ export function PostDetail() {
     const gradientId = `heart-detail-${post?.id ?? "post"}`;
     return (
       <svg
-        className={`h-6 w-6 ${filled ? "text-red-500" : "text-slate-500"}`}
+        className={`h-6 w-6 ${filled ? "text-red-500" : "text-slate-500 dark:text-slate-400"}`}
         viewBox="0 0 24 24"
         fill={filled ? `url(#${gradientId})` : "none"}
         stroke="currentColor"
@@ -169,7 +169,7 @@ export function PostDetail() {
   const BookmarkIcon = ({ filled }: { filled: boolean }) => {
     return (
       <svg
-        className={`h-6 w-6 ${filled ? "text-purple-500" : "text-slate-500"}`}
+        className={`h-6 w-6 ${filled ? "text-purple-500" : "text-slate-500 dark:text-slate-400"}`}
         viewBox="0 0 24 24"
         fill={filled ? "currentColor" : "none"}
         stroke="currentColor"
@@ -184,7 +184,7 @@ export function PostDetail() {
 
   const ShareIcon = () => (
     <svg
-      className="h-6 w-6 text-slate-500"
+      className="h-6 w-6 text-slate-500 dark:text-slate-400"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -198,37 +198,37 @@ export function PostDetail() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
-      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur">
+    <div className="min-h-screen bg-slate-50 pb-20 dark:bg-slate-900">
+      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur dark:border-slate-800 dark:bg-slate-900/80">
         <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-3">
           <button
             type="button"
             onClick={() => navigate(-1)}
-            className="text-xl text-slate-500 hover:text-slate-700"
+            className="text-xl text-slate-500 hover:text-slate-700 dark:text-slate-300"
             aria-label="Go back"
           >
             ←
           </button>
-          <h1 className="text-base font-semibold text-slate-900">Post</h1>
+          <h1 className="text-base font-semibold text-slate-900 dark:text-white">Post</h1>
           {canEdit ? (
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setMenuOpen((prev) => !prev)}
-                className="text-xl text-slate-400 transition-all duration-200 hover:text-slate-600"
+                className="text-xl text-slate-400 transition-all duration-200 hover:text-slate-600 dark:text-slate-300 dark:hover:text-slate-100"
                 aria-label="Post options"
               >
                 ⋯
               </button>
               {menuOpen ? (
-                <div className="absolute right-0 top-8 z-10 w-36 rounded-xl bg-white p-2 text-sm shadow-[0_12px_30px_-20px_rgba(15,23,42,0.5)] ring-1 ring-slate-100">
+                <div className="absolute right-0 top-8 z-10 w-36 rounded-xl bg-white p-2 text-sm shadow-[0_12px_30px_-20px_rgba(15,23,42,0.5)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
                   <button
                     type="button"
                     onClick={() => {
                       setMenuOpen(false);
                       navigate(`/edit-post/${post?.id}`);
                     }}
-                    className="w-full rounded-lg px-3 py-2 text-left text-slate-600 transition-all duration-200 hover:bg-slate-100"
+                    className="w-full rounded-lg px-3 py-2 text-left text-slate-600 transition-all duration-200 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
                   >
                     Edit Post
                   </button>
@@ -238,7 +238,7 @@ export function PostDetail() {
                       setMenuOpen(false);
                       setConfirmOpen(true);
                     }}
-                    className="w-full rounded-lg px-3 py-2 text-left text-red-500 transition-all duration-200 hover:bg-red-50"
+                    className="w-full rounded-lg px-3 py-2 text-left text-red-500 transition-all duration-200 hover:bg-red-50 dark:hover:bg-red-500/10"
                   >
                     Delete Post
                   </button>
@@ -253,17 +253,17 @@ export function PostDetail() {
 
       <main className="mx-auto w-full max-w-md space-y-4 px-4 py-4 pb-24">
         {loading ? (
-          <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)]">
+          <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-500">
             Loading post...
           </div>
         ) : null}
         {!loading && !post ? (
-          <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)]">
+          <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-300">
             Post not found.
           </div>
         ) : null}
         {post ? (
-          <div className="space-y-4 rounded-2xl bg-white p-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100">
+          <div className="space-y-4 rounded-2xl bg-white p-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <img
@@ -276,7 +276,7 @@ export function PostDetail() {
                     <button
                       type="button"
                       onClick={() => navigate(`/profile/${post.authorId}`)}
-                      className="text-sm font-semibold text-slate-900 transition-all duration-200 hover:text-purple-600"
+                      className="text-sm font-semibold text-slate-900 transition-all duration-200 hover:text-purple-600 dark:text-white"
                     >
                       {authorName || post.authorName}
                     </button>
@@ -290,7 +290,7 @@ export function PostDetail() {
                       </button>
                     ) : null}
                   </div>
-                  <p className="text-xs text-slate-500">{timeAgo}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">{timeAgo}</p>
                 </div>
               </div>
               {user && post.authorId !== user.uid ? (
@@ -299,7 +299,7 @@ export function PostDetail() {
                   onClick={toggleFollow}
                   className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-200 ${
                     isFollowing
-                      ? "border border-slate-200 text-slate-500"
+                      ? "border border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-300"
                       : "bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-[0_10px_25px_-15px_rgba(168,85,247,0.7)]"
                   }`}
                 >
@@ -311,7 +311,7 @@ export function PostDetail() {
             <MediaCarousel media={mediaItems} />
 
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4 text-slate-600">
+              <div className="flex items-center gap-4 text-slate-600 dark:text-slate-300">
                 <button
                   type="button"
                   onClick={handleLike}
@@ -328,7 +328,7 @@ export function PostDetail() {
                       block: "start",
                     })
                   }
-                  className="text-2xl text-slate-500 transition-all duration-200 hover:scale-105"
+                  className="text-2xl text-slate-500 transition-all duration-200 hover:scale-105 dark:text-slate-400"
                   aria-label="Comment"
                 >
                   💬
@@ -345,7 +345,7 @@ export function PostDetail() {
               <button
                 type="button"
                 onClick={handleBookmark}
-                className="text-2xl text-slate-500 transition-all duration-200 hover:scale-105"
+                className="text-2xl text-slate-500 transition-all duration-200 hover:scale-105 dark:text-slate-400"
                 aria-label="Save"
               >
                 <BookmarkIcon filled={isBookmarked} />
@@ -353,7 +353,7 @@ export function PostDetail() {
             </div>
 
             <div>
-              <p className="text-sm font-semibold text-slate-900">
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">
                 {likeCount} likes
               </p>
               <button
@@ -364,14 +364,14 @@ export function PostDetail() {
                     block: "start",
                   })
                 }
-                className="text-xs text-slate-400 hover:text-purple-500"
+                className="text-xs text-slate-400 hover:text-purple-500 dark:text-slate-500"
               >
                 {commentCount} comments
               </button>
             </div>
 
-            <p className="text-sm text-slate-700">
-              <span className="font-semibold text-slate-900">
+            <p className="text-sm text-slate-700 dark:text-slate-200">
+              <span className="font-semibold text-slate-900 dark:text-white">
                 {authorName || post.authorName}
               </span>{" "}
               {post.text}
@@ -386,7 +386,7 @@ export function PostDetail() {
                     onClick={() =>
                       navigate(`/search?tag=${encodeURIComponent(tag)}`)
                     }
-                    className="rounded-full bg-purple-50 px-2 py-1 font-semibold text-purple-600 transition-all duration-200 hover:scale-105 hover:bg-purple-100"
+                    className="rounded-full bg-purple-50 px-2 py-1 font-semibold text-purple-600 transition-all duration-200 hover:scale-105 hover:bg-purple-100 dark:bg-purple-500/10 dark:text-purple-300"
                   >
                     #{tag}
                   </button>
@@ -417,11 +417,11 @@ export function PostDetail() {
 
       {confirmOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)]">
-            <h3 className="text-base font-semibold text-slate-900">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)] dark:bg-slate-800">
+            <h3 className="text-base font-semibold text-slate-900 dark:text-white">
               Delete Post
             </h3>
-            <p className="mt-2 text-sm text-slate-600">
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
               Are you sure you want to delete this post? This action cannot be
               undone.
             </p>
@@ -429,7 +429,7 @@ export function PostDetail() {
               <button
                 type="button"
                 onClick={() => setConfirmOpen(false)}
-                className="rounded-full px-4 py-2 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100"
+                className="rounded-full px-4 py-2 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700"
               >
                 Cancel
               </button>

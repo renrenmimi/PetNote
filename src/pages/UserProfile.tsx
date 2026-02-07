@@ -78,29 +78,31 @@ export function UserProfile() {
   const blocked = user ? isBlocked(userId) : false;
 
   return (
-    <div className="min-h-screen bg-white pb-10">
-      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white">
+    <div className="min-h-screen bg-white pb-10 dark:bg-slate-900">
+      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-3">
           <button
             type="button"
             onClick={() => navigate(-1)}
-            className="text-xl text-slate-500 hover:text-slate-700"
+            className="text-xl text-slate-500 hover:text-slate-700 dark:text-slate-300"
             aria-label="Go back"
           >
             ←
           </button>
-          <h1 className="text-base font-semibold text-slate-900">Profile</h1>
+          <h1 className="text-base font-semibold text-slate-900 dark:text-white">
+            Profile
+          </h1>
           <div className="w-6" />
         </div>
       </header>
 
       <main className="mx-auto w-full max-w-md space-y-6 px-4 py-6">
         {blocked ? (
-          <section className="rounded-3xl bg-white p-6 text-center shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100">
-            <h2 className="text-base font-semibold text-slate-900">
+          <section className="rounded-3xl bg-white p-6 text-center shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
               You have blocked this user
             </h2>
-            <p className="mt-2 text-sm text-slate-500">
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-300">
               Unblock to view their profile and posts again.
             </p>
             <button
@@ -109,7 +111,7 @@ export function UserProfile() {
                 if (!user) return;
                 await unblockUser(user.uid, userId);
               }}
-              className="mt-4 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-all duration-200 hover:scale-105 hover:border-purple-300 hover:text-purple-600"
+              className="mt-4 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-all duration-200 hover:scale-105 hover:border-purple-300 hover:text-purple-600 dark:border-slate-700 dark:text-slate-200"
             >
               Unblock
             </button>
@@ -117,19 +119,19 @@ export function UserProfile() {
         ) : null}
 
         {!blocked ? (
-        <section className="rounded-3xl bg-white p-6 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100">
+        <section className="rounded-3xl bg-white p-6 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
           <div className="flex flex-col items-center text-center">
             <div className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 p-1">
               <img
                 src={profile?.avatarUrl || "https://i.pravatar.cc/150?img=12"}
                 alt={profile?.displayName || "User"}
-                className="h-24 w-24 rounded-full border-4 border-white object-cover"
+                className="h-24 w-24 rounded-full border-4 border-white object-cover dark:border-slate-800"
               />
             </div>
-            <h2 className="mt-4 text-xl font-semibold text-slate-900">
+            <h2 className="mt-4 text-xl font-semibold text-slate-900 dark:text-white">
               {profile?.displayName || "PetNote User"}
             </h2>
-            <p className="text-sm text-slate-400">{profile?.email}</p>
+            <p className="text-sm text-slate-400 dark:text-slate-500">{profile?.email}</p>
 
             {user?.uid !== userId ? (
               <div className="mt-4">
@@ -138,7 +140,7 @@ export function UserProfile() {
                   onClick={toggleFollow}
                   className={`rounded-full px-6 py-2 text-sm font-semibold transition-all duration-200 hover:scale-105 ${
                     isFollowing
-                      ? "border border-slate-200 text-slate-500"
+                      ? "border border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-300"
                       : "bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-[0_10px_25px_-15px_rgba(168,85,247,0.7)]"
                   }`}
                 >
@@ -150,10 +152,10 @@ export function UserProfile() {
 
           <div className="mt-6 grid grid-cols-3 gap-4 text-center">
             <div>
-              <p className="text-lg font-semibold text-slate-900">
+              <p className="text-lg font-semibold text-slate-900 dark:text-white">
                 {stats.postCount}
               </p>
-              <p className="text-xs text-slate-400">Posts</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">Posts</p>
             </div>
             <button
               type="button"
@@ -164,10 +166,10 @@ export function UserProfile() {
                 setModalUsers(profiles);
               }}
             >
-              <p className="text-lg font-semibold text-slate-900">
+              <p className="text-lg font-semibold text-slate-900 dark:text-white">
                 {followerCount}
               </p>
-              <p className="text-xs text-slate-400">Followers</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">Followers</p>
             </button>
             <button
               type="button"
@@ -178,24 +180,24 @@ export function UserProfile() {
                 setModalUsers(profiles);
               }}
             >
-              <p className="text-lg font-semibold text-slate-900">
+              <p className="text-lg font-semibold text-slate-900 dark:text-white">
                 {profile?.followingCount ?? 0}
               </p>
-              <p className="text-xs text-slate-400">Following</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">Following</p>
             </button>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-4 text-center">
             <div>
-              <p className="text-lg font-semibold text-slate-900">
+              <p className="text-lg font-semibold text-slate-900 dark:text-white">
                 {stats.totalLikes}
               </p>
-              <p className="text-xs text-slate-400">Likes</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">Likes</p>
             </div>
             <div>
-              <p className="text-lg font-semibold text-slate-900">
+              <p className="text-lg font-semibold text-slate-900 dark:text-white">
                 {joinedDate}
               </p>
-              <p className="text-xs text-slate-400">Joined</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">Joined</p>
             </div>
           </div>
         </section>
@@ -204,7 +206,9 @@ export function UserProfile() {
         {!blocked ? (
           <section className="space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-slate-900">Posts</h3>
+              <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+                Posts
+              </h3>
             </div>
 
             {loading ? (
@@ -212,12 +216,12 @@ export function UserProfile() {
                 {[1, 2, 3].map((item) => (
                   <div
                     key={item}
-                    className="aspect-square animate-pulse rounded-2xl bg-slate-200"
+                    className="aspect-square animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-700"
                   />
                 ))}
               </div>
             ) : posts.length === 0 ? (
-              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500">
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                 No posts yet
               </div>
             ) : (
@@ -234,10 +238,10 @@ export function UserProfile() {
                   const isVideo = first?.type === "video";
                   return (
                     <button
-                      key={post.id}
-                      type="button"
+                    key={post.id}
+                    type="button"
                     onClick={() => navigate(`/post/${post.id}`)}
-                    className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100 transition-all duration-200 hover:scale-[1.02]"
+                    className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100 transition-all duration-200 hover:scale-[1.02] dark:bg-slate-800"
                   >
                       <img
                         src={first?.thumbUrl || first?.url || post.mediaUrl}
@@ -264,9 +268,9 @@ export function UserProfile() {
 
       {modalTitle ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-3xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)]">
+          <div className="w-full max-w-md rounded-3xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)] dark:bg-slate-800">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-slate-900">
+              <h3 className="text-base font-semibold text-slate-900 dark:text-white">
                 {modalTitle}
               </h3>
               <button
@@ -275,14 +279,14 @@ export function UserProfile() {
                   setModalTitle(null);
                   setModalUsers([]);
                 }}
-                className="text-sm text-slate-500 hover:text-slate-700"
+                className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-300"
               >
                 Close
               </button>
             </div>
             <div className="mt-4 space-y-3">
               {modalUsers.length === 0 ? (
-                <p className="text-center text-sm text-slate-500">
+                <p className="text-center text-sm text-slate-500 dark:text-slate-300">
                   No users yet
                 </p>
               ) : (

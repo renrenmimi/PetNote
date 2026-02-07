@@ -18,7 +18,7 @@ export function Navbar() {
 
   return (
     <header
-      className={`sticky top-0 z-20 border-b border-slate-200 bg-white/80 backdrop-blur transition-all duration-200 ${
+      className={`sticky top-0 z-20 border-b border-slate-200 bg-white/80 backdrop-blur transition-all duration-200 dark:border-slate-800 dark:bg-slate-900/80 ${
         scrolled
           ? "shadow-[0_10px_30px_-20px_rgba(15,23,42,0.35)]"
           : "shadow-none"
@@ -27,7 +27,7 @@ export function Navbar() {
       <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-3">
         <Link
           to="/"
-          className="flex items-center gap-2 text-lg font-semibold text-slate-900 transition-transform duration-200 hover:scale-[1.03]"
+          className="flex items-center gap-2 text-lg font-semibold text-slate-900 transition-transform duration-200 hover:scale-[1.03] dark:text-white"
         >
           <PawIcon size={28} />
           PetNote

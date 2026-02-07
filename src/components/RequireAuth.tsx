@@ -11,8 +11,8 @@ export function RequireAuth({ children }: RequireAuthProps) {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-lg text-slate-700">Loading...</p>
+      <div className="flex min-h-screen items-center justify-center bg-white dark:bg-slate-900">
+        <p className="text-lg text-slate-700 dark:text-slate-300">Loading...</p>
       </div>
     );
   }

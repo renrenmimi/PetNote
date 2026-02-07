@@ -36,21 +36,23 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
   }, [limitCount]);
 
   return (
-    <section className="rounded-2xl bg-white px-4 py-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 transition-all duration-200">
-      <h2 className="text-sm font-semibold text-slate-900">⭐ Popular Pets</h2>
+    <section className="rounded-2xl bg-white px-4 py-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 transition-all duration-200 dark:bg-slate-800 dark:ring-slate-700">
+      <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+        ⭐ Popular Pets
+      </h2>
 
       {loading ? (
         <div className="mt-4 flex gap-4 overflow-x-auto pb-1">
           {Array.from({ length: 5 }).map((_, index) => (
             <div key={index} className="flex flex-col items-center gap-2">
-              <div className="h-16 w-16 animate-pulse rounded-full bg-slate-200" />
-              <div className="h-3 w-12 animate-pulse rounded bg-slate-200" />
+              <div className="h-16 w-16 animate-pulse rounded-full bg-slate-200 dark:bg-slate-700" />
+              <div className="h-3 w-12 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
             </div>
           ))}
         </div>
       ) : posts.length === 0 ? (
-        <p className="mt-4 text-sm text-slate-500">
-          Share your pet to get featured!
+        <p className="mt-4 text-sm text-slate-500 dark:text-slate-300">
+          Share your pet to get featured! 🐾
         </p>
       ) : (
         <div className="mt-4 flex gap-4 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -69,10 +71,10 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
                       : post.mediaUrl
                   }
                   alt={post.authorName}
-                  className="h-16 w-16 rounded-full border-2 border-white object-cover"
+                  className="h-16 w-16 rounded-full border-2 border-white object-cover dark:border-slate-800"
                 />
               </span>
-              <span className="text-xs text-slate-600">
+              <span className="text-xs text-slate-600 dark:text-slate-300">
                 {truncate(post.authorName || "Pet")}
               </span>
             </button>

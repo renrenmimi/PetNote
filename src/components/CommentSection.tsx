@@ -179,10 +179,12 @@ export function CommentSection({
   };
 
   return (
-    <section className="mt-3 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
+    <section className="mt-3 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:bg-slate-800 dark:text-slate-200">
       <div className={`space-y-3 ${stickyInput ? "pb-20" : ""}`}>
         {loading ? (
-          <p className="text-xs text-slate-400">Loading comments...</p>
+          <p className="text-xs text-slate-400 dark:text-slate-500">
+            Loading comments...
+          </p>
         ) : null}
         {error ? <p className="text-xs text-red-500">{error}</p> : null}
 
@@ -194,7 +196,7 @@ export function CommentSection({
           return (
             <div
               key={comment.id}
-              className={`border-b border-slate-200 pb-3 pt-2 text-left transition-all duration-200 last:border-b-0 ${
+              className={`border-b border-slate-200 pb-3 pt-2 text-left transition-all duration-200 last:border-b-0 dark:border-slate-700 ${
                 removingId === comment.id ? "opacity-0 -translate-x-2" : ""
               }`}
             >
@@ -207,11 +209,11 @@ export function CommentSection({
                   className="h-6 w-6 rounded-full object-cover"
                 />
                 <div className="flex-1">
-                  <span className="text-xs font-semibold text-slate-900">
+                  <span className="text-xs font-semibold text-slate-900 dark:text-white">
                     {comment.authorName}
                   </span>
 
-                  <p className="mt-1 text-left text-xs text-slate-600">
+                  <p className="mt-1 text-left text-xs text-slate-600 dark:text-slate-300">
                     {comment.replyTo ? (
                       <span className="mr-1 text-purple-600">
                         @{comment.replyTo.authorName}
@@ -220,7 +222,7 @@ export function CommentSection({
                     {comment.text}
                   </p>
 
-                  <div className="mt-2 flex items-center justify-end gap-2 text-[10px] text-slate-400">
+                  <div className="mt-2 flex items-center justify-end gap-2 text-[10px] text-slate-400 dark:text-slate-500">
                     <span>{formatTimeAgo(comment.createdAt)}</span>
                     <span>·</span>
                     <button
@@ -272,9 +274,15 @@ export function CommentSection({
         ) : null}
       </div>
 
-      <div className={stickyInput ? "sticky bottom-0 bg-slate-50 pt-3" : ""}>
+      <div
+        className={
+          stickyInput
+            ? "sticky bottom-0 bg-slate-50 pt-3 dark:bg-slate-800"
+            : ""
+        }
+      >
         {replyTarget ? (
-          <div className="mt-3 flex items-center justify-between rounded-xl bg-white px-3 py-2 text-xs text-slate-500 shadow-sm">
+          <div className="mt-3 flex items-center justify-between rounded-xl bg-white px-3 py-2 text-xs text-slate-500 shadow-sm dark:bg-slate-700 dark:text-slate-300">
             <span>
               Replying to{" "}
               <span className="font-semibold">@{replyTarget.authorName}</span>
@@ -282,7 +290,7 @@ export function CommentSection({
             <button
               type="button"
               onClick={() => setReplyTarget(null)}
-              className="text-slate-400 transition-all duration-200 hover:text-slate-600"
+              className="text-slate-400 transition-all duration-200 hover:text-slate-600 dark:text-slate-300 dark:hover:text-slate-100"
             >
               ✕
             </button>
@@ -300,7 +308,7 @@ export function CommentSection({
               ? "Add a comment..."
               : "Login to comment"
           }
-          className="flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200"
+          className="flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-700 dark:text-white"
           value={text}
           readOnly={!user || isBanned}
           onFocus={() => {
@@ -321,20 +329,20 @@ export function CommentSection({
           type="button"
           onClick={handleSend}
           disabled={!user || !text.trim() || isBanned}
-          className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Send
-        </button>
+        className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Send
+      </button>
         </div>
       </div>
 
       {commentToDelete ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)]">
-            <h3 className="text-base font-semibold text-slate-900">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)] dark:bg-slate-800">
+            <h3 className="text-base font-semibold text-slate-900 dark:text-white">
               Delete Comment
             </h3>
-            <p className="mt-2 text-sm text-slate-600">
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
               {user?.uid === postAuthorId && user?.uid !== commentToDelete.authorId
                 ? "Delete this comment? You are the post owner."
                 : "Delete this comment?"}
@@ -343,7 +351,7 @@ export function CommentSection({
               <button
                 type="button"
                 onClick={() => setCommentToDelete(null)}
-                className="rounded-full px-4 py-2 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100"
+                className="rounded-full px-4 py-2 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700"
               >
                 Cancel
               </button>

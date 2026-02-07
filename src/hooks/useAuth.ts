@@ -81,6 +81,7 @@ export function useAuth(): UseAuthResult {
       email: result.user.email || email,
       followerCount: 0,
       followingCount: 0,
+      onboardingComplete: false,
     });
     return result.user;
   }, []);

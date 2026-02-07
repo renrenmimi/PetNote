@@ -1,0 +1,451 @@
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updatePassword,
+} from "firebase/auth";
+import { useAuth } from "../hooks/useAuth";
+import { useTheme } from "../contexts/ThemeContext";
+import {
+  deleteAccount,
+  getSettings,
+  updateSettings,
+  type UserSettings,
+} from "../services/settings";
+
+const defaultSettings: UserSettings = {
+  likeNotifications: true,
+  commentNotifications: true,
+  followNotifications: true,
+  privateAccount: false,
+};
+
+function Toggle({
+  enabled,
+  onToggle,
+  disabled,
+}: {
+  enabled: boolean;
+  onToggle: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={disabled}
+      className={`relative h-6 w-11 rounded-full transition-all duration-200 ${
+        enabled
+          ? "bg-gradient-to-r from-purple-500 to-pink-500"
+          : "bg-slate-200 dark:bg-slate-700"
+      } ${disabled ? "opacity-60" : ""}`}
+    >
+      <span
+        className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all duration-200 ${
+          enabled ? "left-5" : "left-0.5"
+        }`}
+      />
+    </button>
+  );
+}
+
+export function Settings() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { isDark, mode, setMode } = useTheme();
+  const [settings, setSettings] = useState<UserSettings>(defaultSettings);
+  const [loading, setLoading] = useState(true);
+  const [expandedPassword, setExpandedPassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteInput, setDeleteInput] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let ignore = false;
+    if (!user) return;
+    const load = async () => {
+      setLoading(true);
+      const data = await getSettings(user.uid);
+      if (!ignore) {
+        setSettings(data);
+        setLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      ignore = true;
+    };
+  }, [user]);
+
+  if (!user) return null;
+
+  const handleSettingsUpdate = async (patch: Partial<UserSettings>) => {
+    const next = { ...settings, ...patch };
+    setSettings(next);
+    await updateSettings(user.uid, patch);
+    setSettingsMessage("Saved");
+    setTimeout(() => setSettingsMessage(null), 1200);
+  };
+
+  const handlePasswordSave = async () => {
+    if (!user?.email) return;
+    setPasswordError(null);
+    setPasswordSuccess(null);
+    if (newPassword !== confirmPassword) {
+      setPasswordError("Passwords do not match.");
+      return;
+    }
+    if (!currentPassword || !newPassword) {
+      setPasswordError("Please fill all password fields.");
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      const credential = EmailAuthProvider.credential(
+        user.email,
+        currentPassword
+      );
+      await reauthenticateWithCredential(user, credential);
+      await updatePassword(user, newPassword);
+      setPasswordSuccess("Password updated");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to update password";
+      setPasswordError(message);
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!user) return;
+    if (deleteInput !== "DELETE") {
+      setDeleteError("Please type DELETE to confirm.");
+      return;
+    }
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteAccount(user.uid);
+      navigate("/login", { replace: true });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to delete account.";
+      setDeleteError(message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const systemEnabled = mode === "system";
+
+  return (
+    <div className="min-h-screen bg-white pb-16 dark:bg-slate-900">
+      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+        <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-3">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="text-xl text-slate-500 hover:text-slate-700 dark:text-slate-300"
+            aria-label="Go back"
+          >
+            ←
+          </button>
+          <h1 className="text-base font-semibold text-slate-900 dark:text-white">
+            Settings
+          </h1>
+          <div className="w-6" />
+        </div>
+      </header>
+
+      <main className="mx-auto w-full max-w-md space-y-6 px-4 py-6">
+        {loading ? (
+          <div className="rounded-2xl bg-slate-50 p-6 text-center text-sm text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+            Loading settings...
+          </div>
+        ) : null}
+
+        <section className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+            Account
+          </p>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+            <button
+              type="button"
+              onClick={() => setExpandedPassword((prev) => !prev)}
+              className="flex w-full items-center justify-between text-sm font-semibold text-slate-900 dark:text-white"
+            >
+              Change Password
+              <span className="text-slate-400 dark:text-slate-500">
+                {expandedPassword ? "−" : "+"}
+              </span>
+            </button>
+            {expandedPassword ? (
+              <div className="mt-4 space-y-3">
+                <input
+                  type="password"
+                  placeholder="Current password"
+                  value={currentPassword}
+                  onChange={(event) => setCurrentPassword(event.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-700 dark:text-white"
+                />
+                <input
+                  type="password"
+                  placeholder="New password"
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-700 dark:text-white"
+                />
+                <input
+                  type="password"
+                  placeholder="Confirm new password"
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-700 dark:text-white"
+                />
+                {passwordError ? (
+                  <p className="text-xs text-red-500">{passwordError}</p>
+                ) : null}
+                {passwordSuccess ? (
+                  <p className="text-xs text-emerald-500">{passwordSuccess}</p>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={handlePasswordSave}
+                  disabled={savingPassword}
+                  className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {savingPassword ? "Saving..." : "Save"}
+                </button>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+            Email
+            <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+              {user.email}
+            </p>
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+            Appearance
+          </p>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                  Dark Mode
+                </p>
+                <p className="text-xs text-slate-400 dark:text-slate-500">
+                  Toggle dark theme
+                </p>
+              </div>
+              <Toggle
+                enabled={isDark}
+                onToggle={() => {
+                  if (systemEnabled) {
+                    setMode(isDark ? "light" : "dark");
+                  } else {
+                    setMode(isDark ? "light" : "dark");
+                  }
+                }}
+              />
+            </div>
+            <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-3 text-sm dark:border-slate-700">
+              <div>
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                  Use System Setting
+                </p>
+                <p className="text-xs text-slate-400 dark:text-slate-500">
+                  Follow your device theme
+                </p>
+              </div>
+              <Toggle
+                enabled={systemEnabled}
+                onToggle={() => {
+                  if (systemEnabled) {
+                    setMode(isDark ? "dark" : "light");
+                  } else {
+                    setMode("system");
+                  }
+                }}
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+            Notifications
+          </p>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+            <div className="flex items-center justify-between py-2">
+              <span className="text-sm text-slate-700 dark:text-slate-200">
+                Like Notifications
+              </span>
+              <Toggle
+                enabled={settings.likeNotifications}
+                onToggle={() =>
+                  handleSettingsUpdate({
+                    likeNotifications: !settings.likeNotifications,
+                  })
+                }
+              />
+            </div>
+            <div className="flex items-center justify-between border-t border-slate-200 py-2 dark:border-slate-700">
+              <span className="text-sm text-slate-700 dark:text-slate-200">
+                Comment Notifications
+              </span>
+              <Toggle
+                enabled={settings.commentNotifications}
+                onToggle={() =>
+                  handleSettingsUpdate({
+                    commentNotifications: !settings.commentNotifications,
+                  })
+                }
+              />
+            </div>
+            <div className="flex items-center justify-between border-t border-slate-200 py-2 dark:border-slate-700">
+              <span className="text-sm text-slate-700 dark:text-slate-200">
+                Follow Notifications
+              </span>
+              <Toggle
+                enabled={settings.followNotifications}
+                onToggle={() =>
+                  handleSettingsUpdate({
+                    followNotifications: !settings.followNotifications,
+                  })
+                }
+              />
+            </div>
+            {settingsMessage ? (
+              <p className="mt-2 text-xs text-emerald-500">
+                {settingsMessage}
+              </p>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+            Privacy
+          </p>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                  Private Account
+                </p>
+                <p className="text-xs text-slate-400 dark:text-slate-500">
+                  Followers require approval (UI only)
+                </p>
+              </div>
+              <Toggle
+                enabled={settings.privateAccount}
+                onToggle={() =>
+                  handleSettingsUpdate({
+                    privateAccount: !settings.privateAccount,
+                  })
+                }
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate("/blocked-users")}
+              className="mt-4 w-full rounded-xl border border-slate-200 px-3 py-2 text-left text-sm text-slate-700 transition-all duration-200 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700"
+            >
+              Blocked Users
+            </button>
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-red-400">
+            Danger Zone
+          </p>
+          <div className="rounded-2xl border border-red-200 bg-white p-4 dark:border-red-500/40 dark:bg-slate-800">
+            <button
+              type="button"
+              onClick={() => setDeleteOpen(true)}
+              className="text-sm font-semibold text-red-500"
+            >
+              Delete Account
+            </button>
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+            About
+          </p>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+            <p>Version 1.0.0</p>
+            <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+              Terms of Service
+            </p>
+            <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+              Privacy Policy
+            </p>
+            <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+              Made with ❤️ and 🐾
+            </p>
+          </div>
+        </section>
+      </main>
+
+      {deleteOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)] dark:bg-slate-800">
+            <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+              Delete Account
+            </h3>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+              Type DELETE to confirm. This action cannot be undone.
+            </p>
+            <input
+              type="text"
+              value={deleteInput}
+              onChange={(event) => setDeleteInput(event.target.value)}
+              className="mt-4 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-red-400 focus:ring-2 focus:ring-red-200 dark:border-slate-700 dark:bg-slate-700 dark:text-white"
+            />
+            {deleteError ? (
+              <p className="mt-2 text-xs text-red-500">{deleteError}</p>
+            ) : null}
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteOpen(false)}
+                className="rounded-full px-4 py-2 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={deleting}
+                className="rounded-full bg-red-500 px-4 py-2 text-sm font-semibold text-white transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {deleting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}

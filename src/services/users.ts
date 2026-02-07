@@ -23,6 +23,7 @@ export type UserProfile = {
   followingCount?: number;
   role?: "admin" | "user";
   banned?: boolean;
+  onboardingComplete?: boolean;
 };
 
 export async function getUserProfile(
@@ -95,4 +96,14 @@ export async function getUsersByIds(
     })
   );
   return results.filter(Boolean) as UserProfile[];
+}
+
+export async function completeOnboarding(userId: string): Promise<void> {
+  const userRef = doc(db, "users", userId);
+  await setDoc(userRef, { onboardingComplete: true }, { merge: true });
+}
+
+export async function checkOnboarding(userId: string): Promise<boolean> {
+  const profile = await getUserProfile(userId);
+  return !!profile?.onboardingComplete;
 }
