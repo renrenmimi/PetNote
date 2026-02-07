@@ -38,6 +38,10 @@ export function MediaCarousel({
   const [dragX, setDragX] = useState(0);
   const [dragging, setDragging] = useState(false);
   const startXRef = useRef(0);
+  const startYRef = useRef(0);
+  const lastTapRef = useRef<{ time: number; x: number; y: number } | null>(
+    null
+  );
   const videoRefs = useRef<Array<HTMLVideoElement | null>>([]);
   const [videoPlaying, setVideoPlaying] = useState<Record<number, boolean>>({});
   const [durations, setDurations] = useState<Record<number, number>>({});
@@ -60,9 +64,12 @@ export function MediaCarousel({
   }, [index]);
 
   const handleTouchStart = (event: TouchEvent<HTMLDivElement>) => {
-    if (!hasMultiple) return;
-    startXRef.current = event.touches[0].clientX;
-    setDragging(true);
+    const touch = event.touches[0];
+    startXRef.current = touch.clientX;
+    startYRef.current = touch.clientY;
+    if (hasMultiple) {
+      setDragging(true);
+    }
   };
 
   const handleTouchMove = (event: TouchEvent<HTMLDivElement>) => {
@@ -71,13 +78,35 @@ export function MediaCarousel({
     setDragX(currentX - startXRef.current);
   };
 
-  const handleTouchEnd = () => {
-    if (!dragging) return;
-    if (dragX > 50 && index > 0) {
-      setIndex((prev) => prev - 1);
-    } else if (dragX < -50 && index < items.length - 1) {
-      setIndex((prev) => prev + 1);
+  const handleTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
+    const touch = event.changedTouches[0];
+    const deltaX = touch.clientX - startXRef.current;
+    const deltaY = touch.clientY - startYRef.current;
+    const moved = Math.hypot(deltaX, deltaY);
+
+    if (dragging) {
+      if (dragX > 50 && index > 0) {
+        setIndex((prev) => prev - 1);
+      } else if (dragX < -50 && index < items.length - 1) {
+        setIndex((prev) => prev + 1);
+      }
     }
+
+    if (moved < 10 && onDoubleTap) {
+      const now = Date.now();
+      const lastTap = lastTapRef.current;
+      if (
+        lastTap &&
+        now - lastTap.time < 300 &&
+        Math.hypot(touch.clientX - lastTap.x, touch.clientY - lastTap.y) < 30
+      ) {
+        onDoubleTap();
+        lastTapRef.current = null;
+      } else {
+        lastTapRef.current = { time: now, x: touch.clientX, y: touch.clientY };
+      }
+    }
+
     setDragX(0);
     setDragging(false);
   };
@@ -129,7 +158,7 @@ export function MediaCarousel({
             <div
               key={`${item.url}-${idx}`}
               className="flex w-full flex-shrink-0 items-center justify-center bg-black/5 dark:bg-white/5"
-              onDoubleClick={isVideo ? undefined : onDoubleTap}
+              onDoubleClick={onDoubleTap}
             >
               {isVideo ? (
                 <div className="relative w-full">

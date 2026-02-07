@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import PawIcon from "../components/PawIcon";
+import { useToast } from "../contexts/ToastContext";
 
 function MailIcon() {
   return (
@@ -42,15 +43,15 @@ function LockIcon() {
 export function Login() {
   const navigate = useNavigate();
   const { signIn } = useAuth();
+  const { showToast } = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const isDisabled = loading || password.length < 8 || !email.trim();
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setError("");
     setLoading(true);
 
     try {
@@ -59,7 +60,7 @@ export function Login() {
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Login failed. Please try again.";
-      setError(message);
+      showToast(message, "error");
     } finally {
       setLoading(false);
     }
@@ -124,15 +125,9 @@ export function Login() {
             </div>
           </label>
 
-          {error ? (
-            <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-500/10 dark:text-red-300">
-              {error}
-            </p>
-          ) : null}
-
           <button
             type="submit"
-            disabled={loading}
+            disabled={isDisabled}
             className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
           >
             {loading ? "Signing in..." : "Sign In"}

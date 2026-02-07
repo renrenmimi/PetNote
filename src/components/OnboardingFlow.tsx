@@ -5,6 +5,7 @@ import { uploadImage } from "../services/cloudinary";
 import { createPet } from "../services/pets";
 import { completeOnboarding } from "../services/users";
 import { PET_SPECIES, type PetSpecies } from "../utils/petHelpers";
+import { useToast } from "../contexts/ToastContext";
 
 type OnboardingFlowProps = {
   userId: string;
@@ -26,8 +27,8 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [savingPet, setSavingPet] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const touchStartRef = useRef(0);
+  const { showToast } = useToast();
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -66,10 +67,9 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
 
   const handleAddPet = async () => {
     if (!petName.trim() || !species) {
-      setError("Please add a pet name and species.");
+      showToast("Please add a pet name and species.", "warning");
       return;
     }
-    setError(null);
     setSavingPet(true);
     try {
       let avatarUrl = "";
@@ -89,7 +89,7 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to add pet.";
-      setError(message);
+      showToast(message, "error");
       setSavingPet(false);
     }
   };
@@ -186,7 +186,6 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
                 ) : null}
               </div>
             </div>
-            {error ? <p className="text-xs text-red-500">{error}</p> : null}
             <div className="flex items-center justify-between">
                 <button
                   type="button"

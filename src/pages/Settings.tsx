@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   EmailAuthProvider,
@@ -7,6 +7,9 @@ import {
 } from "firebase/auth";
 import { useAuth } from "../hooks/useAuth";
 import { useTheme } from "../contexts/ThemeContext";
+import { useToast } from "../contexts/ToastContext";
+import { PasswordStrengthIndicator } from "../components/PasswordStrengthIndicator";
+import { validatePassword } from "../utils/passwordValidator";
 import {
   deleteAccount,
   getSettings,
@@ -54,20 +57,23 @@ export function Settings() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { isDark, mode, setMode } = useTheme();
+  const { showToast } = useToast();
   const [settings, setSettings] = useState<UserSettings>(defaultSettings);
   const [loading, setLoading] = useState(true);
   const [expandedPassword, setExpandedPassword] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [passwordError, setPasswordError] = useState<string | null>(null);
-  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
   const [savingPassword, setSavingPassword] = useState(false);
-  const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteInput, setDeleteInput] = useState("");
   const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const passwordValidation = useMemo(
+    () => validatePassword(newPassword),
+    [newPassword]
+  );
+  const passwordsMatch = newPassword === confirmPassword;
 
   useEffect(() => {
     let ignore = false;
@@ -92,20 +98,21 @@ export function Settings() {
     const next = { ...settings, ...patch };
     setSettings(next);
     await updateSettings(user.uid, patch);
-    setSettingsMessage("Saved");
-    setTimeout(() => setSettingsMessage(null), 1200);
+    showToast("Settings saved", "success");
   };
 
   const handlePasswordSave = async () => {
     if (!user?.email) return;
-    setPasswordError(null);
-    setPasswordSuccess(null);
     if (newPassword !== confirmPassword) {
-      setPasswordError("Passwords do not match.");
+      showToast("Passwords don't match", "error");
       return;
     }
     if (!currentPassword || !newPassword) {
-      setPasswordError("Please fill all password fields.");
+      showToast("Please fill all password fields.", "error");
+      return;
+    }
+    if (!passwordValidation.isValid) {
+      showToast("Password does not meet requirements.", "error");
       return;
     }
     setSavingPassword(true);
@@ -116,14 +123,14 @@ export function Settings() {
       );
       await reauthenticateWithCredential(user, credential);
       await updatePassword(user, newPassword);
-      setPasswordSuccess("Password updated");
+      showToast("Password updated", "success");
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to update password";
-      setPasswordError(message);
+      showToast(message, "error");
     } finally {
       setSavingPassword(false);
     }
@@ -132,18 +139,17 @@ export function Settings() {
   const handleDeleteAccount = async () => {
     if (!user) return;
     if (deleteInput !== "DELETE") {
-      setDeleteError("Please type DELETE to confirm.");
+      showToast("Please type DELETE to confirm.", "warning");
       return;
     }
     setDeleting(true);
-    setDeleteError(null);
     try {
       await deleteAccount(user.uid);
       navigate("/login", { replace: true });
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to delete account.";
-      setDeleteError(message);
+      showToast(message, "error");
     } finally {
       setDeleting(false);
     }
@@ -200,6 +206,7 @@ export function Settings() {
                   value={currentPassword}
                   onChange={(event) => setCurrentPassword(event.target.value)}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-700 dark:text-white"
+                  maxLength={64}
                 />
                 <input
                   type="password"
@@ -207,24 +214,27 @@ export function Settings() {
                   value={newPassword}
                   onChange={(event) => setNewPassword(event.target.value)}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-700 dark:text-white"
+                  maxLength={64}
                 />
+                <PasswordStrengthIndicator password={newPassword} />
                 <input
                   type="password"
                   placeholder="Confirm new password"
                   value={confirmPassword}
                   onChange={(event) => setConfirmPassword(event.target.value)}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-700 dark:text-white"
+                  maxLength={64}
                 />
-                {passwordError ? (
-                  <p className="text-xs text-red-500">{passwordError}</p>
-                ) : null}
-                {passwordSuccess ? (
-                  <p className="text-xs text-emerald-500">{passwordSuccess}</p>
-                ) : null}
                 <button
                   type="button"
                   onClick={handlePasswordSave}
-                  disabled={savingPassword}
+                  disabled={
+                    savingPassword ||
+                    !currentPassword ||
+                    !newPassword ||
+                    !passwordValidation.isValid ||
+                    !passwordsMatch
+                  }
                   className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {savingPassword ? "Saving..." : "Save"}
@@ -333,11 +343,6 @@ export function Settings() {
                 }
               />
             </div>
-            {settingsMessage ? (
-              <p className="mt-2 text-xs text-emerald-500">
-                {settingsMessage}
-              </p>
-            ) : null}
           </div>
         </section>
 
@@ -423,9 +428,6 @@ export function Settings() {
               onChange={(event) => setDeleteInput(event.target.value)}
               className="mt-4 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-red-400 focus:ring-2 focus:ring-red-200 dark:border-slate-700 dark:bg-slate-700 dark:text-white"
             />
-            {deleteError ? (
-              <p className="mt-2 text-xs text-red-500">{deleteError}</p>
-            ) : null}
             <div className="mt-4 flex items-center justify-end gap-2">
               <button
                 type="button"

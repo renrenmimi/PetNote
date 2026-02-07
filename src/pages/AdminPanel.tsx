@@ -9,30 +9,13 @@ import {
 import { type ReportItem } from "../services/report";
 import { getPostById } from "../services/posts";
 import { getUserProfile } from "../services/users";
+import { timeAgo } from "../utils/timeAgo";
 
 type ReportPreview = {
   imageUrl?: string;
   text?: string;
   userName?: string;
   userAvatar?: string;
-};
-
-const formatTime = (value: unknown) => {
-  const date =
-    value instanceof Date
-      ? value
-      : typeof value === "object" &&
-        value !== null &&
-        "toDate" in value &&
-        typeof (value as { toDate: () => Date }).toDate === "function"
-      ? (value as { toDate: () => Date }).toDate()
-      : new Date();
-
-  return date.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
 };
 
 export function AdminPanel() {
@@ -210,7 +193,7 @@ export function AdminPanel() {
                       ) : null}
                     </div>
                     <span className="text-xs text-slate-400 dark:text-slate-500">
-                      {formatTime(report.createdAt)}
+                      {timeAgo(report.createdAt as Date)}
                     </span>
                   </div>
 

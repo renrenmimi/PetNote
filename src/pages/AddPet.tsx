@@ -9,9 +9,16 @@ import {
   updatePet,
   type Pet,
 } from "../services/pets";
-import { getSpeciesMeta, PET_SPECIES, type PetGender, type PetSpecies } from "../utils/petHelpers";
+import {
+  getSpeciesMeta,
+  PET_SPECIES,
+  type PetGender,
+  type PetSpecies,
+} from "../utils/petHelpers";
+import { useToast } from "../contexts/ToastContext";
 
 const MAX_BIO = 150;
+const MAX_NAME = 20;
 
 export function AddPet() {
   const navigate = useNavigate();
@@ -27,11 +34,24 @@ export function AddPet() {
   const [avatarUrl, setAvatarUrl] = useState("");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const { showToast } = useToast();
 
   const isEdit = Boolean(petId);
   const remaining = useMemo(() => MAX_BIO - bio.length, [bio.length]);
+  const bioCounterTone =
+    remaining <= 0
+      ? "text-red-500"
+      : remaining <= Math.ceil(MAX_BIO * 0.2)
+      ? "text-amber-500"
+      : "text-slate-400 dark:text-slate-500";
+  const nameRemaining = useMemo(() => MAX_NAME - name.length, [name.length]);
+  const nameCounterTone =
+    nameRemaining <= 0
+      ? "text-red-500"
+      : nameRemaining <= Math.ceil(MAX_NAME * 0.2)
+      ? "text-amber-500"
+      : "text-slate-400 dark:text-slate-500";
   const speciesMeta = getSpeciesMeta(species as PetSpecies);
 
   useEffect(() => {
@@ -89,20 +109,19 @@ export function AddPet() {
   const handleSave = async () => {
     if (!user || saving) return;
     if (!name.trim() || name.trim().length < 2) {
-      setError("Pet name must be at least 2 characters.");
+      showToast("Pet name must be at least 2 characters.", "error");
       return;
     }
     if (!species) {
-      setError("Please select a species.");
+      showToast("Please select a species.", "error");
       return;
     }
     if (name.trim().length > 20) {
-      setError("Pet name must be 2-20 characters.");
+      showToast("Pet name must be 2-20 characters.", "error");
       return;
     }
 
     setSaving(true);
-    setError(null);
 
     try {
       let finalAvatarUrl = avatarUrl;
@@ -135,7 +154,7 @@ export function AddPet() {
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to save pet.";
-      setError(message);
+      showToast(message, "error");
     } finally {
       setSaving(false);
     }
@@ -210,13 +229,18 @@ export function AddPet() {
 
         <section className="space-y-4">
           <div>
-            <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-              Pet Name
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                Pet Name
+              </label>
+              <span className={`text-xs ${nameCounterTone}`}>
+                {name.length}/{MAX_NAME}
+              </span>
+            </div>
             <input
               type="text"
               value={name}
-              maxLength={20}
+              maxLength={MAX_NAME}
               placeholder="Your pet's name"
               onChange={(event) => setName(event.target.value)}
               className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
@@ -295,8 +319,8 @@ export function AddPet() {
               <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
                 Bio
               </label>
-              <span className="text-xs text-slate-400 dark:text-slate-500">
-                {remaining} left
+              <span className={`text-xs ${bioCounterTone}`}>
+                {bio.length}/{MAX_BIO}
               </span>
             </div>
             <textarea
@@ -309,12 +333,6 @@ export function AddPet() {
             />
           </div>
         </section>
-
-        {error ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300">
-            {error}
-          </div>
-        ) : null}
       </main>
     </div>
   );

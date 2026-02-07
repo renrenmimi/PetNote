@@ -7,12 +7,14 @@ import { getPetsByOwner, type Pet } from "../services/pets";
 import { getUserProfile, type UserProfile } from "../services/users";
 import { compressImage } from "../utils/imageCompressor";
 import { getSpeciesMeta } from "../utils/petHelpers";
+import { useToast } from "../contexts/ToastContext";
 
-const MAX_CHARS = 500;
+const MAX_CHARS = 2000;
 
 export function Create() {
   const navigate = useNavigate();
   const { user, isBanned } = useAuth();
+  const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [files, setFiles] = useState<
     Array<{
@@ -30,25 +32,21 @@ export function Create() {
   const [tagInput, setTagInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [converting, setConverting] = useState(false);
-  const [compressing, setCompressing] = useState(false);
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [duplicateToast, setDuplicateToast] = useState<string | null>(null);
   const [duplicateSkipped, setDuplicateSkipped] = useState(0);
-  const [compressToast, setCompressToast] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const duplicateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const compressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const filesRef = useRef(files);
   const [pets, setPets] = useState<Pet[]>([]);
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
 
-  const remaining = useMemo(
-    () => Math.max(0, MAX_CHARS - caption.length),
-    [caption]
-  );
+  const remaining = useMemo(() => MAX_CHARS - caption.length, [caption]);
+  const counterTone =
+    remaining <= 0
+      ? "text-red-500"
+      : remaining <= Math.ceil(MAX_CHARS * 0.2)
+      ? "text-amber-500"
+      : "text-slate-400 dark:text-slate-500";
 
   useEffect(() => {
     let ignore = false;
@@ -95,11 +93,10 @@ export function Create() {
 
   const processFiles = async (incoming: File[]) => {
     if (incoming.length === 0) return;
-    setError(null);
     const currentFiles = filesRef.current;
     const availableSlots = 9 - currentFiles.length;
     if (incoming.length > availableSlots) {
-      setError("Maximum 9 files allowed");
+      showToast("Maximum 9 files allowed", "warning");
     }
     const slice = incoming.slice(0, availableSlots);
     const nextItems: typeof files = [];
@@ -108,13 +105,6 @@ export function Create() {
     let skippedDuplicates = 0;
     let lastDuplicateName = "";
     let startedCompressing = false;
-
-    const beginCompressing = () => {
-      if (startedCompressing) return;
-      startedCompressing = true;
-      setCompressing(true);
-      setCompressToast("Compressing images...");
-    };
 
     for (const rawFile of slice) {
       const rawId = getFileId(rawFile);
@@ -135,7 +125,7 @@ export function Create() {
       const isVideo = rawFile.type.startsWith("video/");
 
       if (!isImage && !isVideo) {
-        setError("Unsupported file format");
+        showToast("Unsupported file format", "warning");
         continue;
       }
 
@@ -161,7 +151,7 @@ export function Create() {
             { type: "image/jpeg", lastModified: rawFile.lastModified }
           );
         } catch {
-          setError("Failed to convert image.");
+          showToast("Failed to convert image.", "error");
           continue;
         } finally {
           setConverting(false);
@@ -170,7 +160,10 @@ export function Create() {
 
       if (file.type.startsWith("image/") && file.type !== "image/gif") {
         try {
-          beginCompressing();
+          if (!startedCompressing) {
+            startedCompressing = true;
+            showToast("Compressing images...", "info");
+          }
           const originalSize = file.size;
           const compressed = await compressImage(file, {
             maxWidth: 1920,
@@ -185,30 +178,36 @@ export function Create() {
           }
           file = compressed;
         } catch {
-          setError("Failed to compress image.");
+          showToast("Failed to compress image.", "error");
         }
       }
 
       if (file.type.startsWith("image/")) {
         if (file.size > 10 * 1024 * 1024) {
-          setError("File too large. Images: max 10MB, Videos: max 50MB");
+          showToast(
+            "File too large. Images: max 10MB, Videos: max 50MB",
+            "warning"
+          );
           continue;
         }
       }
 
       if (file.type.startsWith("video/")) {
         if (file.size > 50 * 1024 * 1024) {
-          setError("File too large. Images: max 10MB, Videos: max 50MB");
+          showToast(
+            "File too large. Images: max 10MB, Videos: max 50MB",
+            "warning"
+          );
           continue;
         }
         try {
           duration = await validateVideoDuration(file);
           if (duration > 60) {
-            setError("Video must be under 60 seconds");
+            showToast("Video must be under 60 seconds", "warning");
             continue;
           }
         } catch {
-          setError("Video must be under 60 seconds");
+          showToast("Video must be under 60 seconds", "warning");
           continue;
         }
       }
@@ -231,28 +230,14 @@ export function Create() {
 
     if (skippedDuplicates > 0) {
       setDuplicateSkipped(skippedDuplicates);
-      setDuplicateToast(
-        `Duplicate file skipped: ${lastDuplicateName || "file"}`
+      showToast(
+        `Duplicate file skipped: ${lastDuplicateName || "file"}`,
+        "warning"
       );
-      if (duplicateTimerRef.current) {
-        clearTimeout(duplicateTimerRef.current);
-      }
-      duplicateTimerRef.current = setTimeout(() => {
-        setDuplicateToast(null);
-      }, 2000);
     } else {
       setDuplicateSkipped(0);
     }
 
-    if (startedCompressing) {
-      setCompressing(false);
-      if (compressTimerRef.current) {
-        clearTimeout(compressTimerRef.current);
-      }
-      compressTimerRef.current = setTimeout(() => {
-        setCompressToast(null);
-      }, 800);
-    }
   };
 
   const handleSelectFile = async (selected: File[] | FileList | null) => {
@@ -283,8 +268,9 @@ export function Create() {
     setTags((prev) => {
       const next = [...prev];
       normalized.forEach((tag) => {
-        if (!next.includes(tag)) {
-          next.push(tag);
+        const trimmed = tag.slice(0, 30);
+        if (trimmed && !next.includes(trimmed)) {
+          next.push(trimmed);
         }
       });
       return next;
@@ -302,12 +288,10 @@ export function Create() {
   const handleShare = async () => {
     if (files.length === 0 || !user || loading) return;
     if (isBanned) {
-      setError("Your account has been suspended.");
+      showToast("Your account has been suspended.", "error");
       return;
     }
     setLoading(true);
-    setError(null);
-    setSuccess(null);
     setUploadingIndex(1);
 
     try {
@@ -338,14 +322,14 @@ export function Create() {
       await createPost({
         ...postPayload,
       });
-      setSuccess("Posted successfully!");
+      showToast("Posted successfully!", "success");
       setTimeout(() => {
         navigate("/", { replace: true });
       }, 600);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to post. Try again.";
-      setError(message);
+      showToast(message, "error");
     } finally {
       setLoading(false);
       setUploadingIndex(null);
@@ -367,12 +351,6 @@ export function Create() {
       filesRef.current.forEach((item) =>
         URL.revokeObjectURL(item.previewUrl)
       );
-      if (duplicateTimerRef.current) {
-        clearTimeout(duplicateTimerRef.current);
-      }
-      if (compressTimerRef.current) {
-        clearTimeout(compressTimerRef.current);
-      }
     };
   }, []);
 
@@ -563,12 +541,8 @@ export function Create() {
             <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
               Caption
             </label>
-            <span
-              className={`text-xs ${
-                remaining === 0 ? "text-red-500" : "text-slate-400 dark:text-slate-500"
-              }`}
-            >
-              {remaining} left
+            <span className={`text-xs ${counterTone}`}>
+              {caption.length}/{MAX_CHARS}
             </span>
           </div>
           <textarea
@@ -681,34 +655,7 @@ export function Create() {
           ) : null}
         </section>
 
-        {success ? (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-600 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300">
-            {success}
-          </div>
-        ) : null}
-
-        {error ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300">
-            {error}
-          </div>
-        ) : null}
       </main>
-
-      {duplicateToast ? (
-        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
-          <div className="rounded-full bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-lg">
-            {duplicateToast}
-          </div>
-        </div>
-      ) : null}
-
-      {compressToast || compressing ? (
-        <div className="fixed bottom-16 left-1/2 z-50 -translate-x-1/2">
-          <div className="rounded-full bg-slate-900/90 px-4 py-2 text-xs font-semibold text-white shadow-lg">
-            {compressToast || "Compressing images..."}
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

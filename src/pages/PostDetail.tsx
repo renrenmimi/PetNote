@@ -3,39 +3,14 @@ import { useNavigate, useParams } from "react-router-dom";
 import { CommentSection } from "../components/CommentSection";
 import { MediaCarousel } from "../components/MediaCarousel";
 import { ShareMenu } from "../components/ShareMenu";
+import { SkeletonPostCard } from "../components/SkeletonPostCard";
 import { useAuth } from "../hooks/useAuth";
 import { useBookmark } from "../hooks/useBookmark";
 import { useFollow } from "../hooks/useFollow";
 import { useLike } from "../hooks/useLike";
 import { deletePost, getPostById, type Post } from "../services/posts";
 import { getUserProfile } from "../services/users";
-
-const formatTimeAgo = (value: unknown) => {
-  const date =
-    value instanceof Date
-      ? value
-      : typeof value === "object" &&
-        value !== null &&
-        "toDate" in value &&
-        typeof (value as { toDate: () => Date }).toDate === "function"
-      ? (value as { toDate: () => Date }).toDate()
-      : new Date();
-
-  const diff = Date.now() - date.getTime();
-  const minutes = Math.floor(diff / 60000);
-  if (minutes <= 0) return "Just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return "Yesterday";
-  if (days < 7) return `${days}d ago`;
-  return date.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-};
+import { timeAgo } from "../utils/timeAgo";
 
 export function PostDetail() {
   const navigate = useNavigate();
@@ -99,8 +74,8 @@ export function PostDetail() {
     };
   }, [post?.authorId, post?.authorAvatar, post?.authorName]);
 
-  const timeAgo = useMemo(
-    () => formatTimeAgo(post?.createdAt),
+  const timeLabel = useMemo(
+    () => (post?.createdAt ? timeAgo(post.createdAt as Date) : ""),
     [post?.createdAt]
   );
   const mediaItems =
@@ -252,11 +227,7 @@ export function PostDetail() {
       </header>
 
       <main className="mx-auto w-full max-w-md space-y-4 px-4 py-4 pb-24">
-        {loading ? (
-          <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-500">
-            Loading post...
-          </div>
-        ) : null}
+        {loading ? <SkeletonPostCard /> : null}
         {!loading && !post ? (
           <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-300">
             Post not found.
@@ -290,7 +261,9 @@ export function PostDetail() {
                       </button>
                     ) : null}
                   </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">{timeAgo}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {timeLabel}
+                  </p>
                 </div>
               </div>
               {user && post.authorId !== user.uid ? (
