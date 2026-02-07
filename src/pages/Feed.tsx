@@ -5,11 +5,15 @@ import { Navbar } from "../components/Navbar";
 import { OnboardingFlow } from "../components/OnboardingFlow";
 import { PetSpotlight } from "../components/PetSpotlight";
 import { PostCard } from "../components/PostCard";
+import { EmptyState } from "../components/EmptyState";
+import { SkeletonPostCard } from "../components/SkeletonPostCard";
+import { ScrollToTop } from "../components/ScrollToTop";
 import { usePosts } from "../hooks/usePosts";
 import { useAuth } from "../hooks/useAuth";
 import { useBlockedUsers } from "../hooks/useBlockedUsers";
 import { getFollowing } from "../services/follow";
 import { type Post } from "../services/posts";
+import { useToast } from "../contexts/ToastContext";
 
 const mockPosts: Post[] = [
   {
@@ -56,32 +60,6 @@ const mockPosts: Post[] = [
 ];
 
 
-function FeedSkeleton() {
-  return (
-    <div className="space-y-4">
-      {[1, 2, 3].map((item) => (
-        <div
-          key={item}
-          className="animate-pulse overflow-hidden rounded-2xl bg-white p-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700"
-        >
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-slate-200 dark:bg-slate-700" />
-            <div className="space-y-2">
-              <div className="h-3 w-24 rounded bg-slate-200 dark:bg-slate-700" />
-              <div className="h-3 w-16 rounded bg-slate-200 dark:bg-slate-700" />
-            </div>
-          </div>
-          <div className="mt-4 h-48 w-full rounded-xl bg-slate-200 dark:bg-slate-700" />
-          <div className="mt-4 space-y-2">
-            <div className="h-3 w-32 rounded bg-slate-200 dark:bg-slate-700" />
-            <div className="h-3 w-2/3 rounded bg-slate-200 dark:bg-slate-700" />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export function Feed() {
   const navigate = useNavigate();
   const { user, profile, profileLoading } = useAuth();
@@ -94,16 +72,25 @@ export function Feed() {
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const startYRef = useRef(0);
+  const lastErrorRef = useRef<string | null>(null);
   const [pullDistance, setPullDistance] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [followingCount, setFollowingCount] = useState(0);
   const { blockedUserIds } = useBlockedUsers(user?.uid ?? null);
+  const { showToast } = useToast();
 
   useEffect(() => {
     if (!useMock) {
       setLocalPosts(posts);
     }
   }, [posts, useMock]);
+
+  useEffect(() => {
+    if (!error) return;
+    if (lastErrorRef.current === error) return;
+    lastErrorRef.current = error;
+    showToast(error, "error");
+  }, [error, showToast]);
 
   useEffect(() => {
     void refresh();
@@ -242,30 +229,31 @@ export function Feed() {
 
         <PetSpotlight />
 
-        {loading && !useMock ? <FeedSkeleton /> : null}
-
-        {!loading && error ? (
-          <div className="rounded-2xl bg-white p-6 text-center text-sm text-red-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800">
-            {error}
+        {loading && !useMock ? (
+          <div className="space-y-4">
+            {[1, 2, 3].map((item) => (
+              <SkeletonPostCard key={item} />
+            ))}
           </div>
         ) : null}
 
         {!loading && filteredPosts.length === 0 ? (
           activeTab === "following" && user && followingCount === 0 ? (
-            <div className="rounded-2xl bg-white p-8 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-300">
-              <p>Follow some pet lovers to see their posts here! 🐾</p>
-              <button
-                type="button"
-                onClick={() => navigate("/search")}
-                className="mt-4 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-xs font-semibold text-white"
-              >
-                Discover
-              </button>
-            </div>
+            <EmptyState
+              icon="👥"
+              title="No posts from friends"
+              description="Follow pet lovers to see their posts here"
+              actionText="Discover People"
+              onAction={() => navigate("/search")}
+            />
           ) : (
-            <div className="rounded-2xl bg-white p-8 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-300">
-              No posts yet, be the first to share your pet!
-            </div>
+            <EmptyState
+              icon="📷"
+              title="No posts yet"
+              description="Be the first to share your pet!"
+              actionText="Create Post"
+              onAction={() => navigate("/create")}
+            />
           )
         ) : null}
 
@@ -294,6 +282,7 @@ export function Feed() {
       </main>
 
       <BottomNav />
+      <ScrollToTop />
 
       {user && !profileLoading && showOnboarding ? (
         <OnboardingFlow

@@ -4,6 +4,8 @@ import { BottomNav } from "../components/BottomNav";
 import { Navbar } from "../components/Navbar";
 import { PostCard } from "../components/PostCard";
 import { UserCard } from "../components/UserCard";
+import { EmptyState } from "../components/EmptyState";
+import { SkeletonPostCard } from "../components/SkeletonPostCard";
 import { useAuth } from "../hooks/useAuth";
 import { useBlockedUsers } from "../hooks/useBlockedUsers";
 import {
@@ -186,15 +188,19 @@ export function Search() {
         ) : null}
 
         {loading ? (
-          <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-500">
-            Searching...
+          <div className="space-y-4">
+            {[1, 2, 3].map((item) => (
+              <SkeletonPostCard key={item} />
+            ))}
           </div>
         ) : null}
 
         {!loading && normalizedQuery && !hasResults ? (
-          <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-300">
-            No results found for "{normalizedQuery}"
-          </div>
+          <EmptyState
+            icon="🔍"
+            title="No results found"
+            description="Try different keywords or tags"
+          />
         ) : null}
 
         {selectedTag ? (

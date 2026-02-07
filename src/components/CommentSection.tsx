@@ -7,6 +7,8 @@ import {
   getComments,
   type Comment,
 } from "../services/posts";
+import { timeAgo } from "../utils/timeAgo";
+import { useToast } from "../contexts/ToastContext";
 
 type CommentSectionProps = {
   postId: string;
@@ -16,26 +18,6 @@ type CommentSectionProps = {
   stickyInput?: boolean;
   onCommentAdded?: () => void;
   onCommentDeleted?: () => void;
-};
-
-const formatTimeAgo = (value: unknown) => {
-  const date =
-    value instanceof Date
-      ? value
-      : typeof value === "object" &&
-        value !== null &&
-        "toDate" in value &&
-        typeof (value as { toDate: () => Date }).toDate === "function"
-      ? (value as { toDate: () => Date }).toDate()
-      : new Date();
-
-  const diff = Date.now() - date.getTime();
-  const minutes = Math.max(1, Math.floor(diff / 60000));
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
 };
 
 export function CommentSection({
@@ -49,11 +31,11 @@ export function CommentSection({
 }: CommentSectionProps) {
   const { user, isBanned } = useAuth();
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(false);
   const [text, setText] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const [replyTarget, setReplyTarget] = useState<{
     commentId: string;
     authorName: string;
@@ -61,19 +43,25 @@ export function CommentSection({
   } | null>(null);
   const [commentToDelete, setCommentToDelete] = useState<Comment | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const remaining = 500 - text.length;
+  const counterTone =
+    remaining <= 0
+      ? "text-red-500"
+      : remaining <= 100
+      ? "text-amber-500"
+      : "text-slate-400 dark:text-slate-500";
 
   useEffect(() => {
     let ignore = false;
     const load = async () => {
       setLoading(true);
-      setError(null);
       try {
         const data = await getComments(postId);
         if (!ignore) setComments(data);
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Failed to load comments";
-        if (!ignore) setError(message);
+        if (!ignore) showToast(message, "error");
       } finally {
         if (!ignore) setLoading(false);
       }
@@ -101,12 +89,13 @@ export function CommentSection({
       return;
     }
     if (isBanned) {
-      setError("Your account has been suspended.");
+      showToast("Your account has been suspended.", "error");
       return;
     }
 
     const content = text.trim();
     if (!content) return;
+    if (content.length > 500) return;
 
     setText("");
 
@@ -150,10 +139,11 @@ export function CommentSection({
           )
         );
       }
+      showToast("Comment posted", "success");
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to post comment";
-      setError(message);
+      showToast(message, "error");
     }
   };
 
@@ -171,10 +161,11 @@ export function CommentSection({
 
     try {
       await deleteComment(postId, targetId);
+      showToast("Comment deleted", "success");
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to delete comment";
-      setError(message);
+      showToast(message, "error");
     }
   };
 
@@ -186,8 +177,6 @@ export function CommentSection({
             Loading comments...
           </p>
         ) : null}
-        {error ? <p className="text-xs text-red-500">{error}</p> : null}
-
         {visibleComments.map((comment) => {
           const canDelete =
             !!user &&
@@ -223,7 +212,7 @@ export function CommentSection({
                   </p>
 
                   <div className="mt-2 flex items-center justify-end gap-2 text-[10px] text-slate-400 dark:text-slate-500">
-                    <span>{formatTimeAgo(comment.createdAt)}</span>
+                    <span>{timeAgo(comment.createdAt as Date)}</span>
                     <span>·</span>
                     <button
                       type="button"
@@ -297,27 +286,30 @@ export function CommentSection({
           </div>
         ) : null}
 
-        <div className={`${replyTarget ? "mt-3" : "mt-4"} flex items-center gap-2`}>
+        <div
+          className={`${replyTarget ? "mt-3" : "mt-4"} flex items-center gap-2`}
+        >
           <input
             ref={inputRef}
             type="text"
-          placeholder={
-            isBanned
-              ? "Account suspended"
-              : user
-              ? "Add a comment..."
-              : "Login to comment"
-          }
-          className="flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-700 dark:text-white"
-          value={text}
-          readOnly={!user || isBanned}
-          onFocus={() => {
-            if (!user) navigate("/login");
-          }}
-          onClick={() => {
-            if (!user) navigate("/login");
-          }}
-          onChange={(event) => setText(event.target.value)}
+            placeholder={
+              isBanned
+                ? "Account suspended"
+                : user
+                ? "Add a comment..."
+                : "Login to comment"
+            }
+            className="flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-700 dark:text-white"
+            value={text}
+            readOnly={!user || isBanned}
+            onFocus={() => {
+              if (!user) navigate("/login");
+            }}
+            onClick={() => {
+              if (!user) navigate("/login");
+            }}
+            onChange={(event) => setText(event.target.value)}
+            maxLength={500}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
@@ -325,14 +317,17 @@ export function CommentSection({
               }
             }}
           />
-        <button
-          type="button"
-          onClick={handleSend}
-          disabled={!user || !text.trim() || isBanned}
-        className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        Send
-      </button>
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={!user || !text.trim() || isBanned}
+            className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Send
+          </button>
+        </div>
+        <div className={`mt-2 text-right text-[10px] ${counterTone}`}>
+          {text.length}/500
         </div>
       </div>
 

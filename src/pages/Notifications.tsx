@@ -1,34 +1,10 @@
 import { useNavigate } from "react-router-dom";
 import { BottomNav } from "../components/BottomNav";
 import { Navbar } from "../components/Navbar";
+import { EmptyState } from "../components/EmptyState";
 import { useAuth } from "../hooks/useAuth";
 import { useNotifications } from "../hooks/useNotifications";
-
-const formatTime = (value: unknown) => {
-  const date =
-    value instanceof Date
-      ? value
-      : typeof value === "object" &&
-        value !== null &&
-        "toDate" in value &&
-        typeof (value as { toDate: () => Date }).toDate === "function"
-      ? (value as { toDate: () => Date }).toDate()
-      : new Date();
-
-  const diff = Date.now() - date.getTime();
-  const minutes = Math.floor(diff / 60000);
-  if (minutes <= 0) return "Just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return "Yesterday";
-  return date.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-};
+import { timeAgo } from "../utils/timeAgo";
 
 export function Notifications() {
   const navigate = useNavigate();
@@ -61,9 +37,11 @@ export function Notifications() {
         ) : null}
 
         {!loading && notifications.length === 0 ? (
-          <div className="rounded-2xl bg-white p-8 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-300">
-            No notifications yet 🔔
-          </div>
+          <EmptyState
+            icon="🔔"
+            title="No notifications"
+            description="When someone likes or comments, you'll see it here"
+          />
         ) : null}
 
         <div className="space-y-3">
@@ -100,7 +78,7 @@ export function Notifications() {
                   {item.message}
                 </p>
                 <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                  {formatTime(item.createdAt)}
+                  {timeAgo(item.createdAt as Date)}
                 </p>
               </div>
               {item.postImage ? (

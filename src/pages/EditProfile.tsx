@@ -3,8 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { uploadImage } from "../services/cloudinary";
 import { getUserProfile, updateUserProfile } from "../services/users";
+import { useToast } from "../contexts/ToastContext";
 
 const MAX_BIO = 150;
+const MAX_NAME = 30;
 
 export function EditProfile() {
   const navigate = useNavigate();
@@ -15,12 +17,24 @@ export function EditProfile() {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { showToast } = useToast();
 
-  const remaining = useMemo(
-    () => Math.max(0, MAX_BIO - bio.length),
-    [bio]
-  );
+  const bioRemaining = useMemo(() => MAX_BIO - bio.length, [bio.length]);
+  const bioCounterTone =
+    bioRemaining <= 0
+      ? "text-red-500"
+      : bioRemaining <= Math.ceil(MAX_BIO * 0.2)
+      ? "text-amber-500"
+      : "text-slate-400 dark:text-slate-500";
+  const nameRemaining = useMemo(() => MAX_NAME - displayName.length, [
+    displayName.length,
+  ]);
+  const nameCounterTone =
+    nameRemaining <= 0
+      ? "text-red-500"
+      : nameRemaining <= Math.ceil(MAX_NAME * 0.2)
+      ? "text-amber-500"
+      : "text-slate-400 dark:text-slate-500";
 
   useEffect(() => {
     let ignore = false;
@@ -51,10 +65,9 @@ export function EditProfile() {
     if (!user || saving) return;
     const name = displayName.trim();
     if (name.length < 2 || name.length > 30) {
-      setError("Display name must be 2-30 characters.");
+      showToast("Display name must be 2-30 characters.", "error");
       return;
     }
-    setError(null);
     setSaving(true);
 
     try {
@@ -73,7 +86,7 @@ export function EditProfile() {
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to update profile.";
-      setError(message);
+      showToast(message, "error");
     } finally {
       setSaving(false);
     }
@@ -150,13 +163,19 @@ export function EditProfile() {
 
         <section className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-              Display Name
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                Display Name
+              </label>
+              <span className={`text-xs ${nameCounterTone}`}>
+                {displayName.length}/{MAX_NAME}
+              </span>
+            </div>
             <input
               type="text"
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
+              maxLength={MAX_NAME}
               className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700 outline-none transition-all duration-200 focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
               placeholder="Enter display name"
             />
@@ -167,12 +186,8 @@ export function EditProfile() {
               <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
                 Bio
               </label>
-              <span
-                className={`text-xs ${
-                  remaining === 0 ? "text-red-500" : "text-slate-400 dark:text-slate-500"
-                }`}
-              >
-                {remaining} left
+              <span className={`text-xs ${bioCounterTone}`}>
+                {bio.length}/{MAX_BIO}
               </span>
             </div>
             <textarea
@@ -184,12 +199,6 @@ export function EditProfile() {
               placeholder="Tell us about your pets..."
             />
           </div>
-
-          {error ? (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300">
-              {error}
-            </div>
-          ) : null}
         </section>
       </main>
     </div>

@@ -5,8 +5,9 @@ import { MediaCarousel } from "../components/MediaCarousel";
 import { getPetsByOwner, type Pet } from "../services/pets";
 import { getPostById, updatePost, type Post } from "../services/posts";
 import { getSpeciesMeta } from "../utils/petHelpers";
+import { useToast } from "../contexts/ToastContext";
 
-const MAX_CHARS = 500;
+const MAX_CHARS = 2000;
 
 export function EditPost() {
   const navigate = useNavigate();
@@ -20,12 +21,15 @@ export function EditPost() {
   const [tagInput, setTagInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { showToast } = useToast();
 
-  const remaining = useMemo(
-    () => Math.max(0, MAX_CHARS - caption.length),
-    [caption]
-  );
+  const remaining = useMemo(() => MAX_CHARS - caption.length, [caption]);
+  const counterTone =
+    remaining <= 0
+      ? "text-red-500"
+      : remaining <= Math.ceil(MAX_CHARS * 0.2)
+      ? "text-amber-500"
+      : "text-slate-400 dark:text-slate-500";
 
   useEffect(() => {
     let ignore = false;
@@ -66,8 +70,9 @@ export function EditPost() {
     setTags((prev) => {
       const next = [...prev];
       normalized.forEach((tag) => {
-        if (!next.includes(tag)) {
-          next.push(tag);
+        const trimmed = tag.slice(0, 30);
+        if (trimmed && !next.includes(trimmed)) {
+          next.push(trimmed);
         }
       });
       return next;
@@ -85,11 +90,10 @@ export function EditPost() {
   const handleSave = async () => {
     if (!post || !user || saving) return;
     if (post.authorId !== user.uid) {
-      setError("You can only edit your own posts.");
+      showToast("You can only edit your own posts.", "error");
       return;
     }
     setSaving(true);
-    setError(null);
     try {
       const selectedPet = pets.find((petItem) => petItem.id === selectedPetId);
       await updatePost(post.id, {
@@ -103,7 +107,7 @@ export function EditPost() {
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to update post.";
-      setError(message);
+      showToast(message, "error");
     } finally {
       setSaving(false);
     }
@@ -181,12 +185,8 @@ export function EditPost() {
             <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
               Caption
             </label>
-            <span
-              className={`text-xs ${
-                remaining === 0 ? "text-red-500" : "text-slate-400 dark:text-slate-500"
-              }`}
-            >
-              {remaining} left
+            <span className={`text-xs ${counterTone}`}>
+              {caption.length}/{MAX_CHARS}
             </span>
           </div>
           <textarea
@@ -298,12 +298,6 @@ export function EditPost() {
             </div>
           ) : null}
         </section>
-
-        {error ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300">
-            {error}
-          </div>
-        ) : null}
       </main>
     </div>
   );

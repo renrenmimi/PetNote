@@ -5,6 +5,7 @@ import { deletePet, getPetById, getPostsByPet, type Pet } from "../services/pets
 import { getUserProfile } from "../services/users";
 import { getGenderMeta, getSpeciesMeta } from "../utils/petHelpers";
 import type { Post } from "../services/posts";
+import { EmptyState } from "../components/EmptyState";
 
 export function PetProfile() {
   const navigate = useNavigate();
@@ -190,9 +191,11 @@ export function PetProfile() {
             Posts
           </h3>
           {posts.length === 0 ? (
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-              No posts yet
-            </div>
+            <EmptyState
+              icon="🐾"
+              title="No posts with this pet"
+              description="Tag this pet when posting to show posts here"
+            />
           ) : (
             <div className="grid grid-cols-3 gap-2">
               {posts.map((post) => {

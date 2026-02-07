@@ -9,6 +9,8 @@ import { getUserProfile } from "../services/users";
 import { MediaCarousel } from "./MediaCarousel";
 import { ReportModal } from "./ReportModal";
 import { ShareMenu } from "./ShareMenu";
+import { timeAgo } from "../utils/timeAgo";
+import { useToast } from "../contexts/ToastContext";
 
 type PostCardProps = {
   post: Post;
@@ -16,36 +18,10 @@ type PostCardProps = {
   onDeleted?: (postId: string) => void;
 };
 
-const formatTimeAgo = (value: unknown) => {
-  const date =
-    value instanceof Date
-      ? value
-      : typeof value === "object" &&
-        value !== null &&
-        "toDate" in value &&
-        typeof (value as { toDate: () => Date }).toDate === "function"
-      ? (value as { toDate: () => Date }).toDate()
-      : new Date();
-
-  const diff = Date.now() - date.getTime();
-  const minutes = Math.floor(diff / 60000);
-  if (minutes <= 0) return "Just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return "Yesterday";
-  if (days < 7) return `${days}d ago`;
-  return date.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-};
-
 export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
   const { user, isBanned } = useAuth();
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [animating, setAnimating] = useState(false);
   const [localLiked, setLocalLiked] = useState(false);
   const [localLikeCount, setLocalLikeCount] = useState(post.likeCount ?? 0);
@@ -53,7 +29,6 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
   const [hidden, setHidden] = useState(false);
   const [authorName, setAuthorName] = useState(post.authorName);
   const [authorAvatar, setAuthorAvatar] = useState(post.authorAvatar);
@@ -74,7 +49,7 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
     useMock ? null : user?.uid ?? null
   );
 
-  const timeAgo = useMemo(() => formatTimeAgo(post.createdAt), [post.createdAt]);
+  const timeLabel = useMemo(() => timeAgo(post.createdAt), [post.createdAt]);
   const mediaItems = useMemo(() => {
     if (post.media && post.media.length > 0) {
       return post.media;
@@ -112,13 +87,12 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
 
   const handleLike = async () => {
     if (!user) {
-      alert("Please login to like posts");
+      showToast("Please login to like posts", "warning");
       navigate("/login");
       return;
     }
     if (isBanned) {
-      setToast({ message: "Your account has been suspended", tone: "error" });
-      setTimeout(() => setToast(null), 2000);
+      showToast("Your account has been suspended", "error");
       return;
     }
 
@@ -144,7 +118,7 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
 
   const handleDoubleLike = async () => {
     setShowHeart(true);
-    setTimeout(() => setShowHeart(false), 500);
+    setTimeout(() => setShowHeart(false), 700);
     if (!likedState) {
       await handleLike();
     }
@@ -155,7 +129,7 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
     setDeleting(true);
     try {
       await deletePost(post.id);
-      setToast({ message: "Post deleted", tone: "success" });
+      showToast("Post deleted", "success");
       setConfirmOpen(false);
       setMenuOpen(false);
       onDeleted?.(post.id);
@@ -163,10 +137,9 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
         setHidden(true);
       }
     } catch (err) {
-      setToast({ message: "Failed to delete post", tone: "error" });
+      showToast("Failed to delete post", "error");
     } finally {
       setDeleting(false);
-      setTimeout(() => setToast(null), 2000);
     }
   };
 
@@ -175,19 +148,18 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
     setBlocking(true);
     try {
       await blockUser(user.uid, post.authorId);
-      setToast({ message: "User blocked", tone: "success" });
+      showToast("User blocked", "info");
       setBlockConfirmOpen(false);
     } catch {
-      setToast({ message: "Failed to block user", tone: "error" });
+      showToast("Failed to block user", "error");
     } finally {
       setBlocking(false);
-      setTimeout(() => setToast(null), 2000);
     }
   };
 
   const handleBookmark = async () => {
     if (!user) {
-      alert("Please login to save posts");
+      showToast("Please login to save posts", "warning");
       navigate("/login");
       return;
     }
@@ -317,7 +289,7 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
               ) : null}
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              {timeAgo}
+              {timeLabel}
             </p>
           </div>
           <div className="relative">
@@ -403,9 +375,13 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
         <MediaCarousel media={mediaItems} onDoubleTap={handleDoubleLike} />
         {showHeart ? (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <span className="text-6xl text-red-500 animate-[pulse_0.6s_ease-out]">
-              ❤️
-            </span>
+            <svg
+              className="h-20 w-20 text-white drop-shadow animate-[heart-pop_0.7s_ease-out]"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            >
+              <path d="M20.8 6.6a5.5 5.5 0 0 0-7.8 0l-1 1-1-1a5.5 5.5 0 1 0-7.8 7.8l1 1L12 21l7.8-5.6 1-1a5.5 5.5 0 0 0 0-7.8Z" />
+            </svg>
           </div>
         ) : null}
       </div>
@@ -512,20 +488,6 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
                 {deleting ? "Deleting..." : "Delete"}
               </button>
             </div>
-          </div>
-        </div>
-      ) : null}
-
-      {toast ? (
-        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
-          <div
-            className={`rounded-full px-4 py-2 text-sm font-semibold shadow-lg ${
-              toast.tone === "success"
-                ? "bg-emerald-500 text-white"
-                : "bg-red-500 text-white"
-            }`}
-          >
-            {toast.message}
           </div>
         </div>
       ) : null}

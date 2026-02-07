@@ -3,17 +3,21 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useAdmin } from "../hooks/useAdmin";
 import { UserCard } from "../components/UserCard";
+import { EmptyState } from "../components/EmptyState";
+import { SkeletonProfile } from "../components/SkeletonProfile";
 import { getBookmarkedPosts } from "../services/bookmarks";
 import { getFollowers, getFollowing } from "../services/follow";
 import { deletePost, getPostsByUser, getUserStats, type Post } from "../services/posts";
 import { getPetsByOwner, type Pet } from "../services/pets";
 import { getUserProfile, getUsersByIds, type UserProfile } from "../services/users";
 import { getSpeciesMeta } from "../utils/petHelpers";
+import { useToast } from "../contexts/ToastContext";
 
 export function Profile() {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const { isAdmin } = useAdmin();
+  const { showToast } = useToast();
   const [posts, setPosts] = useState<Post[]>([]);
   const [stats, setStats] = useState({ postCount: 0, totalLikes: 0 });
   const [loading, setLoading] = useState(true);
@@ -32,7 +36,6 @@ export function Profile() {
   const [modalUsers, setModalUsers] = useState<UserProfile[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<Post | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     let ignore = false;
@@ -141,6 +144,9 @@ export function Profile() {
       </header>
 
       <main className="mx-auto w-full max-w-md space-y-6 px-4 py-6">
+        {loading ? (
+          <SkeletonProfile />
+        ) : (
         <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
           <div className="flex flex-col items-center text-center">
             <div className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 p-1">
@@ -243,7 +249,9 @@ export function Profile() {
             </div>
           </div>
         </section>
+        )}
 
+        {!loading ? (
         <section className="space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-semibold text-slate-900 dark:text-white">
@@ -261,18 +269,13 @@ export function Profile() {
           </div>
 
           {pets.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-              Add your first pet! 🐾
-              <div className="mt-3">
-                <button
-                  type="button"
-                  onClick={() => navigate("/add-pet")}
-                  className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-xs font-semibold text-white"
-                >
-                  Add Pet
-                </button>
-              </div>
-            </div>
+            <EmptyState
+              icon="🐾"
+              title="No pets added"
+              description="Add your furry friend!"
+              actionText="Add Pet"
+              onAction={() => navigate("/add-pet")}
+            />
           ) : (
             <div className="flex gap-4 overflow-x-auto pb-2">
               {pets.map((pet) => {
@@ -324,7 +327,9 @@ export function Profile() {
             </div>
           )}
         </section>
+        ) : null}
 
+        {!loading ? (
         <section className="space-y-3">
           <div className="flex items-center gap-6 border-b border-slate-200 dark:border-slate-700">
             <button
@@ -361,9 +366,13 @@ export function Profile() {
               ))}
             </div>
           ) : activeTab === "posts" && posts.length === 0 ? (
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-              No posts yet
-            </div>
+            <EmptyState
+              icon="📷"
+              title="No posts yet"
+              description="Share your first pet moment!"
+              actionText="Create Post"
+              onAction={() => navigate("/create")}
+            />
           ) : activeTab === "posts" ? (
             <div className="grid grid-cols-3 gap-2">
               {posts.map((post) => {
@@ -424,9 +433,11 @@ export function Profile() {
               ))}
             </div>
           ) : savedPosts.length === 0 ? (
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-              No saved posts yet
-            </div>
+            <EmptyState
+              icon="🔖"
+              title="No saved posts"
+              description="Bookmark posts you love to find them later"
+            />
           ) : (
             <div className="grid grid-cols-3 gap-2">
               {savedPosts.map((post) => {
@@ -466,6 +477,7 @@ export function Profile() {
             </div>
           )}
         </section>
+        ) : null}
       </main>
 
       {deleteTarget ? (
@@ -499,8 +511,7 @@ export function Profile() {
                   const updatedStats = await getUserStats(user.uid);
                   setStats(updatedStats);
                   setDeleteTarget(null);
-                  setToast("Post deleted");
-                  setTimeout(() => setToast(null), 2000);
+                  showToast("Post deleted", "success");
                   setDeleting(false);
                 }}
                 className="rounded-full bg-red-500 px-4 py-2 text-sm font-semibold text-white transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
@@ -509,12 +520,6 @@ export function Profile() {
               </button>
             </div>
           </div>
-        </div>
-      ) : null}
-
-      {toast ? (
-        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-lg">
-          {toast}
         </div>
       ) : null}
 

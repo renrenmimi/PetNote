@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useToast } from "../contexts/ToastContext";
 
 type ShareMenuProps = {
   open: boolean;
@@ -8,8 +9,8 @@ type ShareMenuProps = {
 };
 
 export function ShareMenu({ open, onClose, postId, text }: ShareMenuProps) {
-  const [copied, setCopied] = useState(false);
   const [canShare, setCanShare] = useState(false);
+  const { showToast } = useToast();
 
   const postUrl = useMemo(() => {
     if (typeof window === "undefined") return `/post/${postId}`;
@@ -20,19 +21,14 @@ export function ShareMenu({ open, onClose, postId, text }: ShareMenuProps) {
     setCanShare(typeof navigator !== "undefined" && !!navigator.share);
   }, []);
 
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), 2000);
-    return () => window.clearTimeout(timer);
-  }, [copied]);
-
   if (!open) return null;
 
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(postUrl);
-      setCopied(true);
+      showToast("Link copied!", "success");
     } catch {
+      showToast("Unable to copy link", "error");
       // ignore
     }
   };
@@ -84,11 +80,6 @@ export function ShareMenu({ open, onClose, postId, text }: ShareMenuProps) {
         </button>
       </div>
 
-      {copied ? (
-        <div className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow-lg dark:bg-slate-200 dark:text-slate-900">
-          Link copied!
-        </div>
-      ) : null}
     </div>
   );
 }

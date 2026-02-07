@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import PawIcon from "../components/PawIcon";
+import { PasswordStrengthIndicator } from "../components/PasswordStrengthIndicator";
+import { validatePassword } from "../utils/passwordValidator";
+import { useToast } from "../contexts/ToastContext";
 
 function MailIcon() {
   return (
@@ -42,20 +45,21 @@ function LockIcon() {
 export function SignUp() {
   const navigate = useNavigate();
   const { signUp } = useAuth();
+  const { showToast } = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+
+  const validation = useMemo(() => validatePassword(password), [password]);
+  const passwordsMatch = password === confirmPassword;
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setError("");
-
-    if (password !== confirmPassword) {
-      setError("Passwords do not match");
+    if (!passwordsMatch) return;
+    if (!validation.isValid) {
       return;
     }
 
@@ -66,7 +70,7 @@ export function SignUp() {
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Sign up failed. Please try again.";
-      setError(message);
+      showToast(message, "error");
     } finally {
       setLoading(false);
     }
@@ -114,7 +118,7 @@ export function SignUp() {
               <LockIcon />
               <input
                 type={showPassword ? "text" : "password"}
-                placeholder="At least 6 characters"
+                placeholder="At least 8 characters"
                 autoComplete="new-password"
                 className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
                 value={password}
@@ -128,6 +132,9 @@ export function SignUp() {
               >
                 {showPassword ? "Hide" : "Show"}
               </button>
+            </div>
+            <div className="mt-2">
+              <PasswordStrengthIndicator password={password} />
             </div>
           </label>
 
@@ -156,15 +163,13 @@ export function SignUp() {
             </div>
           </label>
 
-          {error ? (
-            <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-500/10 dark:text-red-300">
-              {error}
-            </p>
+          {!passwordsMatch && confirmPassword ? (
+            <p className="text-xs text-red-500">Passwords don't match</p>
           ) : null}
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !validation.isValid || !passwordsMatch}
             className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
           >
             {loading ? "Creating account..." : "Sign Up"}
