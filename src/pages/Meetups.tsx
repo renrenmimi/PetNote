@@ -1,0 +1,271 @@
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { BottomNav } from "../components/BottomNav";
+import { Navbar } from "../components/Navbar";
+import { EmptyState } from "../components/EmptyState";
+import { useAuth } from "../hooks/useAuth";
+import {
+  getMyMeetups,
+  getNearbyMeetups,
+  getThisWeekMeetups,
+  getUpcomingMeetups,
+  type Meetup,
+} from "../services/meetups";
+import { calculateDistance } from "../services/location";
+
+type FilterKey = "nearby" | "week" | "mine" | "dogs" | "cats";
+
+const filters: Array<{ key: FilterKey; label: string }> = [
+  { key: "nearby", label: "Nearby" },
+  { key: "week", label: "This Week" },
+  { key: "mine", label: "My Meetups" },
+  { key: "dogs", label: "🐕 Dogs" },
+  { key: "cats", label: "🐱 Cats" },
+];
+
+const formatDate = (value: unknown) => {
+  if (!value) return "";
+  const date =
+    value instanceof Date
+      ? value
+      : typeof value === "object" &&
+        value !== null &&
+        "toDate" in value &&
+        typeof (value as { toDate: () => Date }).toDate === "function"
+      ? (value as { toDate: () => Date }).toDate()
+      : null;
+  if (!date) return "";
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+};
+
+const formatTime = (value: unknown) => {
+  if (!value) return "";
+  const date =
+    value instanceof Date
+      ? value
+      : typeof value === "object" &&
+        value !== null &&
+        "toDate" in value &&
+        typeof (value as { toDate: () => Date }).toDate === "function"
+      ? (value as { toDate: () => Date }).toDate()
+      : null;
+  if (!date) return "";
+  return date.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+};
+
+const statusStyles: Record<string, string> = {
+  upcoming: "bg-emerald-500 text-white",
+  ongoing: "bg-blue-500 text-white animate-pulse",
+  completed: "bg-slate-300 text-slate-700",
+  cancelled: "bg-red-500 text-white",
+};
+
+export function Meetups() {
+  const navigate = useNavigate();
+  const { user, profile } = useAuth();
+  const [activeFilter, setActiveFilter] = useState<FilterKey>("nearby");
+  const [meetups, setMeetups] = useState<Meetup[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const userLocation = profile?.location;
+
+  useEffect(() => {
+    let ignore = false;
+    const load = async () => {
+      setLoading(true);
+      let data: Meetup[] = [];
+      if (activeFilter === "nearby") {
+        if (userLocation) {
+          data = await getNearbyMeetups(
+            userLocation.lat,
+            userLocation.lng,
+            50
+          );
+        } else {
+          const upcoming = await getUpcomingMeetups(50);
+          data = upcoming.meetups;
+        }
+      } else if (activeFilter === "week") {
+        data = await getThisWeekMeetups();
+      } else if (activeFilter === "mine") {
+        data = user ? await getMyMeetups(user.uid) : [];
+      } else {
+        const upcoming = await getUpcomingMeetups(50);
+        data = upcoming.meetups.filter((meetup) => {
+          const type = meetup.requirements.petType;
+          if (activeFilter === "dogs") {
+            return type === "dog" || type === "any_dog";
+          }
+          if (activeFilter === "cats") {
+            return type === "cat" || type === "any_cat";
+          }
+          return true;
+        });
+      }
+      if (!ignore) {
+        setMeetups(data);
+        setLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      ignore = true;
+    };
+  }, [activeFilter, user, userLocation]);
+
+  const cards = useMemo(() => {
+    if (!userLocation) return meetups;
+    return meetups.map((meetup) => {
+      const distance = calculateDistance(
+        userLocation.lat,
+        userLocation.lng,
+        meetup.location.lat,
+        meetup.location.lng
+      );
+      return { meetup, distance };
+    });
+  }, [meetups, userLocation]);
+
+  return (
+    <div className="min-h-screen bg-slate-50 pb-20 dark:bg-slate-900">
+      <Navbar />
+
+      <main className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-base font-semibold text-slate-900 dark:text-white">
+            Meetups 🐾
+          </h1>
+          <button
+            type="button"
+            onClick={() => navigate("/create-meetup")}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-md transition-all duration-200 hover:scale-105"
+          >
+            +
+          </button>
+        </div>
+
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {filters.map((filter) => {
+            const active = activeFilter === filter.key;
+            return (
+              <button
+                key={filter.key}
+                type="button"
+                onClick={() => setActiveFilter(filter.key)}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
+                  active
+                    ? "bg-gradient-to-r from-purple-500 to-pink-500 text-white"
+                    : "bg-white text-slate-500 ring-1 ring-slate-200 hover:text-slate-700 dark:bg-slate-800 dark:ring-slate-700 dark:text-slate-300"
+                }`}
+              >
+                {filter.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {loading ? (
+          <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-500">
+            Loading meetups...
+          </div>
+        ) : meetups.length === 0 ? (
+          <EmptyState
+            icon="📍"
+            title="No meetups nearby"
+            description="Be the first to organize one!"
+            actionText="Create Meetup"
+            onAction={() => navigate("/create-meetup")}
+          />
+        ) : (
+          <div className="space-y-3">
+            {cards.map((item) => {
+              const meetup = "meetup" in item ? item.meetup : (item as Meetup);
+              const distance =
+                "distance" in item ? item.distance : undefined;
+              const maxPets = meetup.requirements.maxPets;
+              const progress =
+                maxPets > 0
+                  ? Math.min(
+                      100,
+                      Math.round(
+                        (meetup.participantCount / maxPets) * 100
+                      )
+                    )
+                  : 0;
+
+              return (
+                <button
+                  key={meetup.id}
+                  type="button"
+                  onClick={() => navigate(`/meetups/${meetup.id}`)}
+                  className="flex w-full gap-3 rounded-xl bg-white p-3 text-left shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 transition-all duration-200 hover:-translate-y-0.5 dark:bg-slate-800 dark:ring-slate-700"
+                >
+                  {meetup.coverImage ? (
+                    <img
+                      src={meetup.coverImage}
+                      alt={meetup.title}
+                      className="h-20 w-20 rounded-xl object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-20 w-20 items-center justify-center rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 text-2xl text-white">
+                      🐾
+                    </div>
+                  )}
+                  <div className="flex-1 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                        {meetup.title}
+                      </p>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                          statusStyles[meetup.status] || "bg-slate-200 text-slate-700"
+                        }`}
+                      >
+                        {meetup.status}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-300">
+                      📅 {formatDate(meetup.date)} · {formatTime(meetup.date)}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-300">
+                      📍 {meetup.location.name}
+                    </p>
+                    {distance !== undefined ? (
+                      <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:bg-blue-500/10 dark:text-blue-200">
+                        📍 {distance} mi
+                      </span>
+                    ) : null}
+                    <div className="mt-2">
+                      <div className="flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500">
+                        <span>
+                          👥 {meetup.participantCount}
+                          {maxPets > 0 ? `/${maxPets}` : ""}
+                        </span>
+                      </div>
+                      {maxPets > 0 ? (
+                        <div className="mt-1 h-1.5 w-full rounded-full bg-slate-100 dark:bg-slate-700">
+                          <div
+                            className="h-1.5 rounded-full bg-gradient-to-r from-purple-500 to-pink-500"
+                            style={{ width: `${progress}%` }}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </main>
+
+      <BottomNav />
+    </div>
+  );
+}

@@ -12,14 +12,18 @@ import { EditProfile } from "./pages/EditProfile";
 import { Feed } from "./pages/Feed";
 import { ForgotPassword } from "./pages/ForgotPassword";
 import { Login } from "./pages/Login";
+import { Meetups } from "./pages/Meetups";
 import { Notifications } from "./pages/Notifications";
 import { PetProfile } from "./pages/PetProfile";
+import { MeetupDetail } from "./pages/MeetupDetail";
 import { PostDetail } from "./pages/PostDetail";
 import { Profile } from "./pages/Profile";
 import { Search } from "./pages/Search";
 import { Settings } from "./pages/Settings";
 import { SignUp } from "./pages/SignUp";
 import { UserProfile } from "./pages/UserProfile";
+import { CreateMeetup } from "./pages/CreateMeetup";
+import { EditMeetup } from "./pages/EditMeetup";
 
 function App() {
   return (
@@ -31,6 +35,8 @@ function App() {
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/signup" element={<SignUp />} />
         <Route path="/search" element={<Search />} />
+        <Route path="/meetups" element={<Meetups />} />
+        <Route path="/meetups/:meetupId" element={<MeetupDetail />} />
         <Route path="/post/:postId" element={<PostDetail />} />
         <Route
           path="/admin"
@@ -46,6 +52,22 @@ function App() {
           element={
             <RequireAuth>
               <Create />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/create-meetup"
+          element={
+            <RequireAuth>
+              <CreateMeetup />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/edit-meetup/:meetupId"
+          element={
+            <RequireAuth>
+              <EditMeetup />
             </RequireAuth>
           }
         />

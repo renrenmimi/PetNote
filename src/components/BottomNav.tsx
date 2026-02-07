@@ -25,7 +25,7 @@ export function BottomNav() {
 
   const items: NavItem[] = [
     { label: "Home", icon: "🏠", path: "/" },
-    { label: "Search", icon: "🔍", path: "/search" },
+    { label: "Meetups", icon: "🤝", path: "/meetups" },
     {
       label: "Create",
       icon: "+",
@@ -47,8 +47,8 @@ export function BottomNav() {
             ? location.pathname === item.path ||
               (item.path === "/profile" &&
                 location.pathname.startsWith("/profile")) ||
-              (item.path === "/search" &&
-                location.pathname.startsWith("/search")) ||
+              (item.path === "/meetups" &&
+                location.pathname.startsWith("/meetups")) ||
               (item.path === "/notifications" &&
                 location.pathname.startsWith("/notifications"))
             : false;

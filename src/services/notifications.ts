@@ -14,7 +14,13 @@ import {
 import { db } from "./firebase";
 import { getSettings } from "./settings";
 
-export type NotificationType = "like" | "comment" | "follow" | "reply";
+export type NotificationType =
+  | "like"
+  | "comment"
+  | "follow"
+  | "reply"
+  | "meetup_join"
+  | "meetup_cancelled";
 
 export type NotificationItem = {
   id: string;
@@ -43,9 +49,10 @@ export async function createNotification(
   data: CreateNotificationInput
 ): Promise<string> {
   const settings = await getSettings(data.userId);
-  const mappedType =
-    data.type === "reply" ? "comment" : data.type;
+  const mappedType = data.type === "reply" ? "comment" : data.type;
   const shouldNotify =
+    data.type === "meetup_join" ||
+    data.type === "meetup_cancelled" ||
     (mappedType === "like" && settings.likeNotifications) ||
     (mappedType === "comment" && settings.commentNotifications) ||
     (mappedType === "follow" && settings.followNotifications);

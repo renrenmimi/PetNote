@@ -11,6 +11,12 @@ import { useToast } from "../contexts/ToastContext";
 import { PasswordStrengthIndicator } from "../components/PasswordStrengthIndicator";
 import { validatePassword } from "../utils/passwordValidator";
 import {
+  clearUserLocation,
+  getCityFromCoords,
+  getCurrentLocation,
+  saveUserLocation,
+} from "../services/location";
+import {
   deleteAccount,
   getSettings,
   updateSettings,
@@ -55,7 +61,7 @@ function Toggle({
 
 export function Settings() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { isDark, mode, setMode } = useTheme();
   const { showToast } = useToast();
   const [settings, setSettings] = useState<UserSettings>(defaultSettings);
@@ -68,6 +74,13 @@ export function Settings() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteInput, setDeleteInput] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [locationLoading, setLocationLoading] = useState(false);
+
+  const locationLabel = useMemo(() => {
+    if (!profile?.location) return "Not set";
+    const { city, state } = profile.location;
+    return state ? `${city}, ${state}` : city;
+  }, [profile?.location]);
 
   const passwordValidation = useMemo(
     () => validatePassword(newPassword),
@@ -152,6 +165,39 @@ export function Settings() {
       showToast(message, "error");
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleUpdateLocation = async () => {
+    if (!user || locationLoading) return;
+    setLocationLoading(true);
+    showToast("PetNote needs your location to show nearby meetups.", "info");
+    try {
+      const { lat, lng } = await getCurrentLocation();
+      const { city, state } = await getCityFromCoords(lat, lng);
+      await saveUserLocation(user.uid, { lat, lng, city, state });
+      showToast("Location updated", "success");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to update location.";
+      showToast(message, "error");
+    } finally {
+      setLocationLoading(false);
+    }
+  };
+
+  const handleClearLocation = async () => {
+    if (!user || locationLoading) return;
+    setLocationLoading(true);
+    try {
+      await clearUserLocation(user.uid);
+      showToast("Location cleared", "info");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to clear location.";
+      showToast(message, "error");
+    } finally {
+      setLocationLoading(false);
     }
   };
 
@@ -368,6 +414,42 @@ export function Settings() {
                   })
                 }
               />
+            </div>
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                    My Location
+                  </p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500">
+                    {locationLabel}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleUpdateLocation}
+                  disabled={locationLoading}
+                  className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-3 py-1.5 text-xs font-semibold text-white transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {locationLoading ? "Updating..." : "Update Location"}
+                </button>
+              </div>
+              <div className="mt-2 flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
+                <span>
+                  Your location is used to show distance to meetups. Only your
+                  city is visible to others.
+                </span>
+                {profile?.location ? (
+                  <button
+                    type="button"
+                    onClick={handleClearLocation}
+                    disabled={locationLoading}
+                    className="ml-3 text-red-500 hover:text-red-600"
+                  >
+                    Clear
+                  </button>
+                ) : null}
+              </div>
             </div>
             <button
               type="button"
