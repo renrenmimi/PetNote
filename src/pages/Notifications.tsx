@@ -37,12 +37,12 @@ export function Notifications() {
     useNotifications(user?.uid ?? null);
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
+    <div className="min-h-screen bg-slate-50 pb-20 dark:bg-slate-900">
       <Navbar />
 
       <main className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-base font-semibold text-slate-900">
+          <h1 className="text-base font-semibold text-slate-900 dark:text-white">
             Notifications
           </h1>
           <button
@@ -55,13 +55,13 @@ export function Notifications() {
         </div>
 
         {loading ? (
-          <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)]">
+          <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-500">
             Loading notifications...
           </div>
         ) : null}
 
         {!loading && notifications.length === 0 ? (
-          <div className="rounded-2xl bg-white p-8 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)]">
+          <div className="rounded-2xl bg-white p-8 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-300">
             No notifications yet 🔔
           </div>
         ) : null}
@@ -83,8 +83,8 @@ export function Notifications() {
               }}
               className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all duration-200 hover:scale-[1.01] ${
                 item.read
-                  ? "border-slate-100 bg-white"
-                  : "border-purple-100 bg-purple-50"
+                  ? "border-slate-100 bg-white dark:border-slate-700 dark:bg-slate-800"
+                  : "border-purple-100 bg-purple-50 dark:border-purple-500/40 dark:bg-purple-500/10"
               }`}
             >
               <img
@@ -93,13 +93,13 @@ export function Notifications() {
                 className="h-12 w-12 rounded-full object-cover"
               />
               <div className="flex-1">
-                <p className="text-sm text-slate-700">
-                  <span className="font-semibold text-slate-900">
+                <p className="text-sm text-slate-700 dark:text-slate-200">
+                  <span className="font-semibold text-slate-900 dark:text-white">
                     {item.fromUserName}
                   </span>{" "}
                   {item.message}
                 </p>
-                <p className="mt-1 text-xs text-slate-400">
+                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
                   {formatTime(item.createdAt)}
                 </p>
               </div>
@@ -115,7 +115,7 @@ export function Notifications() {
         </div>
 
         {unreadCount > 0 ? (
-          <p className="text-center text-xs text-slate-400">
+          <p className="text-center text-xs text-slate-400 dark:text-slate-500">
             {unreadCount} unread
           </p>
         ) : null}

@@ -12,6 +12,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { getSettings } from "./settings";
 
 export type NotificationType = "like" | "comment" | "follow" | "reply";
 
@@ -41,6 +42,16 @@ export type CreateNotificationInput = Omit<
 export async function createNotification(
   data: CreateNotificationInput
 ): Promise<string> {
+  const settings = await getSettings(data.userId);
+  const mappedType =
+    data.type === "reply" ? "comment" : data.type;
+  const shouldNotify =
+    (mappedType === "like" && settings.likeNotifications) ||
+    (mappedType === "comment" && settings.commentNotifications) ||
+    (mappedType === "follow" && settings.followNotifications);
+  if (!shouldNotify) {
+    return "";
+  }
   const notificationsRef = collection(db, "notifications");
   const payload = {
     ...data,

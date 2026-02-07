@@ -99,17 +99,17 @@ export function Search() {
   const hasResults = filteredPosts.length > 0 || users.length > 0;
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
+    <div className="min-h-screen bg-slate-50 pb-20 dark:bg-slate-900">
       <Navbar />
 
       <main className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
-        <div className="rounded-2xl bg-white px-4 py-3 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100">
+        <div className="rounded-2xl bg-white px-4 py-3 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
           <div className="flex items-center gap-2">
             <span className="text-lg">🔍</span>
             <input
               type="text"
               placeholder="Search pets, tags, users..."
-              className="flex-1 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+              className="flex-1 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-200 dark:placeholder:text-slate-500"
               value={query}
               onChange={(event) => {
                 const next = event.target.value;
@@ -126,7 +126,7 @@ export function Search() {
               <button
                 type="button"
                 onClick={() => setQuery("")}
-                className="text-sm text-slate-400 transition-all duration-200 hover:text-purple-500"
+                className="text-sm text-slate-400 transition-all duration-200 hover:text-purple-500 dark:text-slate-500"
               >
                 ✕
               </button>
@@ -134,9 +134,9 @@ export function Search() {
           </div>
         </div>
 
-        <section className="rounded-2xl bg-white px-4 py-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100">
+        <section className="rounded-2xl bg-white px-4 py-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-900">
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
               Trending Tags 🔥
             </h2>
           </div>
@@ -149,7 +149,7 @@ export function Search() {
                   setQuery(`#${tag.name}`);
                   setSearchParams({ tag: tag.name });
                 }}
-                className="rounded-full bg-gradient-to-r from-purple-100 to-pink-100 px-3 py-1 text-xs font-semibold text-purple-600 transition-all duration-200 hover:scale-105"
+                className="rounded-full bg-gradient-to-r from-purple-100 to-pink-100 px-3 py-1 text-xs font-semibold text-purple-600 transition-all duration-200 hover:scale-105 dark:from-purple-500/20 dark:to-pink-500/20 dark:text-purple-200"
               >
                 #{tag.name}
               </button>
@@ -158,8 +158,10 @@ export function Search() {
         </section>
 
         {tagResults.length > 0 && !selectedTag ? (
-          <section className="rounded-2xl bg-white px-4 py-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100">
-            <h3 className="text-sm font-semibold text-slate-900">Tags</h3>
+          <section className="rounded-2xl bg-white px-4 py-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+              Tags
+            </h3>
             <div className="mt-3 space-y-2">
               {tagResults.map((tag) => (
                 <button
@@ -169,12 +171,12 @@ export function Search() {
                     setQuery(`#${tag.name}`);
                     setSearchParams({ tag: tag.name });
                   }}
-                  className="flex w-full items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-left text-sm text-slate-700 transition-all duration-200 hover:scale-[1.01]"
+                  className="flex w-full items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-left text-sm text-slate-700 transition-all duration-200 hover:scale-[1.01] dark:bg-slate-900/40 dark:text-slate-200"
                 >
                   <span className="font-semibold text-purple-600">
                     #{tag.name}
                   </span>
-                  <span className="text-xs text-slate-400">
+                  <span className="text-xs text-slate-400 dark:text-slate-500">
                     {tag.postCount} posts
                   </span>
                 </button>
@@ -184,20 +186,20 @@ export function Search() {
         ) : null}
 
         {loading ? (
-          <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)]">
+          <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-500">
             Searching...
           </div>
         ) : null}
 
         {!loading && normalizedQuery && !hasResults ? (
-          <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)]">
+          <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-300">
             No results found for "{normalizedQuery}"
           </div>
         ) : null}
 
         {selectedTag ? (
-          <div className="rounded-2xl bg-white px-4 py-3 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)]">
-            <h3 className="text-base font-semibold text-slate-900">
+          <div className="rounded-2xl bg-white px-4 py-3 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800">
+            <h3 className="text-base font-semibold text-slate-900 dark:text-white">
               #{selectedTag.name} · {selectedTag.postCount || filteredPosts.length} posts
             </h3>
           </div>
@@ -205,7 +207,9 @@ export function Search() {
 
         {users.length > 0 ? (
           <section className="space-y-2">
-            <h3 className="text-sm font-semibold text-slate-900">Users</h3>
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+              Users
+            </h3>
             <div className="space-y-3">
               {users.map((profile) => (
                 <UserCard
@@ -220,7 +224,9 @@ export function Search() {
 
         {filteredPosts.length > 0 ? (
           <section className="space-y-3">
-            <h3 className="text-sm font-semibold text-slate-900">Posts</h3>
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+              Posts
+            </h3>
             <div className="grid gap-4 sm:grid-cols-2">
               {filteredPosts.map((post) => (
                 <PostCard

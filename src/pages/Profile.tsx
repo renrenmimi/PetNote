@@ -99,9 +99,11 @@ export function Profile() {
 
   if (!user) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-white">
+      <main className="flex min-h-screen items-center justify-center bg-white dark:bg-slate-900">
         <div className="text-center">
-          <p className="text-sm text-slate-500">Please log in to view profile.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-300">
+            Please log in to view profile.
+          </p>
           <button
             type="button"
             onClick={() => navigate("/login")}
@@ -115,24 +117,31 @@ export function Profile() {
   }
 
   return (
-    <div className="min-h-screen bg-white pb-10">
-      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white">
+    <div className="min-h-screen bg-white pb-10 dark:bg-slate-900">
+      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-3">
           <button
             type="button"
             onClick={() => navigate(-1)}
-            className="text-xl text-slate-500 hover:text-slate-700"
+            className="text-xl text-slate-500 hover:text-slate-700 dark:text-slate-300"
             aria-label="Go back"
           >
             ←
           </button>
-          <h1 className="text-base font-semibold text-slate-900">Profile</h1>
-          <div className="w-6" />
+          <h1 className="text-base font-semibold text-slate-900 dark:text-white">Profile</h1>
+          <button
+            type="button"
+            onClick={() => navigate("/settings")}
+            className="text-lg text-slate-500 transition-all duration-200 hover:text-purple-500 dark:text-slate-300"
+            aria-label="Settings"
+          >
+            ⚙️
+          </button>
         </div>
       </header>
 
       <main className="mx-auto w-full max-w-md space-y-6 px-4 py-6">
-        <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
+        <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
           <div className="flex flex-col items-center text-center">
             <div className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 p-1">
               <img
@@ -142,22 +151,22 @@ export function Profile() {
                   "https://i.pravatar.cc/150?img=12"
                 }
                 alt={profileName || user.displayName || "User"}
-                className="h-24 w-24 rounded-full border-4 border-white object-cover"
+                className="h-24 w-24 rounded-full border-4 border-white object-cover dark:border-slate-800"
               />
             </div>
-            <h2 className="mt-4 text-xl font-semibold text-slate-900">
+            <h2 className="mt-4 text-xl font-semibold text-slate-900 dark:text-white">
               {profileName || user.displayName || "PetNote User"}
             </h2>
-            <p className="text-sm text-slate-400">{user.email}</p>
+            <p className="text-sm text-slate-400 dark:text-slate-500">{user.email}</p>
             {profileBio ? (
-              <p className="mt-2 text-sm text-slate-600">{profileBio}</p>
+              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{profileBio}</p>
             ) : null}
 
             <div className="mt-4 flex w-full items-center justify-center gap-3">
               <button
                 type="button"
                 onClick={() => navigate("/edit-profile")}
-                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-all duration-200 hover:scale-105 hover:border-purple-300 hover:text-purple-600"
+                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-all duration-200 hover:scale-105 hover:border-purple-300 hover:text-purple-600 dark:border-slate-700 dark:text-slate-200"
               >
                 Edit Profile
               </button>
@@ -165,7 +174,7 @@ export function Profile() {
                 <button
                   type="button"
                   onClick={() => navigate("/admin")}
-                  className="rounded-full border border-red-200 px-4 py-2 text-sm font-semibold text-red-500 transition-all duration-200 hover:scale-105 hover:border-red-300 hover:bg-red-50"
+                  className="rounded-full border border-red-200 px-4 py-2 text-sm font-semibold text-red-500 transition-all duration-200 hover:scale-105 hover:border-red-300 hover:bg-red-50 dark:border-red-500/40 dark:hover:bg-red-500/10"
                 >
                   Admin Panel
                 </button>
@@ -176,7 +185,7 @@ export function Profile() {
                   await signOut();
                   navigate("/login", { replace: true });
                 }}
-                className="rounded-full px-4 py-2 text-sm font-semibold text-red-500 transition-all duration-200 hover:scale-105 hover:bg-red-50"
+                className="rounded-full px-4 py-2 text-sm font-semibold text-red-500 transition-all duration-200 hover:scale-105 hover:bg-red-50 dark:hover:bg-red-500/10"
               >
                 Sign Out
               </button>
@@ -185,10 +194,10 @@ export function Profile() {
 
           <div className="mt-6 grid grid-cols-3 gap-4 text-center">
             <div>
-              <p className="text-lg font-semibold text-slate-900">
+              <p className="text-lg font-semibold text-slate-900 dark:text-white">
                 {stats.postCount}
               </p>
-              <p className="text-xs text-slate-400">Posts</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">Posts</p>
             </div>
             <button
               type="button"
@@ -199,10 +208,10 @@ export function Profile() {
                 setModalUsers(profiles);
               }}
             >
-              <p className="text-lg font-semibold text-slate-900">
+              <p className="text-lg font-semibold text-slate-900 dark:text-white">
                 {followCounts.followerCount}
               </p>
-              <p className="text-xs text-slate-400">Followers</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">Followers</p>
             </button>
             <button
               type="button"
@@ -213,31 +222,33 @@ export function Profile() {
                 setModalUsers(profiles);
               }}
             >
-              <p className="text-lg font-semibold text-slate-900">
+              <p className="text-lg font-semibold text-slate-900 dark:text-white">
                 {followCounts.followingCount}
               </p>
-              <p className="text-xs text-slate-400">Following</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">Following</p>
             </button>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-4 text-center">
             <div>
-              <p className="text-lg font-semibold text-slate-900">
+              <p className="text-lg font-semibold text-slate-900 dark:text-white">
                 {stats.totalLikes}
               </p>
-              <p className="text-xs text-slate-400">Likes</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">Likes</p>
             </div>
             <div>
-              <p className="text-lg font-semibold text-slate-900">
+              <p className="text-lg font-semibold text-slate-900 dark:text-white">
                 {joinedDate}
               </p>
-              <p className="text-xs text-slate-400">Joined</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">Joined</p>
             </div>
           </div>
         </section>
 
         <section className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold text-slate-900">My Pets</h3>
+            <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+              My Pets
+            </h3>
             {pets.length < 5 ? (
               <button
                 type="button"
@@ -250,7 +261,7 @@ export function Profile() {
           </div>
 
           {pets.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-center text-sm text-slate-500">
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
               Add your first pet! 🐾
               <div className="mt-3">
                 <button
@@ -271,25 +282,25 @@ export function Profile() {
                     key={pet.id}
                     type="button"
                     onClick={() => navigate(`/pet/${pet.id}`)}
-                    className="flex min-w-[90px] flex-col items-center text-center text-xs text-slate-600"
+                    className="flex min-w-[90px] flex-col items-center text-center text-xs text-slate-600 dark:text-slate-300"
                   >
                     <div className={`rounded-full bg-gradient-to-r ${meta.gradient} p-0.5`}>
                       {pet.avatarUrl ? (
                         <img
                           src={pet.avatarUrl}
                           alt={pet.name}
-                          className="h-14 w-14 rounded-full border-2 border-white object-cover"
+                          className="h-14 w-14 rounded-full border-2 border-white object-cover dark:border-slate-800"
                         />
                       ) : (
-                        <div className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-white bg-white text-xl">
+                        <div className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-white bg-white text-xl dark:border-slate-800 dark:bg-slate-900">
                           {meta.emoji}
                         </div>
                       )}
                     </div>
-                    <span className="mt-2 font-semibold text-slate-900">
+                    <span className="mt-2 font-semibold text-slate-900 dark:text-white">
                       {pet.name}
                     </span>
-                    <span className="text-[11px] text-slate-400">
+                    <span className="text-[11px] text-slate-400 dark:text-slate-500">
                       {pet.breed || meta.label}
                     </span>
                   </button>
@@ -300,12 +311,12 @@ export function Profile() {
                 <button
                   type="button"
                   onClick={() => navigate("/add-pet")}
-                  className="flex min-w-[90px] flex-col items-center text-center text-xs text-slate-500"
+                  className="flex min-w-[90px] flex-col items-center text-center text-xs text-slate-500 dark:text-slate-400"
                 >
-                  <div className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-dashed border-slate-300 text-lg text-slate-400">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-dashed border-slate-300 text-lg text-slate-400 dark:border-slate-600 dark:text-slate-500">
                     +
                   </div>
-                  <span className="mt-2 text-[11px] text-slate-400">
+                  <span className="mt-2 text-[11px] text-slate-400 dark:text-slate-500">
                     Add Pet
                   </span>
                 </button>
@@ -315,14 +326,14 @@ export function Profile() {
         </section>
 
         <section className="space-y-3">
-          <div className="flex items-center gap-6 border-b border-slate-200">
+          <div className="flex items-center gap-6 border-b border-slate-200 dark:border-slate-700">
             <button
               type="button"
               onClick={() => setActiveTab("posts")}
               className={`pb-2 text-sm font-semibold transition-all duration-200 ${
                 activeTab === "posts"
-                  ? "border-b-2 border-purple-500 text-slate-900"
-                  : "text-slate-400 hover:text-slate-600"
+                  ? "border-b-2 border-purple-500 text-slate-900 dark:text-white"
+                  : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
               }`}
             >
               Posts
@@ -332,8 +343,8 @@ export function Profile() {
               onClick={() => setActiveTab("saved")}
               className={`pb-2 text-sm font-semibold transition-all duration-200 ${
                 activeTab === "saved"
-                  ? "border-b-2 border-purple-500 text-slate-900"
-                  : "text-slate-400 hover:text-slate-600"
+                  ? "border-b-2 border-purple-500 text-slate-900 dark:text-white"
+                  : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
               }`}
             >
               Saved
@@ -345,12 +356,12 @@ export function Profile() {
               {[1, 2, 3].map((item) => (
                 <div
                   key={item}
-                  className="aspect-square animate-pulse rounded-2xl bg-slate-200"
+                  className="aspect-square animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-700"
                 />
               ))}
             </div>
           ) : activeTab === "posts" && posts.length === 0 ? (
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500">
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
               No posts yet
             </div>
           ) : activeTab === "posts" ? (
@@ -369,7 +380,7 @@ export function Profile() {
                 return (
                 <div
                   key={post.id}
-                  className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100"
+                  className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800"
                 >
                   <button
                     type="button"
@@ -394,7 +405,7 @@ export function Profile() {
                   <button
                     type="button"
                     onClick={() => setDeleteTarget(post)}
-                    className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-xs text-slate-600 shadow transition-all duration-200 hover:scale-105 hover:text-red-500"
+                    className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-xs text-slate-600 shadow transition-all duration-200 hover:scale-105 hover:text-red-500 dark:bg-slate-800/90 dark:text-slate-200"
                     aria-label="Delete post"
                   >
                     ✕
@@ -408,12 +419,12 @@ export function Profile() {
               {[1, 2, 3].map((item) => (
                 <div
                   key={item}
-                  className="aspect-square animate-pulse rounded-2xl bg-slate-200"
+                  className="aspect-square animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-700"
                 />
               ))}
             </div>
           ) : savedPosts.length === 0 ? (
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500">
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
               No saved posts yet
             </div>
           ) : (
@@ -433,7 +444,7 @@ export function Profile() {
                     key={post.id}
                     type="button"
                     onClick={() => navigate(`/post/${post.id}`)}
-                    className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100"
+                    className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800"
                   >
                     <img
                       src={first?.thumbUrl || first?.url || post.mediaUrl}
@@ -459,11 +470,11 @@ export function Profile() {
 
       {deleteTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)]">
-            <h3 className="text-base font-semibold text-slate-900">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)] dark:bg-slate-800">
+            <h3 className="text-base font-semibold text-slate-900 dark:text-white">
               Delete Post
             </h3>
-            <p className="mt-2 text-sm text-slate-600">
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
               Are you sure you want to delete this post? This action cannot be
               undone.
             </p>
@@ -471,7 +482,7 @@ export function Profile() {
               <button
                 type="button"
                 onClick={() => setDeleteTarget(null)}
-                className="rounded-full px-4 py-2 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100"
+                className="rounded-full px-4 py-2 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700"
               >
                 Cancel
               </button>
@@ -509,9 +520,9 @@ export function Profile() {
 
       {modalTitle ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-3xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)]">
+          <div className="w-full max-w-md rounded-3xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)] dark:bg-slate-800">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-slate-900">
+              <h3 className="text-base font-semibold text-slate-900 dark:text-white">
                 {modalTitle}
               </h3>
               <button
@@ -520,14 +531,14 @@ export function Profile() {
                   setModalTitle(null);
                   setModalUsers([]);
                 }}
-                className="text-sm text-slate-500 hover:text-slate-700"
+                className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-300"
               >
                 Close
               </button>
             </div>
             <div className="mt-4 space-y-3">
               {modalUsers.length === 0 ? (
-                <p className="text-center text-sm text-slate-500">
+                <p className="text-center text-sm text-slate-500 dark:text-slate-300">
                   No users yet
                 </p>
               ) : (

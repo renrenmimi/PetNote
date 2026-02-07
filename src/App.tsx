@@ -5,6 +5,7 @@ import { RequireAdmin } from "./components/RequireAdmin";
 import { SuspendedBanner } from "./components/SuspendedBanner";
 import { AddPet } from "./pages/AddPet";
 import { AdminPanel } from "./pages/AdminPanel";
+import { BlockedUsers } from "./pages/BlockedUsers";
 import { Create } from "./pages/Create";
 import { EditPost } from "./pages/EditPost";
 import { EditProfile } from "./pages/EditProfile";
@@ -15,6 +16,7 @@ import { PetProfile } from "./pages/PetProfile";
 import { PostDetail } from "./pages/PostDetail";
 import { Profile } from "./pages/Profile";
 import { Search } from "./pages/Search";
+import { Settings } from "./pages/Settings";
 import { SignUp } from "./pages/SignUp";
 import { UserProfile } from "./pages/UserProfile";
 
@@ -90,6 +92,22 @@ function App() {
           element={
             <RequireAuth>
               <Notifications />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <RequireAuth>
+              <Settings />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/blocked-users"
+          element={
+            <RequireAuth>
+              <BlockedUsers />
             </RequireAuth>
           }
         />

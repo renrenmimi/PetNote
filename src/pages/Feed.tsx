@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { BottomNav } from "../components/BottomNav";
 import { Navbar } from "../components/Navbar";
+import { OnboardingFlow } from "../components/OnboardingFlow";
 import { PetSpotlight } from "../components/PetSpotlight";
 import { PostCard } from "../components/PostCard";
 import { usePosts } from "../hooks/usePosts";
@@ -61,19 +62,19 @@ function FeedSkeleton() {
       {[1, 2, 3].map((item) => (
         <div
           key={item}
-          className="animate-pulse overflow-hidden rounded-2xl bg-white p-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100"
+          className="animate-pulse overflow-hidden rounded-2xl bg-white p-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700"
         >
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-slate-200" />
+            <div className="h-10 w-10 rounded-full bg-slate-200 dark:bg-slate-700" />
             <div className="space-y-2">
-              <div className="h-3 w-24 rounded bg-slate-200" />
-              <div className="h-3 w-16 rounded bg-slate-200" />
+              <div className="h-3 w-24 rounded bg-slate-200 dark:bg-slate-700" />
+              <div className="h-3 w-16 rounded bg-slate-200 dark:bg-slate-700" />
             </div>
           </div>
-          <div className="mt-4 h-48 w-full rounded-xl bg-slate-200" />
+          <div className="mt-4 h-48 w-full rounded-xl bg-slate-200 dark:bg-slate-700" />
           <div className="mt-4 space-y-2">
-            <div className="h-3 w-32 rounded bg-slate-200" />
-            <div className="h-3 w-2/3 rounded bg-slate-200" />
+            <div className="h-3 w-32 rounded bg-slate-200 dark:bg-slate-700" />
+            <div className="h-3 w-2/3 rounded bg-slate-200 dark:bg-slate-700" />
           </div>
         </div>
       ))}
@@ -83,12 +84,14 @@ function FeedSkeleton() {
 
 export function Feed() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile, profileLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<"all" | "following">("all");
   const { posts, loading, loadingMore, hasMore, loadMore, refresh, error } =
     usePosts(activeTab, user?.uid ?? null);
   const useMock = false;
   const [localPosts, setLocalPosts] = useState<Post[]>([]);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const startYRef = useRef(0);
   const [pullDistance, setPullDistance] = useState(0);
@@ -109,8 +112,19 @@ export function Feed() {
   useEffect(() => {
     if (!user) {
       setActiveTab("all");
+      setOnboardingDismissed(false);
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!user || profileLoading) {
+      setShowOnboarding(false);
+      return;
+    }
+    setShowOnboarding(
+      !onboardingDismissed && !(profile?.onboardingComplete ?? false)
+    );
+  }, [onboardingDismissed, profile, profileLoading, user]);
 
   useEffect(() => {
     let ignore = false;
@@ -159,7 +173,7 @@ export function Feed() {
     : "Pull to refresh";
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
+    <div className="min-h-screen bg-slate-50 pb-20 dark:bg-slate-900">
       <Navbar />
 
       <main
@@ -184,9 +198,9 @@ export function Feed() {
           setPullDistance(0);
         }}
       >
-        <div className="sticky top-[56px] z-10 -mx-4 bg-slate-50 px-4 pb-2 pt-1">
+        <div className="sticky top-[56px] z-10 -mx-4 bg-slate-50 px-4 pb-2 pt-1 dark:bg-slate-900">
           <div
-            className={`relative border-b border-slate-200 ${
+            className={`relative border-b border-slate-200 dark:border-slate-700 ${
               user ? "grid grid-cols-2" : "grid grid-cols-1"
             }`}
           >
@@ -195,8 +209,8 @@ export function Feed() {
               onClick={() => setActiveTab("all")}
               className={`pb-2 text-sm font-semibold transition-all duration-200 ${
                 activeTab === "all"
-                  ? "text-slate-900"
-                  : "text-slate-400 hover:text-slate-600"
+                  ? "text-slate-900 dark:text-white"
+                  : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
               }`}
             >
               For You
@@ -207,8 +221,8 @@ export function Feed() {
                 onClick={() => setActiveTab("following")}
                 className={`pb-2 text-sm font-semibold transition-all duration-200 ${
                   activeTab === "following"
-                    ? "text-slate-900"
-                    : "text-slate-400 hover:text-slate-600"
+                    ? "text-slate-900 dark:text-white"
+                    : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
                 }`}
               >
                 Following
@@ -222,21 +236,23 @@ export function Feed() {
           </div>
         </div>
 
-        <p className="text-center text-xs text-slate-400">{pullLabel}</p>
+        <p className="text-center text-xs text-slate-400 dark:text-slate-500">
+          {pullLabel}
+        </p>
 
         <PetSpotlight />
 
         {loading && !useMock ? <FeedSkeleton /> : null}
 
         {!loading && error ? (
-          <div className="rounded-2xl bg-white p-6 text-center text-sm text-red-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)]">
+          <div className="rounded-2xl bg-white p-6 text-center text-sm text-red-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800">
             {error}
           </div>
         ) : null}
 
         {!loading && filteredPosts.length === 0 ? (
           activeTab === "following" && user && followingCount === 0 ? (
-            <div className="rounded-2xl bg-white p-8 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)]">
+            <div className="rounded-2xl bg-white p-8 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-300">
               <p>Follow some pet lovers to see their posts here! 🐾</p>
               <button
                 type="button"
@@ -247,7 +263,7 @@ export function Feed() {
               </button>
             </div>
           ) : (
-            <div className="rounded-2xl bg-white p-8 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)]">
+            <div className="rounded-2xl bg-white p-8 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-300">
               No posts yet, be the first to share your pet!
             </div>
           )
@@ -269,7 +285,7 @@ export function Feed() {
             {loadingMore ? (
               <span className="h-6 w-6 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
             ) : !hasMore && filteredPosts.length > 0 ? (
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-400 dark:text-slate-500">
                 You&apos;ve seen all posts 🐾
               </p>
             ) : null}
@@ -278,6 +294,16 @@ export function Feed() {
       </main>
 
       <BottomNav />
+
+      {user && !profileLoading && showOnboarding ? (
+        <OnboardingFlow
+          userId={user.uid}
+          onComplete={() => {
+            setOnboardingDismissed(true);
+            setShowOnboarding(false);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

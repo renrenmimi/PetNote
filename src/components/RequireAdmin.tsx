@@ -12,8 +12,10 @@ export function RequireAdmin({ children }: RequireAdminProps) {
 
   if (loading || adminLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white">
-        <span className="text-sm text-slate-500">Checking admin access...</span>
+      <div className="flex min-h-screen items-center justify-center bg-white dark:bg-slate-900">
+        <span className="text-sm text-slate-500 dark:text-slate-300">
+          Checking admin access...
+        </span>
       </div>
     );
   }

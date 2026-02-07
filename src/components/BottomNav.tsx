@@ -40,7 +40,7 @@ export function BottomNav() {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-20 border-t border-slate-200 bg-white">
+    <nav className="fixed bottom-0 left-0 right-0 z-20 border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
       <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-2">
         {items.map((item) => {
           const isActive = item.path
@@ -60,7 +60,7 @@ export function BottomNav() {
                 type="button"
                 onClick={item.action}
                 className={`flex flex-1 flex-col items-center gap-1 text-xs transition-all duration-200 active:scale-95 ${
-                  isActive ? "text-purple-600" : "text-slate-500"
+                  isActive ? "text-purple-600" : "text-slate-500 dark:text-slate-400"
                 }`}
               >
                 {item.label === "Create" ? (
@@ -80,7 +80,7 @@ export function BottomNav() {
               key={item.label}
               to={item.path || "/"}
               className={`flex flex-1 flex-col items-center gap-1 text-xs transition-all duration-200 active:scale-95 ${
-                isActive ? "text-purple-600" : "text-slate-500"
+                isActive ? "text-purple-600" : "text-slate-500 dark:text-slate-400"
               }`}
             >
               <span className="relative text-xl">

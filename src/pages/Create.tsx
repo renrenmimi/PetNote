@@ -403,23 +403,25 @@ export function Create() {
   };
 
   return (
-    <div className="min-h-screen bg-white pb-10">
-      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white">
+    <div className="min-h-screen bg-white pb-10 dark:bg-slate-900">
+      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-3">
           <button
             type="button"
             onClick={() => navigate(-1)}
-            className="text-xl text-slate-500 hover:text-slate-700"
+            className="text-xl text-slate-500 hover:text-slate-700 dark:text-slate-300"
             aria-label="Go back"
           >
             ←
           </button>
-          <h1 className="text-base font-semibold text-slate-900">New Post</h1>
+          <h1 className="text-base font-semibold text-slate-900 dark:text-white">
+            New Post
+          </h1>
           <button
             type="button"
             onClick={handleShare}
             disabled={loading || files.length === 0 || converting || isBanned}
-            className="flex items-center gap-2 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-1.5 text-sm font-semibold text-white shadow-md transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+            className="flex items-center gap-2 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-1.5 text-sm font-semibold text-white shadow-md transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-slate-700 dark:disabled:text-slate-500"
           >
             {loading ? (
               <>
@@ -437,10 +439,10 @@ export function Create() {
 
       <main className="mx-auto w-full max-w-md space-y-6 px-4 py-6">
         <section
-          className={`relative flex min-h-[240px] flex-col rounded-2xl border-2 border-dashed bg-slate-50 text-center transition ${
+          className={`relative flex min-h-[240px] flex-col rounded-2xl border-2 border-dashed bg-slate-50 text-center transition dark:bg-slate-800 ${
             dragActive
-              ? "border-purple-400 bg-purple-50"
-              : "border-slate-200 hover:border-purple-300"
+              ? "border-purple-400 bg-purple-50 dark:bg-purple-500/10"
+              : "border-slate-200 hover:border-purple-300 dark:border-slate-700 dark:hover:border-purple-400"
           }`}
           onClick={() => fileInputRef.current?.click()}
           onDragOver={(event) => {
@@ -457,7 +459,7 @@ export function Create() {
               {files.map((item) => (
                 <div
                   key={item.id}
-                  className="relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-white"
+                  className="relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
                   onClick={(event) => event.stopPropagation()}
                 >
                   {item.type === "video" ? (
@@ -470,7 +472,7 @@ export function Create() {
                         preload="metadata"
                       />
                       <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/20">
-                        <span className="rounded-full bg-white/90 px-2 py-1 text-xs text-slate-700">
+                        <span className="rounded-full bg-white/90 px-2 py-1 text-xs text-slate-700 dark:bg-slate-800/90 dark:text-slate-200">
                           ▶
                         </span>
                       </div>
@@ -488,7 +490,7 @@ export function Create() {
                     />
                   )}
                   {item.sizeLabel ? (
-                    <span className="absolute bottom-2 left-2 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                    <span className="absolute bottom-2 left-2 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:bg-slate-800/90 dark:text-slate-200">
                       {item.sizeLabel}
                     </span>
                   ) : null}
@@ -498,7 +500,7 @@ export function Create() {
                       event.stopPropagation();
                       handleRemove(item.id);
                     }}
-                    className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-white/80 text-xs text-slate-700 shadow transition hover:bg-white"
+                    className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-white/80 text-xs text-slate-700 shadow transition hover:bg-white dark:bg-slate-800/90 dark:text-slate-200"
                     aria-label="Remove file"
                   >
                     ✕
@@ -513,7 +515,7 @@ export function Create() {
                     event.stopPropagation();
                     fileInputRef.current?.click();
                   }}
-                  className="flex aspect-square items-center justify-center rounded-lg border-2 border-dashed border-slate-300 bg-white/70 text-xl text-slate-400 transition-all duration-200 hover:border-purple-400 hover:text-purple-500"
+                  className="flex aspect-square items-center justify-center rounded-lg border-2 border-dashed border-slate-300 bg-white/70 text-xl text-slate-400 transition-all duration-200 hover:border-purple-400 hover:text-purple-500 dark:border-slate-600 dark:bg-slate-900/60 dark:text-slate-500"
                 >
                   +
                 </button>
@@ -522,17 +524,17 @@ export function Create() {
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center space-y-2 px-4">
               <div className="text-3xl">📷</div>
-              <p className="text-sm font-semibold text-slate-700">
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
                 {converting ? "Converting image..." : "Tap to add photo or video"}
               </p>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-400 dark:text-slate-500">
                 Drag & drop or click to upload
               </p>
             </div>
           )}
 
           {converting ? (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white/70 text-sm font-semibold text-slate-600">
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white/70 text-sm font-semibold text-slate-600 dark:bg-slate-900/70 dark:text-slate-200">
               Converting image...
             </div>
           ) : null}
@@ -548,7 +550,7 @@ export function Create() {
         </section>
 
         {files.length > 0 ? (
-          <p className="text-right text-xs text-slate-400">
+          <p className="text-right text-xs text-slate-400 dark:text-slate-500">
             {files.length}/9 files
             {duplicateSkipped > 0
               ? ` · ${duplicateSkipped} duplicate(s) skipped`
@@ -558,12 +560,12 @@ export function Create() {
 
         <section className="space-y-2">
           <div className="flex items-center justify-between">
-            <label className="text-sm font-semibold text-slate-700">
+            <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
               Caption
             </label>
             <span
               className={`text-xs ${
-                remaining === 0 ? "text-red-500" : "text-slate-400"
+                remaining === 0 ? "text-red-500" : "text-slate-400 dark:text-slate-500"
               }`}
             >
               {remaining} left
@@ -573,7 +575,7 @@ export function Create() {
             placeholder="Write a caption..."
             maxLength={MAX_CHARS}
             rows={4}
-            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200"
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
             value={caption}
             onChange={(event) => setCaption(event.target.value)}
           />
@@ -581,7 +583,7 @@ export function Create() {
 
         <section className="space-y-2">
           <div className="flex items-center justify-between">
-            <label className="text-sm font-semibold text-slate-700">
+            <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
               Tag a pet
             </label>
             <button
@@ -593,7 +595,7 @@ export function Create() {
             </button>
           </div>
           {pets.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-center text-xs text-slate-500">
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-center text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
               Add your first pet to tag in posts.
             </div>
           ) : (
@@ -610,7 +612,7 @@ export function Create() {
                         prev === petItem.id ? null : petItem.id
                       )
                     }
-                    className="flex flex-col items-center text-xs text-slate-600"
+                    className="flex flex-col items-center text-xs text-slate-600 dark:text-slate-300"
                   >
                     <div
                       className={`rounded-full bg-gradient-to-r ${meta.gradient} p-0.5 ${
@@ -621,10 +623,10 @@ export function Create() {
                         <img
                           src={petItem.avatarUrl}
                           alt={petItem.name}
-                          className="h-12 w-12 rounded-full border-2 border-white object-cover"
+                          className="h-12 w-12 rounded-full border-2 border-white object-cover dark:border-slate-800"
                         />
                       ) : (
-                        <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-white bg-white text-lg">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-white bg-white text-lg dark:border-slate-800 dark:bg-slate-900">
                           {meta.emoji}
                         </div>
                       )}
@@ -640,11 +642,13 @@ export function Create() {
         </section>
 
         <section className="space-y-2">
-          <label className="text-sm font-semibold text-slate-700">Tags</label>
+          <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+            Tags
+          </label>
           <input
             type="text"
             placeholder="Add tags (e.g. cat, cute)"
-            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200"
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
             value={tagInput}
             onChange={(event) => setTagInput(event.target.value)}
             onKeyDown={handleTagKeyDown}
@@ -658,7 +662,7 @@ export function Create() {
               {tags.map((tag) => (
                 <span
                   key={tag}
-                  className="flex items-center gap-1 rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-600"
+                  className="flex items-center gap-1 rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-600 dark:bg-purple-500/10 dark:text-purple-300"
                 >
                   #{tag}
                   <button
@@ -666,7 +670,7 @@ export function Create() {
                     onClick={() =>
                       setTags((prev) => prev.filter((item) => item !== tag))
                     }
-                    className="text-purple-400 hover:text-purple-600"
+                    className="text-purple-400 hover:text-purple-600 dark:text-purple-300"
                     aria-label={`Remove ${tag}`}
                   >
                     ✕
@@ -678,13 +682,13 @@ export function Create() {
         </section>
 
         {success ? (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-600">
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-600 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300">
             {success}
           </div>
         ) : null}
 
         {error ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300">
             {error}
           </div>
         ) : null}

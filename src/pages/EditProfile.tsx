@@ -80,18 +80,20 @@ export function EditProfile() {
   };
 
   return (
-    <div className="min-h-screen bg-white pb-10">
-      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white">
+    <div className="min-h-screen bg-white pb-10 dark:bg-slate-900">
+      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-3">
           <button
             type="button"
             onClick={() => navigate(-1)}
-            className="text-xl text-slate-500 hover:text-slate-700"
+            className="text-xl text-slate-500 hover:text-slate-700 dark:text-slate-300"
             aria-label="Go back"
           >
             ←
           </button>
-          <h1 className="text-base font-semibold text-slate-900">Edit Profile</h1>
+          <h1 className="text-base font-semibold text-slate-900 dark:text-white">
+            Edit Profile
+          </h1>
           <button
             type="button"
             onClick={handleSave}
@@ -111,7 +113,7 @@ export function EditProfile() {
       </header>
 
       <main className="mx-auto w-full max-w-md space-y-6 px-4 py-6">
-        <section className="rounded-3xl bg-white p-6 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100">
+        <section className="rounded-3xl bg-white p-6 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
           <div className="flex flex-col items-center text-center">
             <div className="relative">
               <img
@@ -130,7 +132,7 @@ export function EditProfile() {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="mt-3 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-all duration-200 hover:scale-105 hover:border-purple-300 hover:text-purple-600"
+              className="mt-3 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-all duration-200 hover:scale-105 hover:border-purple-300 hover:text-purple-600 dark:border-slate-700 dark:text-slate-200"
             >
               Change Photo
             </button>
@@ -148,24 +150,26 @@ export function EditProfile() {
 
         <section className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-semibold text-slate-700">
+            <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
               Display Name
             </label>
             <input
               type="text"
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700 outline-none transition-all duration-200 focus:border-purple-400 focus:ring-2 focus:ring-purple-200"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700 outline-none transition-all duration-200 focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
               placeholder="Enter display name"
             />
           </div>
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-sm font-semibold text-slate-700">Bio</label>
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                Bio
+              </label>
               <span
                 className={`text-xs ${
-                  remaining === 0 ? "text-red-500" : "text-slate-400"
+                  remaining === 0 ? "text-red-500" : "text-slate-400 dark:text-slate-500"
                 }`}
               >
                 {remaining} left
@@ -176,13 +180,13 @@ export function EditProfile() {
               onChange={(event) => setBio(event.target.value)}
               maxLength={MAX_BIO}
               rows={4}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700 outline-none transition-all duration-200 focus:border-purple-400 focus:ring-2 focus:ring-purple-200"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700 outline-none transition-all duration-200 focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
               placeholder="Tell us about your pets..."
             />
           </div>
 
           {error ? (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300">
               {error}
             </div>
           ) : null}

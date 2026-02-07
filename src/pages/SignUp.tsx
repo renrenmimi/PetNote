@@ -6,7 +6,7 @@ import PawIcon from "../components/PawIcon";
 function MailIcon() {
   return (
     <svg
-      className="h-5 w-5 text-slate-400"
+      className="h-5 w-5 text-slate-400 dark:text-slate-500"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -24,7 +24,7 @@ function MailIcon() {
 function LockIcon() {
   return (
     <svg
-      className="h-5 w-5 text-slate-400"
+      className="h-5 w-5 text-slate-400 dark:text-slate-500"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -74,31 +74,31 @@ export function SignUp() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 px-4">
-      <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl">
+      <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl dark:bg-slate-900">
         <div className="mb-8 text-center">
           <div className="flex justify-center">
             <PawIcon size={48} />
           </div>
-          <h1 className="mt-2 text-2xl font-semibold text-slate-900">
+          <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
             PetNote
           </h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
             Create an account to start sharing your pet's story
           </p>
         </div>
 
         <form className="space-y-4" onSubmit={handleSubmit}>
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-600">
+            <span className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
               Email
             </span>
-            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200">
+            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
               <MailIcon />
               <input
                 type="email"
                 placeholder="you@example.com"
                 autoComplete="email"
-                className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+                className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 required
@@ -107,16 +107,16 @@ export function SignUp() {
           </label>
 
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-600">
+            <span className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
               Password
             </span>
-            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200">
+            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
               <LockIcon />
               <input
                 type={showPassword ? "text" : "password"}
                 placeholder="At least 6 characters"
                 autoComplete="new-password"
-                className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+                className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 required
@@ -124,7 +124,7 @@ export function SignUp() {
               <button
                 type="button"
                 onClick={() => setShowPassword((prev) => !prev)}
-                className="text-xs text-slate-400 transition-all duration-200 hover:text-purple-500"
+                className="text-xs text-slate-400 transition-all duration-200 hover:text-purple-500 dark:text-slate-500"
               >
                 {showPassword ? "Hide" : "Show"}
               </button>
@@ -132,16 +132,16 @@ export function SignUp() {
           </label>
 
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-600">
+            <span className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
               Confirm password
             </span>
-            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200">
+            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
               <LockIcon />
               <input
                 type={showConfirm ? "text" : "password"}
                 placeholder="Re-enter your password"
                 autoComplete="new-password"
-                className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+                className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
                 value={confirmPassword}
                 onChange={(event) => setConfirmPassword(event.target.value)}
                 required
@@ -149,7 +149,7 @@ export function SignUp() {
               <button
                 type="button"
                 onClick={() => setShowConfirm((prev) => !prev)}
-                className="text-xs text-slate-400 transition-all duration-200 hover:text-purple-500"
+                className="text-xs text-slate-400 transition-all duration-200 hover:text-purple-500 dark:text-slate-500"
               >
                 {showConfirm ? "Hide" : "Show"}
               </button>
@@ -157,7 +157,7 @@ export function SignUp() {
           </label>
 
           {error ? (
-            <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600">
+            <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-500/10 dark:text-red-300">
               {error}
             </p>
           ) : null}
@@ -171,21 +171,21 @@ export function SignUp() {
           </button>
         </form>
 
-        <div className="my-6 flex items-center gap-3 text-xs text-slate-400">
-          <span className="h-px flex-1 bg-slate-200" />
+        <div className="my-6 flex items-center gap-3 text-xs text-slate-400 dark:text-slate-500">
+          <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
           Or continue with
-          <span className="h-px flex-1 bg-slate-200" />
+          <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
         </div>
 
         <button
           type="button"
-          className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-all duration-200 hover:scale-[1.02] hover:border-purple-200 hover:bg-purple-50"
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-all duration-200 hover:scale-[1.02] hover:border-purple-200 hover:bg-purple-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-purple-500/10"
         >
           <span>🟢</span>
           Continue with Google
         </button>
 
-        <p className="mt-6 text-center text-sm text-slate-500">
+        <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-300">
           Already have an account?
           <Link
             to="/login"
