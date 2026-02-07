@@ -201,9 +201,6 @@ export function MeetupDetail() {
   const isOrganizer = !!user && meetup?.organizerId === user.uid;
   const isJoined = !!user && participants.some((item) => item.userId === user.uid);
   const maxPets = meetup?.requirements.maxPets ?? 0;
-  const spotsLeft =
-    maxPets > 0 && meetup ? Math.max(0, maxPets - meetup.participantCount) : null;
-
   const distance = useMemo(() => {
     if (!meetup || !profile?.location) return null;
     return calculateDistance(

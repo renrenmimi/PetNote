@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Timestamp } from "firebase/firestore";
 import { useAuth } from "../hooks/useAuth";
@@ -97,9 +97,6 @@ export function EditMeetup() {
       ignore = true;
     };
   }, [meetupId]);
-
-  const remainingTitle = useMemo(() => 60 - title.length, [title]);
-  const remainingDesc = useMemo(() => 500 - description.length, [description]);
 
   const handleGeocode = async () => {
     if (!address.trim()) return;

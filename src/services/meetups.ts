@@ -14,14 +14,13 @@ import {
   Timestamp,
   updateDoc,
   where,
-  writeBatch,
   type QueryConstraint,
   type QueryDocumentSnapshot,
   runTransaction,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { calculateDistance } from "./location";
-import { getUserProfile, type UserProfile } from "./users";
+import { getUserProfile } from "./users";
 import { getUserStats } from "./posts";
 import { createNotification } from "./notifications";
 
