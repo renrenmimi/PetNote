@@ -25,6 +25,13 @@ export type UserProfile = {
   banned?: boolean;
   onboardingComplete?: boolean;
   pinnedPostId?: string;
+  location?: {
+    lat: number;
+    lng: number;
+    city: string;
+    state: string;
+    updatedAt?: unknown;
+  };
 };
 
 export async function getUserProfile(

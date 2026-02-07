@@ -35,6 +35,13 @@ export function Navbar() {
         </Link>
 
         <div className="flex items-center gap-3">
+          <Link
+            to="/search"
+            className="text-lg text-slate-500 transition-all duration-200 hover:scale-105 hover:text-purple-500 dark:text-slate-300"
+            aria-label="Search"
+          >
+            🔍
+          </Link>
           {!user ? (
             <Link
               to="/login"

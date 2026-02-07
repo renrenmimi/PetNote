@@ -33,6 +33,7 @@ export function Profile() {
   const [profileName, setProfileName] = useState<string | null>(null);
   const [profileAvatar, setProfileAvatar] = useState<string | null>(null);
   const [profileBio, setProfileBio] = useState<string | null>(null);
+  const [profileLocation, setProfileLocation] = useState<string | null>(null);
   const [pinnedPost, setPinnedPost] = useState<Post | null>(null);
   const [pets, setPets] = useState<Pet[]>([]);
   const [savedPosts, setSavedPosts] = useState<Post[]>([]);
@@ -66,6 +67,12 @@ export function Profile() {
         setProfileName(profile?.displayName || null);
         setProfileAvatar(profile?.avatarUrl || null);
         setProfileBio(profile?.bio || null);
+        if (profile?.location?.city) {
+          const { city, state } = profile.location;
+          setProfileLocation(state ? `${city}, ${state}` : city);
+        } else {
+          setProfileLocation(null);
+        }
         setPets(petList);
         setFollowCounts({
           followerCount: profile?.followerCount ?? 0,
@@ -207,6 +214,11 @@ export function Profile() {
             <p className="text-sm text-slate-400 dark:text-slate-500">{user.email}</p>
             {profileBio ? (
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{profileBio}</p>
+            ) : null}
+            {profileLocation ? (
+              <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                📍 {profileLocation}
+              </p>
             ) : null}
 
             <div className="mt-4 flex w-full items-center justify-center gap-3">

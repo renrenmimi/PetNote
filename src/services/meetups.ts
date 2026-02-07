@@ -1,0 +1,429 @@
+import {
+  addDoc,
+  collection,
+  collectionGroup,
+  doc,
+  getDoc,
+  getDocs,
+  increment,
+  limit,
+  orderBy,
+  query,
+  serverTimestamp,
+  startAfter,
+  Timestamp,
+  updateDoc,
+  where,
+  writeBatch,
+  type QueryConstraint,
+  type QueryDocumentSnapshot,
+  runTransaction,
+} from "firebase/firestore";
+import { db } from "./firebase";
+import { calculateDistance } from "./location";
+import { getUserProfile, type UserProfile } from "./users";
+import { getUserStats } from "./posts";
+import { createNotification } from "./notifications";
+
+export type MeetupStatus = "upcoming" | "ongoing" | "completed" | "cancelled";
+
+export type MeetupLocation = {
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+};
+
+export type MeetupRequirements = {
+  dogSize:
+    | "any"
+    | "small"
+    | "medium"
+    | "large"
+    | "small_medium"
+    | "medium_large";
+  petType: "any" | "dog" | "cat" | "any_dog" | "any_cat";
+  maxPets: number;
+  mustHavePosts: boolean;
+  mustHavePetProfile: boolean;
+  minFollowers: number;
+  additionalNotes: string;
+};
+
+export type MeetupData = {
+  organizerId: string;
+  organizerName: string;
+  organizerAvatar: string;
+  title: string;
+  description: string;
+  coverImage?: string;
+  date: Timestamp;
+  duration: number;
+  location: MeetupLocation;
+  requirements: MeetupRequirements;
+  status: MeetupStatus;
+  participantCount: number;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+};
+
+export type Meetup = MeetupData & { id: string };
+
+export type Participant = {
+  id?: string;
+  meetupId?: string;
+  userId: string;
+  userName: string;
+  userAvatar: string;
+  petId: string;
+  petName: string;
+  petAvatar: string;
+  joinedAt?: unknown;
+  status: "confirmed" | "pending" | "cancelled";
+};
+
+export async function createMeetup(data: MeetupData): Promise<string> {
+  const meetupsRef = collection(db, "meetups");
+  const payload = {
+    ...data,
+    status: data.status ?? "upcoming",
+    participantCount: data.participantCount ?? 0,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+  const result = await addDoc(meetupsRef, payload);
+  return result.id;
+}
+
+export async function updateMeetup(
+  meetupId: string,
+  data: Partial<MeetupData>
+): Promise<void> {
+  const meetupRef = doc(db, "meetups", meetupId);
+  await updateDoc(meetupRef, { ...data, updatedAt: serverTimestamp() });
+}
+
+export async function cancelMeetup(meetupId: string): Promise<void> {
+  const meetupRef = doc(db, "meetups", meetupId);
+  const meetupSnap = await getDoc(meetupRef);
+  if (!meetupSnap.exists()) return;
+  const meetup = { id: meetupSnap.id, ...(meetupSnap.data() as MeetupData) };
+  await updateDoc(meetupRef, {
+    status: "cancelled",
+    updatedAt: serverTimestamp(),
+  });
+  const participants = await getParticipants(meetupId);
+  await Promise.all(
+    participants
+      .filter((item) => item.userId !== meetup.organizerId)
+      .map((item) =>
+        createNotification({
+          userId: item.userId,
+          type: "meetup_cancelled",
+          fromUserId: meetup.organizerId,
+          fromUserName: meetup.organizerName,
+          fromUserAvatar: meetup.organizerAvatar,
+          message: `cancelled the meetup ${meetup.title}`,
+        })
+      )
+  );
+}
+
+export async function getMeetupById(id: string): Promise<Meetup | null> {
+  const meetupRef = doc(db, "meetups", id);
+  const snapshot = await getDoc(meetupRef);
+  if (!snapshot.exists()) return null;
+  return { id: snapshot.id, ...(snapshot.data() as MeetupData) };
+}
+
+export async function getUpcomingMeetups(
+  limitCount = 20,
+  lastDoc?: QueryDocumentSnapshot
+): Promise<{ meetups: Meetup[]; lastDoc: QueryDocumentSnapshot | null; hasMore: boolean }> {
+  const meetupsRef = collection(db, "meetups");
+  const constraints: QueryConstraint[] = [
+    where("status", "in", ["upcoming", "ongoing"]),
+    orderBy("date", "asc"),
+    limit(limitCount),
+  ];
+  if (lastDoc) constraints.push(startAfter(lastDoc));
+  const meetupQuery = query(meetupsRef, ...constraints);
+  const snapshot = await getDocs(meetupQuery);
+  const meetups = snapshot.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...(docSnap.data() as MeetupData),
+  }));
+  const nextLast = snapshot.docs[snapshot.docs.length - 1] ?? null;
+  return { meetups, lastDoc: nextLast, hasMore: snapshot.docs.length === limitCount };
+}
+
+export async function getNearbyMeetups(
+  userLat: number,
+  userLng: number,
+  radiusMiles = 50
+): Promise<Meetup[]> {
+  const { meetups } = await getUpcomingMeetups(50);
+  return meetups
+    .map((meetup) => ({
+      meetup,
+      distance: calculateDistance(
+        userLat,
+        userLng,
+        meetup.location.lat,
+        meetup.location.lng
+      ),
+    }))
+    .filter((item) => item.distance <= radiusMiles)
+    .sort((a, b) => a.distance - b.distance)
+    .map((item) => item.meetup);
+}
+
+export async function getThisWeekMeetups(): Promise<Meetup[]> {
+  const meetupsRef = collection(db, "meetups");
+  const now = new Date();
+  const end = new Date();
+  end.setDate(now.getDate() + 7);
+  const meetupQuery = query(
+    meetupsRef,
+    where("date", ">=", Timestamp.fromDate(now)),
+    where("date", "<=", Timestamp.fromDate(end)),
+    orderBy("date", "asc")
+  );
+  const snapshot = await getDocs(meetupQuery);
+  return snapshot.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...(docSnap.data() as MeetupData),
+  }));
+}
+
+const fetchMeetupsByIds = async (ids: string[]): Promise<Meetup[]> => {
+  if (ids.length === 0) return [];
+  const meetupsRef = collection(db, "meetups");
+  const chunks: Meetup[] = [];
+  const chunkSize = 10;
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const slice = ids.slice(i, i + chunkSize);
+    const q = query(meetupsRef, where("__name__", "in", slice));
+    const snapshot = await getDocs(q);
+    chunks.push(
+      ...snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() as MeetupData),
+      }))
+    );
+  }
+  return chunks;
+};
+
+export async function getMyMeetups(userId: string): Promise<Meetup[]> {
+  const meetupsRef = collection(db, "meetups");
+  const organizerQuery = query(
+    meetupsRef,
+    where("organizerId", "==", userId),
+    orderBy("date", "asc")
+  );
+  const organizerSnap = await getDocs(organizerQuery);
+  const organizerMeetups = organizerSnap.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...(docSnap.data() as MeetupData),
+  }));
+
+  const participantsQuery = query(
+    collectionGroup(db, "participants"),
+    where("userId", "==", userId)
+  );
+  const participantSnap = await getDocs(participantsQuery);
+  const participantIds = participantSnap.docs
+    .map((docSnap) => {
+      const data = docSnap.data() as Participant;
+      if (data.meetupId) return data.meetupId;
+      return docSnap.ref.parent.parent?.id ?? null;
+    })
+    .filter(Boolean) as string[];
+
+  const otherMeetups = await fetchMeetupsByIds(
+    participantIds.filter((id) => !organizerMeetups.some((m) => m.id === id))
+  );
+
+  const combined = [...organizerMeetups, ...otherMeetups];
+  combined.sort((a, b) => {
+    const aDate =
+      a.date instanceof Timestamp ? a.date.toDate().getTime() : 0;
+    const bDate =
+      b.date instanceof Timestamp ? b.date.toDate().getTime() : 0;
+    return aDate - bDate;
+  });
+  return combined;
+}
+
+export async function getParticipants(meetupId: string): Promise<Participant[]> {
+  const participantsRef = collection(db, "meetups", meetupId, "participants");
+  const q = query(participantsRef, orderBy("joinedAt", "asc"));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...(docSnap.data() as Omit<Participant, "id">),
+  }));
+}
+
+export async function joinMeetup(
+  meetupId: string,
+  userId: string,
+  petData: {
+    petId: string;
+    petName: string;
+    petAvatar: string;
+    petSpecies?: string;
+  }
+): Promise<void> {
+  const meetupRef = doc(db, "meetups", meetupId);
+  const participantRef = doc(
+    db,
+    "meetups",
+    meetupId,
+    "participants",
+    userId
+  );
+  const meetupSnap = await getDoc(meetupRef);
+  if (!meetupSnap.exists()) throw new Error("Meetup not found");
+  const meetup = meetupSnap.data() as MeetupData;
+
+  let eligibility: {
+    eligible: boolean;
+    reasons: string[];
+    userName: string;
+    userAvatar: string;
+  };
+
+  if (meetup.organizerId !== userId) {
+    eligibility = await checkRequirements(
+      userId,
+      petData.petSpecies,
+      meetup.requirements,
+      meetup
+    );
+    if (!eligibility.eligible) {
+      throw new Error(eligibility.reasons.join(" "));
+    }
+  } else {
+    const profile = await getUserProfile(userId);
+    eligibility = {
+      eligible: true,
+      reasons: [],
+      userName: profile?.displayName || "PetNote User",
+      userAvatar:
+        profile?.avatarUrl ||
+        `https://api.dicebear.com/7.x/thumbs/svg?seed=${userId}`,
+    };
+  }
+
+  await runTransaction(db, async (transaction) => {
+    const participantSnap = await transaction.get(participantRef);
+    if (participantSnap.exists()) return;
+    if (
+      meetup.requirements.maxPets > 0 &&
+      (meetup.participantCount ?? 0) >= meetup.requirements.maxPets
+    ) {
+      throw new Error("Meetup is full");
+    }
+    transaction.set(participantRef, {
+      meetupId,
+      userId,
+      userName: eligibility.userName,
+      userAvatar: eligibility.userAvatar,
+      petId: petData.petId,
+      petName: petData.petName,
+      petAvatar: petData.petAvatar,
+      joinedAt: serverTimestamp(),
+      status: "confirmed",
+    });
+    transaction.update(meetupRef, {
+      participantCount: increment(1),
+      updatedAt: serverTimestamp(),
+    });
+  });
+
+  if (meetup.organizerId !== userId) {
+    await createNotification({
+      userId: meetup.organizerId,
+      type: "meetup_join",
+      fromUserId: userId,
+      fromUserName: eligibility.userName,
+      fromUserAvatar: eligibility.userAvatar,
+      message: `joined your meetup ${meetup.title}`,
+    });
+  }
+}
+
+export async function leaveMeetup(
+  meetupId: string,
+  userId: string
+): Promise<void> {
+  const meetupRef = doc(db, "meetups", meetupId);
+  const participantRef = doc(
+    db,
+    "meetups",
+    meetupId,
+    "participants",
+    userId
+  );
+  await runTransaction(db, async (transaction) => {
+    const participantSnap = await transaction.get(participantRef);
+    if (!participantSnap.exists()) return;
+    transaction.delete(participantRef);
+    transaction.update(meetupRef, {
+      participantCount: increment(-1),
+      updatedAt: serverTimestamp(),
+    });
+  });
+}
+
+export async function checkRequirements(
+  userId: string,
+  petSpecies: string | undefined,
+  requirements: MeetupRequirements,
+  meetup?: MeetupData
+): Promise<{ eligible: boolean; reasons: string[]; userName: string; userAvatar: string }> {
+  const reasons: string[] = [];
+  const profile = await getUserProfile(userId);
+  const userName = profile?.displayName || "PetNote User";
+  const userAvatar =
+    profile?.avatarUrl ||
+    `https://api.dicebear.com/7.x/thumbs/svg?seed=${userId}`;
+
+  if (requirements.mustHavePosts) {
+    const stats = await getUserStats(userId);
+    if (stats.postCount === 0) {
+      reasons.push("Must have posted at least once.");
+    }
+  }
+
+  if (requirements.mustHavePetProfile && !petSpecies) {
+    reasons.push("Must have a pet profile.");
+  }
+
+  if (requirements.minFollowers > 0) {
+    const followers = profile?.followerCount ?? 0;
+    if (followers < requirements.minFollowers) {
+      reasons.push(`Requires at least ${requirements.minFollowers} followers.`);
+    }
+  }
+
+  if (requirements.petType === "dog" || requirements.petType === "any_dog") {
+    if (petSpecies && petSpecies !== "dog") {
+      reasons.push("Dogs only.");
+    }
+  }
+
+  if (requirements.petType === "cat" || requirements.petType === "any_cat") {
+    if (petSpecies && petSpecies !== "cat") {
+      reasons.push("Cats only.");
+    }
+  }
+
+  if (meetup && meetup.status === "cancelled") {
+    reasons.push("Meetup is cancelled.");
+  }
+
+  return { eligible: reasons.length === 0, reasons, userName, userAvatar };
+}
