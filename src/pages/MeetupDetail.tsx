@@ -201,6 +201,12 @@ export function MeetupDetail() {
   const isOrganizer = !!user && meetup?.organizerId === user.uid;
   const isJoined = !!user && participants.some((item) => item.userId === user.uid);
   const maxPets = meetup?.requirements.maxPets ?? 0;
+  const visibility = meetup?.locationVisibility ?? "participants_only";
+  const canSeeFullAddress =
+    visibility === "everyone" || isOrganizer || isJoined;
+  const locationCityLabel = [meetup?.location.city, meetup?.location.state]
+    .filter(Boolean)
+    .join(", ");
   const distance = useMemo(() => {
     if (!meetup || !profile?.location) return null;
     return calculateDistance(
@@ -243,10 +249,15 @@ export function MeetupDetail() {
         {
           userId: user.uid,
           userName: profile?.displayName || user.displayName || "PetNote User",
-          userAvatar: profile?.avatarUrl || user.photoURL || "",
+          userAvatar:
+            profile?.avatarUrl ||
+            user.photoURL ||
+            `https://api.dicebear.com/7.x/thumbs/svg?seed=${user.uid}`,
           petId: selectedPet.id,
           petName: selectedPet.name,
-          petAvatar: selectedPet.avatarUrl,
+          petAvatar:
+            selectedPet.avatarUrl ||
+            `https://api.dicebear.com/7.x/thumbs/svg?seed=${selectedPet.id}`,
           status: "confirmed",
         },
       ]);
@@ -457,27 +468,42 @@ export function MeetupDetail() {
           </div>
 
           <div className="space-y-1 text-sm text-slate-600 dark:text-slate-300">
-            <p className="font-semibold text-slate-900 dark:text-white">📍 {meetup.location.name}</p>
-            <p>{meetup.location.address}</p>
+            <p className="font-semibold text-slate-900 dark:text-white">
+              📍 {canSeeFullAddress ? meetup.location.name : locationCityLabel || "City hidden"}
+            </p>
+            {canSeeFullAddress ? (
+              <p>{meetup.location.address}</p>
+            ) : (
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Join this meetup to see the full address.
+              </p>
+            )}
             {distance !== null ? (
               <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-600 dark:bg-blue-500/10 dark:text-blue-200">
                 {distance} miles from you
               </span>
             ) : null}
-            <div>
-              <button
-                type="button"
-                onClick={() =>
-                  window.open(
-                    `https://maps.google.com/?q=${meetup.location.lat},${meetup.location.lng}`,
-                    "_blank"
-                  )
-                }
-                className="mt-2 inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700"
-              >
-                Open in Maps
-              </button>
-            </div>
+            {visibility === "participants_only" && canSeeFullAddress ? (
+              <p className="mt-1 text-xs font-semibold text-blue-600">
+                🔒 Address shared with participants
+              </p>
+            ) : null}
+            {canSeeFullAddress ? (
+              <div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    window.open(
+                      `https://maps.google.com/?q=${meetup.location.lat},${meetup.location.lng}`,
+                      "_blank"
+                    )
+                  }
+                  className="mt-2 inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700"
+                >
+                  Open in Maps
+                </button>
+              </div>
+            ) : null}
           </div>
 
           <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-700/40">
@@ -529,10 +555,12 @@ export function MeetupDetail() {
               {participants.map((participant) => (
                 <div key={participant.userId} className="flex w-20 flex-shrink-0 flex-col items-center text-center">
                   <div className="relative">
-                    <img
-                      src={participant.petAvatar}
+                    <Avatar
+                      src={participant.petAvatar || undefined}
                       alt={participant.petName}
-                      className="h-12 w-12 rounded-full border-2 border-purple-300 object-cover"
+                      userId={participant.userId}
+                      size={48}
+                      className="h-12 w-12 border-2 border-purple-300"
                     />
                   </div>
                   <p className="mt-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
@@ -543,12 +571,26 @@ export function MeetupDetail() {
                   </p>
                 </div>
               ))}
-              {maxPets > 0 && meetup.participantCount < maxPets ? (
-                <div className="flex w-20 flex-shrink-0 flex-col items-center text-center">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-dashed border-slate-300 text-slate-400 dark:border-slate-600">
+              {maxPets > 0 && meetup.participantCount < maxPets && !isJoined ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!user) {
+                      navigate("/login");
+                      return;
+                    }
+                    if (!eligibility.eligible) {
+                      showToast("You don't meet the requirements yet.", "warning");
+                      return;
+                    }
+                    setPetPickerOpen(true);
+                  }}
+                  className="flex w-20 flex-shrink-0 flex-col items-center text-center"
+                >
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-dashed border-slate-300 text-slate-400 transition-all duration-200 hover:border-purple-400 hover:text-purple-500 dark:border-slate-600">
                     +
                   </div>
-                </div>
+                </button>
               ) : null}
               {participants.length === 0 && !participantsLoading ? (
                 <p className="text-sm text-slate-400">No participants yet.</p>
@@ -556,6 +598,10 @@ export function MeetupDetail() {
             </div>
           </div>
         </div>
+
+        <p className="text-center text-xs text-slate-400 dark:text-slate-500">
+          🛡️ Always meet in public places and let someone know your plans
+        </p>
       </main>
 
       {!isCancelled && !isCompleted ? (
@@ -681,10 +727,12 @@ export function MeetupDetail() {
                           : "cursor-pointer"
                       }`}
                     >
-                      <img
-                        src={pet.avatarUrl}
+                      <Avatar
+                        src={pet.avatarUrl || undefined}
                         alt={pet.name}
-                        className="h-12 w-12 rounded-full object-cover"
+                        userId={pet.id}
+                        size={48}
+                        className="h-12 w-12"
                       />
                       <div className="flex-1">
                         <p className="text-sm font-semibold text-slate-900 dark:text-white">
