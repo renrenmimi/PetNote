@@ -1,0 +1,10 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Storage is not used by the app (Cloudinary is used instead).
+    // Keep a deny-by-default policy. Adjust if Firebase Storage is enabled later.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
