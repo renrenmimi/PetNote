@@ -110,11 +110,13 @@ export function AdminPanel() {
 
   const activeReports = activeTab === "pending" ? pending : reviewed;
   const pendingCount = pending.length;
+  const newFeedbackCount = feedback.filter((item) => item.status === "new").length;
+  const emptyReportsMessage = activeTab === "pending" ? "No pending reports 👍" : "No reviewed reports";
   const tabIndex = activeTab === "pending" ? 0 : activeTab === "reviewed" ? 1 : 2;
   const feedbackStatusStyles: Record<string, string> = {
     new: "bg-blue-500 animate-pulse",
     read: "bg-amber-400",
-    resolved: "bg-emerald-400",
+    resolved: "bg-slate-300 dark:bg-slate-600",
   };
   const feedbackTypeIcons: Record<string, string> = {
     bug: "🐛",
@@ -162,7 +164,7 @@ export function AdminPanel() {
     </div>
   ) : feedback.length === 0 ? (
     <div className="rounded-2xl bg-white p-8 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-300">
-      No feedback yet.
+      No new feedback
     </div>
   ) : (
     <div className="space-y-4">
@@ -244,7 +246,7 @@ export function AdminPanel() {
     </div>
   ) : activeReports.length === 0 ? (
     <div className="rounded-2xl bg-white p-8 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-300">
-      No reports here.
+      {emptyReportsMessage}
     </div>
   ) : (
     <div className="space-y-4">
@@ -379,7 +381,7 @@ export function AdminPanel() {
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20 dark:bg-slate-900">
-      <header className="sticky top-0 z-10 bg-slate-900 text-white">
+      <header className="sticky top-0 z-10 bg-gray-900 text-white dark:bg-gray-950">
         <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-3">
           <button
             type="button"
@@ -391,51 +393,60 @@ export function AdminPanel() {
           </button>
           <div className="flex items-center gap-2">
             <h1 className="text-base font-semibold">Admin Panel</h1>
-            <span className="rounded-full bg-red-500 px-2 py-0.5 text-xs font-semibold">
-              {pendingCount}
-            </span>
+            <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">Admin</span>
           </div>
           <div className="w-6" />
         </div>
       </header>
 
       <main className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
+        <p className="text-xs text-slate-500 dark:text-slate-400">You are logged in as Admin</p>
         <div className="relative grid grid-cols-3 border-b border-slate-200 dark:border-slate-700">
           <button
             type="button"
             onClick={() => setActiveTab("pending")}
-            className={`pb-2 text-sm font-semibold transition-all duration-200 ${
+            className={`flex items-center justify-center gap-2 pb-2 text-sm font-semibold transition-all duration-200 ${
               activeTab === "pending"
                 ? "text-slate-900 dark:text-white"
                 : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
             }`}
           >
-            Pending
+            <span>Pending</span>
+            {pendingCount > 0 ? (
+              <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold text-orange-600 dark:bg-orange-500/20 dark:text-orange-200">
+                {pendingCount}
+              </span>
+            ) : null}
           </button>
           <button
             type="button"
             onClick={() => setActiveTab("reviewed")}
-            className={`pb-2 text-sm font-semibold transition-all duration-200 ${
+            className={`flex items-center justify-center gap-2 pb-2 text-sm font-semibold transition-all duration-200 ${
               activeTab === "reviewed"
                 ? "text-slate-900 dark:text-white"
                 : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
             }`}
           >
-            Reviewed
+            <span>Reviewed</span>
           </button>
           <button
             type="button"
             onClick={() => setActiveTab("feedback")}
-            className={`pb-2 text-sm font-semibold transition-all duration-200 ${
+            className={`flex items-center justify-center gap-2 pb-2 text-sm font-semibold transition-all duration-200 ${
               activeTab === "feedback"
                 ? "text-slate-900 dark:text-white"
                 : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
             }`}
           >
-            Feedback
+            <span>Feedback</span>
+            {newFeedbackCount > 0 ? (
+              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:bg-blue-500/20 dark:text-blue-200">
+                {newFeedbackCount}
+              </span>
+            ) : null}
           </button>
           <span
-            className="absolute bottom-0 h-0.5 w-1/3 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300"
+            className={`absolute bottom-0 h-0.5 w-1/3 rounded-full transition-all duration-300 ${activeTab === "feedback" ? "bg-blue-500" : "bg-orange-400"}`}
             style={{ transform: `translateX(${tabIndex * 100}%)` }}
           />
         </div>
