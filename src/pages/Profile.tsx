@@ -150,6 +150,14 @@ export function Profile() {
     return posts.filter((post) => post.id !== pinnedPost.id);
   }, [pinnedPost, posts]);
 
+  const formatLikes = (value: number) => {
+    if (value >= 1000) {
+      const formatted = (value / 1000).toFixed(1).replace(/\.0$/, "");
+      return `${formatted}k`;
+    }
+    return value.toString();
+  };
+
   if (!user) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-white dark:bg-slate-900">
@@ -182,14 +190,7 @@ export function Profile() {
             ←
           </button>
           <h1 className="text-base font-semibold text-slate-900 dark:text-white">Profile</h1>
-          <button
-            type="button"
-            onClick={() => navigate("/settings")}
-            className="text-lg text-slate-500 transition-all duration-200 hover:text-purple-500 dark:text-slate-300"
-            aria-label="Settings"
-          >
-            ⚙️
-          </button>
+          <div className="w-6" />
         </div>
       </header>
 
@@ -197,66 +198,43 @@ export function Profile() {
         {loading ? (
           <SkeletonProfile />
         ) : (
-        <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
+        <section className="space-y-4">
           <div className="flex flex-col items-center text-center">
-            <div className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 p-1">
-              <Avatar
-                src={profileAvatar || user.photoURL || undefined}
-                alt={profileName || user.displayName || "User"}
-                userId={user.uid}
-                size={96}
-                className="h-24 w-24 border-4 border-white dark:border-slate-800"
-              />
+            <div className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 p-[3px]">
+              <div className="rounded-full bg-white p-[2px] dark:bg-slate-900">
+                <Avatar
+                  src={profileAvatar || user.photoURL || undefined}
+                  alt={profileName || user.displayName || "User"}
+                  userId={user.uid}
+                  size={96}
+                  className="h-24 w-24"
+                />
+              </div>
             </div>
-            <h2 className="mt-4 text-xl font-semibold text-slate-900 dark:text-white">
+            <h2 className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">
               {profileName || user.displayName || "PetNote User"}
             </h2>
-            <p className="text-sm text-slate-400 dark:text-slate-500">{user.email}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              @{profileName?.replace(/\s+/g, "").toLowerCase() || user.email}
+            </p>
             {profileBio ? (
-              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{profileBio}</p>
+              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                {profileBio}
+              </p>
             ) : null}
             {profileLocation ? (
               <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
                 📍 {profileLocation}
               </p>
             ) : null}
-
-            <div className="mt-4 flex w-full items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={() => navigate("/edit-profile")}
-                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-all duration-200 hover:scale-105 hover:border-purple-300 hover:text-purple-600 dark:border-slate-700 dark:text-slate-200"
-              >
-                Edit Profile
-              </button>
-              {isAdmin ? (
-                <button
-                  type="button"
-                  onClick={() => navigate("/admin")}
-                  className="rounded-full border border-red-200 px-4 py-2 text-sm font-semibold text-red-500 transition-all duration-200 hover:scale-105 hover:border-red-300 hover:bg-red-50 dark:border-red-500/40 dark:hover:bg-red-500/10"
-                >
-                  Admin Panel
-                </button>
-              ) : null}
-              <button
-                type="button"
-                onClick={async () => {
-                  await signOut();
-                  navigate("/login", { replace: true });
-                }}
-                className="rounded-full px-4 py-2 text-sm font-semibold text-red-500 transition-all duration-200 hover:scale-105 hover:bg-red-50 dark:hover:bg-red-500/10"
-              >
-                Sign Out
-              </button>
-            </div>
           </div>
 
-          <div className="mt-6 grid grid-cols-3 gap-4 text-center">
-            <div>
+          <div className="grid grid-cols-3 divide-x divide-slate-200 text-center dark:divide-slate-800">
+            <div className="px-2 py-2">
               <p className="text-lg font-semibold text-slate-900 dark:text-white">
                 {stats.postCount}
               </p>
-              <p className="text-xs text-slate-400 dark:text-slate-500">Posts</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Posts</p>
             </div>
             <button
               type="button"
@@ -266,11 +244,12 @@ export function Profile() {
                 setModalTitle("Followers");
                 setModalUsers(profiles);
               }}
+              className="px-2 py-2"
             >
               <p className="text-lg font-semibold text-slate-900 dark:text-white">
                 {followCounts.followerCount}
               </p>
-              <p className="text-xs text-slate-400 dark:text-slate-500">Followers</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Followers</p>
             </button>
             <button
               type="button"
@@ -280,27 +259,63 @@ export function Profile() {
                 setModalTitle("Following");
                 setModalUsers(profiles);
               }}
+              className="px-2 py-2"
             >
               <p className="text-lg font-semibold text-slate-900 dark:text-white">
                 {followCounts.followingCount}
               </p>
-              <p className="text-xs text-slate-400 dark:text-slate-500">Following</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Following</p>
             </button>
           </div>
-          <div className="mt-4 grid grid-cols-2 gap-4 text-center">
-            <div>
-              <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                {stats.totalLikes}
-              </p>
-              <p className="text-xs text-slate-400 dark:text-slate-500">Likes</p>
-            </div>
-            <div>
-              <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                {joinedDate}
-              </p>
-              <p className="text-xs text-slate-400 dark:text-slate-500">Joined</p>
-            </div>
+
+          <p className="text-center text-xs text-slate-500 dark:text-slate-400">
+            ❤️ {formatLikes(stats.totalLikes)} likes received
+          </p>
+
+          <div className="flex items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => navigate("/edit-profile")}
+              className="rounded-full border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-700 transition-all duration-200 hover:scale-105 hover:border-purple-300 hover:text-purple-600 dark:border-slate-700 dark:text-slate-200"
+            >
+              Edit Profile
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate("/settings")}
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-lg text-slate-500 transition-all duration-200 hover:border-purple-300 hover:text-purple-600 dark:border-slate-700 dark:text-slate-300"
+              aria-label="Settings"
+            >
+              ⚙️
+            </button>
           </div>
+
+          {isAdmin ? (
+            <div className="flex items-center justify-center">
+              <button
+                type="button"
+                onClick={() => navigate("/admin")}
+                className="rounded-full border border-red-200 px-4 py-2 text-xs font-semibold text-red-500 transition-all duration-200 hover:border-red-300 hover:bg-red-50 dark:border-red-500/40 dark:hover:bg-red-500/10"
+              >
+                Admin Panel
+              </button>
+            </div>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={async () => {
+              await signOut();
+              navigate("/login", { replace: true });
+            }}
+            className="mx-auto text-xs font-semibold text-red-500 hover:text-red-600"
+          >
+            Sign Out
+          </button>
+
+          <p className="text-center text-xs text-slate-400 dark:text-slate-500">
+            Joined {joinedDate}
+          </p>
         </section>
         )}
 

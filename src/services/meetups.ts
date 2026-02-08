@@ -23,6 +23,7 @@ import { calculateDistance } from "./location";
 import { getUserProfile } from "./users";
 import { getUserStats } from "./posts";
 import { createNotification } from "./notifications";
+import { getOrCreateLocation } from "./locations";
 
 export type MeetupStatus = "upcoming" | "ongoing" | "completed" | "cancelled";
 
@@ -61,10 +62,12 @@ export type MeetupData = {
   date: Timestamp;
   duration: number;
   location: MeetupLocation;
+  locationId?: string;
   locationVisibility?: "everyone" | "participants_only";
   requirements: MeetupRequirements;
   status: MeetupStatus;
   participantCount: number;
+  isRatingOpen?: boolean;
   createdAt?: unknown;
   updatedAt?: unknown;
 };
@@ -86,11 +89,21 @@ export type Participant = {
 
 export async function createMeetup(data: MeetupData): Promise<string> {
   const meetupsRef = collection(db, "meetups");
+  const locationId = await getOrCreateLocation({
+    name: data.location.name,
+    address: data.location.address,
+    lat: data.location.lat,
+    lng: data.location.lng,
+    city: data.location.city || "",
+    state: data.location.state || "",
+  });
   const payload = {
     ...data,
+    locationId,
     status: data.status ?? "upcoming",
     participantCount: data.participantCount ?? 0,
     locationVisibility: data.locationVisibility ?? "participants_only",
+    isRatingOpen: data.isRatingOpen ?? false,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
@@ -104,6 +117,32 @@ export async function updateMeetup(
 ): Promise<void> {
   const meetupRef = doc(db, "meetups", meetupId);
   await updateDoc(meetupRef, { ...data, updatedAt: serverTimestamp() });
+}
+
+export async function checkAndUpdateMeetupStatus(
+  meetupId: string
+): Promise<Meetup | null> {
+  const meetupRef = doc(db, "meetups", meetupId);
+  const snapshot = await getDoc(meetupRef);
+  if (!snapshot.exists()) return null;
+  const meetup = { id: snapshot.id, ...(snapshot.data() as MeetupData) };
+  if (meetup.status === "cancelled" || meetup.status === "completed") {
+    return meetup;
+  }
+  const dateValue =
+    meetup.date instanceof Timestamp ? meetup.date.toDate() : meetup.date;
+  const endTime = new Date(
+    dateValue.getTime() + (meetup.duration || 0) * 60 * 1000
+  );
+  if (new Date() >= endTime) {
+    await updateDoc(meetupRef, {
+      status: "completed",
+      isRatingOpen: true,
+      updatedAt: serverTimestamp(),
+    });
+    return { ...meetup, status: "completed", isRatingOpen: true };
+  }
+  return meetup;
 }
 
 export async function cancelMeetup(meetupId: string): Promise<void> {
@@ -137,6 +176,22 @@ export async function getMeetupById(id: string): Promise<Meetup | null> {
   const snapshot = await getDoc(meetupRef);
   if (!snapshot.exists()) return null;
   return { id: snapshot.id, ...(snapshot.data() as MeetupData) };
+}
+
+export async function getMeetupsByLocation(
+  locationId: string
+): Promise<Meetup[]> {
+  const meetupsRef = collection(db, "meetups");
+  const meetupQuery = query(
+    meetupsRef,
+    where("locationId", "==", locationId),
+    orderBy("date", "desc")
+  );
+  const snapshot = await getDocs(meetupQuery);
+  return snapshot.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...(docSnap.data() as MeetupData),
+  }));
 }
 
 export async function getUpcomingMeetups(

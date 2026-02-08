@@ -11,6 +11,7 @@ import { EditPost } from "./pages/EditPost";
 import { EditProfile } from "./pages/EditProfile";
 import { Feed } from "./pages/Feed";
 import { ForgotPassword } from "./pages/ForgotPassword";
+import { LocationDetail } from "./pages/LocationDetail";
 import { Login } from "./pages/Login";
 import { Meetups } from "./pages/Meetups";
 import { Notifications } from "./pages/Notifications";
@@ -37,6 +38,7 @@ function App() {
         <Route path="/search" element={<Search />} />
         <Route path="/meetups" element={<Meetups />} />
         <Route path="/meetups/:meetupId" element={<MeetupDetail />} />
+        <Route path="/location/:locationId" element={<LocationDetail />} />
         <Route path="/post/:postId" element={<PostDetail />} />
         <Route
           path="/admin"

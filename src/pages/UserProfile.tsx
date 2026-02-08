@@ -92,6 +92,14 @@ export function UserProfile() {
     return posts.filter((post) => post.id !== pinnedPost.id);
   }, [pinnedPost, posts]);
 
+  const formatLikes = (value: number) => {
+    if (value >= 1000) {
+      const formatted = (value / 1000).toFixed(1).replace(/\.0$/, "");
+      return `${formatted}k`;
+    }
+    return value.toString();
+  };
+
   return (
     <div className="min-h-screen bg-white pb-10 dark:bg-slate-900">
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
@@ -134,45 +142,43 @@ export function UserProfile() {
         ) : null}
 
         {!blocked ? (
-        <section className="rounded-3xl bg-white p-6 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
+        <section className="space-y-4">
           <div className="flex flex-col items-center text-center">
-            <div className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 p-1">
-              <Avatar
-                src={profile?.avatarUrl || undefined}
-                alt={profile?.displayName || "User"}
-                userId={profile?.id}
-                size={96}
-                className="h-24 w-24 border-4 border-white dark:border-slate-800"
-              />
+            <div className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 p-[3px]">
+              <div className="rounded-full bg-white p-[2px] dark:bg-slate-900">
+                <Avatar
+                  src={profile?.avatarUrl || undefined}
+                  alt={profile?.displayName || "User"}
+                  userId={profile?.id}
+                  size={96}
+                  className="h-24 w-24"
+                />
+              </div>
             </div>
-            <h2 className="mt-4 text-xl font-semibold text-slate-900 dark:text-white">
+            <h2 className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">
               {profile?.displayName || "PetNote User"}
             </h2>
-            <p className="text-sm text-slate-400 dark:text-slate-500">{profile?.email}</p>
-
-            {user?.uid !== userId ? (
-              <div className="mt-4">
-                <button
-                  type="button"
-                  onClick={toggleFollow}
-                  className={`rounded-full px-6 py-2 text-sm font-semibold transition-all duration-200 hover:scale-105 ${
-                    isFollowing
-                      ? "border border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-300"
-                      : "bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-[0_10px_25px_-15px_rgba(168,85,247,0.7)]"
-                  }`}
-                >
-                  {isFollowing ? "Following" : "Follow"}
-                </button>
-              </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              @{profile?.displayName?.replace(/\s+/g, "").toLowerCase() || profile?.email}
+            </p>
+            {profile?.bio ? (
+              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                {profile.bio}
+              </p>
+            ) : null}
+            {profile?.location?.city ? (
+              <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                📍 {profile.location.state ? `${profile.location.city}, ${profile.location.state}` : profile.location.city}
+              </p>
             ) : null}
           </div>
 
-          <div className="mt-6 grid grid-cols-3 gap-4 text-center">
-            <div>
+          <div className="grid grid-cols-3 divide-x divide-slate-200 text-center dark:divide-slate-800">
+            <div className="px-2 py-2">
               <p className="text-lg font-semibold text-slate-900 dark:text-white">
                 {stats.postCount}
               </p>
-              <p className="text-xs text-slate-400 dark:text-slate-500">Posts</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Posts</p>
             </div>
             <button
               type="button"
@@ -182,11 +188,12 @@ export function UserProfile() {
                 setModalTitle("Followers");
                 setModalUsers(profiles);
               }}
+              className="px-2 py-2"
             >
               <p className="text-lg font-semibold text-slate-900 dark:text-white">
                 {followerCount}
               </p>
-              <p className="text-xs text-slate-400 dark:text-slate-500">Followers</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Followers</p>
             </button>
             <button
               type="button"
@@ -196,27 +203,44 @@ export function UserProfile() {
                 setModalTitle("Following");
                 setModalUsers(profiles);
               }}
+              className="px-2 py-2"
             >
               <p className="text-lg font-semibold text-slate-900 dark:text-white">
                 {profile?.followingCount ?? 0}
               </p>
-              <p className="text-xs text-slate-400 dark:text-slate-500">Following</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Following</p>
             </button>
           </div>
-          <div className="mt-4 grid grid-cols-2 gap-4 text-center">
-            <div>
-              <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                {stats.totalLikes}
-              </p>
-              <p className="text-xs text-slate-400 dark:text-slate-500">Likes</p>
+
+          <p className="text-center text-xs text-slate-500 dark:text-slate-400">
+            ❤️ {formatLikes(stats.totalLikes)} likes received
+          </p>
+
+          {user?.uid !== userId ? (
+            <div className="flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={toggleFollow}
+                className={`rounded-full px-6 py-2 text-sm font-semibold transition-all duration-200 hover:scale-105 ${
+                  isFollowing
+                    ? "border border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-300"
+                    : "bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-[0_10px_25px_-15px_rgba(168,85,247,0.7)]"
+                }`}
+              >
+                {isFollowing ? "Following" : "Follow"}
+              </button>
+              <button
+                type="button"
+                className="rounded-full border border-slate-200 px-6 py-2 text-sm font-semibold text-slate-500 dark:border-slate-700 dark:text-slate-300"
+              >
+                Message
+              </button>
             </div>
-            <div>
-              <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                {joinedDate}
-              </p>
-              <p className="text-xs text-slate-400 dark:text-slate-500">Joined</p>
-            </div>
-          </div>
+          ) : null}
+
+          <p className="text-center text-xs text-slate-400 dark:text-slate-500">
+            Joined {joinedDate}
+          </p>
         </section>
         ) : null}
 

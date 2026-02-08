@@ -12,6 +12,7 @@ import {
   type Meetup,
 } from "../services/meetups";
 import { calculateDistance } from "../services/location";
+import { getLocation, type Location } from "../services/locations";
 
 type FilterKey = "nearby" | "week" | "mine" | "dogs" | "cats";
 
@@ -72,6 +73,9 @@ export function Meetups() {
   const [activeFilter, setActiveFilter] = useState<FilterKey>("nearby");
   const [meetups, setMeetups] = useState<Meetup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [locationRatings, setLocationRatings] = useState<
+    Record<string, Location>
+  >({});
 
   const userLocation = profile?.location;
 
@@ -118,6 +122,33 @@ export function Meetups() {
       ignore = true;
     };
   }, [activeFilter, user, userLocation]);
+
+  useEffect(() => {
+    let ignore = false;
+    const loadRatings = async () => {
+      const ids = Array.from(
+        new Set(meetups.map((meetup) => meetup.locationId).filter(Boolean))
+      ) as string[];
+      if (ids.length === 0) {
+        setLocationRatings({});
+        return;
+      }
+      const entries = await Promise.all(
+        ids.map(async (id) => [id, await getLocation(id)] as const)
+      );
+      if (!ignore) {
+        const map: Record<string, Location> = {};
+        entries.forEach(([id, data]) => {
+          if (data) map[id] = data;
+        });
+        setLocationRatings(map);
+      }
+    };
+    void loadRatings();
+    return () => {
+      ignore = true;
+    };
+  }, [meetups]);
 
   const cards = useMemo(() => {
     if (!userLocation) return meetups;
@@ -198,6 +229,9 @@ export function Meetups() {
               const locationLabel = canSeeFullAddress
                 ? meetup.location.name
                 : cityLabel || "City hidden";
+              const rating = meetup.locationId
+                ? locationRatings[meetup.locationId]
+                : null;
               const progress =
                 maxPets > 0
                   ? Math.min(
@@ -245,6 +279,11 @@ export function Meetups() {
                     <p className="text-xs text-slate-500 dark:text-slate-300">
                       📍 {locationLabel}
                     </p>
+                    {rating && rating.totalRatings > 0 ? (
+                      <p className="text-[11px] font-semibold text-amber-500">
+                        ⭐ {rating.averageRating.toFixed(1)}
+                      </p>
+                    ) : null}
                     {distance !== undefined ? (
                       <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:bg-blue-500/10 dark:text-blue-200">
                         📍 {distance} mi
