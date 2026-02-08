@@ -39,14 +39,14 @@ export function Navbar() {
         <div className="flex items-center gap-3">
           <Link
             to="/search"
-            className="text-lg text-slate-500 transition-all duration-200 hover:scale-105 hover:text-purple-500 dark:text-slate-300"
+            className="text-xl text-slate-500 transition-all duration-200 hover:scale-105 hover:text-purple-500 dark:text-slate-300"
             aria-label="Search"
           >
             🔍
           </Link>
           <Link
             to="/notifications"
-            className="relative text-lg text-slate-500 transition-all duration-200 hover:scale-105 hover:text-purple-500 dark:text-slate-300"
+            className="relative text-xl text-slate-500 transition-all duration-200 hover:scale-105 hover:text-purple-500 dark:text-slate-300"
             aria-label="Notifications"
           >
             🔔
@@ -62,24 +62,15 @@ export function Navbar() {
               Login
             </Link>
           ) : (
-            <>
-              <Link
-                to="/create"
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-[0_10px_25px_-15px_rgba(168,85,247,0.7)] transition-all duration-200 hover:scale-105 hover:brightness-110"
-                aria-label="Create post"
-              >
-                +
-              </Link>
-              <Link to="/profile" aria-label="Profile">
-                <Avatar
-                  src={user.photoURL || undefined}
-                  alt={user.displayName || "User"}
-                  userId={user.uid}
-                  size={36}
-                  className="h-9 w-9"
-                />
-              </Link>
-            </>
+            <Link to="/profile" aria-label="Profile">
+              <Avatar
+                src={user.photoURL || undefined}
+                alt={user.displayName || "User"}
+                userId={user.uid}
+                size={36}
+                className="h-9 w-9"
+              />
+            </Link>
           )}
         </div>
       </div>
