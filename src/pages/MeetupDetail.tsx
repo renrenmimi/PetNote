@@ -87,6 +87,7 @@ const petTypeLabels: Record<MeetupRequirements["petType"], string> = {
   cat: "Cats only",
   any_dog: "Any dog",
   any_cat: "Any cat",
+  other: "Other pets",
 };
 
 const dogSizeLabels: Record<MeetupRequirements["dogSize"], string> = {
@@ -197,6 +198,9 @@ export function MeetupDetail() {
           if (meetup.requirements.petType === "cat") return pet.species === "cat";
           if (meetup.requirements.petType === "any_dog") return pet.species === "dog";
           if (meetup.requirements.petType === "any_cat") return pet.species === "cat";
+          if (meetup.requirements.petType === "other") {
+            return pet.species !== "dog" && pet.species !== "cat";
+          }
           return true;
         });
 
@@ -290,7 +294,10 @@ export function MeetupDetail() {
       (meetup.requirements.petType === "dog" && selectedPet.species === "dog") ||
       (meetup.requirements.petType === "cat" && selectedPet.species === "cat") ||
       (meetup.requirements.petType === "any_dog" && selectedPet.species === "dog") ||
-      (meetup.requirements.petType === "any_cat" && selectedPet.species === "cat");
+      (meetup.requirements.petType === "any_cat" && selectedPet.species === "cat") ||
+      (meetup.requirements.petType === "other" &&
+        selectedPet.species !== "dog" &&
+        selectedPet.species !== "cat");
     if (!petMatchesType) {
       showToast("Selected pet doesn't meet the requirements.", "warning");
       return;
@@ -385,7 +392,11 @@ export function MeetupDetail() {
 
   const renderRequirementList = (requirements: MeetupRequirements) => {
     const items: Array<{ icon: string; label: string }> = [];
-    items.push({ icon: "🐾", label: `Pet type: ${petTypeLabels[requirements.petType]}` });
+    const isOther = requirements.petType === "other" && requirements.customPetType;
+    const petTypeLabel = isOther
+      ? `${requirements.customPetType} only`
+      : petTypeLabels[requirements.petType];
+    items.push({ icon: isOther ? "📝" : "🐾", label: `Pet type: ${petTypeLabel}` });
     if (requirements.petType === "dog" || requirements.petType === "any_dog") {
       items.push({
         icon: "📏",
@@ -821,7 +832,10 @@ export function MeetupDetail() {
                     (meetup.requirements.petType === "any_dog" &&
                       pet.species === "dog") ||
                     (meetup.requirements.petType === "any_cat" &&
-                      pet.species === "cat");
+                      pet.species === "cat") ||
+                    (meetup.requirements.petType === "other" &&
+                      pet.species !== "dog" &&
+                      pet.species !== "cat");
                   return (
                     <button
                       key={pet.id}

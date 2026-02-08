@@ -30,6 +30,7 @@ import { SignUp } from "./pages/SignUp";
 import { UserProfile } from "./pages/UserProfile";
 import { CreateMeetup } from "./pages/CreateMeetup";
 import { EditMeetup } from "./pages/EditMeetup";
+import { ContactUs } from "./pages/ContactUs";
 
 function App() {
   const [splashVisible, setSplashVisible] = useState(true);
@@ -180,6 +181,16 @@ function App() {
             wrap(
               <RequireAuth>
                 <Settings />
+              </RequireAuth>
+            )
+          }
+        />
+        <Route
+          path="/contact"
+          element={
+            wrap(
+              <RequireAuth>
+                <ContactUs />
               </RequireAuth>
             )
           }

@@ -53,6 +53,7 @@ export function CreateMeetup() {
   const [petType, setPetType] = useState<
     MeetupRequirements["petType"]
   >("any");
+  const [customPetType, setCustomPetType] = useState("" );
   const [dogSize, setDogSize] = useState<
     MeetupRequirements["dogSize"]
   >("any");
@@ -215,6 +216,7 @@ export function CreateMeetup() {
         mustHavePetProfile,
         minFollowers,
         additionalNotes: additionalNotes.trim(),
+        customPetType: petType === "other" ? customPetType.trim() : undefined,
       };
       const resolvedLocationName = locationName.trim() || address.trim();
       const meetupId = await createMeetup({
@@ -539,6 +541,7 @@ export function CreateMeetup() {
               { key: "any", label: "🐾 Any Pet" },
               { key: "dog", label: "🐕 Dogs Only" },
               { key: "cat", label: "🐱 Cats Only" },
+              { key: "other", label: "📝 Other" },
             ].map((item) => (
               <button
                 key={item.key}
@@ -554,6 +557,25 @@ export function CreateMeetup() {
               </button>
             ))}
           </div>
+          {petType === "other" ? (
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-500 dark:text-slate-300">
+                Custom pet type
+              </label>
+              <input
+                type="text"
+                value={customPetType}
+                maxLength={30}
+                onChange={(event) => setCustomPetType(event.target.value)}
+                placeholder="Enter pet type (e.g. Birds, Rabbits, Hamsters...)"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+              <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                {customPetType.length}/30
+              </p>
+            </div>
+          ) : null}
+
           {(petType === "dog" || petType === "any_dog") ? (
             <div className="flex flex-wrap gap-2">
               {[

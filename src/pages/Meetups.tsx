@@ -16,7 +16,7 @@ import {
 import { calculateDistance } from "../services/location";
 import { getLocation, type Location } from "../services/locations";
 
-type FilterKey = "nearby" | "week" | "mine" | "dogs" | "cats";
+type FilterKey = "nearby" | "week" | "mine" | "dogs" | "cats" | "other";
 
 const filters: Array<{ key: FilterKey; label: string; Icon: typeof MapPin; color: string }> = [
   { key: "nearby", label: "Nearby", Icon: MapPin, color: "text-blue-500" },
@@ -24,6 +24,7 @@ const filters: Array<{ key: FilterKey; label: string; Icon: typeof MapPin; color
   { key: "mine", label: "My Meetups", Icon: User, color: "text-purple-500" },
   { key: "dogs", label: "Dogs", Icon: PawPrint, color: "text-amber-600" },
   { key: "cats", label: "Cats", Icon: PawPrint, color: "text-orange-500" },
+  { key: "other", label: "Other", Icon: PawPrint, color: "text-slate-500" },
 ];
 
 const formatDate = (value: unknown) => {
@@ -110,6 +111,9 @@ export function Meetups() {
           }
           if (activeFilter === "cats") {
             return type === "cat" || type === "any_cat";
+          }
+          if (activeFilter === "other") {
+            return type !== "dog" && type !== "any_dog" && type !== "cat" && type !== "any_cat";
           }
           return true;
         });
