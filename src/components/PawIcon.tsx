@@ -37,7 +37,7 @@ export default function PawIcon({
         cy="30"
         rx="9.2"
         ry="11.2"
-        fill="#FF69B4"
+        fill="#4A2C17"
         transform="rotate(6 58 30)"
       />
       <ellipse
@@ -45,7 +45,7 @@ export default function PawIcon({
         cy="36"
         rx="9.6"
         ry="11.4"
-        fill="#4A2C17"
+        fill="#FF69B4"
         transform="rotate(14 74 36)"
       />
     </svg>
