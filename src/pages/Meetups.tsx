@@ -3,7 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { BottomNav } from "../components/BottomNav";
 import { Navbar } from "../components/Navbar";
 import { EmptyState } from "../components/EmptyState";
+import FilterTag from "../components/FilterTag";
 import { useAuth } from "../hooks/useAuth";
+import { Calendar, MapPin, PawPrint, User } from "lucide-react";
 import {
   getMyMeetups,
   getNearbyMeetups,
@@ -16,12 +18,12 @@ import { getLocation, type Location } from "../services/locations";
 
 type FilterKey = "nearby" | "week" | "mine" | "dogs" | "cats";
 
-const filters: Array<{ key: FilterKey; label: string }> = [
-  { key: "nearby", label: "Nearby" },
-  { key: "week", label: "This Week" },
-  { key: "mine", label: "My Meetups" },
-  { key: "dogs", label: "🐕 Dogs" },
-  { key: "cats", label: "🐱 Cats" },
+const filters: Array<{ key: FilterKey; label: string; Icon: typeof MapPin; color: string }> = [
+  { key: "nearby", label: "Nearby", Icon: MapPin, color: "text-blue-500" },
+  { key: "week", label: "This Week", Icon: Calendar, color: "text-green-500" },
+  { key: "mine", label: "My Meetups", Icon: User, color: "text-purple-500" },
+  { key: "dogs", label: "Dogs", Icon: PawPrint, color: "text-amber-600" },
+  { key: "cats", label: "Cats", Icon: PawPrint, color: "text-orange-500" },
 ];
 
 const formatDate = (value: unknown) => {
@@ -181,24 +183,22 @@ export function Meetups() {
           </button>
         </div>
 
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {filters.map((filter) => {
-            const active = activeFilter === filter.key;
-            return (
-              <button
-                key={filter.key}
-                type="button"
-                onClick={() => setActiveFilter(filter.key)}
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
-                  active
-                    ? "bg-gradient-to-r from-purple-500 to-pink-500 text-white"
-                    : "bg-white text-slate-500 ring-1 ring-slate-200 hover:text-slate-700 dark:bg-slate-800 dark:ring-slate-700 dark:text-slate-300"
-                }`}
-              >
-                {filter.label}
-              </button>
-            );
-          })}
+        <div className="-mx-4 overflow-x-auto py-2 px-4 scrollbar-hide">
+          <div className="flex gap-2">
+            {filters.map((filter) => {
+              const active = activeFilter === filter.key;
+              const Icon = filter.Icon;
+              return (
+                <FilterTag
+                  key={filter.key}
+                  icon={<Icon size={14} className={active ? "text-white" : filter.color} />}
+                  label={filter.label}
+                  active={active}
+                  onClick={() => setActiveFilter(filter.key)}
+                />
+              );
+            })}
+          </div>
         </div>
 
         {loading ? (
