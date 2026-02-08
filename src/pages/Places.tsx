@@ -4,7 +4,9 @@ import { BottomNav } from "../components/BottomNav";
 import { Navbar } from "../components/Navbar";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { EmptyState } from "../components/EmptyState";
+import FilterTag from "../components/FilterTag";
 import { useAuth } from "../hooks/useAuth";
+import { Coffee, Leaf, Mountain, PawPrint, ShoppingBag, Stethoscope, Trees, Waves } from "lucide-react";
 import {
   getPlaces,
   searchPlaces,
@@ -12,22 +14,6 @@ import {
   type PlaceCategory,
 } from "../services/locations";
 import { calculateDistance } from "../services/location";
-
-const categoryOptions: Array<{
-  key: PlaceCategory | "all";
-  label: string;
-  color: string;
-}> = [
-  { key: "all", label: "All", color: "bg-slate-200 text-slate-700" },
-  { key: "dog_park", label: "🐕 Dog Parks", color: "bg-emerald-100 text-emerald-700" },
-  { key: "hiking_trail", label: "🥾 Hiking Trails", color: "bg-amber-100 text-amber-700" },
-  { key: "beach", label: "🏖️ Beaches", color: "bg-blue-100 text-blue-700" },
-  { key: "community_park", label: "🌳 Parks", color: "bg-green-100 text-green-700" },
-  { key: "cafe", label: "☕ Cafés", color: "bg-orange-100 text-orange-700" },
-  { key: "green_space", label: "🌿 Green Spaces", color: "bg-teal-100 text-teal-700" },
-  { key: "pet_store", label: "🏪 Pet Stores", color: "bg-purple-100 text-purple-700" },
-  { key: "vet", label: "🏥 Vets", color: "bg-red-100 text-red-700" },
-];
 
 const categoryEmoji: Record<PlaceCategory, string> = {
   dog_park: "🐕",
@@ -86,6 +72,23 @@ const sortOptions = [
   { key: "most_reviewed", label: "Most Reviewed" },
   { key: "newest", label: "Newest" },
 ] as const;
+
+const categoryFilters: Array<{
+  key: PlaceCategory | "all";
+  label: string;
+  Icon: typeof PawPrint;
+  color: string;
+}> = [
+  { key: "all", label: "All", Icon: PawPrint, color: "text-purple-500" },
+  { key: "dog_park", label: "Dog Parks", Icon: PawPrint, color: "text-green-500" },
+  { key: "hiking_trail", label: "Hiking Trails", Icon: Mountain, color: "text-amber-700" },
+  { key: "beach", label: "Beaches", Icon: Waves, color: "text-blue-500" },
+  { key: "community_park", label: "Parks", Icon: Trees, color: "text-emerald-500" },
+  { key: "cafe", label: "Cafés", Icon: Coffee, color: "text-orange-500" },
+  { key: "green_space", label: "Green Spaces", Icon: Leaf, color: "text-teal-500" },
+  { key: "pet_store", label: "Pet Stores", Icon: ShoppingBag, color: "text-purple-500" },
+  { key: "vet", label: "Vets", Icon: Stethoscope, color: "text-red-500" },
+];
 
 export function Places() {
   const navigate = useNavigate();
@@ -204,24 +207,22 @@ export function Places() {
           placeholder="Search pet-friendly places..."
         />
 
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {categoryOptions.map((option) => {
-            const active = category === option.key;
-            return (
-              <button
-                key={option.key}
-                type="button"
-                onClick={() => setCategory(option.key)}
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
-                  active
-                    ? "bg-gradient-to-r from-purple-500 to-pink-500 text-white"
-                    : "bg-white text-slate-500 ring-1 ring-slate-200 hover:text-slate-700 dark:bg-slate-800 dark:ring-slate-700 dark:text-slate-300"
-                }`}
-              >
-                {option.label}
-              </button>
-            );
-          })}
+        <div className="-mx-4 overflow-x-auto py-2 px-4 scrollbar-hide">
+          <div className="flex gap-2">
+            {categoryFilters.map((option) => {
+              const active = category === option.key;
+              const Icon = option.Icon;
+              return (
+                <FilterTag
+                  key={option.key}
+                  icon={<Icon size={14} className={active ? "text-white" : option.color} />}
+                  label={option.label}
+                  active={active}
+                  onClick={() => setCategory(option.key)}
+                />
+              );
+            })}
+          </div>
         </div>
 
         <div className="flex items-center justify-between text-xs text-slate-400">

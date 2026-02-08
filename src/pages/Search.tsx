@@ -165,12 +165,28 @@ export function Search() {
   const normalizedQuery = useMemo(() => query.trim(), [query]);
   const hasQuery = normalizedQuery.length > 0;
 
+  const handleQueryChange = (value: string) => {
+    setQuery(value);
+  };
+
+  const handleTagClick = (tag: string) => {
+    setSearchResults(null);
+    setQuery(`#${tag}`);
+    setSearchParams({ tag });
+  };
+
+  const handleClear = () => {
+    setQuery("");
+    setSearchResults(null);
+    setSearchParams({});
+  };
+
   useEffect(() => {
     const tagParam = searchParams.get("tag");
-    if (tagParam && !query) {
-      setQuery(`#${tagParam}`);
+    if (tagParam) {
+      setQuery((prev) => (prev ? prev : `#${tagParam}`));
     }
-  }, [query, searchParams]);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!normalizedQuery) {
@@ -302,12 +318,12 @@ export function Search() {
                 placeholder="Search people, pets, tags..."
                 className="flex-1 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-200 dark:placeholder:text-slate-500"
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => handleQueryChange(event.target.value)}
               />
               {query ? (
                 <button
                   type="button"
-                  onClick={() => setQuery("")}
+                  onClick={handleClear}
                   className="text-sm text-slate-400 transition-all duration-200 hover:text-purple-500 dark:text-slate-500"
                 >
                   ✕
@@ -329,7 +345,7 @@ export function Search() {
                     <button
                       key={tag.name}
                       type="button"
-                      onClick={() => setQuery(`#${tag.name}`)}
+                      onClick={() => handleTagClick(tag.name)}
                       className="whitespace-nowrap rounded-full bg-gradient-to-r from-purple-100 to-pink-100 px-3 py-1 text-xs font-semibold text-purple-600 transition-all duration-200 hover:scale-105 dark:from-purple-500/20 dark:to-pink-500/20 dark:text-purple-200"
                     >
                       #{tag.name} · {tag.postCount} posts
@@ -613,7 +629,7 @@ export function Search() {
                     <button
                       key={tag.name}
                       type="button"
-                      onClick={() => setQuery(`#${tag.name}`)}
+                      onClick={() => handleTagClick(tag.name)}
                       className="flex w-full items-center justify-between rounded-xl bg-white px-3 py-2 text-left text-sm text-slate-700 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 transition-all duration-200 hover:scale-[1.01] dark:bg-slate-800 dark:text-slate-200 dark:ring-slate-700"
                     >
                       <span className="font-semibold text-purple-600">#{tag.name}</span>
