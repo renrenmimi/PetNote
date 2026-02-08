@@ -428,6 +428,7 @@ export function PostDetail() {
           onClose={() => setShareOpen(false)}
           postId={post.id}
           text={post.text}
+          post={post}
         />
       ) : null}
     </div>

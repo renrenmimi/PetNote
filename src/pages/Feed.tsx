@@ -261,11 +261,12 @@ export function Feed() {
           )
         ) : null}
 
-        {filteredPosts.map((post) => (
+        {filteredPosts.map((post, index) => (
           <PostCard
             key={post.id}
             post={post}
             useMock={useMock}
+            index={index}
             onDeleted={(postId) =>
               setLocalPosts((prev) => prev.filter((item) => item.id !== postId))
             }

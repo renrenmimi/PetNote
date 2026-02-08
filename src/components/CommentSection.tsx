@@ -34,9 +34,11 @@ export function CommentSection({
   const navigate = useNavigate();
   const { showToast } = useToast();
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputWrapperRef = useRef<HTMLDivElement | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(false);
   const [text, setText] = useState("");
+  const [viewportOffset, setViewportOffset] = useState(0);
   const [replyTarget, setReplyTarget] = useState<{
     commentId: string;
     authorName: string;
@@ -73,6 +75,22 @@ export function CommentSection({
       ignore = true;
     };
   }, [postId]);
+
+  useEffect(() => {
+    if (!stickyInput || !window.visualViewport) return;
+    const viewport = window.visualViewport;
+    const handleResize = () => {
+      const offset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+      setViewportOffset(offset);
+    };
+    handleResize();
+    viewport.addEventListener("resize", handleResize);
+    viewport.addEventListener("scroll", handleResize);
+    return () => {
+      viewport.removeEventListener("resize", handleResize);
+      viewport.removeEventListener("scroll", handleResize);
+    };
+  }, [stickyInput]);
 
   const visibleComments = useMemo(() => {
     if (!Number.isFinite(maxVisible)) {
@@ -267,9 +285,11 @@ export function CommentSection({
       </div>
 
       <div
+        ref={inputWrapperRef}
+        style={stickyInput ? { bottom: viewportOffset } : undefined}
         className={
           stickyInput
-            ? "sticky bottom-0 bg-slate-50 pt-3 dark:bg-slate-800"
+            ? "sticky bottom-0 border-t border-slate-200 bg-slate-50 pt-3 pb-[env(safe-area-inset-bottom)] dark:border-slate-700 dark:bg-slate-800"
             : ""
         }
       >
@@ -292,6 +312,19 @@ export function CommentSection({
         <div
           className={`${replyTarget ? "mt-3" : "mt-4"} flex items-center gap-2`}
         >
+          {user ? (
+            <Avatar
+              src={user.photoURL || undefined}
+              alt={user.displayName || "User"}
+              userId={user.uid}
+              size={24}
+              className="h-6 w-6"
+            />
+          ) : (
+            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-[10px] text-slate-500 dark:bg-slate-700 dark:text-slate-300">
+              👤
+            </div>
+          )}
           <input
             ref={inputRef}
             type="text"

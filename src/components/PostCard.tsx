@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useLike } from "../hooks/useLike";
@@ -8,6 +8,7 @@ import { deletePost, pinPost, unpinPost, type Post } from "../services/posts";
 import { getPetById, isBirthdayToday } from "../services/pets";
 import { getUserProfile } from "../services/users";
 import { MediaCarousel } from "./MediaCarousel";
+import { QuickActionMenu } from "./QuickActionMenu";
 import { ReportModal } from "./ReportModal";
 import { ShareMenu } from "./ShareMenu";
 import { timeAgo } from "../utils/timeAgo";
@@ -17,18 +18,30 @@ import Avatar from "./Avatar";
 type PostCardProps = {
   post: Post;
   useMock?: boolean;
+  index?: number;
   onDeleted?: (postId: string) => void;
 };
 
-export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
+export function PostCard({
+  post,
+  useMock = false,
+  index = 0,
+  onDeleted,
+}: PostCardProps) {
   const { user, isBanned, profile } = useAuth();
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressTriggered = useRef(false);
   const [animating, setAnimating] = useState(false);
   const [localLiked, setLocalLiked] = useState(false);
   const [localLikeCount, setLocalLikeCount] = useState(post.likeCount ?? 0);
   const [showHeart, setShowHeart] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [quickMenuOpen, setQuickMenuOpen] = useState(false);
+  const [quickMenuPosition, setQuickMenuPosition] = useState({ x: 0, y: 0 });
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [hidden, setHidden] = useState(false);
@@ -74,6 +87,7 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
   const commentTotal = post.commentCount ?? 0;
   const isOwner = user?.uid === post.authorId;
   const isPinned = !!profile?.pinnedPostId && profile.pinnedPostId === post.id;
+  const delay = Math.min(index * 100, 500);
 
   useEffect(() => {
     let ignore = false;
@@ -108,6 +122,26 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
     };
   }, [post.petId]);
 
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.1 }
+    );
+    if (cardRef.current) observer.observe(cardRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!quickMenuOpen) {
+      longPressTriggered.current = false;
+    }
+  }, [quickMenuOpen]);
+
   const handleLike = async () => {
     if (!user) {
       showToast("Please login to like posts", "warning");
@@ -140,11 +174,41 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
   };
 
   const handleDoubleLike = async () => {
+    if (quickMenuOpen || longPressTriggered.current) return;
     setShowHeart(true);
     setTimeout(() => setShowHeart(false), 700);
     if (!likedState) {
       await handleLike();
     }
+  };
+
+  const handleTouchStart = (event: React.TouchEvent) => {
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current);
+    }
+    const touch = event.touches[0];
+    longPressTriggered.current = false;
+    longPressTimerRef.current = window.setTimeout(() => {
+      setQuickMenuPosition({ x: touch.clientX, y: touch.clientY });
+      setQuickMenuOpen(true);
+      setMenuOpen(false);
+      longPressTriggered.current = true;
+      if (navigator.vibrate) navigator.vibrate(50);
+    }, 500);
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleContextMenu = (event: React.MouseEvent) => {
+    event.preventDefault();
+    setQuickMenuPosition({ x: event.clientX, y: event.clientY });
+    setQuickMenuOpen(true);
+    setMenuOpen(false);
   };
 
   const handleDelete = async () => {
@@ -277,7 +341,22 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
   );
 
   return (
-    <article className="relative overflow-hidden rounded-2xl bg-white shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_45px_-28px_rgba(15,23,42,0.45)] dark:bg-slate-800 dark:ring-slate-700">
+    <div
+      ref={cardRef}
+      style={{ transitionDelay: `${delay}ms` }}
+      className={`transition-all duration-500 ease-out ${
+        isVisible ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
+      }`}
+    >
+      <article
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+        onContextMenu={handleContextMenu}
+        className={`relative overflow-hidden rounded-2xl bg-white shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_45px_-28px_rgba(15,23,42,0.45)] dark:bg-slate-800 dark:ring-slate-700 ${
+          quickMenuOpen ? "scale-95" : ""
+        }`}
+      >
       <header className="flex items-center gap-3 px-4 py-3">
         <button
           type="button"
@@ -582,19 +661,59 @@ export function PostCard({ post, useMock = false, onDeleted }: PostCardProps) {
         </div>
       ) : null}
 
-      <ShareMenu
-        open={shareOpen}
-        onClose={() => setShareOpen(false)}
-        postId={post.id}
-        text={post.text}
-      />
+        <ShareMenu
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          postId={post.id}
+          text={post.text}
+          post={post}
+        />
 
-      <ReportModal
-        open={reportOpen}
-        onClose={() => setReportOpen(false)}
-        targetType="post"
-        targetId={post.id}
+        <ReportModal
+          open={reportOpen}
+          onClose={() => setReportOpen(false)}
+          targetType="post"
+          targetId={post.id}
+        />
+      </article>
+
+      <QuickActionMenu
+        isOpen={quickMenuOpen}
+        position={quickMenuPosition}
+        post={post}
+        isLiked={likedState}
+        isBookmarked={isBookmarked}
+        isOwner={isOwner}
+        onClose={() => setQuickMenuOpen(false)}
+        onLike={() => {
+          setQuickMenuOpen(false);
+          void handleLike();
+        }}
+        onBookmark={() => {
+          setQuickMenuOpen(false);
+          void handleBookmark();
+        }}
+        onShare={() => {
+          setQuickMenuOpen(false);
+          setShareOpen(true);
+        }}
+        onReport={() => {
+          setQuickMenuOpen(false);
+          if (!user) {
+            navigate("/login");
+            return;
+          }
+          setReportOpen(true);
+        }}
+        onEdit={() => {
+          setQuickMenuOpen(false);
+          navigate(`/edit-post/${post.id}`);
+        }}
+        onDelete={() => {
+          setQuickMenuOpen(false);
+          setConfirmOpen(true);
+        }}
       />
-    </article>
+    </div>
   );
 }

@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { useToast } from "../contexts/ToastContext";
+import type { Post } from "../services/posts";
+import { generateShareCard } from "./ShareCard";
 
 type ShareMenuProps = {
   open: boolean;
   onClose: () => void;
   postId: string;
   text?: string;
+  post?: Post;
 };
 
-export function ShareMenu({ open, onClose, postId, text }: ShareMenuProps) {
+export function ShareMenu({ open, onClose, postId, text, post }: ShareMenuProps) {
   const [canShare, setCanShare] = useState(false);
+  const [sharingImage, setSharingImage] = useState(false);
   const { showToast } = useToast();
 
   const postUrl = useMemo(() => {
@@ -42,6 +46,36 @@ export function ShareMenu({ open, onClose, postId, text }: ShareMenuProps) {
     });
   };
 
+  const handleShareImage = async () => {
+    if (!post) return;
+    setSharingImage(true);
+    try {
+      const blob = await generateShareCard(post);
+      const file = new File([blob], "petnote-share.png", { type: "image/png" });
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: "Check out this cute pet on PetNote!",
+          text: text ? text.slice(0, 100) : "",
+        });
+      } else {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "petnote-share.png";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        showToast("Share card downloaded", "success");
+      }
+    } catch {
+      showToast("Failed to generate share card", "error");
+    } finally {
+      setSharingImage(false);
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/50"
@@ -68,6 +102,17 @@ export function ShareMenu({ open, onClose, postId, text }: ShareMenuProps) {
           >
             <span className="text-lg">📤</span>
             Share to...
+          </button>
+        ) : null}
+        {post ? (
+          <button
+            type="button"
+            onClick={handleShareImage}
+            disabled={sharingImage}
+            className="flex w-full items-center gap-3 border-b border-slate-100 px-2 py-4 text-sm text-slate-700 disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
+          >
+            <span className="text-lg">🖼️</span>
+            {sharingImage ? "Generating card..." : "Share as Image"}
           </button>
         ) : null}
         <button
