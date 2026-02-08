@@ -1,0 +1,172 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ========= Helper functions =========
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isNotBanned() {
+      return !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.banned != true;
+    }
+
+    // ========= users =========
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+
+      match /bookmarks/{bookmarkId} {
+        allow read: if isOwner(userId);
+        allow write: if isOwner(userId);
+      }
+
+      match /following/{targetId} {
+        allow read: if true;
+        allow write: if isOwner(userId) && isNotBanned();
+      }
+
+      match /followers/{followerId} {
+        allow read: if true;
+        allow write: if isAuthenticated() && request.auth.uid == followerId;
+      }
+
+      match /blockedUsers/{blockedId} {
+        allow read: if isOwner(userId);
+        allow write: if isOwner(userId);
+      }
+
+      match /settings/{settingId} {
+        allow read: if isOwner(userId);
+        allow write: if isOwner(userId);
+      }
+    }
+
+    // ========= posts =========
+    match /posts/{postId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isNotBanned();
+      allow update: if isAuthenticated() &&
+        (resource.data.authorId == request.auth.uid || isAdmin());
+      allow delete: if isAuthenticated() &&
+        (resource.data.authorId == request.auth.uid || isAdmin());
+
+      match /likes/{likeId} {
+        allow read: if true;
+        allow create: if isAuthenticated() && request.auth.uid == likeId && isNotBanned();
+        allow delete: if isAuthenticated() && request.auth.uid == likeId;
+      }
+
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if isAuthenticated() && isNotBanned();
+        allow delete: if isAuthenticated() && (
+          resource.data.authorId == request.auth.uid ||
+          get(/databases/$(database)/documents/posts/$(postId)).data.authorId == request.auth.uid ||
+          isAdmin()
+        );
+        allow update: if isAuthenticated() && resource.data.authorId == request.auth.uid;
+      }
+    }
+
+    // ========= pets =========
+    match /pets/{petId} {
+      allow read: if true;
+      allow create: if isAuthenticated() &&
+        request.resource.data.ownerId == request.auth.uid && isNotBanned();
+      allow update: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
+      allow delete: if isAuthenticated() &&
+        (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+
+    // ========= notifications =========
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() &&
+        (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // ========= meetups =========
+    match /meetups/{meetupId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isNotBanned();
+      allow update: if isAuthenticated() &&
+        (resource.data.organizerId == request.auth.uid || isAdmin());
+      allow delete: if isAuthenticated() &&
+        (resource.data.organizerId == request.auth.uid || isAdmin());
+
+      match /participants/{participantId} {
+        allow read: if true;
+        allow create: if isAuthenticated() && request.auth.uid == participantId && isNotBanned();
+        allow delete: if isAuthenticated() && (
+          request.auth.uid == participantId ||
+          get(/databases/$(database)/documents/meetups/$(meetupId)).data.organizerId == request.auth.uid ||
+          isAdmin()
+        );
+        allow update: if isAuthenticated() && request.auth.uid == participantId;
+      }
+    }
+
+    // ========= locations =========
+    match /locations/{locationId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isNotBanned();
+      allow update: if isAuthenticated();
+      allow delete: if isAdmin();
+
+      match /reviews/{reviewId} {
+        allow read: if true;
+        allow create: if isAuthenticated() && isNotBanned();
+        allow delete: if isAuthenticated() &&
+          (resource.data.userId == request.auth.uid || isAdmin());
+        allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      }
+
+      match /checkins/{checkinId} {
+        allow read: if true;
+        allow create: if isAuthenticated() && isNotBanned();
+        allow delete: if isAuthenticated() &&
+          (resource.data.userId == request.auth.uid || isAdmin());
+      }
+    }
+
+    // ========= hashtags =========
+    match /hashtags/{tagId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    // ========= reports =========
+    match /reports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated() && isNotBanned();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ========= feedback =========
+    match /feedback/{feedbackId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+  }
+}

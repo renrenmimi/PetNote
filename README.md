@@ -112,6 +112,43 @@ The project includes a `vercel.json` configured with SPA rewrites. To deploy:
 
 Or connect the GitHub repo (`renrenmimi/PetNote`) to Vercel for automatic deployments on every push.
 
+## 🔒 Firestore Security Rules
+
+Security rules live in the project root at `firestore.rules`.
+
+### Deploy rules (Console)
+
+1. Open Firebase Console → Firestore → Rules
+2. Copy the contents of `firestore.rules`
+3. Click Publish
+
+### Deploy rules (Firebase CLI)
+
+1. Install the CLI:
+   ```bash
+   npm install -g firebase-tools
+   ```
+2. Log in:
+   ```bash
+   firebase login
+   ```
+3. Initialize Firestore (first time only):
+   ```bash
+   firebase init firestore
+   ```
+4. Deploy rules:
+   ```bash
+   firebase deploy --only firestore:rules
+   ```
+
+## 🧱 Firebase Storage Rules
+
+The app currently uploads media to Cloudinary, so Firebase Storage is not used. A `storage.rules` file is included with a deny-by-default policy. If you later enable Firebase Storage, update `storage.rules` and deploy with:
+
+```bash
+firebase deploy --only storage:rules
+```
+
 ## 🗂 Project Structure
 
 ```
