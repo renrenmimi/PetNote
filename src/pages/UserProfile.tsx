@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { PostCard } from "../components/PostCard";
 import { UserCard } from "../components/UserCard";
 import Avatar from "../components/Avatar";
+import LazyImage from "../components/LazyImage";
 import { useAuth } from "../hooks/useAuth";
 import { useBlockedUsers } from "../hooks/useBlockedUsers";
 import { unblockUser } from "../services/block";
@@ -288,6 +289,7 @@ export function UserProfile() {
                       const first = mediaList[0];
                       const isMulti = mediaList.length > 1;
                       const isVideo = first?.type === "video";
+                      const thumbSrc = first?.thumbUrl || first?.url || post.mediaUrl;
                       return (
                         <button
                           key={post.id}
@@ -295,11 +297,13 @@ export function UserProfile() {
                           onClick={() => navigate(`/post/${post.id}`)}
                           className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100 transition-all duration-200 hover:scale-[1.02] dark:bg-slate-800"
                         >
-                          <img
-                            src={first?.thumbUrl || first?.url || post.mediaUrl}
-                            alt={post.text}
-                            className="h-full w-full object-cover"
-                          />
+                          {thumbSrc ? (
+                            <LazyImage
+                              src={thumbSrc}
+                              alt={post.text}
+                              className="h-full w-full"
+                            />
+                          ) : null}
                           {isVideo ? (
                             <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
                               ▶

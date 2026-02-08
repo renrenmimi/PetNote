@@ -4,6 +4,7 @@ import { BottomNav } from "../components/BottomNav";
 import { Navbar } from "../components/Navbar";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { EmptyState } from "../components/EmptyState";
+import LazyImage from "../components/LazyImage";
 import FilterTag from "../components/FilterTag";
 import { useAuth } from "../hooks/useAuth";
 import { Coffee, Leaf, Mountain, PawPrint, ShoppingBag, Stethoscope, Trees, Waves } from "lucide-react";
@@ -272,10 +273,10 @@ export function Places() {
                   className="flex w-full gap-3 rounded-xl bg-white p-3 text-left shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 transition-all duration-200 hover:-translate-y-0.5 dark:bg-slate-800 dark:ring-slate-700"
                 >
                   {place.photos?.[0] ? (
-                    <img
+                    <LazyImage
                       src={place.photos[0]}
                       alt={place.name}
-                      className="h-20 w-20 rounded-xl object-cover"
+                      className="h-20 w-20 rounded-xl"
                     />
                   ) : (
                     <div className="flex h-20 w-20 items-center justify-center rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 text-2xl text-white">

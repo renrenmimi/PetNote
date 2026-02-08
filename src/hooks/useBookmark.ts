@@ -13,16 +13,28 @@ type UseBookmarkResult = {
 
 export function useBookmark(
   postId: string,
-  userId: string | null
+  userId: string | null,
+  initialBookmarked?: boolean
 ): UseBookmarkResult {
-  const [isBookmarked, setIsBookmarked] = useState(false);
+  const [isBookmarked, setIsBookmarked] = useState(initialBookmarked ?? false);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (initialBookmarked !== undefined) {
+      setIsBookmarked(initialBookmarked);
+    }
+  }, [initialBookmarked]);
 
   useEffect(() => {
     let ignore = false;
     if (!userId) {
       setIsBookmarked(false);
       return;
+    }
+    if (initialBookmarked !== undefined) {
+      return () => {
+        ignore = true;
+      };
     }
 
     const load = async () => {
@@ -38,7 +50,7 @@ export function useBookmark(
     return () => {
       ignore = true;
     };
-  }, [postId, userId]);
+  }, [postId, userId, initialBookmarked]);
 
   const toggleBookmark = useCallback(async () => {
     if (!userId || loading) return;

@@ -6,6 +6,7 @@ import { PostCard } from "../components/PostCard";
 import { UserCard } from "../components/UserCard";
 import { EmptyState } from "../components/EmptyState";
 import Avatar from "../components/Avatar";
+import LazyImage from "../components/LazyImage";
 import { useAuth } from "../hooks/useAuth";
 import { useBlockedUsers } from "../hooks/useBlockedUsers";
 import {
@@ -385,10 +386,10 @@ export function Search() {
                           className="relative aspect-square overflow-hidden rounded-lg bg-slate-100"
                         >
                           {media ? (
-                            <img
+                            <LazyImage
                               src={media.url}
                               alt={post.text}
-                              className="h-full w-full object-cover"
+                              className="h-full w-full"
                             />
                           ) : null}
                           {post.media?.length && post.media.length > 1 ? (
@@ -484,10 +485,10 @@ export function Search() {
                       className="flex w-full items-center gap-3 rounded-2xl bg-white px-4 py-3 text-left shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700"
                     >
                       {place.photos?.[0] ? (
-                        <img
+                        <LazyImage
                           src={place.photos[0]}
                           alt={place.name}
-                          className="h-12 w-12 rounded-xl object-cover"
+                          className="h-12 w-12 rounded-xl"
                         />
                       ) : (
                         <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 text-white">
