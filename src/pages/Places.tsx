@@ -285,9 +285,16 @@ export function Places() {
                   )}
                   <div className="flex-1 space-y-1">
                     <div className="flex items-center justify-between">
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                        {place.name}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                          {place.name}
+                        </p>
+                        {place.verifiedByCheckins ? (
+                          <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                            ✓ Verified
+                          </span>
+                        ) : null}
+                      </div>
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${badgeClass}`}>
                         {badgeLabel}
                       </span>
@@ -299,6 +306,11 @@ export function Places() {
                     ) : (
                       <p className="text-xs text-slate-400">No reviews yet</p>
                     )}
+                    {place.totalCheckins ? (
+                      <p className="text-xs text-slate-400">
+                        📍 {place.totalCheckins} check-ins
+                      </p>
+                    ) : null}
                     {distance !== null ? (
                       <p className="text-xs text-blue-500">
                         📍 {distance} mi away

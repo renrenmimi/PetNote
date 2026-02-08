@@ -61,6 +61,8 @@ export type Location = {
   averageRating: number;
   totalRatings: number;
   totalPhotos: number;
+  totalCheckins?: number;
+  verifiedByCheckins?: boolean;
   tags: string[];
   source: "user" | "meetup";
   verified: boolean;
@@ -128,6 +130,8 @@ export async function getOrCreateLocation(data: {
           averageRating: 0,
           totalRatings: 0,
           totalPhotos: data.photos?.length ?? 0,
+          totalCheckins: 0,
+          verifiedByCheckins: false,
           tags: [],
           source: data.source ?? "meetup",
           verified: false,

@@ -6,20 +6,23 @@ import { generateShareCard } from "./ShareCard";
 type ShareMenuProps = {
   open: boolean;
   onClose: () => void;
-  postId: string;
+  postId?: string;
+  shareUrl?: string;
   text?: string;
   post?: Post;
 };
 
-export function ShareMenu({ open, onClose, postId, text, post }: ShareMenuProps) {
+export function ShareMenu({ open, onClose, postId, shareUrl, text, post }: ShareMenuProps) {
   const [canShare, setCanShare] = useState(false);
   const [sharingImage, setSharingImage] = useState(false);
   const { showToast } = useToast();
 
   const postUrl = useMemo(() => {
-    if (typeof window === "undefined") return `/post/${postId}`;
-    return `${window.location.origin}/post/${postId}`;
-  }, [postId]);
+    if (shareUrl) return shareUrl;
+    if (typeof window === "undefined") return postId ? `/post/${postId}` : "/";
+    if (postId) return `${window.location.origin}/post/${postId}`;
+    return window.location.href;
+  }, [postId, shareUrl]);
 
   useEffect(() => {
     setCanShare(typeof navigator !== "undefined" && !!navigator.share);
