@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Avatar from "../components/Avatar";
 import LazyImage from "../components/LazyImage";
+import { CheckInModal } from "../components/CheckInModal";
 import { LocationRatingModal } from "../components/LocationRatingModal";
 import { MediaCarousel } from "../components/MediaCarousel";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../contexts/ToastContext";
 import { calculateDistance } from "../services/location";
+import { getCheckins, hasUserCheckedIn, type Checkin } from "../services/checkins";
 import {
   getLocation,
   getReviews,
@@ -113,22 +115,31 @@ export function LocationDetail() {
   const [loading, setLoading] = useState(true);
   const [ratingOpen, setRatingOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [checkins, setCheckins] = useState<Checkin[]>([]);
+  const [checkinsExpanded, setCheckinsExpanded] = useState(false);
+  const [checkedInToday, setCheckedInToday] = useState(false);
+  const [checkInOpen, setCheckInOpen] = useState(false);
 
   const refreshData = async (id: string, userId?: string) => {
     setLoading(true);
-    const [loc, revs, meetupsData] = await Promise.all([
+    const [loc, revs, meetupsData, checkinList] = await Promise.all([
       getLocation(id),
       getReviews(id),
       getMeetupsByLocation(id),
+      getCheckins(id, 20),
     ]);
     setLocation(loc);
     setReviews(revs);
+    setCheckins(checkinList);
     setMeetups(meetupsData.filter((meetup) => meetup.status === "completed"));
     if (userId) {
       const existingReview = await getUserReview(id, userId);
       setUserReview(existingReview);
+      const checked = await hasUserCheckedIn(id, userId);
+      setCheckedInToday(checked);
     } else {
       setUserReview(null);
+      setCheckedInToday(false);
     }
     setLoading(false);
   };
@@ -186,15 +197,26 @@ export function LocationDetail() {
     );
   }, [location, profile?.location]);
 
-  const allPhotos = useMemo(() => {
+  const photoItems = useMemo(() => {
     if (!location) return [];
-    const collected = new Set<string>();
-    (location.photos || []).forEach((photo) => collected.add(photo));
+    const items: { url: string; source: "place" | "review" | "checkin" }[] = [];
+    (location.photos || []).forEach((photo) => items.push({ url: photo, source: "place" }));
     reviews.forEach((review) => {
-      (review.photos || []).forEach((photo) => collected.add(photo));
+      (review.photos || []).forEach((photo) => items.push({ url: photo, source: "review" }));
     });
-    return Array.from(collected);
-  }, [location, reviews]);
+    checkins.forEach((checkin) => {
+      if (checkin.photoUrl) items.push({ url: checkin.photoUrl, source: "checkin" });
+    });
+    const seen = new Set<string>();
+    return items.filter((item) => {
+      const key = `${item.url}|${item.source}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [location, reviews, checkins]);
+
+  const allPhotos = useMemo(() => photoItems.map((item) => item.url), [photoItems]);
 
   const heroPhotos = useMemo(() => {
     if (!location) return [];
@@ -280,9 +302,16 @@ export function LocationDetail() {
         <section className="space-y-3 rounded-2xl bg-white p-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
-                {location.name}
-              </h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+                  {location.name}
+                </h2>
+                {location.verifiedByCheckins ? (
+                  <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                    ✓ Verified
+                  </span>
+                ) : null}
+              </div>
               <span
                 className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${meta.badge}`}
               >
@@ -310,6 +339,11 @@ export function LocationDetail() {
           {location.description ? (
             <p className="text-sm text-slate-600 dark:text-slate-300">
               {location.description}
+            </p>
+          ) : null}
+          {location.totalCheckins ? (
+            <p className="text-xs text-slate-400">
+              📍 {location.totalCheckins} check-ins
             </p>
           ) : null}
 
@@ -406,19 +440,83 @@ export function LocationDetail() {
               Photos ({allPhotos.length})
             </h3>
           </div>
-          {allPhotos.length === 0 ? (
+          {photoItems.length === 0 ? (
             <p className="mt-2 text-xs text-slate-400">No photos yet.</p>
           ) : (
             <div className="mt-3 grid grid-cols-3 gap-2">
-              {allPhotos.map((photo, idx) => (
+              {photoItems.map((item, idx) => (
                 <button
-                  key={photo}
+                  key={`${item.url}-${idx}`}
                   type="button"
                   onClick={() => setLightboxIndex(idx)}
-                  className="aspect-square overflow-hidden rounded-xl"
+                  className="relative aspect-square overflow-hidden rounded-xl"
                 >
-                  <LazyImage src={photo} alt="Location" className="h-full w-full" />
+                  <LazyImage src={item.url} alt="Location" className="h-full w-full" />
+                  {item.source === "checkin" ? (
+                    <span className="absolute bottom-1 right-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+                      📍
+                    </span>
+                  ) : null}
                 </button>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-2xl bg-white p-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+              Recent Check-ins ({checkins.length})
+            </h3>
+            {checkins.length > 5 ? (
+              <button
+                type="button"
+                onClick={() => setCheckinsExpanded((prev) => !prev)}
+                className="text-xs font-semibold text-purple-600"
+              >
+                {checkinsExpanded ? "Show less" : "See all check-ins"}
+              </button>
+            ) : null}
+          </div>
+          {checkins.length === 0 ? (
+            <p className="mt-2 text-xs text-slate-400">No check-ins yet.</p>
+          ) : (
+            <div className="mt-3 space-y-3">
+              {(checkinsExpanded ? checkins : checkins.slice(0, 5)).map((checkin) => (
+                <div key={checkin.id} className="flex items-start gap-3">
+                  <Avatar
+                    src={checkin.userAvatar || undefined}
+                    alt={checkin.userName}
+                    userId={checkin.userId}
+                    size={32}
+                    className="h-8 w-8"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                        {checkin.userName}
+                      </p>
+                      <span className="text-[11px] text-slate-400">
+                        {checkin.createdAt ? timeAgo(checkin.createdAt as Date) : ""}
+                      </span>
+                    </div>
+                    {checkin.caption ? (
+                      <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                        {checkin.caption}
+                      </p>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const idx = allPhotos.findIndex((photo) => photo === checkin.photoUrl);
+                      if (idx >= 0) setLightboxIndex(idx);
+                    }}
+                    className="h-16 w-16 overflow-hidden rounded-xl"
+                  >
+                    <LazyImage src={checkin.photoUrl} alt="Check-in" className="h-full w-full" />
+                  </button>
+                </div>
               ))}
             </div>
           )}
@@ -519,23 +617,43 @@ export function LocationDetail() {
 
       <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-slate-200 bg-white/90 px-4 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
         <div className="mx-auto w-full max-w-md">
-          {userReview ? (
+          <div className="flex gap-3">
+            {userReview ? (
+              <button
+                type="button"
+                disabled
+                className="flex-1 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-400 dark:border-slate-700"
+              >
+                You reviewed this place ⭐ {userReview.rating}/5
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={openReview}
+                className="flex-1 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_25px_-15px_rgba(168,85,247,0.8)] transition-all duration-200 hover:scale-[1.01]"
+              >
+                Write a Review ⭐
+              </button>
+            )}
             <button
               type="button"
-              disabled
-              className="w-full rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-400 dark:border-slate-700"
+              disabled={checkedInToday}
+              onClick={() => {
+                if (!user) {
+                  navigate("/login");
+                  return;
+                }
+                setCheckInOpen(true);
+              }}
+              className={`flex-1 rounded-full px-4 py-2 text-sm font-semibold transition-all duration-200 ${
+                checkedInToday
+                  ? "border border-slate-200 text-slate-400 dark:border-slate-700"
+                  : "bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-[0_12px_25px_-15px_rgba(168,85,247,0.8)] hover:scale-[1.01]"
+              }`}
             >
-              You reviewed this place ⭐ {userReview.rating}/5
+              {checkedInToday ? "Checked In Today ✓" : "Check In 📍"}
             </button>
-          ) : (
-            <button
-              type="button"
-              onClick={openReview}
-              className="w-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_25px_-15px_rgba(168,85,247,0.8)] transition-all duration-200 hover:scale-[1.01]"
-            >
-              Write a Review ⭐
-            </button>
-          )}
+          </div>
         </div>
       </div>
 
@@ -546,6 +664,25 @@ export function LocationDetail() {
         locationName={location.name}
         locationAddress={location.address}
         onSubmitted={() => refreshData(location.id, user?.uid)}
+      />
+      <CheckInModal
+        open={checkInOpen}
+        onClose={() => setCheckInOpen(false)}
+        locationId={location.id}
+        locationName={location.name}
+        currentUser={{
+          uid: user?.uid ?? "",
+          name:
+            profile?.displayName ||
+            user?.displayName ||
+            user?.email ||
+            "PetNote User",
+          avatar:
+            profile?.avatarUrl ||
+            user?.photoURL ||
+            `https://api.dicebear.com/7.x/thumbs/svg?seed=${user?.uid ?? "petnote"}`,
+        }}
+        onSuccess={() => refreshData(location.id, user?.uid)}
       />
 
       {lightboxIndex !== null ? (

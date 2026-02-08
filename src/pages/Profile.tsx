@@ -9,7 +9,9 @@ import { SkeletonProfile } from "../components/SkeletonProfile";
 import LazyImage from "../components/LazyImage";
 import Avatar from "../components/Avatar";
 import { getBookmarkedPosts } from "../services/bookmarks";
+import { getUserCheckins, type Checkin } from "../services/checkins";
 import { getFollowers, getFollowing } from "../services/follow";
+import { getLocation, type Location } from "../services/locations";
 import {
   deletePost,
   getPostById,
@@ -22,6 +24,7 @@ import { getPetsByOwner, type Pet } from "../services/pets";
 import { getUserProfile, getUsersByIds, type UserProfile } from "../services/users";
 import { getSpeciesMeta } from "../utils/petHelpers";
 import { useToast } from "../contexts/ToastContext";
+import { timeAgo } from "../utils/timeAgo";
 
 export function Profile() {
   const navigate = useNavigate();
@@ -39,7 +42,14 @@ export function Profile() {
   const [pets, setPets] = useState<Pet[]>([]);
   const [savedPosts, setSavedPosts] = useState<Post[]>([]);
   const [savedLoading, setSavedLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<"posts" | "saved">("posts");
+  const [checkins, setCheckins] = useState<Checkin[]>([]);
+  const [checkinsLoading, setCheckinsLoading] = useState(false);
+  const [checkinLocations, setCheckinLocations] = useState<Record<string, Location | null>>(
+    {}
+  );
+  const [activeTab, setActiveTab] = useState<"posts" | "saved" | "checkins">(
+    "posts"
+  );
   const [followCounts, setFollowCounts] = useState({
     followerCount: 0,
     followingCount: 0,
@@ -131,6 +141,38 @@ export function Profile() {
       }
     };
     void loadSaved();
+    return () => {
+      ignore = true;
+    };
+  }, [activeTab, user]);
+
+  useEffect(() => {
+    let ignore = false;
+    if (!user || activeTab !== "checkins") return;
+    const loadCheckins = async () => {
+      setCheckinsLoading(true);
+      try {
+        const list = await getUserCheckins(user.uid);
+        if (ignore) return;
+        setCheckins(list);
+        const uniqueIds = Array.from(
+          new Set(list.map((item) => item.locationId).filter(Boolean))
+        );
+        const entries = await Promise.all(
+          uniqueIds.map(async (id) => [id, await getLocation(id)] as const)
+        );
+        if (!ignore) {
+          const mapping: Record<string, Location | null> = {};
+          entries.forEach(([id, location]) => {
+            mapping[id] = location;
+          });
+          setCheckinLocations(mapping);
+        }
+      } finally {
+        if (!ignore) setCheckinsLoading(false);
+      }
+    };
+    void loadCheckins();
     return () => {
       ignore = true;
     };
@@ -408,6 +450,17 @@ export function Profile() {
             >
               Saved
             </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("checkins")}
+              className={`pb-2 text-sm font-semibold transition-all duration-200 ${
+                activeTab === "checkins"
+                  ? "border-b-2 border-purple-500 text-slate-900 dark:text-white"
+                  : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
+              }`}
+            >
+              Check-ins
+            </button>
           </div>
 
           {activeTab === "posts" && loading ? (
@@ -507,6 +560,64 @@ export function Profile() {
                   className="aspect-square animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-700"
                 />
               ))}
+            </div>
+          ) : activeTab === "checkins" && checkinsLoading ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map((item) => (
+                <div
+                  key={item}
+                  className="h-20 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-700"
+                />
+              ))}
+            </div>
+          ) : activeTab === "checkins" && checkins.length === 0 ? (
+            <EmptyState
+              icon="📍"
+              title="No check-ins yet"
+              description="Visit a pet-friendly place and check in!"
+            />
+          ) : activeTab === "checkins" ? (
+            <div className="space-y-3">
+              {checkins.map((checkin) => {
+                const location = checkinLocations[checkin.locationId];
+                const locationName = location?.name || "Unknown location";
+                const locationPhoto = location?.photos?.[0];
+                return (
+                  <button
+                    key={checkin.id}
+                    type="button"
+                    onClick={() => navigate(`/location/${checkin.locationId}`)}
+                    className="flex w-full items-center gap-3 rounded-2xl bg-white p-3 text-left shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 transition-all duration-200 hover:-translate-y-0.5 dark:bg-slate-800 dark:ring-slate-700"
+                  >
+                    {locationPhoto ? (
+                      <LazyImage
+                        src={locationPhoto}
+                        alt={locationName}
+                        className="h-14 w-14 rounded-xl"
+                      />
+                    ) : (
+                      <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 text-lg text-white">
+                        📍
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                        {locationName}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {checkin.createdAt ? timeAgo(checkin.createdAt as Date) : ""}
+                      </p>
+                    </div>
+                    <div className="h-14 w-14 overflow-hidden rounded-xl">
+                      <LazyImage
+                        src={checkin.photoUrl}
+                        alt="Check-in"
+                        className="h-full w-full"
+                      />
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           ) : savedPosts.length === 0 ? (
             <EmptyState
