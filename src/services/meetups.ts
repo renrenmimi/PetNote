@@ -96,6 +96,8 @@ export async function createMeetup(data: MeetupData): Promise<string> {
     lng: data.location.lng,
     city: data.location.city || "",
     state: data.location.state || "",
+    category: "community_park",
+    source: "meetup",
   });
   const payload = {
     ...data,

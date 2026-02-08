@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import { useNotifications } from "../hooks/useNotifications";
 import PawIcon from "./PawIcon";
 import Avatar from "./Avatar";
 
 export function Navbar() {
   const { user } = useAuth();
+  const { unreadCount } = useNotifications(user?.uid ?? null);
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -41,6 +43,16 @@ export function Navbar() {
             aria-label="Search"
           >
             🔍
+          </Link>
+          <Link
+            to="/notifications"
+            className="relative text-lg text-slate-500 transition-all duration-200 hover:scale-105 hover:text-purple-500 dark:text-slate-300"
+            aria-label="Notifications"
+          >
+            🔔
+            {unreadCount > 0 ? (
+              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-500" />
+            ) : null}
           </Link>
           {!user ? (
             <Link

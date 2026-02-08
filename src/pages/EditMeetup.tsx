@@ -249,6 +249,8 @@ export function EditMeetup() {
         lng,
         city: locationCity.trim(),
         state: locationState.trim(),
+        category: "community_park",
+        source: "meetup",
       });
 
       await updateMeetup(meetup.id, {

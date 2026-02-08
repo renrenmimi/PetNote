@@ -13,6 +13,8 @@ import { Feed } from "./pages/Feed";
 import { ForgotPassword } from "./pages/ForgotPassword";
 import { LocationDetail } from "./pages/LocationDetail";
 import { Login } from "./pages/Login";
+import { Places } from "./pages/Places";
+import { AddPlace } from "./pages/AddPlace";
 import { Meetups } from "./pages/Meetups";
 import { Notifications } from "./pages/Notifications";
 import { PetProfile } from "./pages/PetProfile";
@@ -36,6 +38,7 @@ function App() {
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/signup" element={<SignUp />} />
         <Route path="/search" element={<Search />} />
+        <Route path="/places" element={<Places />} />
         <Route path="/meetups" element={<Meetups />} />
         <Route path="/meetups/:meetupId" element={<MeetupDetail />} />
         <Route path="/location/:locationId" element={<LocationDetail />} />
@@ -54,6 +57,14 @@ function App() {
           element={
             <RequireAuth>
               <Create />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/places/add"
+          element={
+            <RequireAuth>
+              <AddPlace />
             </RequireAuth>
           }
         />
