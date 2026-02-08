@@ -12,6 +12,7 @@ import {
   type Meetup,
   type MeetupRequirements,
 } from "../services/meetups";
+import { getOrCreateLocation } from "../services/locations";
 
 const durations = [
   { label: "30 min", value: 30 },
@@ -241,6 +242,15 @@ export function EditMeetup() {
       };
 
       const resolvedLocationName = locationName.trim() || address.trim();
+      const locationId = await getOrCreateLocation({
+        name: resolvedLocationName,
+        address: address.trim(),
+        lat,
+        lng,
+        city: locationCity.trim(),
+        state: locationState.trim(),
+      });
+
       await updateMeetup(meetup.id, {
         title: title.trim(),
         description: description.trim(),
@@ -255,6 +265,7 @@ export function EditMeetup() {
           city: locationCity.trim() || undefined,
           state: locationState.trim() || undefined,
         },
+        locationId,
         locationVisibility,
         requirements,
       });

@@ -11,6 +11,7 @@ import {
   joinMeetup,
   type MeetupRequirements,
 } from "../services/meetups";
+import { buildLocationId, getLocation, type Location } from "../services/locations";
 
 const durations = [
   { label: "30 min", value: 30 },
@@ -46,6 +47,7 @@ export function CreateMeetup() {
   const [locationVisibility, setLocationVisibility] = useState<
     "everyone" | "participants_only"
   >("participants_only");
+  const [locationPreview, setLocationPreview] = useState<Location | null>(null);
   const [safetyOpen, setSafetyOpen] = useState(true);
 
   const [petType, setPetType] = useState<
@@ -147,6 +149,11 @@ export function CreateMeetup() {
       setLocationCity(city);
       setLocationState(state);
       setLocationStatus("success");
+      if (latitude && longitude) {
+        const locationId = buildLocationId(latitude, longitude);
+        const preview = await getLocation(locationId);
+        setLocationPreview(preview);
+      }
     } catch (err: any) {
       if (err?.code === 1) {
         setLocationError(
@@ -162,6 +169,7 @@ export function CreateMeetup() {
         );
       }
       setLocationStatus("error");
+      setLocationPreview(null);
     }
     finally {
       setLocationLoading(false);
@@ -430,6 +438,10 @@ export function CreateMeetup() {
                 setLocationCity(location.city || "");
                 setLocationState(location.state || "");
                 setLocationStatus("success");
+                const locationId = buildLocationId(location.lat, location.lng);
+                void getLocation(locationId).then((data) => {
+                  setLocationPreview(data);
+                });
               } else {
                 setLocationName("");
                 setLat(null);
@@ -437,6 +449,7 @@ export function CreateMeetup() {
                 setLocationCity("");
                 setLocationState("");
                 setLocationStatus("idle");
+                setLocationPreview(null);
               }
             }}
             placeholder="Search for a location"
@@ -466,6 +479,12 @@ export function CreateMeetup() {
                 : ""}
             </span>
           </div>
+          {locationPreview && locationPreview.totalRatings > 0 ? (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
+              ⭐ {locationPreview.averageRating.toFixed(1)} (
+              {locationPreview.totalRatings} reviews) · Highly rated by pet owners!
+            </div>
+          ) : null}
 
           <div className="space-y-2">
             <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">

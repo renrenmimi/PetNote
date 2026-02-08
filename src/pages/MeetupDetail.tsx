@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Timestamp } from "firebase/firestore";
 import Avatar from "../components/Avatar";
+import { LocationRatingModal } from "../components/LocationRatingModal";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../contexts/ToastContext";
 import { calculateDistance } from "../services/location";
 import {
+  checkAndUpdateMeetupStatus,
   cancelMeetup,
   checkRequirements,
   getMeetupById,
@@ -18,6 +20,13 @@ import {
 } from "../services/meetups";
 import { getPetsByOwner, type Pet } from "../services/pets";
 import { getSpeciesMeta } from "../utils/petHelpers";
+import {
+  buildLocationId,
+  getLocation,
+  getOrCreateLocation,
+  getUserReview,
+  type Location,
+} from "../services/locations";
 
 const toDate = (value: unknown): Date | null => {
   if (!value) return null;
@@ -105,6 +114,13 @@ export function MeetupDetail() {
   const [joining, setJoining] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [petPickerOpen, setPetPickerOpen] = useState(false);
+  const [locationInfo, setLocationInfo] = useState<Location | null>(null);
+  const [hasReviewed, setHasReviewed] = useState(false);
+  const [ratingModalOpen, setRatingModalOpen] = useState(false);
+  const [resolvedLocationId, setResolvedLocationId] = useState<string | null>(
+    null
+  );
+  const [userReviewRating, setUserReviewRating] = useState<number | null>(null);
   const [eligibility, setEligibility] = useState<{
     eligible: boolean;
     reasons: string[];
@@ -115,7 +131,8 @@ export function MeetupDetail() {
     if (!meetupId) return;
     const load = async () => {
       setLoading(true);
-      const data = await getMeetupById(meetupId);
+      const updated = await checkAndUpdateMeetupStatus(meetupId);
+      const data = updated ?? (await getMeetupById(meetupId));
       if (!ignore) {
         setMeetup(data);
         setLoading(false);
@@ -197,6 +214,48 @@ export function MeetupDetail() {
       ignore = true;
     };
   }, [user, meetup, pets]);
+
+  useEffect(() => {
+    let ignore = false;
+    if (!meetup) return;
+    const loadLocation = async () => {
+      const locationId =
+        meetup.locationId ??
+        buildLocationId(meetup.location.lat, meetup.location.lng);
+      if (!ignore) {
+        setResolvedLocationId(locationId);
+      }
+      let data = await getLocation(locationId);
+      if (!data) {
+        await getOrCreateLocation({
+          name: meetup.location.name,
+          address: meetup.location.address,
+          lat: meetup.location.lat,
+          lng: meetup.location.lng,
+          city: meetup.location.city || "",
+          state: meetup.location.state || "",
+        });
+        data = await getLocation(locationId);
+      }
+      if (!ignore) {
+        setLocationInfo(data);
+      }
+      if (user && meetup.status === "completed" && meetup.isRatingOpen) {
+        const review = await getUserReview(locationId, user.uid, meetup.id);
+        if (!ignore) {
+          setHasReviewed(!!review);
+          setUserReviewRating(review?.rating ?? null);
+        }
+      } else if (!ignore) {
+        setHasReviewed(false);
+        setUserReviewRating(null);
+      }
+    };
+    void loadLocation();
+    return () => {
+      ignore = true;
+    };
+  }, [meetup, user]);
 
   const isOrganizer = !!user && meetup?.organizerId === user.uid;
   const isJoined = !!user && participants.some((item) => item.userId === user.uid);
@@ -298,6 +357,15 @@ export function MeetupDetail() {
     }
   };
 
+  const handleReviewSubmitted = async () => {
+    if (!resolvedLocationId || !meetup || !user) return;
+    const data = await getLocation(resolvedLocationId);
+    setLocationInfo(data);
+    const review = await getUserReview(resolvedLocationId, user.uid, meetup.id);
+    setHasReviewed(!!review);
+    setUserReviewRating(review?.rating ?? null);
+  };
+
   const handleCancelMeetup = async () => {
     if (!meetup) return;
     try {
@@ -371,6 +439,7 @@ export function MeetupDetail() {
   const isCancelled = meetup.status === "cancelled";
   const isCompleted = meetup.status === "completed";
   const isFull = maxPets > 0 && meetup.participantCount >= maxPets;
+  const isRatingOpen = meetup.isRatingOpen ?? false;
 
   return (
     <div className="min-h-screen bg-slate-50 pb-28 dark:bg-slate-900">
@@ -482,6 +551,18 @@ export function MeetupDetail() {
               <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-600 dark:bg-blue-500/10 dark:text-blue-200">
                 {distance} miles from you
               </span>
+            ) : null}
+            {locationInfo && locationInfo.totalRatings > 0 ? (
+              <button
+                type="button"
+                onClick={() =>
+                  resolvedLocationId && navigate(`/location/${resolvedLocationId}`)
+                }
+                className="mt-2 inline-flex items-center gap-2 text-xs font-semibold text-amber-500 hover:text-amber-600"
+              >
+                ⭐ {locationInfo.averageRating.toFixed(1)} (
+                {locationInfo.totalRatings} reviews)
+              </button>
             ) : null}
             {visibility === "participants_only" && canSeeFullAddress ? (
               <p className="mt-1 text-xs font-semibold text-blue-600">
@@ -671,6 +752,36 @@ export function MeetupDetail() {
         </div>
       ) : null}
 
+      {isCompleted && isRatingOpen ? (
+        <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
+          <div className="mx-auto w-full max-w-md">
+            {isJoined ? (
+              hasReviewed ? (
+                <button
+                  type="button"
+                  disabled
+                  className="w-full rounded-full bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-500 dark:bg-slate-700 dark:text-slate-400"
+                >
+                  You rated this location ⭐ {userReviewRating ?? "—"}/5
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setRatingModalOpen(true)}
+                  className="w-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_25px_-15px_rgba(168,85,247,0.8)] transition-all duration-200 hover:scale-[1.01]"
+                >
+                  Rate this location ⭐
+                </button>
+              )
+            ) : (
+              <p className="text-center text-xs text-slate-400">
+                Only participants can rate this location.
+              </p>
+            )}
+          </div>
+        </div>
+      ) : null}
+
       {petPickerOpen ? (
         <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 px-4 pb-6">
           <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow-xl dark:bg-slate-800">
@@ -762,6 +873,18 @@ export function MeetupDetail() {
             )}
           </div>
         </div>
+      ) : null}
+
+      {ratingModalOpen && resolvedLocationId ? (
+        <LocationRatingModal
+          open={ratingModalOpen}
+          onClose={() => setRatingModalOpen(false)}
+          locationId={resolvedLocationId}
+          locationName={meetup.location.name}
+          locationAddress={meetup.location.address}
+          meetupId={meetup.id}
+          onSubmitted={handleReviewSubmitted}
+        />
       ) : null}
 
       {confirmCancel ? (
