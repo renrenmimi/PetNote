@@ -1,8 +1,11 @@
 import "./App.css";
+import { useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { RequireAuth } from "./components/RequireAuth";
 import { RequireAdmin } from "./components/RequireAdmin";
 import { SuspendedBanner } from "./components/SuspendedBanner";
+import PageTransition from "./components/PageTransition";
+import { SplashScreen } from "./components/SplashScreen";
 import { AddPet } from "./pages/AddPet";
 import { AdminPanel } from "./pages/AdminPanel";
 import { BlockedUsers } from "./pages/BlockedUsers";
@@ -29,126 +32,169 @@ import { CreateMeetup } from "./pages/CreateMeetup";
 import { EditMeetup } from "./pages/EditMeetup";
 
 function App() {
+  const [splashVisible, setSplashVisible] = useState(true);
+  const [splashFading, setSplashFading] = useState(false);
+
+  useEffect(() => {
+    const fadeTimer = window.setTimeout(() => setSplashFading(true), 1500);
+    const removeTimer = window.setTimeout(() => setSplashVisible(false), 2000);
+    return () => {
+      window.clearTimeout(fadeTimer);
+      window.clearTimeout(removeTimer);
+    };
+  }, []);
+
+  const wrap = (element: React.ReactNode) => (
+    <PageTransition>{element}</PageTransition>
+  );
+
   return (
     <BrowserRouter>
       <SuspendedBanner />
+      {splashVisible ? <SplashScreen visible={!splashFading} /> : null}
       <Routes>
-        <Route path="/" element={<Feed />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/signup" element={<SignUp />} />
-        <Route path="/search" element={<Search />} />
-        <Route path="/places" element={<Places />} />
-        <Route path="/meetups" element={<Meetups />} />
-        <Route path="/meetups/:meetupId" element={<MeetupDetail />} />
-        <Route path="/location/:locationId" element={<LocationDetail />} />
-        <Route path="/post/:postId" element={<PostDetail />} />
+        <Route path="/" element={wrap(<Feed />)} />
+        <Route path="/login" element={wrap(<Login />)} />
+        <Route path="/forgot-password" element={wrap(<ForgotPassword />)} />
+        <Route path="/signup" element={wrap(<SignUp />)} />
+        <Route path="/search" element={wrap(<Search />)} />
+        <Route path="/places" element={wrap(<Places />)} />
+        <Route path="/meetups" element={wrap(<Meetups />)} />
+        <Route path="/meetups/:meetupId" element={wrap(<MeetupDetail />)} />
+        <Route path="/location/:locationId" element={wrap(<LocationDetail />)} />
+        <Route path="/post/:postId" element={wrap(<PostDetail />)} />
         <Route
           path="/admin"
           element={
-            <RequireAdmin>
-              <AdminPanel />
-            </RequireAdmin>
+            wrap(
+              <RequireAdmin>
+                <AdminPanel />
+              </RequireAdmin>
+            )
           }
         />
-        <Route path="/pet/:petId" element={<PetProfile />} />
+        <Route path="/pet/:petId" element={wrap(<PetProfile />)} />
         <Route
           path="/create"
           element={
-            <RequireAuth>
-              <Create />
-            </RequireAuth>
+            wrap(
+              <RequireAuth>
+                <Create />
+              </RequireAuth>
+            )
           }
         />
         <Route
           path="/places/add"
           element={
-            <RequireAuth>
-              <AddPlace />
-            </RequireAuth>
+            wrap(
+              <RequireAuth>
+                <AddPlace />
+              </RequireAuth>
+            )
           }
         />
         <Route
           path="/create-meetup"
           element={
-            <RequireAuth>
-              <CreateMeetup />
-            </RequireAuth>
+            wrap(
+              <RequireAuth>
+                <CreateMeetup />
+              </RequireAuth>
+            )
           }
         />
         <Route
           path="/edit-meetup/:meetupId"
           element={
-            <RequireAuth>
-              <EditMeetup />
-            </RequireAuth>
+            wrap(
+              <RequireAuth>
+                <EditMeetup />
+              </RequireAuth>
+            )
           }
         />
         <Route
           path="/add-pet"
           element={
-            <RequireAuth>
-              <AddPet />
-            </RequireAuth>
+            wrap(
+              <RequireAuth>
+                <AddPet />
+              </RequireAuth>
+            )
           }
         />
         <Route
           path="/edit-pet/:petId"
           element={
-            <RequireAuth>
-              <AddPet />
-            </RequireAuth>
+            wrap(
+              <RequireAuth>
+                <AddPet />
+              </RequireAuth>
+            )
           }
         />
         <Route
           path="/edit-post/:postId"
           element={
-            <RequireAuth>
-              <EditPost />
-            </RequireAuth>
+            wrap(
+              <RequireAuth>
+                <EditPost />
+              </RequireAuth>
+            )
           }
         />
         <Route
           path="/profile"
           element={
-            <RequireAuth>
-              <Profile />
-            </RequireAuth>
+            wrap(
+              <RequireAuth>
+                <Profile />
+              </RequireAuth>
+            )
           }
         />
         <Route
           path="/edit-profile"
           element={
-            <RequireAuth>
-              <EditProfile />
-            </RequireAuth>
+            wrap(
+              <RequireAuth>
+                <EditProfile />
+              </RequireAuth>
+            )
           }
         />
         <Route
           path="/notifications"
           element={
-            <RequireAuth>
-              <Notifications />
-            </RequireAuth>
+            wrap(
+              <RequireAuth>
+                <Notifications />
+              </RequireAuth>
+            )
           }
         />
         <Route
           path="/settings"
           element={
-            <RequireAuth>
-              <Settings />
-            </RequireAuth>
+            wrap(
+              <RequireAuth>
+                <Settings />
+              </RequireAuth>
+            )
           }
         />
         <Route
           path="/blocked-users"
           element={
-            <RequireAuth>
-              <BlockedUsers />
-            </RequireAuth>
+            wrap(
+              <RequireAuth>
+                <BlockedUsers />
+              </RequireAuth>
+            )
           }
         />
-        <Route path="/profile/:userId" element={<UserProfile />} />
+        <Route path="/profile/:userId" element={wrap(<UserProfile />)} />
       </Routes>
     </BrowserRouter>
   );
