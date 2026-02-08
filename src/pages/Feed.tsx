@@ -8,6 +8,7 @@ import { EmailVerificationBanner } from "../components/EmailVerificationBanner";
 import { BirthdayCelebration } from "../components/BirthdayCelebration";
 import { PostCard } from "../components/PostCard";
 import { EmptyState } from "../components/EmptyState";
+import PawIcon from "../components/PawIcon";
 import { SkeletonPostCard } from "../components/SkeletonPostCard";
 import { ScrollToTop } from "../components/ScrollToTop";
 import { usePosts } from "../hooks/usePosts";
@@ -250,6 +251,34 @@ export function Feed() {
               actionText="Discover People"
               onAction={() => navigate("/search")}
             />
+          ) : !useMock ? (
+            <div className="rounded-2xl bg-white p-6 text-center shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500">
+                <PawIcon size={36} />
+              </div>
+              <p className="mt-4 text-base font-semibold text-slate-900 dark:text-white">
+                Welcome to PetNote! 🐾
+              </p>
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                Start by sharing your first pet moment.
+              </p>
+              <div className="mt-4 flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigate("/create")}
+                  className="w-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white"
+                >
+                  Create Post
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate("/search")}
+                  className="text-xs font-semibold text-purple-600"
+                >
+                  Or explore what others are sharing
+                </button>
+              </div>
+            </div>
           ) : (
             <EmptyState
               icon="📷"

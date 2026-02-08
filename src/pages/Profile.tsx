@@ -304,6 +304,14 @@ export function Profile() {
 
           <button
             type="button"
+            onClick={() => navigate("/contact")}
+            className="mx-auto text-xs font-semibold text-purple-600 hover:text-purple-500"
+          >
+            Help & Feedback
+          </button>
+
+          <button
+            type="button"
             onClick={async () => {
               await signOut();
               navigate("/login", { replace: true });

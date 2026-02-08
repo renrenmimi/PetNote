@@ -14,6 +14,7 @@ type QuickActionMenuProps = {
   onBookmark: () => void;
   onShare: () => void;
   onReport: () => void;
+  onBlock: () => void;
   onEdit: () => void;
   onDelete: () => void;
 };
@@ -30,6 +31,7 @@ export function QuickActionMenu({
   onBookmark,
   onShare,
   onReport,
+  onBlock,
   onEdit,
   onDelete,
 }: QuickActionMenuProps) {
@@ -111,14 +113,28 @@ export function QuickActionMenu({
             </button>
           </>
         ) : (
-          <button
-            type="button"
-            onClick={onReport}
-            className="flex h-11 w-full items-center gap-2 px-4 text-sm text-orange-500 transition-all duration-200 hover:bg-orange-50 dark:hover:bg-orange-500/10"
-          >
-            ⚠️ Report
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={onReport}
+              className="flex h-11 w-full items-center gap-2 px-4 text-sm text-orange-500 transition-all duration-200 hover:bg-orange-50 dark:hover:bg-orange-500/10"
+            >
+              ⚠️ Report Post
+            </button>
+            <button
+              type="button"
+              onClick={onBlock}
+              className="flex h-11 w-full items-center gap-2 px-4 text-sm text-red-500 transition-all duration-200 hover:bg-red-50 dark:hover:bg-red-500/10"
+            >
+              ⛔ Block User
+            </button>
+          </>
         )}
+        <div className="mt-1 border-t border-slate-200 pt-2 text-center text-xs text-slate-400 dark:border-slate-700 dark:text-slate-500">
+          <button type="button" onClick={onClose} className="w-full">
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -44,7 +44,8 @@ export type MeetupRequirements = {
     | "large"
     | "small_medium"
     | "medium_large";
-  petType: "any" | "dog" | "cat" | "any_dog" | "any_cat";
+  petType: "any" | "dog" | "cat" | "any_dog" | "any_cat" | "other";
+  customPetType?: string;
   maxPets: number;
   mustHavePosts: boolean;
   mustHavePetProfile: boolean;
@@ -487,6 +488,12 @@ export async function checkRequirements(
   if (requirements.petType === "cat" || requirements.petType === "any_cat") {
     if (petSpecies && petSpecies !== "cat") {
       reasons.push("Cats only.");
+    }
+  }
+
+  if (requirements.petType === "other") {
+    if (petSpecies && (petSpecies === "dog" || petSpecies === "cat")) {
+      reasons.push("Other pets only.");
     }
   }
 
