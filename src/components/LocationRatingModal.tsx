@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useToast } from "../contexts/ToastContext";
 import { submitReview } from "../services/locations";
 import { useAuth } from "../hooks/useAuth";
+import { uploadImage } from "../services/cloudinary";
 
 type LocationRatingModalProps = {
   open: boolean;
@@ -9,7 +10,7 @@ type LocationRatingModalProps = {
   locationId: string;
   locationName: string;
   locationAddress: string;
-  meetupId: string;
+  meetupId?: string;
   onSubmitted?: () => void;
 };
 
@@ -48,8 +49,30 @@ export function LocationRatingModal({
   const [comment, setComment] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
 
   const remaining = useMemo(() => 300 - comment.length, [comment]);
+
+  useEffect(() => {
+    const urls = photos.map((file) => URL.createObjectURL(file));
+    setPhotoPreviews(urls);
+    return () => {
+      urls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [photos]);
+
+  useEffect(() => {
+    if (!open) {
+      setRating(0);
+      setSpace(0);
+      setSafety(0);
+      setCleanliness(0);
+      setComment("");
+      setTags([]);
+      setPhotos([]);
+    }
+  }, [open]);
 
   if (!open) return null;
 
@@ -67,22 +90,29 @@ export function LocationRatingModal({
     }
     setSubmitting(true);
     try {
-      await submitReview(locationId, {
+      const photoUrls = await Promise.all(photos.map((file) => uploadImage(file)));
+      const reviewPayload: Parameters<typeof submitReview>[1] = {
         userId: user.uid,
         userName: profile?.displayName || user.displayName || "PetNote User",
         userAvatar:
           profile?.avatarUrl ||
           user.photoURL ||
           `https://api.dicebear.com/7.x/thumbs/svg?seed=${user.uid}`,
-        meetupId,
         rating,
         comment: comment.trim(),
+        photos: photoUrls,
         tags,
         petFriendly: {
           space: space || rating,
           safety: safety || rating,
           cleanliness: cleanliness || rating,
         },
+      };
+      if (meetupId) {
+        reviewPayload.meetupId = meetupId;
+      }
+      await submitReview(locationId, {
+        ...reviewPayload,
       });
       showToast("Thanks for your review! 🐾", "success");
       onSubmitted?.();
@@ -92,6 +122,18 @@ export function LocationRatingModal({
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handlePhotos = (files: FileList | null) => {
+    if (!files) return;
+    const incoming = Array.from(files);
+    const available = 3 - photos.length;
+    if (available <= 0) return;
+    setPhotos((prev) => [...prev, ...incoming.slice(0, available)]);
+  };
+
+  const removePhoto = (index: number) => {
+    setPhotos((prev) => prev.filter((_, idx) => idx !== index));
   };
 
   return (
@@ -187,6 +229,41 @@ export function LocationRatingModal({
                 </button>
               );
             })}
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-slate-900 dark:text-white">
+              Add photos (optional)
+            </p>
+            <span className="text-xs text-slate-400">{photos.length}/3</span>
+          </div>
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            {photoPreviews.map((url, idx) => (
+              <div key={url} className="relative aspect-square overflow-hidden rounded-xl">
+                <img src={url} alt={`Upload ${idx + 1}`} className="h-full w-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => removePhoto(idx)}
+                  className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-[10px] text-white"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            {photos.length < 3 ? (
+              <label className="flex aspect-square items-center justify-center rounded-xl border border-dashed border-slate-300 text-xs text-slate-400 dark:border-slate-600">
+                +
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(event) => handlePhotos(event.target.files)}
+                />
+              </label>
+            ) : null}
           </div>
         </div>
 

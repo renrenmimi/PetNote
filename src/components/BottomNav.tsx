@@ -1,6 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import { useNotifications } from "../hooks/useNotifications";
 
 type NavItem = {
   label: string;
@@ -13,7 +12,6 @@ export function BottomNav() {
   const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const { unreadCount } = useNotifications(user?.uid ?? null);
 
   const requireAuth = (path: string) => {
     if (!user) {
@@ -25,13 +23,13 @@ export function BottomNav() {
 
   const items: NavItem[] = [
     { label: "Home", icon: "🏠", path: "/" },
-    { label: "Meetups", icon: "🤝", path: "/meetups" },
+    { label: "Places", icon: "📍", path: "/places" },
     {
       label: "Create",
       icon: "+",
       action: () => requireAuth("/create"),
     },
-    { label: "Notifications", icon: "🔔", path: "/notifications" },
+    { label: "Meetups", icon: "🤝", path: "/meetups" },
     {
       label: "Profile",
       icon: "👤",
@@ -49,8 +47,8 @@ export function BottomNav() {
                 location.pathname.startsWith("/profile")) ||
               (item.path === "/meetups" &&
                 location.pathname.startsWith("/meetups")) ||
-              (item.path === "/notifications" &&
-                location.pathname.startsWith("/notifications"))
+              (item.path === "/places" &&
+                location.pathname.startsWith("/places"))
             : false;
 
           if (item.action) {
@@ -83,14 +81,7 @@ export function BottomNav() {
                 isActive ? "text-purple-600" : "text-slate-500 dark:text-slate-400"
               }`}
             >
-              <span className="relative text-xl">
-                {item.icon}
-                {item.label === "Notifications" && unreadCount > 0 ? (
-                  <span className="absolute -right-2 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
-                    {unreadCount > 9 ? "9+" : unreadCount}
-                  </span>
-                ) : null}
-              </span>
+              <span className="text-xl">{item.icon}</span>
               {item.label}
             </Link>
           );
