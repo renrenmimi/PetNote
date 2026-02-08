@@ -482,9 +482,9 @@ export function PostCard({
                         setMenuOpen(false);
                         setReportOpen(true);
                       }}
-                      className="w-full rounded-lg px-3 py-2 text-left text-orange-500 transition-all duration-200 hover:bg-orange-50 dark:hover:bg-orange-500/10"
+                      className="w-full rounded-lg px-3 py-2 text-left text-slate-600 transition-all duration-200 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
                     >
-                      ⚠️ Report Post
+                      Report Post
                     </button>
                     <button
                       type="button"
@@ -496,9 +496,9 @@ export function PostCard({
                         setMenuOpen(false);
                         setBlockConfirmOpen(true);
                       }}
-                      className="w-full rounded-lg px-3 py-2 text-left text-red-500 transition-all duration-200 hover:bg-red-50 dark:hover:bg-red-500/10"
+                      className="w-full rounded-lg px-3 py-2 text-left text-slate-600 transition-all duration-200 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
                     >
-                      ⛔ Block User
+                      Block User
                     </button>
                   </>
                 )}

@@ -72,28 +72,28 @@ export function QuickActionMenu({
           onClick={onLike}
           className="flex h-11 w-full items-center gap-2 px-4 text-sm text-slate-700 transition-all duration-200 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
         >
-          ❤️ {isLiked ? "Unlike" : "Like"}
+          {isLiked ? "Unlike" : "Like"}
         </button>
         <button
           type="button"
           onClick={onBookmark}
           className="flex h-11 w-full items-center gap-2 px-4 text-sm text-slate-700 transition-all duration-200 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
         >
-          🔖 {isBookmarked ? "Unsave" : "Save"}
+          {isBookmarked ? "Unsave" : "Save"}
         </button>
         <button
           type="button"
           onClick={onShare}
           className="flex h-11 w-full items-center gap-2 px-4 text-sm text-slate-700 transition-all duration-200 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
         >
-          ↗️ Share
+          Share
         </button>
         <button
           type="button"
           onClick={() => navigate(`/profile/${post.authorId}`)}
           className="flex h-11 w-full items-center gap-2 px-4 text-sm text-slate-700 transition-all duration-200 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
         >
-          👤 View Profile
+          View Profile
         </button>
         {isOwner ? (
           <>
@@ -102,14 +102,14 @@ export function QuickActionMenu({
               onClick={onEdit}
               className="flex h-11 w-full items-center gap-2 px-4 text-sm text-slate-700 transition-all duration-200 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
             >
-              ✏️ Edit
+              Edit
             </button>
             <button
               type="button"
               onClick={onDelete}
               className="flex h-11 w-full items-center gap-2 px-4 text-sm text-red-500 transition-all duration-200 hover:bg-red-50 dark:hover:bg-red-500/10"
             >
-              🗑️ Delete
+              Delete
             </button>
           </>
         ) : (
@@ -117,16 +117,16 @@ export function QuickActionMenu({
             <button
               type="button"
               onClick={onReport}
-              className="flex h-11 w-full items-center gap-2 px-4 text-sm text-orange-500 transition-all duration-200 hover:bg-orange-50 dark:hover:bg-orange-500/10"
+              className="flex h-11 w-full items-center gap-2 px-4 text-sm text-slate-700 transition-all duration-200 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
             >
-              ⚠️ Report Post
+              Report Post
             </button>
             <button
               type="button"
               onClick={onBlock}
-              className="flex h-11 w-full items-center gap-2 px-4 text-sm text-red-500 transition-all duration-200 hover:bg-red-50 dark:hover:bg-red-500/10"
+              className="flex h-11 w-full items-center gap-2 px-4 text-sm text-slate-700 transition-all duration-200 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
             >
-              ⛔ Block User
+              Block User
             </button>
           </>
         )}

@@ -190,7 +190,14 @@ export function Profile() {
             ←
           </button>
           <h1 className="text-base font-semibold text-slate-900 dark:text-white">Profile</h1>
-          <div className="w-6" />
+          <button
+            type="button"
+            onClick={() => navigate("/settings")}
+            className="text-xl text-slate-500 transition-colors hover:text-slate-700 dark:text-slate-300 dark:hover:text-white"
+            aria-label="Settings"
+          >
+            ⚙️
+          </button>
         </div>
       </header>
 
@@ -280,14 +287,6 @@ export function Profile() {
             >
               Edit Profile
             </button>
-            <button
-              type="button"
-              onClick={() => navigate("/settings")}
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-lg text-slate-500 transition-all duration-200 hover:border-purple-300 hover:text-purple-600 dark:border-slate-700 dark:text-slate-300"
-              aria-label="Settings"
-            >
-              ⚙️
-            </button>
           </div>
 
           {isAdmin ? (
@@ -302,28 +301,6 @@ export function Profile() {
             </div>
           ) : null}
 
-          <button
-            type="button"
-            onClick={() => navigate("/contact")}
-            className="mx-auto text-xs font-semibold text-purple-600 hover:text-purple-500"
-          >
-            Help & Feedback
-          </button>
-
-          <button
-            type="button"
-            onClick={async () => {
-              await signOut();
-              navigate("/login", { replace: true });
-            }}
-            className="mx-auto text-xs font-semibold text-red-500 hover:text-red-600"
-          >
-            Sign Out
-          </button>
-
-          <p className="text-center text-xs text-slate-400 dark:text-slate-500">
-            Joined {joinedDate}
-          </p>
         </section>
         )}
 
@@ -573,7 +550,33 @@ export function Profile() {
           )}
         </section>
         ) : null}
+
+        {!loading ? (
+          <div className="space-y-2 pt-4">
+            <button
+              type="button"
+              onClick={() => navigate("/contact")}
+              className="text-left text-sm text-slate-500 transition-colors hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+            >
+              Help & Feedback
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                await signOut();
+                navigate("/login", { replace: true });
+              }}
+              className="text-left text-sm text-slate-500 transition-colors hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+            >
+              Sign Out
+            </button>
+            <p className="text-xs text-slate-400 dark:text-slate-500">
+              Joined {joinedDate}
+            </p>
+          </div>
+        ) : null}
       </main>
+
 
       {deleteTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
