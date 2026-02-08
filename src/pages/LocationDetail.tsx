@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Avatar from "../components/Avatar";
+import LazyImage from "../components/LazyImage";
 import { LocationRatingModal } from "../components/LocationRatingModal";
 import { MediaCarousel } from "../components/MediaCarousel";
 import { useAuth } from "../hooks/useAuth";
@@ -416,7 +417,7 @@ export function LocationDetail() {
                   onClick={() => setLightboxIndex(idx)}
                   className="aspect-square overflow-hidden rounded-xl"
                 >
-                  <img src={photo} alt="Location" className="h-full w-full object-cover" />
+                  <LazyImage src={photo} alt="Location" className="h-full w-full" />
                 </button>
               ))}
             </div>
@@ -482,7 +483,7 @@ export function LocationDetail() {
                     <div className="grid grid-cols-3 gap-2">
                       {review.photos.map((photo) => (
                         <div key={photo} className="aspect-square overflow-hidden rounded-lg">
-                          <img src={photo} alt="Review" className="h-full w-full object-cover" />
+                          <LazyImage src={photo} alt="Review" className="h-full w-full" />
                         </div>
                       ))}
                     </div>

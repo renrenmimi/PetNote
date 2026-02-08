@@ -6,7 +6,6 @@ import { useBookmark } from "../hooks/useBookmark";
 import { blockUser } from "../services/block";
 import { deletePost, pinPost, unpinPost, type Post } from "../services/posts";
 import { getPetById, isBirthdayToday } from "../services/pets";
-import { getUserProfile } from "../services/users";
 import { MediaCarousel } from "./MediaCarousel";
 import { QuickActionMenu } from "./QuickActionMenu";
 import { ReportModal } from "./ReportModal";
@@ -20,6 +19,8 @@ type PostCardProps = {
   useMock?: boolean;
   index?: number;
   onDeleted?: (postId: string) => void;
+  initialLiked?: boolean;
+  initialBookmarked?: boolean;
 };
 
 export function PostCard({
@@ -27,6 +28,8 @@ export function PostCard({
   useMock = false,
   index = 0,
   onDeleted,
+  initialLiked,
+  initialBookmarked,
 }: PostCardProps) {
   const { user, isBanned, profile } = useAuth();
   const navigate = useNavigate();
@@ -45,9 +48,6 @@ export function PostCard({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [hidden, setHidden] = useState(false);
-  const [authorName, setAuthorName] = useState(post.authorName);
-  const [authorAvatar, setAuthorAvatar] = useState(post.authorAvatar);
-  const [authorLocation, setAuthorLocation] = useState<string | null>(null);
   const [bookmarkAnimating, setBookmarkAnimating] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
@@ -59,15 +59,20 @@ export function PostCard({
   const { isLiked, likeCount, toggleLike } = useLike(
     post.id,
     useMock ? null : user?.uid ?? null,
-    post.likeCount ?? 0
+    post.likeCount ?? 0,
+    initialLiked
   );
 
   const { isBookmarked, toggleBookmark } = useBookmark(
     post.id,
-    useMock ? null : user?.uid ?? null
+    useMock ? null : user?.uid ?? null,
+    initialBookmarked
   );
 
   const timeLabel = useMemo(() => timeAgo(post.createdAt), [post.createdAt]);
+  const authorName = post.authorName || "PetNote User";
+  const authorAvatar = post.authorAvatar || "";
+
   const mediaItems = useMemo(() => {
     if (post.media && post.media.length > 0) {
       return post.media;
@@ -90,25 +95,6 @@ export function PostCard({
   const isPinned = !!profile?.pinnedPostId && profile.pinnedPostId === post.id;
   const delay = Math.min(index * 100, 500);
 
-  useEffect(() => {
-    let ignore = false;
-    const loadProfile = async () => {
-      const profile = await getUserProfile(post.authorId);
-      if (!ignore && profile) {
-        setAuthorName(profile.displayName || post.authorName);
-        setAuthorAvatar(profile.avatarUrl || post.authorAvatar);
-        const city = profile.location?.city;
-        const state = profile.location?.state;
-        setAuthorLocation(city ? `${city}${state ? `, ${state}` : ""}` : null);
-      } else if (!ignore) {
-        setAuthorLocation(null);
-      }
-    };
-    void loadProfile();
-    return () => {
-      ignore = true;
-    };
-  }, [post.authorId, post.authorName, post.authorAvatar]);
 
   useEffect(() => {
     let ignore = false;
@@ -420,7 +406,7 @@ export function PostCard({
               ) : null}
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              {timeLabel}{authorLocation ? ` · ${authorLocation}` : ""}
+              {timeLabel}
               {isBirthday ? (
                 <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-500/20 dark:text-amber-200">
                   🎂 Birthday!

@@ -11,6 +11,14 @@ import { useToast } from "../contexts/ToastContext";
 import { FILTER_MAP, ImageFilter, type FilterName } from "../components/ImageFilter";
 
 const MAX_CHARS = 2000;
+const DRAFT_KEY = "petnote_post_draft";
+
+interface PostDraft {
+  text: string;
+  tags: string[];
+  petId?: string;
+  savedAt: number;
+}
 
 export function Create() {
   const navigate = useNavigate();
@@ -46,6 +54,9 @@ export function Create() {
   const filesRef = useRef(files);
   const [pets, setPets] = useState<Pet[]>([]);
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<PostDraft | null>(null);
+  const [showDraftBanner, setShowDraftBanner] = useState(false);
+  const [draftReady, setDraftReady] = useState(false);
 
   const remaining = useMemo(() => MAX_CHARS - caption.length, [caption]);
   const counterTone =
@@ -84,8 +95,45 @@ export function Create() {
   }, [pets, searchParams]);
 
   useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(DRAFT_KEY);
+      if (saved) {
+        const parsed: PostDraft = JSON.parse(saved);
+        if (Date.now() - parsed.savedAt > 24 * 60 * 60 * 1000) {
+          sessionStorage.removeItem(DRAFT_KEY);
+        } else {
+          setDraft(parsed);
+          setShowDraftBanner(true);
+        }
+      }
+    } catch {
+      // ignore
+    } finally {
+      setDraftReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
     filesRef.current = files;
   }, [files]);
+
+  useEffect(() => {
+    if (!draftReady || showDraftBanner) return;
+    const timer = setTimeout(() => {
+      if (caption.trim() || tags.length > 0 || selectedPetId) {
+        const payload: PostDraft = {
+          text: caption,
+          tags,
+          petId: selectedPetId || undefined,
+          savedAt: Date.now(),
+        };
+        sessionStorage.setItem(DRAFT_KEY, JSON.stringify(payload));
+      } else {
+        sessionStorage.removeItem(DRAFT_KEY);
+      }
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [caption, tags, selectedPetId, draftReady, showDraftBanner]);
 
   const validateVideoDuration = (file: File) =>
     new Promise<number>((resolve, reject) => {
@@ -303,6 +351,28 @@ export function Create() {
     });
   };
 
+  const handleRestoreDraft = () => {
+    if (!draft) return;
+    const hasInput = caption.trim() || tags.length > 0 || selectedPetId;
+    if (hasInput) {
+      const confirmed = window.confirm(
+        "Replace your current draft with the saved one?"
+      );
+      if (!confirmed) return;
+    }
+    setCaption(draft.text || "");
+    setTags(draft.tags || []);
+    setSelectedPetId(draft.petId || null);
+    setShowDraftBanner(false);
+    setDraft(null);
+  };
+
+  const handleDiscardDraft = () => {
+    sessionStorage.removeItem(DRAFT_KEY);
+    setShowDraftBanner(false);
+    setDraft(null);
+  };
+
   const handleTagKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -368,6 +438,7 @@ export function Create() {
       await createPost({
         ...postPayload,
       });
+      sessionStorage.removeItem(DRAFT_KEY);
       showToast("Posted successfully!", "success");
       setTimeout(() => {
         navigate("/", { replace: true });
@@ -526,6 +597,30 @@ export function Create() {
       </header>
 
       <main className="mx-auto w-full max-w-md space-y-6 px-4 py-6">
+        {showDraftBanner && draft ? (
+          <div className="flex items-center justify-between gap-3 rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-700 shadow-sm dark:bg-blue-900/20 dark:text-blue-200">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">📝</span>
+              <span>You have an unsaved draft</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleRestoreDraft}
+                className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-3 py-1 text-xs font-semibold text-white"
+              >
+                Restore
+              </button>
+              <button
+                type="button"
+                onClick={handleDiscardDraft}
+                className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300"
+              >
+                Discard
+              </button>
+            </div>
+          </div>
+        ) : null}
         <section
           className={`relative flex min-h-[240px] flex-col rounded-2xl border-2 border-dashed bg-slate-50 text-center transition dark:bg-slate-800 ${
             dragActive

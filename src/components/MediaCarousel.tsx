@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
 import type { MediaItem } from "../services/posts";
+import LazyImage from "./LazyImage";
 
 type MediaCarouselProps = {
   media?: MediaItem[];
@@ -204,11 +205,16 @@ export function MediaCarousel({
                   ) : null}
                 </div>
               ) : (
-                <img
-                  src={item.url}
-                  alt="Post media"
-                  className="max-h-[500px] w-full object-contain"
-                />
+                Math.abs(idx - index) <= 1 ? (
+                  <LazyImage
+                    src={item.url}
+                    alt="Post media"
+                    className="max-h-[500px] w-full"
+                    imgClassName="object-contain"
+                  />
+                ) : (
+                  <div className="max-h-[500px] w-full bg-slate-200 dark:bg-slate-700" />
+                )
               )}
             </div>
           );

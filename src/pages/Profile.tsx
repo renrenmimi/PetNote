@@ -6,6 +6,7 @@ import { PostCard } from "../components/PostCard";
 import { UserCard } from "../components/UserCard";
 import { EmptyState } from "../components/EmptyState";
 import { SkeletonProfile } from "../components/SkeletonProfile";
+import LazyImage from "../components/LazyImage";
 import Avatar from "../components/Avatar";
 import { getBookmarkedPosts } from "../services/bookmarks";
 import { getFollowers, getFollowing } from "../services/follow";
@@ -455,6 +456,7 @@ export function Profile() {
                     const first = mediaList[0];
                     const isMulti = mediaList.length > 1;
                     const isVideo = first?.type === "video";
+                    const thumbSrc = first?.thumbUrl || first?.url || post.mediaUrl;
 
                     return (
                       <div
@@ -466,11 +468,13 @@ export function Profile() {
                           onClick={() => navigate(`/post/${post.id}`)}
                           className="h-full w-full"
                         >
-                          <img
-                            src={first?.thumbUrl || first?.url || post.mediaUrl}
-                            alt={post.text}
-                            className="h-full w-full object-cover"
-                          />
+                          {thumbSrc ? (
+                            <LazyImage
+                              src={thumbSrc}
+                              alt={post.text}
+                              className="h-full w-full"
+                            />
+                          ) : null}
                         </button>
                         {isVideo ? (
                           <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
@@ -522,6 +526,7 @@ export function Profile() {
                 const first = mediaList[0];
                 const isMulti = mediaList.length > 1;
                 const isVideo = first?.type === "video";
+                const thumbSrc = first?.thumbUrl || first?.url || post.mediaUrl;
                 return (
                   <button
                     key={post.id}
@@ -529,11 +534,13 @@ export function Profile() {
                     onClick={() => navigate(`/post/${post.id}`)}
                     className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800"
                   >
-                    <img
-                      src={first?.thumbUrl || first?.url || post.mediaUrl}
-                      alt={post.text}
-                      className="h-full w-full object-cover"
-                    />
+                    {thumbSrc ? (
+                      <LazyImage
+                        src={thumbSrc}
+                        alt={post.text}
+                        className="h-full w-full"
+                      />
+                    ) : null}
                     {isVideo ? (
                       <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
                         ▶

@@ -11,9 +11,10 @@ type UseLikeResult = {
 export function useLike(
   postId: string,
   userId: string | null,
-  initialCount = 0
+  initialCount = 0,
+  initialLiked?: boolean
 ): UseLikeResult {
-  const [isLiked, setIsLiked] = useState(false);
+  const [isLiked, setIsLiked] = useState(initialLiked ?? false);
   const [likeCount, setLikeCount] = useState(initialCount);
   const [loading, setLoading] = useState(false);
 
@@ -22,10 +23,21 @@ export function useLike(
   }, [initialCount]);
 
   useEffect(() => {
+    if (initialLiked !== undefined) {
+      setIsLiked(initialLiked);
+    }
+  }, [initialLiked]);
+
+  useEffect(() => {
     let ignore = false;
     if (!userId) {
       setIsLiked(false);
       return;
+    }
+    if (initialLiked !== undefined) {
+      return () => {
+        ignore = true;
+      };
     }
 
     const load = async () => {
@@ -41,7 +53,7 @@ export function useLike(
     return () => {
       ignore = true;
     };
-  }, [postId, userId]);
+  }, [postId, userId, initialLiked]);
 
   const toggleLike = useCallback(async () => {
     if (!userId || loading) return;

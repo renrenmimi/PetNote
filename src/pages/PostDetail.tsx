@@ -10,7 +10,7 @@ import { useBookmark } from "../hooks/useBookmark";
 import { useFollow } from "../hooks/useFollow";
 import { useLike } from "../hooks/useLike";
 import { deletePost, getPostById, type Post } from "../services/posts";
-import { getUserProfile } from "../services/users";
+import { getCachedUser } from "../hooks/useUserCache";
 import { timeAgo } from "../utils/timeAgo";
 
 export function PostDetail() {
@@ -63,7 +63,7 @@ export function PostDetail() {
     let ignore = false;
     if (!post?.authorId) return;
     const loadProfile = async () => {
-      const profile = await getUserProfile(post.authorId);
+      const profile = await getCachedUser(post.authorId);
       if (!ignore && profile) {
         setAuthorName(profile.displayName || post.authorName);
         setAuthorAvatar(profile.avatarUrl || post.authorAvatar);

@@ -14,6 +14,8 @@ import { ScrollToTop } from "../components/ScrollToTop";
 import { usePosts } from "../hooks/usePosts";
 import { useAuth } from "../hooks/useAuth";
 import { useBlockedUsers } from "../hooks/useBlockedUsers";
+import { batchCheckLikes } from "../hooks/useBatchLikeStatus";
+import { batchCheckBookmarks } from "../hooks/useBatchBookmarkStatus";
 import { getFollowing } from "../services/follow";
 import { type Post } from "../services/posts";
 import { useToast } from "../contexts/ToastContext";
@@ -81,6 +83,8 @@ export function Feed() {
   const [followingCount, setFollowingCount] = useState(0);
   const { blockedUserIds } = useBlockedUsers(user?.uid ?? null);
   const { showToast } = useToast();
+  const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
+  const [bookmarkedPosts, setBookmarkedPosts] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!useMock) {
@@ -155,6 +159,30 @@ export function Feed() {
       displayPosts.filter((post) => !blockedUserIds.includes(post.authorId)),
     [blockedUserIds, displayPosts]
   );
+
+  useEffect(() => {
+    let ignore = false;
+    if (!user || filteredPosts.length === 0) {
+      setLikedPosts(new Set());
+      setBookmarkedPosts(new Set());
+      return;
+    }
+    const ids = filteredPosts.map((post) => post.id);
+    const loadStatus = async () => {
+      const [likedSet, bookmarkedSet] = await Promise.all([
+        batchCheckLikes(user.uid, ids),
+        batchCheckBookmarks(user.uid, ids),
+      ]);
+      if (!ignore) {
+        setLikedPosts(likedSet);
+        setBookmarkedPosts(bookmarkedSet);
+      }
+    };
+    void loadStatus();
+    return () => {
+      ignore = true;
+    };
+  }, [filteredPosts, user]);
 
   const pullLabel = refreshing
     ? "Refreshing..."
@@ -296,6 +324,8 @@ export function Feed() {
             post={post}
             useMock={useMock}
             index={index}
+            initialLiked={likedPosts.has(post.id)}
+            initialBookmarked={bookmarkedPosts.has(post.id)}
             onDeleted={(postId) =>
               setLocalPosts((prev) => prev.filter((item) => item.id !== postId))
             }
