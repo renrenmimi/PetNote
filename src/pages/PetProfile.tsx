@@ -1,22 +1,36 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import { deletePet, getPetById, getPostsByPet, type Pet } from "../services/pets";
+import {
+  deletePet,
+  getPetById,
+  getPetFamily,
+  getPostsByPet,
+  getRelationshipLabel,
+  isFamilyMember,
+  type FamilyMember,
+  type Pet,
+} from "../services/pets";
 import { getUserProfile } from "../services/users";
 import { getSpeciesMeta } from "../utils/petHelpers";
 import type { Post } from "../services/posts";
 import { EmptyState } from "../components/EmptyState";
+import Avatar from "../components/Avatar";
+import { InviteCodeModal } from "../components/InviteCodeModal";
 
 export function PetProfile() {
   const navigate = useNavigate();
   const { petId } = useParams();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [pet, setPet] = useState<Pet | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [ownerName, setOwnerName] = useState<string | null>(null);
+  const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
+  const [viewerIsFamilyMember, setViewerIsFamilyMember] = useState(false);
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -29,14 +43,44 @@ export function PetProfile() {
         if (!ignore) setLoading(false);
         return;
       }
-      const [petPosts, ownerProfile] = await Promise.all([
+
+      const [petPosts, family] = await Promise.all([
         getPostsByPet(petId),
-        getUserProfile(petData.ownerId),
+        getPetFamily(petId),
       ]);
+
+      const primaryOwnerId = petData.primaryOwnerId || petData.ownerId;
+      const primaryMember = family.find((member) => member.role === "primary");
+      const fallbackOwnerProfile = primaryMember
+        ? null
+        : await getUserProfile(primaryOwnerId);
+
+      let members = family;
+      if (members.length === 0) {
+        members = [
+          {
+            userId: primaryOwnerId,
+            userName: fallbackOwnerProfile?.displayName || "Family",
+            userAvatar:
+              fallbackOwnerProfile?.avatarUrl ||
+              `https://api.dicebear.com/7.x/thumbs/svg?seed=${primaryOwnerId}`,
+            relationship: "caretaker",
+            role: "primary",
+          },
+        ];
+      }
+
+      const isMember = user
+        ? members.some((member) => member.userId === user.uid) ||
+          (await isFamilyMember(petId, user.uid))
+        : false;
+
       if (!ignore) {
         setPet(petData);
         setPosts(petPosts);
-        setOwnerName(ownerProfile?.displayName || "Family");
+        setFamilyMembers(members);
+        setViewerIsFamilyMember(isMember);
+        setOwnerName(primaryMember?.userName || fallbackOwnerProfile?.displayName || "Family");
         setLoading(false);
       }
     };
@@ -45,7 +89,7 @@ export function PetProfile() {
     return () => {
       ignore = true;
     };
-  }, [petId]);
+  }, [petId, user]);
 
   const speciesMeta = useMemo(
     () => getSpeciesMeta(pet?.species),
@@ -97,7 +141,8 @@ export function PetProfile() {
     );
   }
 
-  const isOwner = user?.uid === pet.ownerId;
+  const primaryOwnerId = pet.primaryOwnerId || pet.ownerId;
+  const isPrimaryOwner = user?.uid === primaryOwnerId;
 
   return (
     <div className="min-h-screen bg-white pb-10 dark:bg-slate-900">
@@ -155,13 +200,13 @@ export function PetProfile() {
 
           <button
             type="button"
-            onClick={() => navigate(`/profile/${pet.ownerId}`)}
+            onClick={() => navigate(`/profile/${primaryOwnerId}`)}
             className="mt-3 text-xs text-slate-500 hover:text-purple-600 dark:text-slate-400"
           >
             Family: {ownerName}
           </button>
 
-          {isOwner ? (
+          {isPrimaryOwner ? (
             <div className="mt-4 flex items-center justify-center gap-3">
               <button
                 type="button"
@@ -179,6 +224,46 @@ export function PetProfile() {
               </button>
             </div>
           ) : null}
+        </section>
+
+        <section className="space-y-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Family</h3>
+            {viewerIsFamilyMember ? (
+              <button
+                type="button"
+                onClick={() => setInviteOpen(true)}
+                className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-3 py-1 text-xs font-semibold text-white"
+              >
+                Invite Family Member
+              </button>
+            ) : null}
+          </div>
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {familyMembers.map((member) => (
+              <button
+                key={member.userId}
+                type="button"
+                onClick={() => navigate(`/profile/${member.userId}`)}
+                className="flex min-w-[90px] flex-col items-center text-center"
+              >
+                <Avatar
+                  src={member.userAvatar}
+                  alt={member.userName}
+                  userId={member.userId}
+                  size={48}
+                  className="h-12 w-12"
+                />
+                <span className="mt-2 line-clamp-1 text-xs font-semibold text-slate-900 dark:text-white">
+                  {member.userName}
+                  {member.role === "primary" ? " ★" : ""}
+                </span>
+                <span className="mt-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500 dark:bg-slate-700 dark:text-slate-300">
+                  {getRelationshipLabel(member.relationship, member.customRelationship)}
+                </span>
+              </button>
+            ))}
+          </div>
         </section>
 
         <section className="rounded-2xl bg-white p-4 text-center shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
@@ -271,6 +356,17 @@ export function PetProfile() {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {user && viewerIsFamilyMember ? (
+        <InviteCodeModal
+          isOpen={inviteOpen}
+          onClose={() => setInviteOpen(false)}
+          petId={pet.id}
+          petName={pet.name}
+          userId={user.uid}
+          userName={profile?.displayName || user.displayName || "User"}
+        />
       ) : null}
     </div>
   );

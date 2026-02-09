@@ -160,7 +160,7 @@ export function UserProfile() {
               {profile?.displayName || "PetNote User"}
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              @{profile?.displayName?.replace(/\s+/g, "").toLowerCase() || profile?.email}
+              @{profile?.email || "unknown"}
             </p>
             {profile?.bio ? (
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">

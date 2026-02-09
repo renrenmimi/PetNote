@@ -12,8 +12,12 @@ import {
 } from "firebase/auth";
 import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth, db } from "../services/firebase";
-import { createUserProfile, type UserProfile } from "../services/users";
-import { generateRandomUsername } from "../utils/randomName";
+import {
+  createUserProfile,
+  generateUniqueUsername,
+  isUsernameTaken,
+  type UserProfile,
+} from "../services/users";
 
 type UseAuthResult = {
   user: User | null;
@@ -74,7 +78,7 @@ export function useAuth(): UseAuthResult {
     try {
       const result = await createUserWithEmailAndPassword(auth, email, password);
       const createdUser = result.user;
-      const randomName = generateRandomUsername();
+      const randomName = await generateUniqueUsername();
       const avatarUrl = `https://api.dicebear.com/7.x/thumbs/svg?seed=${createdUser.uid}`;
       await updateProfile(createdUser, {
         displayName: randomName,
@@ -107,43 +111,52 @@ export function useAuth(): UseAuthResult {
     const googleUser = result.user;
     const userRef = doc(db, "users", googleUser.uid);
     const snapshot = await getDoc(userRef);
-    const displayName = googleUser.displayName || generateRandomUsername();
+    const profileData = snapshot.exists()
+      ? (snapshot.data() as Partial<UserProfile>)
+      : null;
+    const candidateName = profileData?.displayName || googleUser.displayName?.trim();
+    let displayName =
+      candidateName && candidateName.length > 0
+        ? candidateName
+        : await generateUniqueUsername();
+    if (!snapshot.exists() && candidateName) {
+      const taken = await isUsernameTaken(candidateName);
+      if (taken) {
+        displayName = await generateUniqueUsername();
+      }
+    }
     const avatarUrl = `https://api.dicebear.com/7.x/thumbs/svg?seed=${googleUser.uid}`;
     if (!snapshot.exists()) {
-      await setDoc(
-        userRef,
-        {
-          displayName,
-          avatarUrl,
-          bio: "",
-          email: googleUser.email,
-          followingCount: 0,
-          followerCount: 0,
-          onboardingComplete: false,
-          createdAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
+      await createUserProfile(googleUser.uid, {
+        displayName,
+        avatarUrl,
+        bio: "",
+        email: googleUser.email ?? "",
+        followingCount: 0,
+        followerCount: 0,
+        onboardingComplete: false,
+        createdAt: serverTimestamp(),
+      });
       await updateProfile(googleUser, {
         displayName,
         photoURL: avatarUrl,
       });
     } else {
-      const data = snapshot.data() as Partial<UserProfile> | undefined;
       const needsAvatar =
-        !data?.avatarUrl || (data.avatarUrl ?? "").includes("googleusercontent");
-      if (needsAvatar) {
+        !profileData?.avatarUrl ||
+        (profileData.avatarUrl ?? "").includes("googleusercontent");
+      if (needsAvatar || !profileData?.displayName) {
         await setDoc(
           userRef,
           {
-            displayName: data?.displayName || displayName,
-            avatarUrl,
+            displayName,
+            avatarUrl: profileData?.avatarUrl || avatarUrl,
           },
           { merge: true }
         );
         await updateProfile(googleUser, {
-          displayName: data?.displayName || displayName,
-          photoURL: avatarUrl,
+          displayName,
+          photoURL: profileData?.avatarUrl || avatarUrl,
         });
       }
     }
