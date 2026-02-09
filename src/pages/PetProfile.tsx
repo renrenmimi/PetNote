@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { deletePet, getPetById, getPostsByPet, type Pet } from "../services/pets";
 import { getUserProfile } from "../services/users";
-import { getGenderMeta, getSpeciesMeta } from "../utils/petHelpers";
+import { getSpeciesMeta } from "../utils/petHelpers";
 import type { Post } from "../services/posts";
 import { EmptyState } from "../components/EmptyState";
 
@@ -36,7 +36,7 @@ export function PetProfile() {
       if (!ignore) {
         setPet(petData);
         setPosts(petPosts);
-        setOwnerName(ownerProfile?.displayName || "Owner");
+        setOwnerName(ownerProfile?.displayName || "Family");
         setLoading(false);
       }
     };
@@ -50,10 +50,6 @@ export function PetProfile() {
   const speciesMeta = useMemo(
     () => getSpeciesMeta(pet?.species),
     [pet?.species]
-  );
-  const genderMeta = useMemo(
-    () => getGenderMeta(pet?.gender),
-    [pet?.gender]
   );
 
   const birthdayLabel = useMemo(() => {
@@ -140,14 +136,18 @@ export function PetProfile() {
           <h2 className="mt-4 text-2xl font-semibold text-slate-900 dark:text-white">
             {pet.name}
           </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-300">
-            {speciesMeta.emoji} {pet.breed || speciesMeta.label}
-          </p>
+          {pet.breed ? (
+            <p className="text-sm text-slate-500 dark:text-slate-300">
+              {speciesMeta.emoji} {pet.breed}
+            </p>
+          ) : null}
           <div className="mt-2 flex items-center justify-center gap-2 text-xs text-slate-500 dark:text-slate-400">
             {pet.age ? <span>{pet.age}</span> : birthdayLabel ? <span>{birthdayLabel}</span> : null}
-            <span style={{ color: genderMeta.color }}>
-              {genderMeta.icon}
-            </span>
+            {pet.gender === "male" ? (
+              <span className="text-lg font-bold text-blue-500">♂</span>
+            ) : pet.gender === "female" ? (
+              <span className="text-lg font-bold text-pink-500">♀</span>
+            ) : null}
           </div>
           {pet.bio ? (
             <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{pet.bio}</p>
@@ -158,7 +158,7 @@ export function PetProfile() {
             onClick={() => navigate(`/profile/${pet.ownerId}`)}
             className="mt-3 text-xs text-slate-500 hover:text-purple-600 dark:text-slate-400"
           >
-            Owner: {ownerName}
+            Family: {ownerName}
           </button>
 
           {isOwner ? (

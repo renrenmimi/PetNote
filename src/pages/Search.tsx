@@ -135,9 +135,11 @@ function PetResultCard({ pet }: { pet: Pet }) {
         <p className="text-sm font-semibold text-slate-900 dark:text-white">
           {pet.name} {emoji}
         </p>
-        <p className="text-xs text-slate-400 dark:text-slate-500">
-          {pet.breed || "Pet friend"}
-        </p>
+        {pet.breed ? (
+          <p className="text-xs text-slate-400 dark:text-slate-500">
+            {pet.breed}
+          </p>
+        ) : null}
       </div>
     </button>
   );
@@ -450,9 +452,11 @@ export function Search() {
                       <p className="mt-2 text-xs font-semibold text-slate-900 dark:text-white">
                         {pet.name}
                       </p>
-                      <p className="text-[10px] text-slate-400 dark:text-slate-500">
-                        {pet.breed || "Pet friend"}
-                      </p>
+                      {pet.breed ? (
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                          {pet.breed}
+                        </p>
+                      ) : null}
                       <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">
                         {pet.postCount} posts
                       </p>

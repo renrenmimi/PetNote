@@ -863,9 +863,11 @@ export function MeetupDetail() {
                         <p className="text-sm font-semibold text-slate-900 dark:text-white">
                           {pet.name}
                         </p>
-                        <p className="text-xs text-slate-500 dark:text-slate-300">
-                          {speciesMeta.emoji} {pet.breed || speciesMeta.label}
-                        </p>
+                        {pet.breed ? (
+                          <p className="text-xs text-slate-500 dark:text-slate-300">
+                            {speciesMeta.emoji} {pet.breed}
+                          </p>
+                        ) : null}
                         {!petMatchesType ? (
                           <p className="text-[11px] text-red-500">
                             Doesn&apos;t meet pet type requirement

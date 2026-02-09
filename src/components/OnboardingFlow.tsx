@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import PawIcon from "./PawIcon";
 import Avatar from "./Avatar";
+import { doc, getDoc, serverTimestamp } from "firebase/firestore";
+import { auth, db } from "../services/firebase";
 import { uploadImage } from "../services/cloudinary";
 import { createPet } from "../services/pets";
-import { completeOnboarding } from "../services/users";
+import { completeOnboarding, createUserProfile, type UserProfile } from "../services/users";
 import { PET_SPECIES, type PetSpecies } from "../utils/petHelpers";
+import { generateRandomUsername } from "../utils/randomName";
 import { useToast } from "../contexts/ToastContext";
+import { getSuggestedUsers } from "../services/explore";
+import { followUser } from "../services/follow";
 
 type OnboardingFlowProps = {
   userId: string;
@@ -16,7 +20,6 @@ type OnboardingFlowProps = {
 const stepCount = 4;
 
 export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
-  const navigate = useNavigate();
   const [step, setStep] = useState(() => {
     if (typeof window === "undefined") return 0;
     const saved = window.localStorage.getItem("onboardingStep");
@@ -28,6 +31,9 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [savingPet, setSavingPet] = useState(false);
+  const [suggestedUsers, setSuggestedUsers] = useState<UserProfile[]>([]);
+  const [suggestedLoading, setSuggestedLoading] = useState(false);
+  const [followedIds, setFollowedIds] = useState<Set<string>>(new Set());
   const touchStartRef = useRef(0);
   const { showToast } = useToast();
 
@@ -43,6 +49,26 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
       }
     };
   }, [avatarPreview]);
+
+  useEffect(() => {
+    let ignore = false;
+    if (!userId) return;
+    const loadSuggested = async () => {
+      setSuggestedLoading(true);
+      try {
+        const users = await getSuggestedUsers(userId, 8);
+        if (!ignore) setSuggestedUsers(users);
+      } catch (error) {
+        console.error("Failed to load suggested users:", error);
+      } finally {
+        if (!ignore) setSuggestedLoading(false);
+      }
+    };
+    void loadSuggested();
+    return () => {
+      ignore = true;
+    };
+  }, [userId]);
 
   const dots = useMemo(
     () =>
@@ -73,11 +99,36 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
     }
     setSavingPet(true);
     try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        showToast("Please log in to add a pet.", "error");
+        setSavingPet(false);
+        return;
+      }
+      const userRef = doc(db, "users", currentUser.uid);
+      const snapshot = await getDoc(userRef);
+      if (!snapshot.exists()) {
+        const displayName = currentUser.displayName || generateRandomUsername();
+        const avatarUrl =
+          currentUser.photoURL ||
+          `https://api.dicebear.com/7.x/thumbs/svg?seed=${currentUser.uid}`;
+        await createUserProfile(currentUser.uid, {
+          displayName,
+          avatarUrl,
+          bio: "",
+          email: currentUser.email || "",
+          followerCount: 0,
+          followingCount: 0,
+          onboardingComplete: false,
+          createdAt: serverTimestamp(),
+        });
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
       let avatarUrl = "";
       if (avatarFile) {
         avatarUrl = await uploadImage(avatarFile);
       }
-      await createPet(userId, {
+      await createPet(currentUser.uid, {
         name: petName.trim(),
         species,
         breed: "",
@@ -92,6 +143,18 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
         err instanceof Error ? err.message : "Failed to add pet.";
       showToast(message, "error");
       setSavingPet(false);
+    }
+  };
+
+  const handleFollow = async (targetId: string) => {
+    if (!userId || followedIds.has(targetId)) return;
+    try {
+      await followUser(userId, targetId);
+      setFollowedIds((prev) => new Set(prev).add(targetId));
+      showToast("Now following!", "success");
+    } catch (error) {
+      console.error("Failed to follow user:", error);
+      showToast("Unable to follow right now.", "error");
     }
   };
 
@@ -210,33 +273,20 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
         {step === 2 ? (
           <>
             <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
-              Share your first moment!
+              Share Your Pet&apos;s Moments!
             </h1>
             <div className="mx-auto flex h-32 w-32 items-center justify-center rounded-3xl bg-slate-100 text-4xl dark:bg-slate-800">
               📸
             </div>
-            <div className="space-y-3">
-              <button
-                type="button"
-                onClick={() => navigate("/create")}
-                className="w-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-6 py-3 text-sm font-semibold text-white transition-all duration-200 hover:brightness-110"
-              >
-                Take a Photo
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate("/create")}
-                className="w-full rounded-full border border-slate-200 px-6 py-3 text-sm font-semibold text-slate-600 transition-all duration-200 hover:border-purple-300 hover:text-purple-600 dark:border-slate-700 dark:text-slate-300"
-              >
-                Choose from Library
-              </button>
-            </div>
+            <p className="text-sm text-slate-500 dark:text-slate-300">
+              You&apos;re all set! Start sharing photos and videos of your pet anytime from the home screen.
+            </p>
             <button
               type="button"
               onClick={handleNext}
-              className="text-xs text-slate-400 dark:text-slate-500"
+              className="w-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-6 py-3 text-sm font-semibold text-white transition-all duration-200 hover:brightness-110"
             >
-              Skip
+              Let&apos;s Go! 🐾
             </button>
           </>
         ) : null}
@@ -250,34 +300,54 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
               Follow a few pet lovers to start.
             </p>
             <div className="space-y-3">
-              {[
-                { name: "Luna", avatar: "https://i.pravatar.cc/100?img=32" },
-                { name: "Milo", avatar: "https://i.pravatar.cc/100?img=15" },
-                { name: "Coco", avatar: "https://i.pravatar.cc/100?img=23" },
-              ].map((item) => (
-                <div
-                  key={item.name}
-                  className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-800"
-                >
-                  <div className="flex items-center gap-3">
-                    <Avatar
-                      src={item.avatar}
-                      alt={item.name}
-                      size={40}
-                      className="h-10 w-10"
-                    />
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                      {item.name}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-all duration-200 hover:border-purple-300 hover:text-purple-600 dark:border-slate-700 dark:text-slate-300"
-                  >
-                    Follow
-                  </button>
+              {suggestedLoading ? (
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-sm text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-500">
+                  Loading suggestions...
                 </div>
-              ))}
+              ) : suggestedUsers.length === 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  <p>No other users yet. You&apos;re one of the first! 🎉</p>
+                  <p className="mt-2 text-xs text-slate-400">Invite your friends to join PetNote.</p>
+                </div>
+              ) : (
+                suggestedUsers.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-800"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Avatar
+                        src={item.avatarUrl}
+                        alt={item.displayName || "User"}
+                        userId={item.id}
+                        size={40}
+                        className="h-10 w-10"
+                      />
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                          {item.displayName || "PetNote User"}
+                        </p>
+                        {item.bio ? (
+                          <p className="text-xs text-slate-400">
+                            {item.bio.slice(0, 50)}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleFollow(item.id)}
+                      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
+                        followedIds.has(item.id)
+                          ? "border-slate-200 text-slate-400 dark:border-slate-700"
+                          : "border-slate-200 text-slate-600 hover:border-purple-300 hover:text-purple-600 dark:border-slate-700 dark:text-slate-300"
+                      }`}
+                    >
+                      {followedIds.has(item.id) ? "Following" : "Follow"}
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
             <button
               type="button"

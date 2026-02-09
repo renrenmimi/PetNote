@@ -71,24 +71,34 @@ export function useAuth(): UseAuthResult {
   }, []);
 
   const signUp = useCallback(async (email: string, password: string) => {
-    const result = await createUserWithEmailAndPassword(auth, email, password);
-    const randomName = generateRandomUsername();
-    const avatarUrl = `https://api.dicebear.com/7.x/thumbs/svg?seed=${result.user.uid}`;
-    await updateProfile(result.user, {
-      displayName: randomName,
-      photoURL: avatarUrl,
-    });
-    await createUserProfile(result.user.uid, {
-      displayName: randomName,
-      avatarUrl,
-      bio: "",
-      email: result.user.email || email,
-      followerCount: 0,
-      followingCount: 0,
-      onboardingComplete: false,
-    });
-    await sendEmailVerification(result.user);
-    return result.user;
+    try {
+      const result = await createUserWithEmailAndPassword(auth, email, password);
+      const createdUser = result.user;
+      const randomName = generateRandomUsername();
+      const avatarUrl = `https://api.dicebear.com/7.x/thumbs/svg?seed=${createdUser.uid}`;
+      await updateProfile(createdUser, {
+        displayName: randomName,
+        photoURL: avatarUrl,
+      });
+      await createUserProfile(createdUser.uid, {
+        displayName: randomName,
+        avatarUrl,
+        bio: "",
+        email: createdUser.email || email,
+        followerCount: 0,
+        followingCount: 0,
+        onboardingComplete: false,
+        createdAt: serverTimestamp(),
+      });
+      try {
+        await sendEmailVerification(createdUser);
+      } catch {
+        // Ignore verification errors so sign-up can still finish.
+      }
+      return createdUser;
+    } catch (error) {
+      throw error;
+    }
   }, []);
 
   const signInWithGoogle = useCallback(async () => {
