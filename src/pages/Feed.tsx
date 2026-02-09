@@ -16,7 +16,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useBlockedUsers } from "../hooks/useBlockedUsers";
 import { batchCheckLikes } from "../hooks/useBatchLikeStatus";
 import { batchCheckBookmarks } from "../hooks/useBatchBookmarkStatus";
-import { getFollowing } from "../services/follow";
+import { getFollowingPets } from "../services/follow";
 import { useToast } from "../contexts/ToastContext";
 import { type Post } from "../services/posts";
 
@@ -76,8 +76,8 @@ export function Feed() {
     let ignore = false;
     if (!user || activeTab !== "following") return;
     const loadFollowing = async () => {
-      const ids = await getFollowing(user.uid);
-      if (!ignore) setFollowingCount(ids.length);
+      const items = await getFollowingPets(user.uid);
+      if (!ignore) setFollowingCount(items.length);
     };
     void loadFollowing();
     return () => {
@@ -219,9 +219,9 @@ export function Feed() {
           activeTab === "following" && user && followingCount === 0 ? (
             <EmptyState
               icon="👥"
-              title="No posts from friends"
-              description="Follow pet lovers to see their posts here"
-              actionText="Discover People"
+              title="No posts from followed pets"
+              description="Follow some pets to see their posts here"
+              actionText="Discover Pets"
               onAction={() => navigate("/search")}
             />
           ) : (

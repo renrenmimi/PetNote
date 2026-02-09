@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import {
+  collectionGroup,
+  getDocs,
+  query,
+  where,
+  writeBatch,
+} from "firebase/firestore";
 import { useAuth } from "../hooks/useAuth";
 import { uploadImage } from "../services/cloudinary";
 import {
@@ -7,6 +14,7 @@ import {
   isUsernameTaken,
   updateUserProfile,
 } from "../services/users";
+import { db } from "../services/firebase";
 import { useToast } from "../contexts/ToastContext";
 import Avatar from "../components/Avatar";
 
@@ -152,6 +160,26 @@ export function EditProfile() {
         avatarUrl,
         bio: bio.trim(),
       });
+
+      try {
+        const familyQuery = query(
+          collectionGroup(db, "family"),
+          where("userId", "==", user.uid)
+        );
+        const snapshot = await getDocs(familyQuery);
+        if (!snapshot.empty) {
+          const batch = writeBatch(db);
+          snapshot.docs.forEach((docSnap) => {
+            batch.update(docSnap.ref, {
+              userName: name,
+              userAvatar: avatarUrl || "",
+            });
+          });
+          await batch.commit();
+        }
+      } catch (error) {
+        console.warn("Failed to update pet family profile mirrors:", error);
+      }
 
       navigate("/profile", { replace: true });
     } catch (err) {

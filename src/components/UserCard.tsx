@@ -1,5 +1,4 @@
 import { useNavigate } from "react-router-dom";
-import { useFollow } from "../hooks/useFollow";
 import { type UserProfile } from "../services/users";
 import Avatar from "./Avatar";
 
@@ -10,7 +9,6 @@ type UserCardProps = {
 
 export function UserCard({ user, currentUid }: UserCardProps) {
   const navigate = useNavigate();
-  const { isFollowing, toggleFollow, loading } = useFollow(user.id);
   const isSelf = currentUid === user.id;
 
   return (
@@ -37,20 +35,15 @@ export function UserCard({ user, currentUid }: UserCardProps) {
         </div>
       </button>
 
-      {!isSelf ? (
-        <button
-          type="button"
-          onClick={toggleFollow}
-          disabled={loading}
-          className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-200 hover:scale-105 ${
-            isFollowing
-              ? "border border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-300"
-              : "bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-[0_10px_25px_-15px_rgba(168,85,247,0.7)]"
-          }`}
-        >
-          {isFollowing ? "Following" : "Follow"}
-        </button>
-      ) : null}
+      <span
+        className={`rounded-full px-4 py-1.5 text-xs font-semibold ${
+          isSelf
+            ? "text-slate-400 dark:text-slate-500"
+            : "text-purple-600 dark:text-purple-300"
+        }`}
+      >
+        {isSelf ? "You" : "View"}
+      </span>
     </div>
   );
 }

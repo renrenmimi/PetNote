@@ -3,14 +3,17 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useAdmin } from "../hooks/useAdmin";
 import { PostCard } from "../components/PostCard";
-import { UserCard } from "../components/UserCard";
 import { EmptyState } from "../components/EmptyState";
 import { SkeletonProfile } from "../components/SkeletonProfile";
 import LazyImage from "../components/LazyImage";
 import Avatar from "../components/Avatar";
 import { getBookmarkedPosts } from "../services/bookmarks";
 import { getUserCheckins, type Checkin } from "../services/checkins";
-import { getFollowers, getFollowing } from "../services/follow";
+import {
+  getFollowingPets,
+  unfollowPet,
+  type FollowingPet,
+} from "../services/follow";
 import { getLocation, type Location } from "../services/locations";
 import {
   deletePost,
@@ -25,7 +28,7 @@ import {
   getUserPets,
   type Pet,
 } from "../services/pets";
-import { getUserProfile, getUsersByIds, type UserProfile } from "../services/users";
+import { getUserProfile } from "../services/users";
 import { getSpeciesMeta } from "../utils/petHelpers";
 import { useToast } from "../contexts/ToastContext";
 import { timeAgo } from "../utils/timeAgo";
@@ -48,18 +51,15 @@ export function Profile() {
   const [savedLoading, setSavedLoading] = useState(false);
   const [checkins, setCheckins] = useState<Checkin[]>([]);
   const [checkinsLoading, setCheckinsLoading] = useState(false);
+  const [followingPets, setFollowingPets] = useState<FollowingPet[]>([]);
+  const [followingPetsLoading, setFollowingPetsLoading] = useState(false);
   const [checkinLocations, setCheckinLocations] = useState<Record<string, Location | null>>(
     {}
   );
   const [activeTab, setActiveTab] = useState<"posts" | "saved" | "checkins">(
     "posts"
   );
-  const [followCounts, setFollowCounts] = useState({
-    followerCount: 0,
-    followingCount: 0,
-  });
-  const [modalTitle, setModalTitle] = useState<string | null>(null);
-  const [modalUsers, setModalUsers] = useState<UserProfile[]>([]);
+  const [followingModalOpen, setFollowingModalOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Post | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -89,10 +89,7 @@ export function Profile() {
           setProfileLocation(null);
         }
         setPets(petList);
-        setFollowCounts({
-          followerCount: profile?.followerCount ?? 0,
-          followingCount: profile?.followingCount ?? 0,
-        });
+        setFollowingPets([]);
         if (profile?.pinnedPostId) {
           const pinned =
             postList.find((item) => item.id === profile.pinnedPostId) ??
@@ -289,40 +286,29 @@ export function Profile() {
             ) : null}
           </div>
 
-          <div className="grid grid-cols-3 divide-x divide-slate-200 text-center dark:divide-slate-800">
+          <div className="grid grid-cols-2 divide-x divide-slate-200 text-center dark:divide-slate-800">
             <div className="px-2 py-2">
               <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                {stats.postCount}
+                {pets.length}
               </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Posts</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Pets</p>
             </div>
             <button
               type="button"
               onClick={async () => {
-                const ids = await getFollowers(user.uid);
-                const profiles = await getUsersByIds(ids);
-                setModalTitle("Followers");
-                setModalUsers(profiles);
+                setFollowingPetsLoading(true);
+                try {
+                  const items = await getFollowingPets(user.uid);
+                  setFollowingPets(items);
+                  setFollowingModalOpen(true);
+                } finally {
+                  setFollowingPetsLoading(false);
+                }
               }}
               className="px-2 py-2"
             >
               <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                {followCounts.followerCount}
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Followers</p>
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                const ids = await getFollowing(user.uid);
-                const profiles = await getUsersByIds(ids);
-                setModalTitle("Following");
-                setModalUsers(profiles);
-              }}
-              className="px-2 py-2"
-            >
-              <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                {followCounts.followingCount}
+                {authProfile?.followingPetsCount ?? followingPets.length}
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400">Following</p>
             </button>
@@ -736,18 +722,17 @@ export function Profile() {
         </div>
       ) : null}
 
-      {modalTitle ? (
+      {followingModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-3xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)] dark:bg-slate-800">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-                {modalTitle}
+                Following Pets
               </h3>
               <button
                 type="button"
                 onClick={() => {
-                  setModalTitle(null);
-                  setModalUsers([]);
+                  setFollowingModalOpen(false);
                 }}
                 className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-300"
               >
@@ -755,17 +740,49 @@ export function Profile() {
               </button>
             </div>
             <div className="mt-4 space-y-3">
-              {modalUsers.length === 0 ? (
+              {followingPetsLoading ? (
                 <p className="text-center text-sm text-slate-500 dark:text-slate-300">
-                  No users yet
+                  Loading...
+                </p>
+              ) : followingPets.length === 0 ? (
+                <p className="text-center text-sm text-slate-500 dark:text-slate-300">
+                  No followed pets yet
                 </p>
               ) : (
-                modalUsers.map((profile) => (
-                  <UserCard
-                    key={profile.id}
-                    user={profile}
-                    currentUid={user.uid}
-                  />
+                followingPets.map((pet) => (
+                  <div
+                    key={pet.petId}
+                    className="flex items-center justify-between rounded-2xl bg-white px-4 py-3 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/pet/${pet.petId}`)}
+                      className="flex items-center gap-3 text-left"
+                    >
+                      <Avatar
+                        src={pet.petAvatar || undefined}
+                        alt={pet.petName || "Pet"}
+                        userId={pet.petId}
+                        size={40}
+                        className="h-10 w-10"
+                      />
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                        {pet.petName || "Pet"}
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await unfollowPet(user.uid, pet.petId);
+                        setFollowingPets((prev) =>
+                          prev.filter((item) => item.petId !== pet.petId)
+                        );
+                      }}
+                      className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-500 transition-all duration-200 hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:text-slate-300"
+                    >
+                      Unfollow
+                    </button>
+                  </div>
                 ))
               )}
             </div>

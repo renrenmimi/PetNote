@@ -23,6 +23,7 @@ export type UserProfile = {
   createdAt?: unknown;
   followerCount?: number;
   followingCount?: number;
+  followingPetsCount?: number;
   role?: "admin" | "user";
   banned?: boolean;
   onboardingComplete?: boolean;
@@ -89,6 +90,7 @@ export async function createUserProfile(
     createdAt: data.createdAt ?? serverTimestamp(),
     followerCount: data.followerCount ?? 0,
     followingCount: data.followingCount ?? 0,
+    followingPetsCount: data.followingPetsCount ?? 0,
   };
   try {
     await setDoc(userRef, payload, { merge: true });

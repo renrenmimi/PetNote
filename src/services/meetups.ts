@@ -473,9 +473,12 @@ export async function checkRequirements(
   }
 
   if (requirements.minFollowers > 0) {
-    const followers = profile?.followerCount ?? 0;
-    if (followers < requirements.minFollowers) {
-      reasons.push(`Requires at least ${requirements.minFollowers} followers.`);
+    const followScore =
+      profile?.followingPetsCount ?? profile?.followerCount ?? 0;
+    if (followScore < requirements.minFollowers) {
+      reasons.push(
+        `Requires at least ${requirements.minFollowers} followed pets.`
+      );
     }
   }
 

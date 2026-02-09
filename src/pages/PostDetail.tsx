@@ -7,7 +7,7 @@ import { SkeletonPostCard } from "../components/SkeletonPostCard";
 import Avatar from "../components/Avatar";
 import { useAuth } from "../hooks/useAuth";
 import { useBookmark } from "../hooks/useBookmark";
-import { useFollow } from "../hooks/useFollow";
+import { useFollowPet } from "../hooks/useFollow";
 import { useLike } from "../hooks/useLike";
 import { deletePost, getPostById, type Post } from "../services/posts";
 import { getCachedUser } from "../hooks/useUserCache";
@@ -37,7 +37,7 @@ export function PostDetail() {
     postId,
     user?.uid ?? null
   );
-  const { isFollowing, toggleFollow } = useFollow(post?.authorId ?? "");
+  const { isFollowing, toggleFollow } = useFollowPet(post?.petId ?? "");
 
   useEffect(() => {
     let ignore = false;
@@ -269,7 +269,7 @@ export function PostDetail() {
                   </p>
                 </div>
               </div>
-              {user && post.authorId !== user.uid ? (
+              {user && post.authorId !== user.uid && post.petId ? (
                 <button
                   type="button"
                   onClick={toggleFollow}

@@ -15,7 +15,7 @@ import type { UserProfile } from "./users";
 import type { Pet } from "./pets";
 import type { Location } from "./locations";
 import type { Meetup } from "./meetups";
-import { getFollowing } from "./follow";
+import { getFollowingPets } from "./follow";
 
 export async function getTrendingPosts(limitCount = 6): Promise<Post[]> {
   const postsRef = collection(db, "posts");
@@ -40,21 +40,48 @@ export async function getSuggestedUsers(
   currentUserId: string,
   limitCount = 8
 ): Promise<UserProfile[]> {
-  const usersRef = collection(db, "users");
-  const snapshot = await getDocs(
-    query(usersRef, orderBy("followerCount", "desc"), limit(20))
-  );
-  const followingIds = currentUserId ? await getFollowing(currentUserId) : [];
-  const filtered = snapshot.docs
+  // Deprecated in follow-pet model. Kept only for compatibility.
+  void currentUserId;
+  void limitCount;
+  return [];
+}
+
+export async function getSuggestedPets(
+  currentUserId: string,
+  limitCount = 8
+): Promise<Array<Pet & { postCount: number }>> {
+  const petsRef = collection(db, "pets");
+  const [petSnapshot, followingPets] = await Promise.all([
+    getDocs(query(petsRef, orderBy("followerCount", "desc"), limit(50))),
+    currentUserId ? getFollowingPets(currentUserId) : Promise.resolve([]),
+  ]);
+  const followedIds = new Set(followingPets.map((item) => item.petId));
+
+  const rankedPets = petSnapshot.docs
     .map((docSnap) => ({
       id: docSnap.id,
-      ...(docSnap.data() as Omit<UserProfile, "id">),
+      ...(docSnap.data() as Omit<Pet, "id">),
     }))
-    .filter(
-      (user) => user.id !== currentUserId && !followingIds.includes(user.id)
-    )
+    .filter((pet) => !followedIds.has(pet.id))
     .slice(0, limitCount);
-  return filtered;
+
+  const postCounts = await Promise.all(
+    rankedPets.map(async (pet) => {
+      const postsSnapshot = await getDocs(
+        query(
+          collection(db, "posts"),
+          where("petId", "==", pet.id),
+          limit(100)
+        )
+      );
+      return { petId: pet.id, count: postsSnapshot.size };
+    })
+  );
+  const countMap = new Map(postCounts.map((item) => [item.petId, item.count]));
+  return rankedPets.map((pet) => ({
+    ...pet,
+    postCount: countMap.get(pet.id) ?? 0,
+  }));
 }
 
 export async function getPopularPets(limitCount = 8): Promise<Array<Pet & { postCount: number }>> {

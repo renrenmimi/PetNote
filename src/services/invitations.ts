@@ -100,53 +100,69 @@ export async function validateInvitationCode(code: string): Promise<{
   invitationRefPath?: string;
   error?: string;
 }> {
-  const normalized = normalizeCode(code);
-  if (normalized.length !== 8) {
-    return { valid: false, error: "Invitation code must be 8 characters." };
+  try {
+    const normalized = normalizeCode(code);
+    if (normalized.length !== 8) {
+      return { valid: false, error: "Invitation code must be 8 characters." };
+    }
+
+    // Keep this query on a single field to avoid requiring a composite index.
+    const invitationQuery = query(
+      collectionGroup(db, "invitations"),
+      where("code", "==", normalized),
+      limit(5)
+    );
+    const invitationSnapshot = await getDocs(invitationQuery);
+    if (invitationSnapshot.empty) {
+      return { valid: false, error: "Invalid or expired invitation code." };
+    }
+
+    const candidate = invitationSnapshot.docs
+      .map((docSnap) => ({
+        docSnap,
+        data: docSnap.data() as Invitation,
+      }))
+      .find((item) => {
+        if (item.data.used) return false;
+        const expiresDate =
+          item.data.expiresAt &&
+          typeof item.data.expiresAt === "object" &&
+          "toDate" in item.data.expiresAt &&
+          typeof (item.data.expiresAt as { toDate: () => Date }).toDate ===
+            "function"
+            ? (item.data.expiresAt as { toDate: () => Date }).toDate()
+            : null;
+        if (!expiresDate) return false;
+        return expiresDate.getTime() >= Date.now();
+      });
+
+    if (!candidate) {
+      return { valid: false, error: "Invalid or expired invitation code." };
+    }
+
+    const petId = candidate.docSnap.ref.parent.parent?.id;
+    if (!petId) {
+      return { valid: false, error: "Could not find the associated pet." };
+    }
+
+    const petSnap = await getDoc(doc(db, "pets", petId));
+    if (!petSnap.exists()) {
+      return { valid: false, error: "Could not find the associated pet." };
+    }
+
+    return {
+      valid: true,
+      petId,
+      petName: (petSnap.data() as { name?: string }).name || "Pet",
+      invitationRefPath: candidate.docSnap.ref.path,
+    };
+  } catch (error) {
+    console.error("Error validating invitation code:", error);
+    return {
+      valid: false,
+      error: "Failed to validate code. Please try again.",
+    };
   }
-
-  const invitationQuery = query(
-    collectionGroup(db, "invitations"),
-    where("code", "==", normalized),
-    where("used", "==", false),
-    limit(1)
-  );
-  const invitationSnapshot = await getDocs(invitationQuery);
-  if (invitationSnapshot.empty) {
-    return { valid: false, error: "Invalid or expired invitation code." };
-  }
-
-  const invitationDoc = invitationSnapshot.docs[0];
-  const invitationData = invitationDoc.data() as Invitation;
-  const expiresDate =
-    invitationData.expiresAt &&
-    typeof invitationData.expiresAt === "object" &&
-    "toDate" in invitationData.expiresAt &&
-    typeof (invitationData.expiresAt as { toDate: () => Date }).toDate ===
-      "function"
-      ? (invitationData.expiresAt as { toDate: () => Date }).toDate()
-      : null;
-
-  if (!expiresDate || expiresDate.getTime() < Date.now()) {
-    return { valid: false, error: "This invitation code has expired." };
-  }
-
-  const petId = invitationDoc.ref.parent.parent?.id;
-  if (!petId) {
-    return { valid: false, error: "Could not find the pet." };
-  }
-
-  const petSnap = await getDoc(doc(db, "pets", petId));
-  if (!petSnap.exists()) {
-    return { valid: false, error: "Could not find the pet." };
-  }
-
-  return {
-    valid: true,
-    petId,
-    petName: (petSnap.data() as { name?: string }).name || "Pet",
-    invitationRefPath: invitationDoc.ref.path,
-  };
 }
 
 export async function useInvitation(
