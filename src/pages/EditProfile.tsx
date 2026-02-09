@@ -2,7 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { uploadImage } from "../services/cloudinary";
-import { getUserProfile, updateUserProfile } from "../services/users";
+import {
+  getUserProfile,
+  isUsernameTaken,
+  updateUserProfile,
+} from "../services/users";
 import { useToast } from "../contexts/ToastContext";
 import Avatar from "../components/Avatar";
 
@@ -14,10 +18,13 @@ export function EditProfile() {
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [displayName, setDisplayName] = useState("");
+  const [initialDisplayName, setInitialDisplayName] = useState("");
   const [bio, setBio] = useState("");
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const [usernameChecking, setUsernameChecking] = useState(false);
+  const [usernameTaken, setUsernameTaken] = useState(false);
   const { showToast } = useToast();
 
   const bioRemaining = useMemo(() => MAX_BIO - bio.length, [bio.length]);
@@ -27,6 +34,7 @@ export function EditProfile() {
       : bioRemaining <= Math.ceil(MAX_BIO * 0.2)
       ? "text-amber-500"
       : "text-slate-400 dark:text-slate-500";
+
   const nameRemaining = useMemo(() => MAX_NAME - displayName.length, [
     displayName.length,
   ]);
@@ -37,13 +45,27 @@ export function EditProfile() {
       ? "text-amber-500"
       : "text-slate-400 dark:text-slate-500";
 
+  const canSave = useMemo(() => {
+    const normalized = displayName.trim();
+    return (
+      !!user &&
+      !saving &&
+      normalized.length >= 2 &&
+      normalized.length <= MAX_NAME &&
+      !usernameTaken &&
+      !usernameChecking
+    );
+  }, [displayName, saving, user, usernameChecking, usernameTaken]);
+
   useEffect(() => {
     let ignore = false;
     if (!user) return;
     const load = async () => {
       const profile = await getUserProfile(user.uid);
       if (ignore) return;
-      setDisplayName(profile?.displayName || user.displayName || "");
+      const resolvedDisplayName = profile?.displayName || user.displayName || "";
+      setDisplayName(resolvedDisplayName);
+      setInitialDisplayName(resolvedDisplayName);
       setBio(profile?.bio || "");
       setAvatarPreview(
         profile?.avatarUrl ||
@@ -64,6 +86,44 @@ export function EditProfile() {
     return () => URL.revokeObjectURL(url);
   }, [avatarFile]);
 
+  useEffect(() => {
+    let ignore = false;
+    if (!user) return;
+
+    const normalized = displayName.trim();
+    if (
+      normalized.length < 2 ||
+      normalized.toLowerCase() === initialDisplayName.trim().toLowerCase()
+    ) {
+      setUsernameChecking(false);
+      setUsernameTaken(false);
+      return;
+    }
+
+    setUsernameChecking(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const taken = await isUsernameTaken(normalized, user.uid);
+        if (!ignore) {
+          setUsernameTaken(taken);
+        }
+      } catch (error) {
+        if (!ignore) {
+          setUsernameTaken(false);
+        }
+      } finally {
+        if (!ignore) {
+          setUsernameChecking(false);
+        }
+      }
+    }, 500);
+
+    return () => {
+      ignore = true;
+      window.clearTimeout(timer);
+    };
+  }, [displayName, initialDisplayName, user]);
+
   const handleSave = async () => {
     if (!user || saving) return;
     const name = displayName.trim();
@@ -71,6 +131,14 @@ export function EditProfile() {
       showToast("Display name must be 2-30 characters.", "error");
       return;
     }
+    if (usernameTaken) {
+      showToast("This username is already taken.", "error");
+      return;
+    }
+    if (usernameChecking) {
+      return;
+    }
+
     setSaving(true);
 
     try {
@@ -113,7 +181,7 @@ export function EditProfile() {
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving}
+            disabled={!canSave}
             className="flex items-center gap-2 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-1.5 text-sm font-semibold text-white transition-all duration-200 hover:scale-105 disabled:cursor-not-allowed disabled:opacity-70"
           >
             {saving ? (
@@ -183,6 +251,25 @@ export function EditProfile() {
               maxLength={MAX_NAME}
               className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700 outline-none transition-all duration-200 focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
               placeholder="Enter display name"
+            />
+            {usernameChecking ? (
+              <p className="text-xs text-slate-400 dark:text-slate-500">
+                Checking username...
+              </p>
+            ) : usernameTaken ? (
+              <p className="text-xs text-red-500">This username is already taken</p>
+            ) : null}
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+              Email
+            </label>
+            <input
+              type="text"
+              readOnly
+              value={user?.email || ""}
+              className="w-full rounded-xl border border-slate-200 bg-slate-100 px-4 py-2 text-sm text-slate-500 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400"
             />
           </div>
 

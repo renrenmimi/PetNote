@@ -20,7 +20,11 @@ import {
   unpinPost,
   type Post,
 } from "../services/posts";
-import { getPetsByOwner, type Pet } from "../services/pets";
+import {
+  getRelationshipLabel,
+  getUserPets,
+  type Pet,
+} from "../services/pets";
 import { getUserProfile, getUsersByIds, type UserProfile } from "../services/users";
 import { getSpeciesMeta } from "../utils/petHelpers";
 import { useToast } from "../contexts/ToastContext";
@@ -70,7 +74,7 @@ export function Profile() {
           getPostsByUser(user.uid),
           getUserStats(user.uid),
           getUserProfile(user.uid),
-          getPetsByOwner(user.uid),
+          getUserPets(user.uid),
         ]);
         if (ignore) return;
         setPosts(postList);
@@ -271,7 +275,7 @@ export function Profile() {
               {profileName || user.displayName || "PetNote User"}
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              @{profileName?.replace(/\s+/g, "").toLowerCase() || user.email}
+              @{user.email || authProfile?.email || "unknown"}
             </p>
             {profileBio ? (
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
@@ -405,11 +409,9 @@ export function Profile() {
                     <span className="mt-2 font-semibold text-slate-900 dark:text-white">
                       {pet.name}
                     </span>
-                    {pet.breed ? (
-                      <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                        {pet.breed}
-                      </span>
-                    ) : null}
+                    <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                      {getRelationshipLabel(pet.relationship, pet.customRelationship)}
+                    </span>
                   </button>
                 );
               })}

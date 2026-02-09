@@ -9,8 +9,10 @@ import {
   where,
   writeBatch,
   serverTimestamp,
+  limit,
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
+import { generateRandomUsername } from "../utils/randomName";
 
 export type UserProfile = {
   id: string;
@@ -95,6 +97,48 @@ export async function createUserProfile(
     await new Promise((resolve) => setTimeout(resolve, 1000));
     await setDoc(userRef, payload, { merge: true });
   }
+}
+
+export async function isUsernameTaken(
+  username: string,
+  excludeUserId?: string
+): Promise<boolean> {
+  const normalized = username.trim();
+  if (!normalized) {
+    return false;
+  }
+
+  const usersRef = collection(db, "users");
+  const usersQuery = query(
+    usersRef,
+    where("displayName", "==", normalized),
+    limit(10)
+  );
+  const snapshot = await getDocs(usersQuery);
+  if (snapshot.empty) {
+    return false;
+  }
+  if (!excludeUserId) {
+    return true;
+  }
+  return snapshot.docs.some((docSnap) => docSnap.id !== excludeUserId);
+}
+
+export async function generateUniqueUsername(): Promise<string> {
+  let attempt = 0;
+  let username = generateRandomUsername();
+  while (attempt < 10) {
+    const taken = await isUsernameTaken(username);
+    if (!taken) {
+      return username;
+    }
+    username = generateRandomUsername();
+    attempt += 1;
+  }
+  return `${generateRandomUsername()}${Date.now().toString().slice(-4)}`.slice(
+    0,
+    30
+  );
 }
 
 export async function getUsersByIds(
