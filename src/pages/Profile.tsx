@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../hooks/useAuth";
-import { useAdmin } from "../hooks/useAdmin";
-import { PostCard } from "../components/PostCard";
+import Avatar from "../components/Avatar";
+import LazyImage from "../components/LazyImage";
 import { EmptyState } from "../components/EmptyState";
 import { SkeletonProfile } from "../components/SkeletonProfile";
-import LazyImage from "../components/LazyImage";
-import Avatar from "../components/Avatar";
+import { useAuth } from "../hooks/useAuth";
+import { useAdmin } from "../hooks/useAdmin";
 import { getBookmarkedPosts } from "../services/bookmarks";
 import { getUserCheckins, type Checkin } from "../services/checkins";
 import {
@@ -15,53 +14,49 @@ import {
   type FollowingPet,
 } from "../services/follow";
 import { getLocation, type Location } from "../services/locations";
+import { type Post } from "../services/posts";
 import {
-  deletePost,
-  getPostById,
-  getPostsByUser,
-  getUserStats,
-  unpinPost,
-  type Post,
-} from "../services/posts";
-import {
+  getPostsByPet,
   getRelationshipLabel,
   getUserPets,
   type Pet,
 } from "../services/pets";
 import { getUserProfile } from "../services/users";
 import { getSpeciesMeta } from "../utils/petHelpers";
-import { useToast } from "../contexts/ToastContext";
 import { timeAgo } from "../utils/timeAgo";
+
+const genderSymbolClass = "text-base font-bold";
 
 export function Profile() {
   const navigate = useNavigate();
   const { user, profile: authProfile } = useAuth();
   const { isAdmin } = useAdmin();
-  const { showToast } = useToast();
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [stats, setStats] = useState({ postCount: 0, totalLikes: 0 });
+
   const [loading, setLoading] = useState(true);
   const [profileName, setProfileName] = useState<string | null>(null);
   const [profileAvatar, setProfileAvatar] = useState<string | null>(null);
   const [profileBio, setProfileBio] = useState<string | null>(null);
   const [profileLocation, setProfileLocation] = useState<string | null>(null);
-  const [pinnedPost, setPinnedPost] = useState<Post | null>(null);
+
   const [pets, setPets] = useState<Pet[]>([]);
+  const [petPostCounts, setPetPostCounts] = useState<Record<string, number>>({});
+
   const [savedPosts, setSavedPosts] = useState<Post[]>([]);
   const [savedLoading, setSavedLoading] = useState(false);
+
   const [checkins, setCheckins] = useState<Checkin[]>([]);
   const [checkinsLoading, setCheckinsLoading] = useState(false);
-  const [followingPets, setFollowingPets] = useState<FollowingPet[]>([]);
-  const [followingPetsLoading, setFollowingPetsLoading] = useState(false);
   const [checkinLocations, setCheckinLocations] = useState<Record<string, Location | null>>(
     {}
   );
-  const [activeTab, setActiveTab] = useState<"posts" | "saved" | "checkins">(
-    "posts"
-  );
+
+  const [followingPets, setFollowingPets] = useState<FollowingPet[]>([]);
   const [followingModalOpen, setFollowingModalOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<Post | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const [followingPetsLoading, setFollowingPetsLoading] = useState(false);
+
+  const [activeTab, setActiveTab] = useState<"pets" | "saved" | "checkins">(
+    "pets"
+  );
 
   useEffect(() => {
     let ignore = false;
@@ -70,33 +65,34 @@ export function Profile() {
     const load = async () => {
       setLoading(true);
       try {
-        const [postList, userStats, profile, petList] = await Promise.all([
-          getPostsByUser(user.uid),
-          getUserStats(user.uid),
+        const [profile, petList] = await Promise.all([
           getUserProfile(user.uid),
           getUserPets(user.uid),
         ]);
         if (ignore) return;
-        setPosts(postList);
-        setStats(userStats);
+
         setProfileName(profile?.displayName || null);
         setProfileAvatar(profile?.avatarUrl || null);
         setProfileBio(profile?.bio || null);
+        setPets(petList);
+
+        const postCountPairs = await Promise.all(
+          petList.map(async (pet) => {
+            const posts = await getPostsByPet(pet.id);
+            return [pet.id, posts.length] as const;
+          })
+        );
+        const counts: Record<string, number> = {};
+        postCountPairs.forEach(([petId, count]) => {
+          counts[petId] = count;
+        });
+        setPetPostCounts(counts);
+
         if (profile?.location?.city) {
           const { city, state } = profile.location;
           setProfileLocation(state ? `${city}, ${state}` : city);
         } else {
           setProfileLocation(null);
-        }
-        setPets(petList);
-        setFollowingPets([]);
-        if (profile?.pinnedPostId) {
-          const pinned =
-            postList.find((item) => item.id === profile.pinnedPostId) ??
-            (await getPostById(profile.pinnedPostId));
-          setPinnedPost(pinned ?? null);
-        } else {
-          setPinnedPost(null);
         }
       } finally {
         if (!ignore) setLoading(false);
@@ -111,36 +107,22 @@ export function Profile() {
 
   useEffect(() => {
     let ignore = false;
-    if (!user) return;
-    const pinnedId = authProfile?.pinnedPostId;
-    if (!pinnedId) {
-      setPinnedPost(null);
-      return;
-    }
-    const loadPinned = async () => {
-      const pinned =
-        posts.find((item) => item.id === pinnedId) ??
-        (await getPostById(pinnedId));
-      if (!ignore) setPinnedPost(pinned ?? null);
-    };
-    void loadPinned();
-    return () => {
-      ignore = true;
-    };
-  }, [authProfile?.pinnedPostId, posts, user]);
-
-  useEffect(() => {
-    let ignore = false;
     if (!user || activeTab !== "saved") return;
+
     const loadSaved = async () => {
       setSavedLoading(true);
       try {
         const saved = await getBookmarkedPosts(user.uid);
-        if (!ignore) setSavedPosts(saved);
+        if (!ignore) {
+          setSavedPosts(saved);
+        }
       } finally {
-        if (!ignore) setSavedLoading(false);
+        if (!ignore) {
+          setSavedLoading(false);
+        }
       }
     };
+
     void loadSaved();
     return () => {
       ignore = true;
@@ -150,25 +132,27 @@ export function Profile() {
   useEffect(() => {
     let ignore = false;
     if (!user || activeTab !== "checkins") return;
+
     const loadCheckins = async () => {
       setCheckinsLoading(true);
       try {
         const list = await getUserCheckins(user.uid);
         if (ignore) return;
         setCheckins(list);
+
         const uniqueIds = Array.from(
           new Set(list.map((item) => item.locationId).filter(Boolean))
         );
         const entries = await Promise.all(
           uniqueIds.map(async (id) => [id, await getLocation(id)] as const)
         );
-        if (!ignore) {
-          const mapping: Record<string, Location | null> = {};
-          entries.forEach(([id, location]) => {
-            mapping[id] = location;
-          });
-          setCheckinLocations(mapping);
-        }
+        if (ignore) return;
+
+        const mapping: Record<string, Location | null> = {};
+        entries.forEach(([id, location]) => {
+          mapping[id] = location;
+        });
+        setCheckinLocations(mapping);
       } catch (error) {
         console.warn("Permission error while loading check-ins:", error);
         if (!ignore) {
@@ -176,9 +160,12 @@ export function Profile() {
           setCheckinLocations({});
         }
       } finally {
-        if (!ignore) setCheckinsLoading(false);
+        if (!ignore) {
+          setCheckinsLoading(false);
+        }
       }
     };
+
     void loadCheckins();
     return () => {
       ignore = true;
@@ -194,19 +181,6 @@ export function Profile() {
       day: "numeric",
     });
   }, [user]);
-
-  const gridPosts = useMemo(() => {
-    if (!pinnedPost) return posts;
-    return posts.filter((post) => post.id !== pinnedPost.id);
-  }, [pinnedPost, posts]);
-
-  const formatLikes = (value: number) => {
-    if (value >= 1000) {
-      const formatted = (value / 1000).toFixed(1).replace(/\.0$/, "");
-      return `${formatted}k`;
-    }
-    return value.toString();
-  };
 
   if (!user) {
     return (
@@ -239,7 +213,9 @@ export function Profile() {
           >
             ←
           </button>
-          <h1 className="text-base font-semibold text-slate-900 dark:text-white">Profile</h1>
+          <h1 className="text-base font-semibold text-slate-900 dark:text-white">
+            Profile
+          </h1>
           <button
             type="button"
             onClick={() => navigate("/settings")}
@@ -255,247 +231,215 @@ export function Profile() {
         {loading ? (
           <SkeletonProfile />
         ) : (
-        <section className="space-y-4">
-          <div className="flex flex-col items-center text-center">
-            <div className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 p-[3px]">
-              <div className="rounded-full bg-white p-[2px] dark:bg-slate-900">
-                <Avatar
-                  src={profileAvatar || user.photoURL || undefined}
-                  alt={profileName || user.displayName || "User"}
-                  userId={user.uid}
-                  size={96}
-                  className="h-24 w-24"
-                />
+          <section className="space-y-4">
+            <div className="flex flex-col items-center text-center">
+              <div className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 p-[3px]">
+                <div className="rounded-full bg-white p-[2px] dark:bg-slate-900">
+                  <Avatar
+                    src={profileAvatar || user.photoURL || undefined}
+                    alt={profileName || user.displayName || "User"}
+                    userId={user.uid}
+                    size={96}
+                    className="h-24 w-24"
+                  />
+                </div>
               </div>
+              <h2 className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">
+                {profileName || user.displayName || "PetNote User"}
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                @{user.email || authProfile?.email || "unknown"}
+              </p>
+              {profileBio ? (
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                  {profileBio}
+                </p>
+              ) : null}
+              {profileLocation ? (
+                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                  {profileLocation}
+                </p>
+              ) : null}
             </div>
-            <h2 className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">
-              {profileName || user.displayName || "PetNote User"}
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              @{user.email || authProfile?.email || "unknown"}
-            </p>
-            {profileBio ? (
-              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                {profileBio}
-              </p>
-            ) : null}
-            {profileLocation ? (
-              <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                📍 {profileLocation}
-              </p>
-            ) : null}
-          </div>
 
-          <div className="grid grid-cols-2 divide-x divide-slate-200 text-center dark:divide-slate-800">
-            <div className="px-2 py-2">
-              <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                {pets.length}
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Pets</p>
-            </div>
-            <button
-              type="button"
-              onClick={async () => {
-                setFollowingPetsLoading(true);
-                try {
-                  const items = await getFollowingPets(user.uid);
-                  setFollowingPets(items);
-                  setFollowingModalOpen(true);
-                } finally {
-                  setFollowingPetsLoading(false);
-                }
-              }}
-              className="px-2 py-2"
-            >
-              <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                {authProfile?.followingPetsCount ?? followingPets.length}
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Following</p>
-            </button>
-          </div>
-
-          <p className="text-center text-xs text-slate-500 dark:text-slate-400">
-            ❤️ {formatLikes(stats.totalLikes)} likes received
-          </p>
-
-          <div className="flex items-center justify-center gap-3">
-            <button
-              type="button"
-              onClick={() => navigate("/edit-profile")}
-              className="rounded-full border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-700 transition-all duration-200 hover:scale-105 hover:border-purple-300 hover:text-purple-600 dark:border-slate-700 dark:text-slate-200"
-            >
-              Edit Profile
-            </button>
-          </div>
-
-          {isAdmin ? (
-            <div className="flex items-center justify-center">
+            <div className="grid grid-cols-2 divide-x divide-slate-200 text-center dark:divide-slate-800">
+              <div className="px-2 py-2">
+                <p className="text-lg font-semibold text-slate-900 dark:text-white">
+                  {pets.length}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Pets</p>
+              </div>
               <button
                 type="button"
-                onClick={() => navigate("/admin")}
-                className="rounded-full border border-red-200 px-4 py-2 text-xs font-semibold text-red-500 transition-all duration-200 hover:border-red-300 hover:bg-red-50 dark:border-red-500/40 dark:hover:bg-red-500/10"
+                onClick={async () => {
+                  setFollowingPetsLoading(true);
+                  try {
+                    const items = await getFollowingPets(user.uid);
+                    setFollowingPets(items);
+                    setFollowingModalOpen(true);
+                  } finally {
+                    setFollowingPetsLoading(false);
+                  }
+                }}
+                className="px-2 py-2"
               >
-                Admin Panel
+                <p className="text-lg font-semibold text-slate-900 dark:text-white">
+                  {authProfile?.followingPetsCount ?? followingPets.length}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Following</p>
               </button>
             </div>
-          ) : null}
 
-        </section>
+            <div className="flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => navigate("/edit-profile")}
+                className="rounded-full border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-700 transition-all duration-200 hover:scale-105 hover:border-purple-300 hover:text-purple-600 dark:border-slate-700 dark:text-slate-200"
+              >
+                Edit Profile
+              </button>
+            </div>
+
+            {isAdmin ? (
+              <div className="flex items-center justify-center">
+                <button
+                  type="button"
+                  onClick={() => navigate("/admin")}
+                  className="rounded-full border border-red-200 px-4 py-2 text-xs font-semibold text-red-500 transition-all duration-200 hover:border-red-300 hover:bg-red-50 dark:border-red-500/40 dark:hover:bg-red-500/10"
+                >
+                  Admin Panel
+                </button>
+              </div>
+            ) : null}
+          </section>
         )}
 
         {!loading ? (
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-              My Pets
-            </h3>
-            {pets.length < 5 ? (
+          <section className="space-y-3">
+            <div className="flex items-center gap-6 border-b border-slate-200 dark:border-slate-700">
               <button
                 type="button"
-                onClick={() => navigate("/add-pet")}
-                className="text-xs font-semibold text-purple-600 transition-all duration-200 hover:text-purple-500"
+                onClick={() => setActiveTab("pets")}
+                className={`pb-2 text-sm font-semibold transition-all duration-200 ${
+                  activeTab === "pets"
+                    ? "border-b-2 border-purple-500 text-slate-900 dark:text-white"
+                    : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
+                }`}
               >
-                Add Pet
+                My Pets
               </button>
-            ) : null}
-          </div>
-
-          {pets.length === 0 ? (
-            <EmptyState
-              icon="🐾"
-              title="No pets added"
-              description="Add your furry friend!"
-              actionText="Add Pet"
-              onAction={() => navigate("/add-pet")}
-            />
-          ) : (
-            <div className="flex gap-4 overflow-x-auto pb-2">
-              {pets.map((pet) => {
-                const meta = getSpeciesMeta(pet.species);
-                return (
-                  <button
-                    key={pet.id}
-                    type="button"
-                    onClick={() => navigate(`/pet/${pet.id}`)}
-                    className="flex min-w-[90px] flex-col items-center text-center text-xs text-slate-600 dark:text-slate-300"
-                  >
-                    <div className={`rounded-full bg-gradient-to-r ${meta.gradient} p-0.5`}>
-                      {pet.avatarUrl ? (
-                        <img
-                          src={pet.avatarUrl}
-                          alt={pet.name}
-                          className="h-14 w-14 rounded-full border-2 border-white object-cover dark:border-slate-800"
-                        />
-                      ) : (
-                        <div className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-white bg-white text-xl dark:border-slate-800 dark:bg-slate-900">
-                          {meta.emoji}
-                        </div>
-                      )}
-                    </div>
-                    <span className="mt-2 font-semibold text-slate-900 dark:text-white">
-                      {pet.name}
-                    </span>
-                    <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                      {getRelationshipLabel(pet.relationship, pet.customRelationship)}
-                    </span>
-                  </button>
-                );
-              })}
-
-              {pets.length < 5 ? (
-                <button
-                  type="button"
-                  onClick={() => navigate("/add-pet")}
-                  className="flex min-w-[90px] flex-col items-center text-center text-xs text-slate-500 dark:text-slate-400"
-                >
-                  <div className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-dashed border-slate-300 text-lg text-slate-400 dark:border-slate-600 dark:text-slate-500">
-                    +
-                  </div>
-                  <span className="mt-2 text-[11px] text-slate-400 dark:text-slate-500">
-                    Add Pet
-                  </span>
-                </button>
-              ) : null}
+              <button
+                type="button"
+                onClick={() => setActiveTab("saved")}
+                className={`pb-2 text-sm font-semibold transition-all duration-200 ${
+                  activeTab === "saved"
+                    ? "border-b-2 border-purple-500 text-slate-900 dark:text-white"
+                    : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
+                }`}
+              >
+                Saved
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("checkins")}
+                className={`pb-2 text-sm font-semibold transition-all duration-200 ${
+                  activeTab === "checkins"
+                    ? "border-b-2 border-purple-500 text-slate-900 dark:text-white"
+                    : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
+                }`}
+              >
+                Check-ins
+              </button>
             </div>
-          )}
-        </section>
-        ) : null}
 
-        {!loading ? (
-        <section className="space-y-3">
-          <div className="flex items-center gap-6 border-b border-slate-200 dark:border-slate-700">
-            <button
-              type="button"
-              onClick={() => setActiveTab("posts")}
-              className={`pb-2 text-sm font-semibold transition-all duration-200 ${
-                activeTab === "posts"
-                  ? "border-b-2 border-purple-500 text-slate-900 dark:text-white"
-                  : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
-              }`}
-            >
-              Posts
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("saved")}
-              className={`pb-2 text-sm font-semibold transition-all duration-200 ${
-                activeTab === "saved"
-                  ? "border-b-2 border-purple-500 text-slate-900 dark:text-white"
-                  : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
-              }`}
-            >
-              Saved
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("checkins")}
-              className={`pb-2 text-sm font-semibold transition-all duration-200 ${
-                activeTab === "checkins"
-                  ? "border-b-2 border-purple-500 text-slate-900 dark:text-white"
-                  : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
-              }`}
-            >
-              Check-ins
-            </button>
-          </div>
-
-          {activeTab === "posts" && loading ? (
-            <div className="grid grid-cols-3 gap-2">
-              {[1, 2, 3].map((item) => (
-                <div
-                  key={item}
-                  className="aspect-square animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-700"
+            {activeTab === "pets" ? (
+              pets.length === 0 ? (
+                <EmptyState
+                  icon="🐾"
+                  title="No pets added"
+                  description="Add your furry friend!"
+                  actionText="Add Pet"
+                  onAction={() => navigate("/add-pet")}
                 />
-              ))}
-            </div>
-          ) : activeTab === "posts" && posts.length === 0 && !pinnedPost ? (
-            <EmptyState
-              icon="📷"
-              title="No posts yet"
-              description="Share your first pet moment!"
-              actionText="Create Post"
-              onAction={() => navigate("/create")}
-            />
-          ) : activeTab === "posts" ? (
-            <div className="space-y-4">
-              {pinnedPost ? (
-                <div className="relative rounded-2xl border border-purple-200 p-2 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:border-purple-500/40">
-                  <span className="absolute left-4 top-4 z-10 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-2 py-0.5 text-[10px] font-semibold text-white">
-                    📌 Pinned
-                  </span>
-                  <PostCard
-                    post={pinnedPost}
-                    onDeleted={(postId) => {
-                      setPosts((prev) => prev.filter((item) => item.id !== postId));
-                      setPinnedPost(null);
-                    }}
-                  />
-                </div>
-              ) : null}
+              ) : (
+                <div className="space-y-3">
+                  {pets.map((pet) => {
+                    const species = getSpeciesMeta(pet.species);
+                    const postCount = petPostCounts[pet.id] || 0;
+                    return (
+                      <button
+                        key={pet.id}
+                        type="button"
+                        onClick={() => navigate(`/pet/${pet.id}`)}
+                        className="flex w-full items-center gap-3 rounded-2xl bg-white px-4 py-3 text-left shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 transition-all duration-200 hover:-translate-y-0.5 dark:bg-slate-800 dark:ring-slate-700"
+                      >
+                        <Avatar
+                          src={pet.avatarUrl || undefined}
+                          alt={pet.name}
+                          userId={pet.id}
+                          size={48}
+                          className="h-12 w-12"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-1">
+                            <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                              {pet.name}
+                            </p>
+                            <span className="text-sm">{species.emoji}</span>
+                            {pet.gender === "male" ? (
+                              <span className={`${genderSymbolClass} text-blue-500`}>♂</span>
+                            ) : pet.gender === "female" ? (
+                              <span className={`${genderSymbolClass} text-pink-500`}>♀</span>
+                            ) : null}
+                          </div>
+                          {pet.breed ? (
+                            <p className="text-xs text-slate-400 dark:text-slate-500">
+                              {pet.breed}
+                            </p>
+                          ) : null}
+                          <p className="text-xs text-slate-400 dark:text-slate-500">
+                            {postCount} posts · {pet.followerCount || 0} followers
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-500 dark:bg-slate-700 dark:text-slate-300">
+                          {getRelationshipLabel(pet.relationship, pet.customRelationship)}
+                        </span>
+                      </button>
+                    );
+                  })}
 
-              {gridPosts.length > 0 ? (
+                  {pets.length < 5 ? (
+                    <button
+                      type="button"
+                      onClick={() => navigate("/add-pet")}
+                      className="w-full rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-purple-600 transition-all duration-200 hover:border-purple-300 hover:bg-purple-50 dark:border-slate-700 dark:hover:bg-purple-500/10"
+                    >
+                      + Add Pet
+                    </button>
+                  ) : null}
+                </div>
+              )
+            ) : null}
+
+            {activeTab === "saved" ? (
+              savedLoading ? (
                 <div className="grid grid-cols-3 gap-2">
-                  {gridPosts.map((post) => {
+                  {[1, 2, 3].map((item) => (
+                    <div
+                      key={item}
+                      className="aspect-square animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-700"
+                    />
+                  ))}
+                </div>
+              ) : savedPosts.length === 0 ? (
+                <EmptyState
+                  icon="🔖"
+                  title="No saved posts"
+                  description="Bookmark posts you love to find them later"
+                />
+              ) : (
+                <div className="grid grid-cols-3 gap-2">
+                  {savedPosts.map((post) => {
                     const mediaList =
                       post.media && post.media.length > 0
                         ? post.media
@@ -506,25 +450,20 @@ export function Profile() {
                     const isMulti = mediaList.length > 1;
                     const isVideo = first?.type === "video";
                     const thumbSrc = first?.thumbUrl || first?.url || post.mediaUrl;
-
                     return (
-                      <div
+                      <button
                         key={post.id}
+                        type="button"
+                        onClick={() => navigate(`/post/${post.id}`)}
                         className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800"
                       >
-                        <button
-                          type="button"
-                          onClick={() => navigate(`/post/${post.id}`)}
-                          className="h-full w-full"
-                        >
-                          {thumbSrc ? (
-                            <LazyImage
-                              src={thumbSrc}
-                              alt={post.text}
-                              className="h-full w-full"
-                            />
-                          ) : null}
-                        </button>
+                        {thumbSrc ? (
+                          <LazyImage
+                            src={thumbSrc}
+                            alt={post.text}
+                            className="h-full w-full"
+                          />
+                        ) : null}
                         {isVideo ? (
                           <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
                             ▶
@@ -534,135 +473,75 @@ export function Profile() {
                             ⧉
                           </span>
                         ) : null}
-                        <button
-                          type="button"
-                          onClick={() => setDeleteTarget(post)}
-                          className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-xs text-slate-600 shadow transition-all duration-200 hover:scale-105 hover:text-red-500 dark:bg-slate-800/90 dark:text-slate-200"
-                          aria-label="Delete post"
-                        >
-                          ✕
-                        </button>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
-              ) : null}
-            </div>
-          ) : savedLoading ? (
-            <div className="grid grid-cols-3 gap-2">
-              {[1, 2, 3].map((item) => (
-                <div
-                  key={item}
-                  className="aspect-square animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-700"
+              )
+            ) : null}
+
+            {activeTab === "checkins" ? (
+              checkinsLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map((item) => (
+                    <div
+                      key={item}
+                      className="h-20 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-700"
+                    />
+                  ))}
+                </div>
+              ) : checkins.length === 0 ? (
+                <EmptyState
+                  icon="📍"
+                  title="No check-ins yet"
+                  description="Visit a pet-friendly place and check in"
                 />
-              ))}
-            </div>
-          ) : activeTab === "checkins" && checkinsLoading ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map((item) => (
-                <div
-                  key={item}
-                  className="h-20 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-700"
-                />
-              ))}
-            </div>
-          ) : activeTab === "checkins" && checkins.length === 0 ? (
-            <EmptyState
-              icon="📍"
-              title="No check-ins yet"
-              description="Visit a pet-friendly place and check in!"
-            />
-          ) : activeTab === "checkins" ? (
-            <div className="space-y-3">
-              {checkins.map((checkin) => {
-                const location = checkinLocations[checkin.locationId];
-                const locationName = location?.name || "Unknown location";
-                const locationPhoto = location?.photos?.[0];
-                return (
-                  <button
-                    key={checkin.id}
-                    type="button"
-                    onClick={() => navigate(`/location/${checkin.locationId}`)}
-                    className="flex w-full items-center gap-3 rounded-2xl bg-white p-3 text-left shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 transition-all duration-200 hover:-translate-y-0.5 dark:bg-slate-800 dark:ring-slate-700"
-                  >
-                    {locationPhoto ? (
-                      <LazyImage
-                        src={locationPhoto}
-                        alt={locationName}
-                        className="h-14 w-14 rounded-xl"
-                      />
-                    ) : (
-                      <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 text-lg text-white">
-                        📍
-                      </div>
-                    )}
-                    <div className="flex-1">
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                        {locationName}
-                      </p>
-                      <p className="text-xs text-slate-400">
-                        {checkin.createdAt ? timeAgo(checkin.createdAt as Date) : ""}
-                      </p>
-                    </div>
-                    <div className="h-14 w-14 overflow-hidden rounded-xl">
-                      <LazyImage
-                        src={checkin.photoUrl}
-                        alt="Check-in"
-                        className="h-full w-full"
-                      />
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          ) : savedPosts.length === 0 ? (
-            <EmptyState
-              icon="🔖"
-              title="No saved posts"
-              description="Bookmark posts you love to find them later"
-            />
-          ) : (
-            <div className="grid grid-cols-3 gap-2">
-              {savedPosts.map((post) => {
-                const mediaList =
-                  post.media && post.media.length > 0
-                    ? post.media
-                    : post.mediaUrl
-                    ? [{ url: post.mediaUrl, type: post.mediaType || "image" }]
-                    : [];
-                const first = mediaList[0];
-                const isMulti = mediaList.length > 1;
-                const isVideo = first?.type === "video";
-                const thumbSrc = first?.thumbUrl || first?.url || post.mediaUrl;
-                return (
-                  <button
-                    key={post.id}
-                    type="button"
-                    onClick={() => navigate(`/post/${post.id}`)}
-                    className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800"
-                  >
-                    {thumbSrc ? (
-                      <LazyImage
-                        src={thumbSrc}
-                        alt={post.text}
-                        className="h-full w-full"
-                      />
-                    ) : null}
-                    {isVideo ? (
-                      <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
-                        ▶
-                      </span>
-                    ) : isMulti ? (
-                      <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
-                        ⧉
-                      </span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </section>
+              ) : (
+                <div className="space-y-3">
+                  {checkins.map((checkin) => {
+                    const location = checkinLocations[checkin.locationId];
+                    const locationName = location?.name || "Unknown location";
+                    const locationPhoto = location?.photos?.[0];
+                    return (
+                      <button
+                        key={checkin.id}
+                        type="button"
+                        onClick={() => navigate(`/location/${checkin.locationId}`)}
+                        className="flex w-full items-center gap-3 rounded-2xl bg-white p-3 text-left shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 transition-all duration-200 hover:-translate-y-0.5 dark:bg-slate-800 dark:ring-slate-700"
+                      >
+                        {locationPhoto ? (
+                          <LazyImage
+                            src={locationPhoto}
+                            alt={locationName}
+                            className="h-14 w-14 rounded-xl"
+                          />
+                        ) : (
+                          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 text-lg text-white">
+                            📍
+                          </div>
+                        )}
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                            {locationName}
+                          </p>
+                          <p className="text-xs text-slate-400">
+                            {checkin.createdAt ? timeAgo(checkin.createdAt as Date) : ""}
+                          </p>
+                        </div>
+                        <div className="h-14 w-14 overflow-hidden rounded-xl">
+                          <LazyImage
+                            src={checkin.photoUrl}
+                            alt="Check-in"
+                            className="h-full w-full"
+                          />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )
+            ) : null}
+          </section>
         ) : null}
 
         {!loading ? (
@@ -673,54 +552,6 @@ export function Profile() {
           </div>
         ) : null}
       </main>
-
-
-      {deleteTarget ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)] dark:bg-slate-800">
-            <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-              Delete Post
-            </h3>
-            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-              Are you sure you want to delete this post? This action cannot be
-              undone.
-            </p>
-            <div className="mt-5 flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setDeleteTarget(null)}
-                className="rounded-full px-4 py-2 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={deleting}
-                onClick={async () => {
-                  if (!deleteTarget) return;
-                  setDeleting(true);
-                  await deletePost(deleteTarget.id);
-                  if (pinnedPost?.id === deleteTarget.id) {
-                    await unpinPost(user.uid);
-                    setPinnedPost(null);
-                  }
-                  setPosts((prev) =>
-                    prev.filter((item) => item.id !== deleteTarget.id)
-                  );
-                  const updatedStats = await getUserStats(user.uid);
-                  setStats(updatedStats);
-                  setDeleteTarget(null);
-                  showToast("Post deleted", "success");
-                  setDeleting(false);
-                }}
-                className="rounded-full bg-red-500 px-4 py-2 text-sm font-semibold text-white transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {deleting ? "Deleting..." : "Delete"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {followingModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">

@@ -300,3 +300,16 @@ export async function getBirthdayPets(ownerId: string): Promise<Pet[]> {
   const pets = await getUserPets(ownerId);
   return pets.filter((pet) => isBirthdayToday(pet.birthday));
 }
+
+export async function getPetTotalLikes(petId: string): Promise<number> {
+  if (!petId) return 0;
+  const postsRef = collection(db, "posts");
+  const postsQuery = query(postsRef, where("petId", "==", petId));
+  const snapshot = await getDocs(postsQuery);
+  let total = 0;
+  snapshot.docs.forEach((docSnap) => {
+    const data = docSnap.data() as { likeCount?: number };
+    total += data.likeCount || 0;
+  });
+  return total;
+}
