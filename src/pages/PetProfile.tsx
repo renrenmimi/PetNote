@@ -1,41 +1,58 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import Avatar from "../components/Avatar";
+import { EmptyState } from "../components/EmptyState";
+import { InviteCodeModal } from "../components/InviteCodeModal";
+import LazyImage from "../components/LazyImage";
 import { useAuth } from "../hooks/useAuth";
 import { useFollowPet } from "../hooks/useFollow";
+import { getPetFollowers, type PetFollower } from "../services/follow";
+import { getCheckinsByPet, type Checkin } from "../services/checkins";
+import { getLocation, type Location } from "../services/locations";
 import {
   deletePet,
   getPetById,
   getPetFamily,
+  getPetTotalLikes,
   getPostsByPet,
   getRelationshipLabel,
   isFamilyMember,
   type FamilyMember,
   type Pet,
 } from "../services/pets";
-import { getUserProfile } from "../services/users";
-import { getPetFollowers, type PetFollower } from "../services/follow";
-import { getSpeciesMeta } from "../utils/petHelpers";
 import type { Post } from "../services/posts";
-import { EmptyState } from "../components/EmptyState";
-import Avatar from "../components/Avatar";
-import { InviteCodeModal } from "../components/InviteCodeModal";
+import { getUserProfile } from "../services/users";
+import { getSpeciesMeta } from "../utils/petHelpers";
+import { timeAgo } from "../utils/timeAgo";
+
+const genderSymbolClass = "text-lg font-bold";
 
 export function PetProfile() {
   const navigate = useNavigate();
   const { petId } = useParams();
   const { user, profile } = useAuth();
+
   const [pet, setPet] = useState<Pet | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [petLikes, setPetLikes] = useState(0);
   const [ownerName, setOwnerName] = useState<string | null>(null);
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [viewerIsFamilyMember, setViewerIsFamilyMember] = useState(false);
+
+  const [checkins, setCheckins] = useState<Checkin[]>([]);
+  const [checkinLocations, setCheckinLocations] = useState<Record<string, Location | null>>(
+    {}
+  );
+
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<"posts" | "checkins">("posts");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [followersOpen, setFollowersOpen] = useState(false);
   const [followers, setFollowers] = useState<PetFollower[]>([]);
   const [followersLoading, setFollowersLoading] = useState(false);
+
   const { isFollowing, followerCount, toggleFollow, loading: followLoading } =
     useFollowPet(petId ?? "");
 
@@ -51,9 +68,11 @@ export function PetProfile() {
         return;
       }
 
-      const [petPosts, family] = await Promise.all([
+      const [petPosts, family, totalLikes, petCheckins] = await Promise.all([
         getPostsByPet(petId),
         getPetFamily(petId),
+        getPetTotalLikes(petId),
+        getCheckinsByPet(petId, 100),
       ]);
 
       const primaryOwnerId = petData.primaryOwnerId || petData.ownerId;
@@ -82,12 +101,28 @@ export function PetProfile() {
           (await isFamilyMember(petId, user.uid))
         : false;
 
+      const uniqueLocationIds = Array.from(
+        new Set(petCheckins.map((item) => item.locationId).filter(Boolean))
+      );
+      const locationEntries = await Promise.all(
+        uniqueLocationIds.map(async (id) => [id, await getLocation(id)] as const)
+      );
+      const locationMap: Record<string, Location | null> = {};
+      locationEntries.forEach(([id, location]) => {
+        locationMap[id] = location;
+      });
+
       if (!ignore) {
         setPet(petData);
         setPosts(petPosts);
+        setPetLikes(totalLikes);
         setFamilyMembers(members);
         setViewerIsFamilyMember(isMember);
-        setOwnerName(primaryMember?.userName || fallbackOwnerProfile?.displayName || "Family");
+        setOwnerName(
+          primaryMember?.userName || fallbackOwnerProfile?.displayName || "Family"
+        );
+        setCheckins(petCheckins);
+        setCheckinLocations(locationMap);
         setLoading(false);
       }
     };
@@ -185,22 +220,23 @@ export function PetProfile() {
               </div>
             )}
           </div>
+
           <h2 className="mt-4 text-2xl font-semibold text-slate-900 dark:text-white">
             {pet.name}
           </h2>
-          {pet.breed ? (
-            <p className="text-sm text-slate-500 dark:text-slate-300">
-              {speciesMeta.emoji} {pet.breed}
-            </p>
-          ) : null}
-          <div className="mt-2 flex items-center justify-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-            {pet.age ? <span>{pet.age}</span> : birthdayLabel ? <span>{birthdayLabel}</span> : null}
+
+          <div className="mt-2 flex flex-wrap items-center justify-center gap-2 text-sm text-slate-500 dark:text-slate-300">
+            <span>{speciesMeta.emoji}</span>
+            {pet.breed ? <span>{pet.breed}</span> : null}
             {pet.gender === "male" ? (
-              <span className="text-lg font-bold text-blue-500">♂</span>
+              <span className={`${genderSymbolClass} text-blue-500`}>♂</span>
             ) : pet.gender === "female" ? (
-              <span className="text-lg font-bold text-pink-500">♀</span>
+              <span className={`${genderSymbolClass} text-pink-500`}>♀</span>
             ) : null}
+            {pet.age ? <span>{pet.age}</span> : null}
+            {!pet.age && birthdayLabel ? <span>{birthdayLabel}</span> : null}
           </div>
+
           {pet.bio ? (
             <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{pet.bio}</p>
           ) : null}
@@ -212,69 +248,10 @@ export function PetProfile() {
           >
             Family: {ownerName}
           </button>
-
-          {isPrimaryOwner ? (
-            <div className="mt-4 flex items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={() => navigate(`/edit-pet/${pet.id}`)}
-                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-all duration-200 hover:scale-105 hover:border-purple-300 hover:text-purple-600 dark:border-slate-700 dark:text-slate-200"
-              >
-                Edit Pet
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(true)}
-                className="rounded-full px-4 py-2 text-sm font-semibold text-red-500 transition-all duration-200 hover:scale-105 hover:bg-red-50"
-              >
-                Delete Pet
-              </button>
-            </div>
-          ) : null}
         </section>
 
         <section className="space-y-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Family</h3>
-            {viewerIsFamilyMember ? (
-              <button
-                type="button"
-                onClick={() => setInviteOpen(true)}
-                className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-3 py-1 text-xs font-semibold text-white"
-              >
-                Invite Family Member
-              </button>
-            ) : null}
-          </div>
-          <div className="flex gap-3 overflow-x-auto pb-1">
-            {familyMembers.map((member) => (
-              <button
-                key={member.userId}
-                type="button"
-                onClick={() => navigate(`/profile/${member.userId}`)}
-                className="flex min-w-[90px] flex-col items-center text-center"
-              >
-                <Avatar
-                  src={member.userAvatar}
-                  alt={member.userName}
-                  userId={member.userId}
-                  size={48}
-                  className="h-12 w-12"
-                />
-                <span className="mt-2 line-clamp-1 text-xs font-semibold text-slate-900 dark:text-white">
-                  {member.userName}
-                  {member.role === "primary" ? " ★" : ""}
-                </span>
-                <span className="mt-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500 dark:bg-slate-700 dark:text-slate-300">
-                  {getRelationshipLabel(member.relationship, member.customRelationship)}
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="space-y-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
-          <div className="grid grid-cols-2 divide-x divide-slate-200 text-center dark:divide-slate-700">
+          <div className="grid grid-cols-3 divide-x divide-slate-200 text-center dark:divide-slate-700">
             <button
               type="button"
               onClick={async () => {
@@ -300,9 +277,45 @@ export function PetProfile() {
               </p>
               <p className="text-xs text-slate-400 dark:text-slate-500">Posts</p>
             </div>
+            <div className="px-2 py-2">
+              <p className="text-lg font-semibold text-slate-900 dark:text-white">
+                {petLikes}
+              </p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">Likes</p>
+            </div>
           </div>
 
-          {!viewerIsFamilyMember ? (
+          {viewerIsFamilyMember ? (
+            <div
+              className={`grid gap-2 ${
+                isPrimaryOwner ? "grid-cols-3" : "grid-cols-2"
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => navigate(`/edit-pet/${pet.id}`)}
+                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-all duration-200 hover:border-purple-300 hover:text-purple-600 dark:border-slate-700 dark:text-slate-200"
+              >
+                Edit Pet
+              </button>
+              <button
+                type="button"
+                onClick={() => setInviteOpen(true)}
+                className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white"
+              >
+                Invite Family
+              </button>
+              {isPrimaryOwner ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  className="rounded-full border border-red-200 px-4 py-2 text-sm font-semibold text-red-500 transition-all duration-200 hover:bg-red-50 dark:border-red-500/40 dark:hover:bg-red-500/10"
+                >
+                  Delete
+                </button>
+              ) : null}
+            </div>
+          ) : (
             <button
               type="button"
               onClick={toggleFollow}
@@ -315,56 +328,161 @@ export function PetProfile() {
             >
               {isFollowing ? "Following" : "Follow"}
             </button>
-          ) : null}
+          )}
+        </section>
+
+        <section className="space-y-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white">🏠 Family</h3>
+            {viewerIsFamilyMember ? (
+              <button
+                type="button"
+                onClick={() => setInviteOpen(true)}
+                className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-3 py-1 text-xs font-semibold text-white"
+              >
+                Invite
+              </button>
+            ) : null}
+          </div>
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {familyMembers.map((member) => (
+              <button
+                key={member.userId}
+                type="button"
+                onClick={() => navigate(`/profile/${member.userId}`)}
+                className="flex min-w-[96px] flex-col items-center text-center"
+              >
+                <Avatar
+                  src={member.userAvatar}
+                  alt={member.userName}
+                  userId={member.userId}
+                  size={48}
+                  className="h-12 w-12"
+                />
+                <span className="mt-2 line-clamp-1 text-xs font-semibold text-slate-900 dark:text-white">
+                  {member.userName}
+                  {member.role === "primary" ? " ★" : ""}
+                </span>
+                <span className="mt-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500 dark:bg-slate-700 dark:text-slate-300">
+                  {getRelationshipLabel(member.relationship, member.customRelationship)}
+                </span>
+              </button>
+            ))}
+          </div>
         </section>
 
         <section className="space-y-3">
-          <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-            Posts
-          </h3>
-          {posts.length === 0 ? (
-            <EmptyState
-              icon="🐾"
-              title="No posts with this pet"
-              description="Tag this pet when posting to show posts here"
-            />
+          <div className="flex items-center gap-6 border-b border-slate-200 dark:border-slate-700">
+            <button
+              type="button"
+              onClick={() => setActiveTab("posts")}
+              className={`pb-2 text-sm font-semibold transition-all duration-200 ${
+                activeTab === "posts"
+                  ? "border-b-2 border-purple-500 text-slate-900 dark:text-white"
+                  : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
+              }`}
+            >
+              Posts
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("checkins")}
+              className={`pb-2 text-sm font-semibold transition-all duration-200 ${
+                activeTab === "checkins"
+                  ? "border-b-2 border-purple-500 text-slate-900 dark:text-white"
+                  : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
+              }`}
+            >
+              Check-ins
+            </button>
+          </div>
+
+          {activeTab === "posts" ? (
+            posts.length === 0 ? (
+              <EmptyState
+                icon="🐾"
+                title="No posts with this pet"
+                description="Tag this pet when posting to show posts here"
+              />
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {posts.map((post) => {
+                  const mediaList =
+                    post.media && post.media.length > 0
+                      ? post.media
+                      : post.mediaUrl
+                      ? [{ url: post.mediaUrl, type: post.mediaType || "image" }]
+                      : [];
+                  const first = mediaList[0];
+                  const isVideo = first?.type === "video";
+                  const isMulti = mediaList.length > 1;
+                  return (
+                    <button
+                      key={post.id}
+                      type="button"
+                      onClick={() => navigate(`/post/${post.id}`)}
+                      className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100 transition-all duration-200 hover:scale-[1.02] dark:bg-slate-800"
+                    >
+                      {first?.url ? (
+                        <LazyImage
+                          src={first.thumbUrl || first.url}
+                          alt={post.text}
+                          className="h-full w-full"
+                        />
+                      ) : null}
+                      {isVideo ? (
+                        <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+                          ▶
+                        </span>
+                      ) : isMulti ? (
+                        <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+                          ⧉
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            )
           ) : (
-            <div className="grid grid-cols-3 gap-2">
-              {posts.map((post) => {
-                const mediaList =
-                  post.media && post.media.length > 0
-                    ? post.media
-                    : post.mediaUrl
-                    ? [{ url: post.mediaUrl, type: post.mediaType || "image" }]
-                    : [];
-                const first = mediaList[0];
-                const isVideo = first?.type === "video";
-                const isMulti = mediaList.length > 1;
-                return (
-                  <button
-                    key={post.id}
-                    type="button"
-                    onClick={() => navigate(`/post/${post.id}`)}
-                    className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100 transition-all duration-200 hover:scale-[1.02] dark:bg-slate-800"
-                  >
-                    <img
-                      src={first?.thumbUrl || first?.url || post.mediaUrl}
-                      alt={post.text}
-                      className="h-full w-full object-cover"
-                    />
-                    {isVideo ? (
-                      <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
-                        ▶
-                      </span>
-                    ) : isMulti ? (
-                      <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
-                        ⧉
-                      </span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
+            checkins.length === 0 ? (
+              <EmptyState
+                icon="📍"
+                title="No check-ins with this pet"
+                description="Check in at places when this pet is with you"
+              />
+            ) : (
+              <div className="space-y-3">
+                {checkins.map((checkin) => {
+                  const location = checkinLocations[checkin.locationId];
+                  const locationName = location?.name || "Unknown location";
+                  return (
+                    <button
+                      key={checkin.id}
+                      type="button"
+                      onClick={() => navigate(`/location/${checkin.locationId}`)}
+                      className="flex w-full items-center gap-3 rounded-2xl bg-white p-3 text-left shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 transition-all duration-200 hover:-translate-y-0.5 dark:bg-slate-800 dark:ring-slate-700"
+                    >
+                      <div className="h-14 w-14 overflow-hidden rounded-xl">
+                        <LazyImage
+                          src={checkin.photoUrl}
+                          alt="Check-in"
+                          className="h-full w-full"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                          {locationName}
+                        </p>
+                        <p className="text-xs text-slate-400 dark:text-slate-500">
+                          {checkin.createdAt ? timeAgo(checkin.createdAt as Date) : ""}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )
           )}
         </section>
       </main>

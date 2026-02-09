@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { uploadMedia } from "../services/cloudinary";
 import { checkIn } from "../services/checkins";
 import { useToast } from "../contexts/ToastContext";
+import Avatar from "./Avatar";
 
 interface CheckInModalProps {
   open: boolean;
@@ -13,6 +14,11 @@ interface CheckInModalProps {
     name: string;
     avatar: string;
   };
+  userPets?: Array<{
+    id: string;
+    name: string;
+    avatarUrl?: string;
+  }>;
   onSuccess?: () => void;
 }
 
@@ -24,6 +30,7 @@ export function CheckInModal({
   locationId,
   locationName,
   currentUser,
+  userPets = [],
   onSuccess,
 }: CheckInModalProps) {
   const { showToast } = useToast();
@@ -31,16 +38,18 @@ export function CheckInModal({
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [caption, setCaption] = useState("");
+  const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!open) {
       setFile(null);
       setCaption("");
+      setSelectedPetId(null);
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       setPreviewUrl(null);
     }
-  }, [open]);
+  }, [open, previewUrl]);
 
   if (!open) return null;
 
@@ -68,12 +77,15 @@ export function CheckInModal({
     setSubmitting(true);
     try {
       const upload = await uploadMedia(file);
+      const selectedPet = userPets.find((pet) => pet.id === selectedPetId);
       await checkIn(locationId, {
         userId: currentUser.uid,
         userName: currentUser.name,
         userAvatar: currentUser.avatar,
         photoUrl: upload.url,
         caption: caption.trim() || undefined,
+        petId: selectedPet?.id,
+        petName: selectedPet?.name,
       });
       showToast("Checked in! 📍", "success");
       onSuccess?.();
@@ -161,6 +173,46 @@ export function CheckInModal({
               className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
             />
           </div>
+
+          {userPets.length > 0 ? (
+            <div>
+              <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Which pet is with you? (optional)
+              </p>
+              <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                {userPets.map((pet) => {
+                  const selected = selectedPetId === pet.id;
+                  return (
+                    <button
+                      key={pet.id}
+                      type="button"
+                      onClick={() =>
+                        setSelectedPetId((prev) =>
+                          prev === pet.id ? null : pet.id
+                        )
+                      }
+                      className={`flex min-w-[96px] items-center gap-2 rounded-xl border px-2 py-1.5 text-left transition-all duration-200 ${
+                        selected
+                          ? "border-purple-400 bg-purple-50 dark:border-purple-400 dark:bg-purple-500/20"
+                          : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
+                      }`}
+                    >
+                      <Avatar
+                        src={pet.avatarUrl}
+                        alt={pet.name}
+                        userId={pet.id}
+                        size={24}
+                        className="h-6 w-6"
+                      />
+                      <span className="truncate text-xs font-semibold text-slate-700 dark:text-slate-200">
+                        {pet.name}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <button

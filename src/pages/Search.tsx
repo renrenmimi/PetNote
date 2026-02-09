@@ -24,7 +24,7 @@ import {
 } from "../services/explore";
 import { type Post } from "../services/posts";
 import { type UserProfile } from "../services/users";
-import { type Pet } from "../services/pets";
+import { getUserPets, type Pet } from "../services/pets";
 import { type Location } from "../services/locations";
 import { type Meetup } from "../services/meetups";
 import { useFollowPet } from "../hooks/useFollow";
@@ -149,6 +149,9 @@ export function Search() {
   const [searchResults, setSearchResults] = useState<SearchResults | null>(null);
   const [showAllPeople, setShowAllPeople] = useState(false);
   const [showAllPets, setShowAllPets] = useState(false);
+  const [peoplePetCounts, setPeoplePetCounts] = useState<Record<string, number>>(
+    {}
+  );
 
   const [trendingTags, setTrendingTags] = useState<Hashtag[]>([]);
   const [trendingPosts, setTrendingPosts] = useState<Post[]>([]);
@@ -293,6 +296,32 @@ export function Search() {
   const peopleResults = searchResults?.users ?? [];
   const petResults = searchResults?.pets ?? [];
   const tagResults = searchResults?.tags ?? [];
+
+  useEffect(() => {
+    let ignore = false;
+    if (peopleResults.length === 0) {
+      setPeoplePetCounts({});
+      return;
+    }
+    const loadCounts = async () => {
+      const pairs = await Promise.all(
+        peopleResults.map(async (person) => {
+          const pets = await getUserPets(person.id);
+          return [person.id, pets.length] as const;
+        })
+      );
+      if (ignore) return;
+      const map: Record<string, number> = {};
+      pairs.forEach(([id, count]) => {
+        map[id] = count;
+      });
+      setPeoplePetCounts(map);
+    };
+    void loadCounts();
+    return () => {
+      ignore = true;
+    };
+  }, [peopleResults]);
 
   const hasAnyResult =
     peopleResults.length > 0 ||
@@ -601,6 +630,9 @@ export function Search() {
                               </p>
                               <p className="line-clamp-1 text-xs text-slate-400 dark:text-slate-500">
                                 {profile.bio || "Pet lover"}
+                              </p>
+                              <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                                {peoplePetCounts[profile.id] ?? 0} pets
                               </p>
                             </div>
                           </div>

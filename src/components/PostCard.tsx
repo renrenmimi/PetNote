@@ -78,6 +78,9 @@ export function PostCard({
   const timeLabel = useMemo(() => timeAgo(post.createdAt), [post.createdAt]);
   const authorName = post.authorName || "PetNote User";
   const authorAvatar = post.authorAvatar || "";
+  const hasPetContext = !!(post.petId && post.petName);
+  const primaryName = hasPetContext ? post.petName || "Pet" : authorName;
+  const primaryAvatar = hasPetContext ? post.petAvatarUrl || "" : authorAvatar;
 
   const mediaItems = useMemo(() => {
     if (post.media && post.media.length > 0) {
@@ -358,59 +361,45 @@ export function PostCard({
       <header className="flex items-center gap-3 px-4 py-3">
         <button
           type="button"
-          onClick={() => navigate(`/profile/${post.authorId}`)}
+          onClick={() =>
+            hasPetContext && post.petId
+              ? navigate(`/pet/${post.petId}`)
+              : navigate(`/profile/${post.authorId}`)
+          }
           className="transition-transform duration-200 hover:scale-105"
         >
-          <div className="relative">
-            <Avatar
-              src={authorAvatar}
-              alt={authorName}
-              userId={post.authorId}
-              size={40}
-              className="h-10 w-10"
-            />
-            {post.petId ? (
-              <div className="absolute -bottom-1 -right-1 rounded-full bg-white p-0.5 dark:bg-slate-800">
-                {post.petAvatarUrl ? (
-                  <img
-                    src={post.petAvatarUrl}
-                    alt={post.petName || "Pet"}
-                    className="h-4 w-4 rounded-full object-cover"
-                  />
-                ) : (
-                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-purple-100 text-[10px] text-purple-600 dark:bg-purple-500/20 dark:text-purple-300">
-                    🐾
-                  </span>
-                )}
-              </div>
-            ) : null}
-          </div>
+          <Avatar
+            src={primaryAvatar}
+            alt={primaryName}
+            userId={hasPetContext && post.petId ? post.petId : post.authorId}
+            size={40}
+            className="h-10 w-10"
+          />
         </button>
         <div className="flex flex-1 items-center justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-1">
               <button
                 type="button"
-                onClick={() => navigate(`/profile/${post.authorId}`)}
+                onClick={() =>
+                  hasPetContext && post.petId
+                    ? navigate(`/pet/${post.petId}`)
+                    : navigate(`/profile/${post.authorId}`)
+                }
                 className="text-sm font-semibold text-slate-900 transition-all duration-200 hover:text-purple-600 dark:text-white"
               >
-                {authorName}
+                {primaryName}
               </button>
-              {post.petId && post.petName ? (
-                <>
-                  <span className="text-xs text-slate-400 dark:text-slate-500">
-                    ·
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/pet/${post.petId}`)}
-                    className="text-xs font-semibold text-purple-600 transition-all duration-200 hover:text-purple-500"
-                  >
-                    with {post.petName}
-                  </button>
-                </>
-              ) : null}
             </div>
+            {hasPetContext ? (
+              <button
+                type="button"
+                onClick={() => navigate(`/profile/${post.authorId}`)}
+                className="text-xs text-slate-500 transition-all duration-200 hover:text-purple-600 dark:text-slate-400"
+              >
+                by {authorName}
+              </button>
+            ) : null}
             <p className="text-xs text-slate-500 dark:text-slate-400">
               {timeLabel}
               {isBirthday ? (

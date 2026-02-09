@@ -21,6 +21,8 @@ export type Checkin = {
   userAvatar: string;
   photoUrl: string;
   caption?: string;
+  petId?: string;
+  petName?: string;
   createdAt?: unknown;
 };
 
@@ -46,6 +48,8 @@ export async function checkIn(
     userAvatar: string;
     photoUrl: string;
     caption?: string;
+    petId?: string;
+    petName?: string;
   }
 ): Promise<void> {
   const locationRef = doc(db, "locations", locationId);
@@ -114,4 +118,29 @@ export async function getUserCheckins(userId: string): Promise<Checkin[]> {
     locationId: docSnap.ref.parent.parent?.id || "",
     ...(docSnap.data() as Omit<Checkin, "id" | "locationId">),
   }));
+}
+
+export async function getCheckinsByPet(
+  petId: string,
+  limitCount = 50
+): Promise<Checkin[]> {
+  if (!petId) return [];
+  const snapshot = await getDocs(
+    query(
+      collectionGroup(db, "checkins"),
+      where("petId", "==", petId),
+      limit(limitCount)
+    )
+  );
+  const rows = snapshot.docs.map((docSnap) => ({
+    id: docSnap.id,
+    locationId: docSnap.ref.parent.parent?.id || "",
+    ...(docSnap.data() as Omit<Checkin, "id" | "locationId">),
+  }));
+  rows.sort((a, b) => {
+    const aDate = toDate(a.createdAt)?.getTime() ?? 0;
+    const bDate = toDate(b.createdAt)?.getTime() ?? 0;
+    return bDate - aDate;
+  });
+  return rows;
 }

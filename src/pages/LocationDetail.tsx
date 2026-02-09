@@ -9,6 +9,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../contexts/ToastContext";
 import { calculateDistance } from "../services/location";
 import { getCheckins, hasUserCheckedIn, type Checkin } from "../services/checkins";
+import { getUserPets, type Pet } from "../services/pets";
 import {
   getLocation,
   getReviews,
@@ -119,6 +120,7 @@ export function LocationDetail() {
   const [checkinsExpanded, setCheckinsExpanded] = useState(false);
   const [checkedInToday, setCheckedInToday] = useState(false);
   const [checkInOpen, setCheckInOpen] = useState(false);
+  const [userPets, setUserPets] = useState<Pet[]>([]);
 
   const refreshData = async (id: string, userId?: string) => {
     setLoading(true);
@@ -156,6 +158,24 @@ export function LocationDetail() {
       ignore = true;
     };
   }, [locationId, user?.uid]);
+
+  useEffect(() => {
+    let ignore = false;
+    if (!user?.uid) {
+      setUserPets([]);
+      return;
+    }
+    const loadPets = async () => {
+      const pets = await getUserPets(user.uid);
+      if (!ignore) {
+        setUserPets(pets);
+      }
+    };
+    void loadPets();
+    return () => {
+      ignore = true;
+    };
+  }, [user?.uid]);
 
   const ratingStats = useMemo(() => {
     if (reviews.length === 0) {
@@ -682,6 +702,11 @@ export function LocationDetail() {
             user?.photoURL ||
             `https://api.dicebear.com/7.x/thumbs/svg?seed=${user?.uid ?? "petnote"}`,
         }}
+        userPets={userPets.map((pet) => ({
+          id: pet.id,
+          name: pet.name,
+          avatarUrl: pet.avatarUrl,
+        }))}
         onSuccess={() => refreshData(location.id, user?.uid)}
       />
 

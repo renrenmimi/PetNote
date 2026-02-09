@@ -344,7 +344,7 @@ export function Settings() {
           <button
             type="button"
             onClick={() => setSignOutOpen(true)}
-            className="w-full rounded-2xl border border-slate-200 bg-white p-4 text-left text-sm font-semibold text-red-500 transition-all duration-200 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700"
+            className="w-full rounded-2xl border border-slate-200 bg-white p-4 text-center text-sm font-semibold text-red-500 transition-all duration-200 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700"
           >
             Sign Out
           </button>
@@ -450,25 +450,7 @@ export function Settings() {
             Privacy
           </p>
           <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                  Private Account
-                </p>
-                <p className="text-xs text-slate-400 dark:text-slate-500">
-                  Followers require approval (UI only)
-                </p>
-              </div>
-              <Toggle
-                enabled={settings.privateAccount}
-                onToggle={() =>
-                  handleSettingsUpdate({
-                    privateAccount: !settings.privateAccount,
-                  })
-                }
-              />
-            </div>
-            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-semibold text-slate-900 dark:text-white">

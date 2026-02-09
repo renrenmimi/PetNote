@@ -1,26 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { PostCard } from "../components/PostCard";
 import Avatar from "../components/Avatar";
-import LazyImage from "../components/LazyImage";
 import { useAuth } from "../hooks/useAuth";
 import { useBlockedUsers } from "../hooks/useBlockedUsers";
 import { unblockUser } from "../services/block";
 import { useFollowPet } from "../hooks/useFollow";
 import { getFollowingPets, type FollowingPet } from "../services/follow";
-import { getPostById, getPostsByUser, getUserStats, type Post } from "../services/posts";
 import {
   getRelationshipLabel,
   getUserPets,
   type Pet,
 } from "../services/pets";
 import { getUserProfile, type UserProfile } from "../services/users";
+import { getSpeciesMeta } from "../utils/petHelpers";
 
-function PetFollowButton({
-  petId,
-}: {
-  petId: string;
-}) {
+function PetFollowButton({ petId }: { petId: string }) {
   const { user } = useAuth();
   const { isFollowing, toggleFollow, loading } = useFollowPet(petId);
   if (!user) return null;
@@ -46,12 +40,10 @@ export function UserProfile() {
   const { userId } = useParams();
   const { user } = useAuth();
   const { isBlocked } = useBlockedUsers(user?.uid ?? null);
+
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [pets, setPets] = useState<Pet[]>([]);
-  const [posts, setPosts] = useState<Post[]>([]);
   const [followingPets, setFollowingPets] = useState<FollowingPet[]>([]);
-  const [pinnedPost, setPinnedPost] = useState<Post | null>(null);
-  const [stats, setStats] = useState({ postCount: 0, totalLikes: 0 });
   const [loading, setLoading] = useState(true);
   const [followingModalOpen, setFollowingModalOpen] = useState(false);
 
@@ -62,29 +54,19 @@ export function UserProfile() {
     const load = async () => {
       setLoading(true);
       try {
-        const [postList, userStats, profileData, petList, followingList] = await Promise.all([
-          getPostsByUser(userId),
-          getUserStats(userId),
+        const [profileData, petList, followingList] = await Promise.all([
           getUserProfile(userId),
           getUserPets(userId),
           getFollowingPets(userId),
         ]);
         if (ignore) return;
-        setPosts(postList);
-        setStats(userStats);
         setProfile(profileData);
         setPets(petList);
         setFollowingPets(followingList);
-        if (profileData?.pinnedPostId) {
-          const pinned =
-            postList.find((item) => item.id === profileData.pinnedPostId) ??
-            (await getPostById(profileData.pinnedPostId));
-          setPinnedPost(pinned ?? null);
-        } else {
-          setPinnedPost(null);
-        }
       } finally {
-        if (!ignore) setLoading(false);
+        if (!ignore) {
+          setLoading(false);
+        }
       }
     };
 
@@ -120,18 +102,6 @@ export function UserProfile() {
   }
 
   const blocked = user ? isBlocked(userId) : false;
-  const gridPosts = useMemo(() => {
-    if (!pinnedPost) return posts;
-    return posts.filter((post) => post.id !== pinnedPost.id);
-  }, [pinnedPost, posts]);
-
-  const formatLikes = (value: number) => {
-    if (value >= 1000) {
-      const formatted = (value / 1000).toFixed(1).replace(/\.0$/, "");
-      return `${formatted}k`;
-    }
-    return value.toString();
-  };
 
   return (
     <div className="min-h-screen bg-white pb-10 dark:bg-slate-900">
@@ -159,7 +129,7 @@ export function UserProfile() {
               You have blocked this user
             </h2>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-300">
-              Unblock to view their profile and posts again.
+              Unblock to view their profile and pets again.
             </p>
             <button
               type="button"
@@ -175,66 +145,62 @@ export function UserProfile() {
         ) : null}
 
         {!blocked ? (
-        <section className="space-y-4">
-          <div className="flex flex-col items-center text-center">
-            <div className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 p-[3px]">
-              <div className="rounded-full bg-white p-[2px] dark:bg-slate-900">
-                <Avatar
-                  src={profile?.avatarUrl || undefined}
-                  alt={profile?.displayName || "User"}
-                  userId={profile?.id}
-                  size={96}
-                  className="h-24 w-24"
-                />
+          <section className="space-y-4">
+            <div className="flex flex-col items-center text-center">
+              <div className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 p-[3px]">
+                <div className="rounded-full bg-white p-[2px] dark:bg-slate-900">
+                  <Avatar
+                    src={profile?.avatarUrl || undefined}
+                    alt={profile?.displayName || "User"}
+                    userId={profile?.id}
+                    size={96}
+                    className="h-24 w-24"
+                  />
+                </div>
               </div>
+              <h2 className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">
+                {profile?.displayName || "PetNote User"}
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                @{profile?.email || "unknown"}
+              </p>
+              {profile?.bio ? (
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                  {profile.bio}
+                </p>
+              ) : null}
+              {profile?.location?.city ? (
+                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                  {profile.location.state
+                    ? `${profile.location.city}, ${profile.location.state}`
+                    : profile.location.city}
+                </p>
+              ) : null}
             </div>
-            <h2 className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">
-              {profile?.displayName || "PetNote User"}
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              @{profile?.email || "unknown"}
+
+            <div className="grid grid-cols-2 divide-x divide-slate-200 text-center dark:divide-slate-800">
+              <div className="px-2 py-2">
+                <p className="text-lg font-semibold text-slate-900 dark:text-white">
+                  {pets.length}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Pets</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFollowingModalOpen(true)}
+                className="px-2 py-2"
+              >
+                <p className="text-lg font-semibold text-slate-900 dark:text-white">
+                  {profile?.followingPetsCount ?? followingPets.length}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Following</p>
+              </button>
+            </div>
+
+            <p className="text-center text-xs text-slate-400 dark:text-slate-500">
+              Joined {joinedDate}
             </p>
-            {profile?.bio ? (
-              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                {profile.bio}
-              </p>
-            ) : null}
-            {profile?.location?.city ? (
-              <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                📍 {profile.location.state ? `${profile.location.city}, ${profile.location.state}` : profile.location.city}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="grid grid-cols-2 divide-x divide-slate-200 text-center dark:divide-slate-800">
-            <div className="px-2 py-2">
-              <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                {pets.length}
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Pets</p>
-            </div>
-            <button
-              type="button"
-              onClick={async () => {
-                setFollowingModalOpen(true);
-              }}
-              className="px-2 py-2"
-            >
-              <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                {profile?.followingPetsCount ?? followingPets.length}
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Following</p>
-            </button>
-          </div>
-
-          <p className="text-center text-xs text-slate-500 dark:text-slate-400">
-            ❤️ {formatLikes(stats.totalLikes)} likes received
-          </p>
-
-          <p className="text-center text-xs text-slate-400 dark:text-slate-500">
-            Joined {joinedDate}
-          </p>
-        </section>
+          </section>
         ) : null}
 
         {!blocked ? (
@@ -242,129 +208,66 @@ export function UserProfile() {
             <h3 className="text-base font-semibold text-slate-900 dark:text-white">
               Pets
             </h3>
-            {pets.length === 0 ? (
+            {loading ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((item) => (
+                  <div
+                    key={item}
+                    className="h-20 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-700"
+                  />
+                ))}
+              </div>
+            ) : pets.length === 0 ? (
               <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                 No pets yet
               </div>
             ) : (
               <div className="space-y-3">
-                {pets.map((pet) => (
-                  <div
-                    key={pet.id}
-                    className="flex items-center justify-between rounded-2xl bg-white px-4 py-3 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/pet/${pet.id}`)}
-                      className="flex items-center gap-3 text-left"
+                {pets.map((pet) => {
+                  const species = getSpeciesMeta(pet.species);
+                  return (
+                    <div
+                      key={pet.id}
+                      className="flex items-center justify-between rounded-2xl bg-white px-4 py-3 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700"
                     >
-                      <Avatar
-                        src={pet.avatarUrl || undefined}
-                        alt={pet.name}
-                        userId={pet.id}
-                        size={44}
-                        className="h-11 w-11"
-                      />
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                          {pet.name}
-                        </p>
-                        {pet.breed ? (
-                          <p className="text-xs text-slate-400 dark:text-slate-500">
-                            {pet.breed}
-                          </p>
-                        ) : null}
-                        {pet.relationship ? (
-                          <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                            {getRelationshipLabel(
-                              pet.relationship,
-                              pet.customRelationship
-                            )}
-                          </p>
-                        ) : null}
-                      </div>
-                    </button>
-                    <PetFollowButton petId={pet.id} />
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        ) : null}
-
-        {!blocked ? (
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-                Posts
-              </h3>
-            </div>
-
-            {loading ? (
-              <div className="grid grid-cols-3 gap-2">
-                {[1, 2, 3].map((item) => (
-                  <div
-                    key={item}
-                    className="aspect-square animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-700"
-                  />
-                ))}
-              </div>
-            ) : posts.length === 0 && !pinnedPost ? (
-              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                No posts yet
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {pinnedPost ? (
-                  <div className="relative rounded-2xl border border-purple-200 p-2 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:border-purple-500/40">
-                    <span className="absolute left-4 top-4 z-10 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-2 py-0.5 text-[10px] font-semibold text-white">
-                      📌 Pinned
-                    </span>
-                    <PostCard post={pinnedPost} />
-                  </div>
-                ) : null}
-
-                {gridPosts.length > 0 ? (
-                  <div className="grid grid-cols-3 gap-2">
-                    {gridPosts.map((post) => {
-                      const mediaList =
-                        post.media && post.media.length > 0
-                          ? post.media
-                          : post.mediaUrl
-                          ? [{ url: post.mediaUrl, type: post.mediaType || "image" }]
-                          : [];
-                      const first = mediaList[0];
-                      const isMulti = mediaList.length > 1;
-                      const isVideo = first?.type === "video";
-                      const thumbSrc = first?.thumbUrl || first?.url || post.mediaUrl;
-                      return (
-                        <button
-                          key={post.id}
-                          type="button"
-                          onClick={() => navigate(`/post/${post.id}`)}
-                          className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100 transition-all duration-200 hover:scale-[1.02] dark:bg-slate-800"
-                        >
-                          {thumbSrc ? (
-                            <LazyImage
-                              src={thumbSrc}
-                              alt={post.text}
-                              className="h-full w-full"
-                            />
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/pet/${pet.id}`)}
+                        className="flex items-center gap-3 text-left"
+                      >
+                        <Avatar
+                          src={pet.avatarUrl || undefined}
+                          alt={pet.name}
+                          userId={pet.id}
+                          size={44}
+                          className="h-11 w-11"
+                        />
+                        <div>
+                          <div className="flex items-center gap-1">
+                            <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                              {pet.name}
+                            </p>
+                            <span className="text-sm">{species.emoji}</span>
+                          </div>
+                          {pet.breed ? (
+                            <p className="text-xs text-slate-400 dark:text-slate-500">
+                              {pet.breed}
+                            </p>
                           ) : null}
-                          {isVideo ? (
-                            <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
-                              ▶
-                            </span>
-                          ) : isMulti ? (
-                            <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
-                              ⧉
-                            </span>
+                          {pet.relationship ? (
+                            <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                              {getRelationshipLabel(
+                                pet.relationship,
+                                pet.customRelationship
+                              )}
+                            </p>
                           ) : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
+                        </div>
+                      </button>
+                      <PetFollowButton petId={pet.id} />
+                    </div>
+                  );
+                })}
               </div>
             )}
           </section>

@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { uploadMedia } from "../services/cloudinary";
 import { createPost, type MediaItem } from "../services/posts";
-import { getPetsByOwner, type Pet } from "../services/pets";
+import { getUserPets, type Pet } from "../services/pets";
 import { getUserProfile, type UserProfile } from "../services/users";
 import { compressImage } from "../utils/imageCompressor";
 import { getSpeciesMeta } from "../utils/petHelpers";
@@ -72,7 +72,7 @@ export function Create() {
     const load = async () => {
       const [profileData, petList] = await Promise.all([
         getUserProfile(user.uid),
-        getPetsByOwner(user.uid),
+        getUserPets(user.uid),
       ]);
       if (!ignore) {
         setProfile(profileData);
@@ -93,6 +93,12 @@ export function Create() {
       setSelectedPetId(petId);
     }
   }, [pets, searchParams]);
+
+  useEffect(() => {
+    if (pets.length === 1) {
+      setSelectedPetId((prev) => prev || pets[0].id);
+    }
+  }, [pets]);
 
   useEffect(() => {
     try {
@@ -383,6 +389,10 @@ export function Create() {
 
   const handleShare = async () => {
     if (files.length === 0 || !user || loading) return;
+    if (!selectedPetId) {
+      showToast("Please select a pet", "warning");
+      return;
+    }
     if (isBanned) {
       showToast("Your account has been suspended.", "error");
       return;
@@ -418,6 +428,9 @@ export function Create() {
         uploaded.push(result);
       }
       const selectedPet = pets.find((petItem) => petItem.id === selectedPetId);
+      if (!selectedPet) {
+        throw new Error("Please select a valid pet.");
+      }
       const postPayload: Parameters<typeof createPost>[0] = {
         authorId: user.uid,
         authorName:
@@ -429,12 +442,10 @@ export function Create() {
         text: caption.trim(),
         media: uploaded,
         tags,
+        petId: selectedPet.id,
+        petName: selectedPet.name,
+        petAvatarUrl: selectedPet.avatarUrl || "",
       };
-      if (selectedPet) {
-        postPayload.petId = selectedPet.id;
-        postPayload.petName = selectedPet.name;
-        postPayload.petAvatarUrl = selectedPet.avatarUrl || "";
-      }
       await createPost({
         ...postPayload,
       });
@@ -579,7 +590,13 @@ export function Create() {
           <button
             type="button"
             onClick={handleShare}
-            disabled={loading || files.length === 0 || converting || isBanned}
+            disabled={
+              loading ||
+              files.length === 0 ||
+              converting ||
+              isBanned ||
+              !selectedPetId
+            }
             className="flex items-center gap-2 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-1.5 text-sm font-semibold text-white shadow-md transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-slate-700 dark:disabled:text-slate-500"
           >
             {loading ? (
@@ -621,6 +638,24 @@ export function Create() {
             </div>
           </div>
         ) : null}
+        {pets.length === 0 ? (
+          <section className="space-y-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center dark:border-slate-700 dark:bg-slate-800">
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+              You need to add a pet before posting
+            </h2>
+            <p className="text-sm text-slate-500 dark:text-slate-300">
+              Add your pet profile first, then share posts for that pet.
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate("/add-pet")}
+              className="mx-auto rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white"
+            >
+              Add Pet
+            </button>
+          </section>
+        ) : (
+        <>
         <section
           className={`relative flex min-h-[240px] flex-col rounded-2xl border-2 border-dashed bg-slate-50 text-center transition dark:bg-slate-800 ${
             dragActive
@@ -787,7 +822,7 @@ export function Create() {
         <section className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-              Tag a pet
+              Which pet is this about? *
             </label>
             <button
               type="button"
@@ -797,55 +832,45 @@ export function Create() {
               Add pet
             </button>
           </div>
-          {pets.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-center text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-              Add your first pet to tag in posts.
-            </div>
-          ) : (
-            <div className="flex gap-3 overflow-x-auto py-2">
-              {pets.map((petItem) => {
-                const meta = getSpeciesMeta(petItem.species);
-                const selected = selectedPetId === petItem.id;
-                return (
-                  <button
-                    key={petItem.id}
-                    type="button"
-                    onClick={() =>
-                      setSelectedPetId((prev) =>
-                        prev === petItem.id ? null : petItem.id
-                      )
-                    }
-                    className="flex flex-col items-center text-xs text-slate-600 dark:text-slate-300"
-                  >
-                    {petItem.avatarUrl ? (
-                      <img
-                        src={petItem.avatarUrl}
-                        alt={petItem.name}
-                        className={`h-12 w-12 rounded-full object-cover transition-all duration-200 ${
-                          selected
-                            ? "border-2 border-purple-500"
-                            : "border-2 border-transparent"
-                        }`}
-                      />
-                    ) : (
-                      <div
-                        className={`flex h-12 w-12 items-center justify-center rounded-full bg-white text-lg transition-all duration-200 dark:bg-slate-900 ${
-                          selected
-                            ? "border-2 border-purple-500"
-                            : "border-2 border-transparent"
-                        }`}
-                      >
-                        {meta.emoji}
-                      </div>
-                    )}
-                    <span className="mt-1 max-w-[64px] truncate">
-                      {petItem.name}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
+          <div className="flex gap-3 overflow-x-auto py-2">
+            {pets.map((petItem) => {
+              const meta = getSpeciesMeta(petItem.species);
+              const selected = selectedPetId === petItem.id;
+              return (
+                <button
+                  key={petItem.id}
+                  type="button"
+                  onClick={() => setSelectedPetId(petItem.id)}
+                  className="flex flex-col items-center text-xs text-slate-600 dark:text-slate-300"
+                >
+                  {petItem.avatarUrl ? (
+                    <img
+                      src={petItem.avatarUrl}
+                      alt={petItem.name}
+                      className={`h-12 w-12 rounded-full object-cover transition-all duration-200 ${
+                        selected
+                          ? "border-2 border-purple-500"
+                          : "border-2 border-transparent"
+                      }`}
+                    />
+                  ) : (
+                    <div
+                      className={`flex h-12 w-12 items-center justify-center rounded-full bg-white text-lg transition-all duration-200 dark:bg-slate-900 ${
+                        selected
+                          ? "border-2 border-purple-500"
+                          : "border-2 border-transparent"
+                      }`}
+                    >
+                      {meta.emoji}
+                    </div>
+                  )}
+                  <span className="mt-1 max-w-[64px] truncate">
+                    {petItem.name}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </section>
 
         <section className="space-y-2">
@@ -887,7 +912,8 @@ export function Create() {
             </div>
           ) : null}
         </section>
-
+        </>
+        )}
       </main>
     </div>
   );
