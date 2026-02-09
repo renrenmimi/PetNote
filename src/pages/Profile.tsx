@@ -28,7 +28,7 @@ import { timeAgo } from "../utils/timeAgo";
 
 export function Profile() {
   const navigate = useNavigate();
-  const { user, signOut, profile: authProfile } = useAuth();
+  const { user, profile: authProfile } = useAuth();
   const { isAdmin } = useAdmin();
   const { showToast } = useToast();
   const [posts, setPosts] = useState<Post[]>([]);
@@ -167,6 +167,12 @@ export function Profile() {
             mapping[id] = location;
           });
           setCheckinLocations(mapping);
+        }
+      } catch (error) {
+        console.warn("Permission error while loading check-ins:", error);
+        if (!ignore) {
+          setCheckins([]);
+          setCheckinLocations({});
         }
       } finally {
         if (!ignore) setCheckinsLoading(false);
@@ -399,9 +405,11 @@ export function Profile() {
                     <span className="mt-2 font-semibold text-slate-900 dark:text-white">
                       {pet.name}
                     </span>
-                    <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                      {pet.breed || meta.label}
-                    </span>
+                    {pet.breed ? (
+                      <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                        {pet.breed}
+                      </span>
+                    ) : null}
                   </button>
                 );
               })}
@@ -670,24 +678,7 @@ export function Profile() {
         ) : null}
 
         {!loading ? (
-          <div className="space-y-2 pt-4">
-            <button
-              type="button"
-              onClick={() => navigate("/contact")}
-              className="text-left text-sm text-slate-500 transition-colors hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-            >
-              Help & Feedback
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                await signOut();
-                navigate("/login", { replace: true });
-              }}
-              className="text-left text-sm text-slate-500 transition-colors hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-            >
-              Sign Out
-            </button>
+          <div className="pt-4">
             <p className="text-xs text-slate-400 dark:text-slate-500">
               Joined {joinedDate}
             </p>

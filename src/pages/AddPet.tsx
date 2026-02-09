@@ -296,7 +296,13 @@ export function AddPet() {
                       : "border-slate-200 text-slate-500 hover:border-purple-300 hover:text-purple-600 dark:border-slate-700 dark:text-slate-300"
                   }`}
                 >
-                  {value === "male" ? "Male ♂" : value === "female" ? "Female ♀" : "Unknown"}
+                  {value === "male" ? (
+                    <span className="text-lg font-bold text-blue-500">♂</span>
+                  ) : value === "female" ? (
+                    <span className="text-lg font-bold text-pink-500">♀</span>
+                  ) : (
+                    <span className="text-lg font-semibold text-slate-400">—</span>
+                  )}
                 </button>
               ))}
             </div>

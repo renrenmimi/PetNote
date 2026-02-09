@@ -57,18 +57,23 @@ export async function createPet(
   ownerId: string,
   data: Omit<Pet, "id" | "ownerId" | "createdAt">
 ): Promise<string> {
-  const petsRef = collection(db, "pets");
-  const ownerQuery = query(petsRef, where("ownerId", "==", ownerId));
-  const snapshot = await getDocs(ownerQuery);
-  if (snapshot.size >= 5) {
-    throw new Error("Maximum 5 pets allowed");
+  try {
+    const petsRef = collection(db, "pets");
+    const ownerQuery = query(petsRef, where("ownerId", "==", ownerId));
+    const snapshot = await getDocs(ownerQuery);
+    if (snapshot.size >= 5) {
+      throw new Error("Maximum 5 pets allowed");
+    }
+    const result = await addDoc(petsRef, {
+      ...data,
+      ownerId,
+      createdAt: serverTimestamp(),
+    });
+    return result.id;
+  } catch (error) {
+    console.error("Failed to create pet. ownerId:", ownerId, error);
+    throw error;
   }
-  const result = await addDoc(petsRef, {
-    ...data,
-    ownerId,
-    createdAt: serverTimestamp(),
-  });
-  return result.id;
 }
 
 export async function updatePet(

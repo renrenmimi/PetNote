@@ -802,7 +802,7 @@ export function Create() {
               Add your first pet to tag in posts.
             </div>
           ) : (
-            <div className="flex gap-3 overflow-x-auto pb-2">
+            <div className="flex gap-3 overflow-x-auto py-2">
               {pets.map((petItem) => {
                 const meta = getSpeciesMeta(petItem.species);
                 const selected = selectedPetId === petItem.id;
@@ -817,23 +817,27 @@ export function Create() {
                     }
                     className="flex flex-col items-center text-xs text-slate-600 dark:text-slate-300"
                   >
-                    <div
-                      className={`rounded-full bg-gradient-to-r ${meta.gradient} p-0.5 ${
-                        selected ? "ring-2 ring-purple-400 ring-offset-2" : ""
-                      }`}
-                    >
-                      {petItem.avatarUrl ? (
-                        <img
-                          src={petItem.avatarUrl}
-                          alt={petItem.name}
-                          className="h-12 w-12 rounded-full border-2 border-white object-cover dark:border-slate-800"
-                        />
-                      ) : (
-                        <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-white bg-white text-lg dark:border-slate-800 dark:bg-slate-900">
-                          {meta.emoji}
-                        </div>
-                      )}
-                    </div>
+                    {petItem.avatarUrl ? (
+                      <img
+                        src={petItem.avatarUrl}
+                        alt={petItem.name}
+                        className={`h-12 w-12 rounded-full object-cover transition-all duration-200 ${
+                          selected
+                            ? "border-2 border-purple-500"
+                            : "border-2 border-transparent"
+                        }`}
+                      />
+                    ) : (
+                      <div
+                        className={`flex h-12 w-12 items-center justify-center rounded-full bg-white text-lg transition-all duration-200 dark:bg-slate-900 ${
+                          selected
+                            ? "border-2 border-purple-500"
+                            : "border-2 border-transparent"
+                        }`}
+                      >
+                        {meta.emoji}
+                      </div>
+                    )}
                     <span className="mt-1 max-w-[64px] truncate">
                       {petItem.name}
                     </span>

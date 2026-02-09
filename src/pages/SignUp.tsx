@@ -79,13 +79,17 @@ export function SignUp() {
 
   const validation = useMemo(() => validatePassword(password), [password]);
   const passwordsMatch = password === confirmPassword;
+  const canSubmit =
+    email.trim() !== "" &&
+    password.length >= 8 &&
+    confirmPassword.length > 0 &&
+    passwordsMatch &&
+    validation.isValid &&
+    !loading;
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!passwordsMatch) return;
-    if (!validation.isValid) {
-      return;
-    }
+    if (!canSubmit) return;
 
     setLoading(true);
     try {
@@ -207,7 +211,7 @@ export function SignUp() {
 
           <button
             type="submit"
-            disabled={loading || !validation.isValid || !passwordsMatch}
+            disabled={!canSubmit}
             className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
           >
             {loading ? "Creating account..." : "Sign Up"}

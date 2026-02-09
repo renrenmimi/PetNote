@@ -484,7 +484,7 @@ export function CreateMeetup() {
           {locationPreview && locationPreview.totalRatings > 0 ? (
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
               ⭐ {locationPreview.averageRating.toFixed(1)} (
-              {locationPreview.totalRatings} reviews) · Highly rated by pet owners!
+              {locationPreview.totalRatings} reviews) · Highly rated by pet families!
             </div>
           ) : null}
 

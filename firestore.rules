@@ -18,8 +18,10 @@ service cloud.firestore {
     }
 
     function isNotBanned() {
-      return !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.banned != true;
+      let userDoc = /databases/$(database)/documents/users/$(request.auth.uid);
+      return !exists(userDoc) ||
+        !('banned' in get(userDoc).data) ||
+        get(userDoc).data.banned != true;
     }
 
     // ========= users =========
@@ -58,7 +60,7 @@ service cloud.firestore {
     // ========= posts =========
     match /posts/{postId} {
       allow read: if true;
-      allow create: if isAuthenticated() && isNotBanned();
+      allow create: if isAuthenticated();
       allow update: if isAuthenticated() &&
         (resource.data.authorId == request.auth.uid || isAdmin());
       allow delete: if isAuthenticated() &&
@@ -86,7 +88,7 @@ service cloud.firestore {
     match /pets/{petId} {
       allow read: if true;
       allow create: if isAuthenticated() &&
-        request.resource.data.ownerId == request.auth.uid && isNotBanned();
+        request.resource.data.ownerId == request.auth.uid;
       allow update: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
       allow delete: if isAuthenticated() &&
         (resource.data.ownerId == request.auth.uid || isAdmin());
@@ -104,7 +106,7 @@ service cloud.firestore {
     // ========= meetups =========
     match /meetups/{meetupId} {
       allow read: if true;
-      allow create: if isAuthenticated() && isNotBanned();
+      allow create: if isAuthenticated();
       allow update: if isAuthenticated() &&
         (resource.data.organizerId == request.auth.uid || isAdmin());
       allow delete: if isAuthenticated() &&
@@ -125,7 +127,7 @@ service cloud.firestore {
     // ========= locations =========
     match /locations/{locationId} {
       allow read: if true;
-      allow create: if isAuthenticated() && isNotBanned();
+      allow create: if isAuthenticated();
       allow update: if isAuthenticated();
       allow delete: if isAdmin();
 
@@ -167,6 +169,31 @@ service cloud.firestore {
       allow create: if isAuthenticated();
       allow update: if isAdmin();
       allow delete: if isAdmin();
+    }
+
+    // ========= Collection Group queries =========
+    match /{path=**}/checkins/{checkinId} {
+      allow read: if true;
+    }
+
+    match /{path=**}/likes/{likeId} {
+      allow read: if true;
+    }
+
+    match /{path=**}/comments/{commentId} {
+      allow read: if true;
+    }
+
+    match /{path=**}/participants/{participantId} {
+      allow read: if true;
+    }
+
+    match /{path=**}/reviews/{reviewId} {
+      allow read: if true;
+    }
+
+    match /{path=**}/bookmarks/{bookmarkId} {
+      allow read: if request.auth != null && request.auth.uid == bookmarkId;
     }
   }
 }

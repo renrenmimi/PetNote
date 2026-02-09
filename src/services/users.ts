@@ -82,16 +82,19 @@ export async function createUserProfile(
   data: Omit<UserProfile, "id">
 ): Promise<void> {
   const userRef = doc(db, "users", userId);
-  await setDoc(
-    userRef,
-    {
-      ...data,
-      createdAt: data.createdAt ?? serverTimestamp(),
-      followerCount: data.followerCount ?? 0,
-      followingCount: data.followingCount ?? 0,
-    },
-    { merge: true }
-  );
+  const payload = {
+    ...data,
+    createdAt: data.createdAt ?? serverTimestamp(),
+    followerCount: data.followerCount ?? 0,
+    followingCount: data.followingCount ?? 0,
+  };
+  try {
+    await setDoc(userRef, payload, { merge: true });
+  } catch (error) {
+    console.error("Failed to create user profile:", error);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await setDoc(userRef, payload, { merge: true });
+  }
 }
 
 export async function getUsersByIds(

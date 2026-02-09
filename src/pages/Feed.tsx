@@ -17,53 +17,8 @@ import { useBlockedUsers } from "../hooks/useBlockedUsers";
 import { batchCheckLikes } from "../hooks/useBatchLikeStatus";
 import { batchCheckBookmarks } from "../hooks/useBatchBookmarkStatus";
 import { getFollowing } from "../services/follow";
-import { type Post } from "../services/posts";
 import { useToast } from "../contexts/ToastContext";
-
-const mockPosts: Post[] = [
-  {
-    id: "1",
-    authorId: "user1",
-    authorName: "Sarah",
-    authorAvatar: "https://i.pravatar.cc/150?img=1",
-    text: "My cute puppy enjoying the sunshine! ☀️",
-    mediaUrl:
-      "https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=600",
-    mediaType: "image",
-    createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
-    likeCount: 42,
-    commentCount: 5,
-    tags: ["puppy", "sunshine", "happy"],
-  },
-  {
-    id: "2",
-    authorId: "user2",
-    authorName: "Mike",
-    authorAvatar: "https://i.pravatar.cc/150?img=2",
-    text: "Meet my new kitten! 🐱",
-    mediaUrl:
-      "https://images.unsplash.com/photo-1574158622682-e40e69881006?w=600",
-    mediaType: "image",
-    createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
-    likeCount: 128,
-    commentCount: 23,
-    tags: ["kitten", "cute", "newpet"],
-  },
-  {
-    id: "3",
-    authorId: "user3",
-    authorName: "Emma",
-    authorAvatar: "https://i.pravatar.cc/150?img=3",
-    text: "Beach day with my golden retriever! 🏖️",
-    mediaUrl: "https://images.unsplash.com/photo-1552053831-71594a27632d?w=600",
-    mediaType: "image",
-    createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
-    likeCount: 89,
-    commentCount: 12,
-    tags: ["goldenretriever", "beach", "summer"],
-  },
-];
-
+import { type Post } from "../services/posts";
 
 export function Feed() {
   const navigate = useNavigate();
@@ -71,7 +26,6 @@ export function Feed() {
   const [activeTab, setActiveTab] = useState<"all" | "following">("all");
   const { posts, loading, loadingMore, hasMore, loadMore, refresh, error } =
     usePosts(activeTab, user?.uid ?? null);
-  const useMock = false;
   const [localPosts, setLocalPosts] = useState<Post[]>([]);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
@@ -87,10 +41,8 @@ export function Feed() {
   const [bookmarkedPosts, setBookmarkedPosts] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!useMock) {
-      setLocalPosts(posts);
-    }
-  }, [posts, useMock]);
+    setLocalPosts(posts);
+  }, [posts]);
 
   useEffect(() => {
     if (!error) return;
@@ -134,7 +86,6 @@ export function Feed() {
   }, [activeTab, user]);
 
   useEffect(() => {
-    if (useMock) return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && hasMore && !loadingMore) {
@@ -148,16 +99,10 @@ export function Feed() {
     if (node) observer.observe(node);
 
     return () => observer.disconnect();
-  }, [hasMore, loadMore, loadingMore, useMock]);
-
-  const displayPosts = useMemo(
-    () => (useMock ? mockPosts : localPosts),
-    [useMock, localPosts],
-  );
+  }, [hasMore, loadMore, loadingMore]);
   const filteredPosts = useMemo(
-    () =>
-      displayPosts.filter((post) => !blockedUserIds.includes(post.authorId)),
-    [blockedUserIds, displayPosts]
+    () => localPosts.filter((post) => !blockedUserIds.includes(post.authorId)),
+    [blockedUserIds, localPosts]
   );
 
   useEffect(() => {
@@ -262,7 +207,7 @@ export function Feed() {
         <BirthdayCelebration ownerId={user?.uid ?? null} />
         <PetSpotlight />
 
-        {loading && !useMock ? (
+        {loading ? (
           <div className="space-y-4">
             {[1, 2, 3].map((item) => (
               <SkeletonPostCard key={item} />
@@ -279,7 +224,7 @@ export function Feed() {
               actionText="Discover People"
               onAction={() => navigate("/search")}
             />
-          ) : !useMock ? (
+          ) : (
             <div className="rounded-2xl bg-white p-6 text-center shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500">
                 <PawIcon size={36} />
@@ -307,14 +252,6 @@ export function Feed() {
                 </button>
               </div>
             </div>
-          ) : (
-            <EmptyState
-              icon="📷"
-              title="No posts yet"
-              description="Be the first to share your pet!"
-              actionText="Create Post"
-              onAction={() => navigate("/create")}
-            />
           )
         ) : null}
 
@@ -322,7 +259,6 @@ export function Feed() {
           <PostCard
             key={post.id}
             post={post}
-            useMock={useMock}
             index={index}
             initialLiked={likedPosts.has(post.id)}
             initialBookmarked={bookmarkedPosts.has(post.id)}
@@ -332,17 +268,15 @@ export function Feed() {
           />
         ))}
 
-        {!useMock ? (
-          <div ref={sentinelRef} className="flex justify-center py-4">
-            {loadingMore ? (
-              <span className="h-6 w-6 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
-            ) : !hasMore && filteredPosts.length > 0 ? (
-              <p className="text-xs text-slate-400 dark:text-slate-500">
-                You&apos;ve seen all posts 🐾
-              </p>
-            ) : null}
-          </div>
-        ) : null}
+        <div ref={sentinelRef} className="flex justify-center py-4">
+          {loadingMore ? (
+            <span className="h-6 w-6 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
+          ) : !hasMore && filteredPosts.length > 0 ? (
+            <p className="text-xs text-slate-400 dark:text-slate-500">
+              You&apos;ve seen all posts 🐾
+            </p>
+          ) : null}
+        </div>
       </main>
 
       <BottomNav />
