@@ -7,18 +7,18 @@ import { uploadImage } from "../services/cloudinary";
 import {
   createPet,
   PET_FAMILY_RELATIONSHIP_OPTIONS,
+  type Pet,
   type PetFamilyRelationship,
 } from "../services/pets";
 import {
   completeOnboarding,
   createUserProfile,
   generateUniqueUsername,
-  type UserProfile,
 } from "../services/users";
 import { PET_SPECIES, type PetSpecies } from "../utils/petHelpers";
 import { useToast } from "../contexts/ToastContext";
-import { getSuggestedUsers } from "../services/explore";
-import { followUser } from "../services/follow";
+import { getSuggestedPets } from "../services/explore";
+import { followPet } from "../services/follow";
 import { useInvitation, validateInvitationCode } from "../services/invitations";
 
 type OnboardingFlowProps = {
@@ -63,7 +63,7 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
   const [joinCustomRelationship, setJoinCustomRelationship] = useState("");
   const [validatingInvite, setValidatingInvite] = useState(false);
   const [joiningFamily, setJoiningFamily] = useState(false);
-  const [suggestedUsers, setSuggestedUsers] = useState<UserProfile[]>([]);
+  const [suggestedPets, setSuggestedPets] = useState<Array<Pet & { postCount: number }>>([]);
   const [suggestedLoading, setSuggestedLoading] = useState(false);
   const [followedIds, setFollowedIds] = useState<Set<string>>(new Set());
   const touchStartRef = useRef(0);
@@ -88,8 +88,8 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
     const loadSuggested = async () => {
       setSuggestedLoading(true);
       try {
-        const users = await getSuggestedUsers(userId, 8);
-        if (!ignore) setSuggestedUsers(users);
+        const pets = await getSuggestedPets(userId, 8);
+        if (!ignore) setSuggestedPets(pets);
       } catch (error) {
         console.error("Failed to load suggested users:", error);
       } finally {
@@ -143,6 +143,7 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
         email: currentUser.email || "",
         followerCount: 0,
         followingCount: 0,
+        followingPetsCount: 0,
         onboardingComplete: false,
         createdAt: serverTimestamp(),
       });
@@ -241,14 +242,14 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
     }
   };
 
-  const handleFollow = async (targetId: string) => {
-    if (!userId || followedIds.has(targetId)) return;
+  const handleFollow = async (petId: string) => {
+    if (!userId || followedIds.has(petId)) return;
     try {
-      await followUser(userId, targetId);
-      setFollowedIds((prev) => new Set(prev).add(targetId));
+      await followPet(userId, petId);
+      setFollowedIds((prev) => new Set(prev).add(petId));
       showToast("Now following.", "success");
     } catch (error) {
-      console.error("Failed to follow user:", error);
+      console.error("Failed to follow pet:", error);
       showToast("Unable to follow right now.", "error");
     }
   };
@@ -527,22 +528,22 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
               Find your community!
             </h1>
             <p className="text-sm text-slate-500 dark:text-slate-300">
-              Follow a few pet lovers to start.
+              Follow a few pets to personalize your feed.
             </p>
             <div className="space-y-3">
               {suggestedLoading ? (
                 <div className="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-sm text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-500">
                   Loading suggestions...
                 </div>
-              ) : suggestedUsers.length === 0 ? (
+              ) : suggestedPets.length === 0 ? (
                 <div className="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                  <p>No other users yet. You&apos;re one of the first! 🎉</p>
+                  <p>No pets available yet. You&apos;re one of the first! 🎉</p>
                   <p className="mt-2 text-xs text-slate-400">
                     Invite your friends to join PetNote.
                   </p>
                 </div>
               ) : (
-                suggestedUsers.map((item) => (
+                suggestedPets.map((item) => (
                   <div
                     key={item.id}
                     className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-800"
@@ -550,18 +551,18 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
                     <div className="flex items-center gap-3">
                       <Avatar
                         src={item.avatarUrl}
-                        alt={item.displayName || "User"}
+                        alt={item.name || "Pet"}
                         userId={item.id}
                         size={40}
                         className="h-10 w-10"
                       />
                       <div>
                         <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                          {item.displayName || "PetNote User"}
+                          {item.name || "Pet"}
                         </p>
-                        {item.bio ? (
+                        {item.breed ? (
                           <p className="text-xs text-slate-400">
-                            {item.bio.slice(0, 50)}
+                            {item.breed}
                           </p>
                         ) : null}
                       </div>

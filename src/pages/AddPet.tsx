@@ -250,22 +250,28 @@ export function AddPet() {
   };
 
   const handleValidateInvite = async () => {
-    if (validatingInvite || inviteCode.length !== 8) return;
+    const normalized = normalizeInviteCode(inviteCode);
+    if (validatingInvite || normalized.length !== 8) return;
     setValidatingInvite(true);
     try {
-      const result = await validateInvitationCode(inviteCode);
+      const result = await validateInvitationCode(normalized);
       if (!result.valid || !result.petId || !result.petName) {
         showToast(result.error || "Invalid invitation code.", "error");
         return;
       }
       setPendingInvite({
-        code: normalizeInviteCode(inviteCode),
+        code: normalized,
         petId: result.petId,
         petName: result.petName,
       });
+      setInviteCode(normalized);
       showToast(`Code accepted for ${result.petName}.`, "success");
     } catch (error) {
-      showToast("Unable to validate invitation code.", "error");
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to validate code. Please try again.";
+      showToast(message, "error");
     } finally {
       setValidatingInvite(false);
     }

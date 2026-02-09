@@ -3,7 +3,6 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { BottomNav } from "../components/BottomNav";
 import { Navbar } from "../components/Navbar";
 import { PostCard } from "../components/PostCard";
-import { UserCard } from "../components/UserCard";
 import { EmptyState } from "../components/EmptyState";
 import Avatar from "../components/Avatar";
 import LazyImage from "../components/LazyImage";
@@ -18,7 +17,7 @@ import {
 import { searchByText, searchPets, searchUsers } from "../services/search";
 import {
   getPopularPets,
-  getSuggestedUsers,
+  getSuggestedPets,
   getTopRatedPlaces,
   getTrendingPosts,
   getUpcomingMeetupPreview,
@@ -28,7 +27,7 @@ import { type UserProfile } from "../services/users";
 import { type Pet } from "../services/pets";
 import { type Location } from "../services/locations";
 import { type Meetup } from "../services/meetups";
-import { useFollow } from "../hooks/useFollow";
+import { useFollowPet } from "../hooks/useFollow";
 import { timeAgo } from "../utils/timeAgo";
 
 type PopularPet = Pet & { postCount: number };
@@ -63,41 +62,35 @@ const placeCategoryLabel: Record<string, string> = {
   other: "📍 Other",
 };
 
-function SuggestedUserCard({
-  user,
-  currentUid,
-}: {
-  user: UserProfile;
-  currentUid: string | null;
-}) {
-  const { isFollowing, toggleFollow, loading } = useFollow(user.id);
+function SuggestedPetCard({ pet }: { pet: PopularPet }) {
+  const { user } = useAuth();
+  const { isFollowing, toggleFollow, loading } = useFollowPet(pet.id);
   const navigate = useNavigate();
-  const isSelf = user.id === currentUid;
 
   return (
     <div className="min-w-[140px] rounded-2xl bg-white p-3 text-center shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
       <button
         type="button"
-        onClick={() => navigate(`/profile/${user.id}`)}
+        onClick={() => navigate(`/pet/${pet.id}`)}
         className="flex w-full flex-col items-center gap-2"
       >
         <Avatar
-          src={user.avatarUrl || undefined}
-          alt={user.displayName || "User"}
-          userId={user.id}
+          src={pet.avatarUrl || undefined}
+          alt={pet.name}
+          userId={pet.id}
           size={56}
           className="h-14 w-14"
         />
         <div>
           <p className="text-xs font-semibold text-slate-900 dark:text-white">
-            {user.displayName || "PetNote User"}
+            {pet.name}
           </p>
           <p className="text-[10px] text-slate-400 dark:text-slate-500">
-            {user.followerCount || 0} followers
+            {pet.followerCount || 0} followers
           </p>
         </div>
       </button>
-      {!isSelf ? (
+      {user ? (
         <button
           type="button"
           onClick={toggleFollow}
@@ -159,7 +152,7 @@ export function Search() {
 
   const [trendingTags, setTrendingTags] = useState<Hashtag[]>([]);
   const [trendingPosts, setTrendingPosts] = useState<Post[]>([]);
-  const [suggestedUsers, setSuggestedUsers] = useState<UserProfile[]>([]);
+  const [suggestedPets, setSuggestedPets] = useState<PopularPet[]>([]);
   const [popularPets, setPopularPets] = useState<PopularPet[]>([]);
   const [topPlaces, setTopPlaces] = useState<Location[]>([]);
   const [upcomingMeetups, setUpcomingMeetups] = useState<Meetup[]>([]);
@@ -229,14 +222,14 @@ export function Search() {
       try {
         const [trending, suggested, popular, places, meetups] = await Promise.all([
           getTrendingPosts(9),
-          user ? getSuggestedUsers(user.uid, 8) : getSuggestedUsers("", 8),
+          getSuggestedPets(user?.uid ?? "", 8),
           getPopularPets(8),
           getTopRatedPlaces(5),
           getUpcomingMeetupPreview(3),
         ]);
         if (!ignore) {
           setTrendingPosts(trending);
-          setSuggestedUsers(suggested);
+          setSuggestedPets(suggested);
           setPopularPets(popular);
           setTopPlaces(places);
           setUpcomingMeetups(meetups);
@@ -412,17 +405,16 @@ export function Search() {
               </section>
             ) : null}
 
-            {suggestedUsers.length > 0 ? (
+            {suggestedPets.length > 0 ? (
               <section>
                 <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-                  👥 Suggested People
+                  🐾 Suggested Pets
                 </h3>
                 <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
-                  {suggestedUsers.map((profile) => (
-                    <SuggestedUserCard
-                      key={profile.id}
-                      user={profile}
-                      currentUid={user?.uid ?? null}
+                  {suggestedPets.map((pet) => (
+                    <SuggestedPetCard
+                      key={pet.id}
+                      pet={pet}
                     />
                   ))}
                 </div>
@@ -586,13 +578,44 @@ export function Search() {
                 </div>
                 <div className="space-y-3">
                   {(showAllPeople ? peopleResults : peopleResults.slice(0, 3)).map(
-                    (profile) => (
-                      <UserCard
-                        key={profile.id}
-                        user={profile}
-                        currentUid={user?.uid ?? null}
-                      />
-                    )
+                    (profile) => {
+                      const isSelf = profile.id === user?.uid;
+                      return (
+                        <button
+                          key={profile.id}
+                          type="button"
+                          onClick={() => navigate(`/profile/${profile.id}`)}
+                          className="flex w-full items-center justify-between rounded-2xl bg-white px-4 py-3 text-left shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 transition-all duration-200 hover:-translate-y-0.5 dark:bg-slate-800 dark:ring-slate-700"
+                        >
+                          <div className="flex items-center gap-3">
+                            <Avatar
+                              src={profile.avatarUrl || undefined}
+                              alt={profile.displayName || "User"}
+                              userId={profile.id}
+                              size={44}
+                              className="h-11 w-11"
+                            />
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                                {profile.displayName || "PetNote User"}
+                              </p>
+                              <p className="line-clamp-1 text-xs text-slate-400 dark:text-slate-500">
+                                {profile.bio || "Pet lover"}
+                              </p>
+                            </div>
+                          </div>
+                          {!isSelf ? (
+                            <span className="text-xs font-semibold text-purple-600">
+                              View
+                            </span>
+                          ) : (
+                            <span className="text-xs font-semibold text-slate-400">
+                              You
+                            </span>
+                          )}
+                        </button>
+                      );
+                    }
                   )}
                 </div>
               </section>

@@ -10,100 +10,142 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { createNotification } from "./notifications";
+import { getPetById, getPetFamily } from "./pets";
 import { getUserProfile } from "./users";
 
-export async function followUser(
-  myUid: string,
-  targetUid: string
-): Promise<void> {
-  if (myUid === targetUid) return;
-  const followingRef = doc(db, "users", myUid, "following", targetUid);
-  const followerRef = doc(db, "users", targetUid, "followers", myUid);
-  const myUserRef = doc(db, "users", myUid);
-  const targetUserRef = doc(db, "users", targetUid);
-  let didFollow = false;
+export type FollowingPet = {
+  id: string;
+  petId: string;
+  petName: string;
+  petAvatar: string;
+  followedAt?: unknown;
+};
+
+export type PetFollower = {
+  id: string;
+  userId: string;
+  userName: string;
+  userAvatar: string;
+  followedAt?: unknown;
+};
+
+export async function followPet(userId: string, petId: string): Promise<void> {
+  if (!userId || !petId) return;
+
+  const [pet, profile] = await Promise.all([
+    getPetById(petId),
+    getUserProfile(userId),
+  ]);
+  if (!pet) return;
+
+  const userRef = doc(db, "users", userId);
+  const petRef = doc(db, "pets", petId);
+  const followingRef = doc(db, "users", userId, "followingPets", petId);
+  const followerRef = doc(db, "pets", petId, "followers", userId);
+  let created = false;
 
   await runTransaction(db, async (transaction) => {
-    const followSnap = await transaction.get(followingRef);
-    if (followSnap.exists()) return;
+    const existing = await transaction.get(followingRef);
+    if (existing.exists()) return;
 
-    transaction.set(followingRef, { createdAt: serverTimestamp() });
-    transaction.set(followerRef, { createdAt: serverTimestamp() });
-    transaction.set(
-      myUserRef,
-      { followingCount: increment(1) },
-      { merge: true }
-    );
-    transaction.set(
-      targetUserRef,
-      { followerCount: increment(1) },
-      { merge: true }
-    );
-    didFollow = true;
+    transaction.set(followingRef, {
+      petId,
+      petName: pet.name,
+      petAvatar: pet.avatarUrl || "",
+      followedAt: serverTimestamp(),
+    });
+    transaction.set(followerRef, {
+      userId,
+      userName: profile?.displayName || "PetNote User",
+      userAvatar:
+        profile?.avatarUrl ||
+        `https://api.dicebear.com/7.x/thumbs/svg?seed=${userId}`,
+      followedAt: serverTimestamp(),
+    });
+    transaction.set(userRef, { followingPetsCount: increment(1) }, { merge: true });
+    transaction.set(petRef, { followerCount: increment(1) }, { merge: true });
+    created = true;
   });
 
-  if (didFollow) {
-    const profile = await getUserProfile(myUid);
-    await createNotification({
-      userId: targetUid,
-      type: "follow",
-      fromUserId: myUid,
-      fromUserName: profile?.displayName || "PetNote User",
-      fromUserAvatar:
-        profile?.avatarUrl || "https://i.pravatar.cc/150?img=12",
-      message: "started following you",
-    });
-  }
+  if (!created) return;
+
+  const familyMembers = await getPetFamily(petId);
+  const recipientIds = Array.from(
+    new Set(
+      familyMembers
+        .map((member) => member.userId)
+        .filter((memberId) => !!memberId && memberId !== userId)
+    )
+  );
+  if (recipientIds.length === 0) return;
+
+  await Promise.all(
+    recipientIds.map((recipientId) =>
+      createNotification({
+        userId: recipientId,
+        type: "pet_follow",
+        fromUserId: userId,
+        fromUserName: profile?.displayName || "PetNote User",
+        fromUserAvatar:
+          profile?.avatarUrl ||
+          `https://api.dicebear.com/7.x/thumbs/svg?seed=${userId}`,
+        message: `started following ${pet.name}`,
+      })
+    )
+  );
 }
 
-export async function unfollowUser(
-  myUid: string,
-  targetUid: string
-): Promise<void> {
-  if (myUid === targetUid) return;
-  const followingRef = doc(db, "users", myUid, "following", targetUid);
-  const followerRef = doc(db, "users", targetUid, "followers", myUid);
-  const myUserRef = doc(db, "users", myUid);
-  const targetUserRef = doc(db, "users", targetUid);
+export async function unfollowPet(userId: string, petId: string): Promise<void> {
+  if (!userId || !petId) return;
+
+  const userRef = doc(db, "users", userId);
+  const petRef = doc(db, "pets", petId);
+  const followingRef = doc(db, "users", userId, "followingPets", petId);
+  const followerRef = doc(db, "pets", petId, "followers", userId);
 
   await runTransaction(db, async (transaction) => {
-    const followSnap = await transaction.get(followingRef);
-    if (!followSnap.exists()) return;
+    const existing = await transaction.get(followingRef);
+    if (!existing.exists()) return;
 
     transaction.delete(followingRef);
     transaction.delete(followerRef);
     transaction.set(
-      myUserRef,
-      { followingCount: increment(-1) },
+      userRef,
+      { followingPetsCount: increment(-1) },
       { merge: true }
     );
-    transaction.set(
-      targetUserRef,
-      { followerCount: increment(-1) },
-      { merge: true }
-    );
+    transaction.set(petRef, { followerCount: increment(-1) }, { merge: true });
   });
 }
 
-export async function checkIfFollowing(
-  myUid: string,
-  targetUid: string
+export async function checkIfFollowingPet(
+  userId: string,
+  petId: string
 ): Promise<boolean> {
-  const followingRef = doc(db, "users", myUid, "following", targetUid);
+  if (!userId || !petId) return false;
+  const followingRef = doc(db, "users", userId, "followingPets", petId);
   const snapshot = await getDoc(followingRef);
   return snapshot.exists();
 }
 
-export async function getFollowers(uid: string): Promise<string[]> {
-  const followersRef = collection(db, "users", uid, "followers");
-  const snapshot = await getDocs(followersRef);
-  return snapshot.docs.map((docSnap) => docSnap.id);
+export async function getFollowingPets(userId: string): Promise<FollowingPet[]> {
+  if (!userId) return [];
+  const followingRef = collection(db, "users", userId, "followingPets");
+  const snapshot = await getDocs(followingRef);
+  return snapshot.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...(docSnap.data() as Omit<FollowingPet, "id">),
+  }));
 }
 
-export async function getFollowing(uid: string): Promise<string[]> {
-  const followingRef = collection(db, "users", uid, "following");
-  const snapshot = await getDocs(followingRef);
-  return snapshot.docs.map((docSnap) => docSnap.id);
+export async function getPetFollowers(petId: string): Promise<PetFollower[]> {
+  if (!petId) return [];
+  const followersRef = collection(db, "pets", petId, "followers");
+  const snapshot = await getDocs(followersRef);
+  return snapshot.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...(docSnap.data() as Omit<PetFollower, "id">),
+  }));
 }
 
 export async function ensureUserDoc(
@@ -113,7 +155,45 @@ export async function ensureUserDoc(
   const userRef = doc(db, "users", uid);
   await setDoc(
     userRef,
-    { followerCount: 0, followingCount: 0, ...payload },
+    { followingPetsCount: 0, followerCount: 0, followingCount: 0, ...payload },
     { merge: true }
   );
+}
+
+const warnDeprecated = (fn: string) => {
+  console.warn(
+    `[deprecated] ${fn} is no longer supported. Use pet follow APIs instead.`
+  );
+};
+
+export async function followUser(
+  _myUid: string,
+  _targetUid: string
+): Promise<void> {
+  warnDeprecated("followUser");
+}
+
+export async function unfollowUser(
+  _myUid: string,
+  _targetUid: string
+): Promise<void> {
+  warnDeprecated("unfollowUser");
+}
+
+export async function checkIfFollowing(
+  _myUid: string,
+  _targetUid: string
+): Promise<boolean> {
+  warnDeprecated("checkIfFollowing");
+  return false;
+}
+
+export async function getFollowers(_uid: string): Promise<string[]> {
+  warnDeprecated("getFollowers");
+  return [];
+}
+
+export async function getFollowing(_uid: string): Promise<string[]> {
+  warnDeprecated("getFollowing");
+  return [];
 }

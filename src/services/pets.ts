@@ -44,6 +44,7 @@ export type Pet = {
   gender: PetGender;
   bio: string;
   avatarUrl: string;
+  followerCount?: number;
   createdAt?: unknown;
   relationship?: PetFamilyRelationship;
   customRelationship?: string;
@@ -160,6 +161,7 @@ export async function createPet(
       ...data,
       ownerId,
       primaryOwnerId: ownerId,
+      followerCount: 0,
       createdAt: serverTimestamp(),
     });
 

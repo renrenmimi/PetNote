@@ -91,6 +91,7 @@ export function useAuth(): UseAuthResult {
         email: createdUser.email || email,
         followerCount: 0,
         followingCount: 0,
+        followingPetsCount: 0,
         onboardingComplete: false,
         createdAt: serverTimestamp(),
       });
@@ -134,6 +135,7 @@ export function useAuth(): UseAuthResult {
         email: googleUser.email ?? "",
         followingCount: 0,
         followerCount: 0,
+        followingPetsCount: 0,
         onboardingComplete: false,
         createdAt: serverTimestamp(),
       });

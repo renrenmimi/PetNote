@@ -18,6 +18,7 @@ export type NotificationType =
   | "like"
   | "comment"
   | "follow"
+  | "pet_follow"
   | "reply"
   | "meetup_join"
   | "meetup_cancelled";
@@ -55,7 +56,8 @@ export async function createNotification(
     data.type === "meetup_cancelled" ||
     (mappedType === "like" && settings.likeNotifications) ||
     (mappedType === "comment" && settings.commentNotifications) ||
-    (mappedType === "follow" && settings.followNotifications);
+    ((mappedType === "follow" || mappedType === "pet_follow") &&
+      settings.followNotifications);
   if (!shouldNotify) {
     return "";
   }

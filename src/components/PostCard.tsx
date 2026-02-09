@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useLike } from "../hooks/useLike";
 import { useBookmark } from "../hooks/useBookmark";
+import { useFollowPet } from "../hooks/useFollow";
 import { blockUser } from "../services/block";
 import { deletePost, pinPost, unpinPost, type Post } from "../services/posts";
 import { getPetById, isBirthdayToday } from "../services/pets";
@@ -68,6 +69,11 @@ export function PostCard({
     useMock ? null : user?.uid ?? null,
     initialBookmarked
   );
+  const {
+    isFollowing: isFollowingPet,
+    toggleFollow: toggleFollowPet,
+    loading: followPetLoading,
+  } = useFollowPet(post.petId ?? "");
 
   const timeLabel = useMemo(() => timeAgo(post.createdAt), [post.createdAt]);
   const authorName = post.authorName || "PetNote User";
@@ -414,7 +420,22 @@ export function PostCard({
               ) : null}
             </p>
           </div>
-          <div className="relative">
+          <div className="flex items-center gap-2">
+            {user && post.authorId !== user.uid && post.petId ? (
+              <button
+                type="button"
+                onClick={toggleFollowPet}
+                disabled={followPetLoading}
+                className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-all duration-200 ${
+                  isFollowingPet
+                    ? "border border-slate-200 text-slate-500 hover:border-red-300 hover:text-red-500 dark:border-slate-700 dark:text-slate-300"
+                    : "bg-gradient-to-r from-purple-500 to-pink-500 text-white"
+                }`}
+              >
+                {isFollowingPet ? "Following" : "Follow"}
+              </button>
+            ) : null}
+            <div className="relative">
             <button
               type="button"
               onClick={() => setMenuOpen((prev) => !prev)}
@@ -499,6 +520,7 @@ export function PostCard({
                 </div>
               </div>
             ) : null}
+            </div>
           </div>
         </div>
       </header>

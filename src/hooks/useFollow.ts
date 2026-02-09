@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "./useAuth";
 import {
-  checkIfFollowing,
-  followUser,
-  unfollowUser,
+  checkIfFollowingPet,
+  followPet,
+  unfollowPet,
 } from "../services/follow";
-import { getUserProfile } from "../services/users";
+import { getPetById } from "../services/pets";
 
 type UseFollowResult = {
   isFollowing: boolean;
@@ -14,7 +14,7 @@ type UseFollowResult = {
   loading: boolean;
 };
 
-export function useFollow(targetUid: string): UseFollowResult {
+export function useFollowPet(petId: string): UseFollowResult {
   const { user } = useAuth();
   const [isFollowing, setIsFollowing] = useState(false);
   const [followerCount, setFollowerCount] = useState(0);
@@ -22,12 +22,15 @@ export function useFollow(targetUid: string): UseFollowResult {
 
   useEffect(() => {
     let ignore = false;
+    if (!petId) {
+      setFollowerCount(0);
+      return;
+    }
 
     const load = async () => {
-      if (!targetUid) return;
-      const profile = await getUserProfile(targetUid);
+      const pet = await getPetById(petId);
       if (!ignore) {
-        setFollowerCount(profile?.followerCount ?? 0);
+        setFollowerCount(pet?.followerCount ?? 0);
       }
     };
 
@@ -35,18 +38,18 @@ export function useFollow(targetUid: string): UseFollowResult {
     return () => {
       ignore = true;
     };
-  }, [targetUid]);
+  }, [petId]);
 
   useEffect(() => {
     let ignore = false;
-    if (!user || !targetUid || user.uid === targetUid) {
+    if (!user || !petId) {
       setIsFollowing(false);
       return;
     }
 
     const load = async () => {
       try {
-        const result = await checkIfFollowing(user.uid, targetUid);
+        const result = await checkIfFollowingPet(user.uid, petId);
         if (!ignore) setIsFollowing(result);
       } catch {
         if (!ignore) setIsFollowing(false);
@@ -57,25 +60,27 @@ export function useFollow(targetUid: string): UseFollowResult {
     return () => {
       ignore = true;
     };
-  }, [targetUid, user]);
+  }, [petId, user]);
 
   const toggleFollow = useCallback(async () => {
-    if (!user || !targetUid || user.uid === targetUid || loading) return;
+    if (!user || !petId || loading) return;
     setLoading(true);
     try {
       if (isFollowing) {
-        await unfollowUser(user.uid, targetUid);
+        await unfollowPet(user.uid, petId);
         setIsFollowing(false);
         setFollowerCount((prev) => Math.max(0, prev - 1));
       } else {
-        await followUser(user.uid, targetUid);
+        await followPet(user.uid, petId);
         setIsFollowing(true);
         setFollowerCount((prev) => prev + 1);
       }
     } finally {
       setLoading(false);
     }
-  }, [user, targetUid, isFollowing, loading]);
+  }, [isFollowing, loading, petId, user]);
 
   return { isFollowing, followerCount, toggleFollow, loading };
 }
+
+export const useFollow = useFollowPet;

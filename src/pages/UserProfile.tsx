@@ -1,16 +1,45 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { PostCard } from "../components/PostCard";
-import { UserCard } from "../components/UserCard";
 import Avatar from "../components/Avatar";
 import LazyImage from "../components/LazyImage";
 import { useAuth } from "../hooks/useAuth";
 import { useBlockedUsers } from "../hooks/useBlockedUsers";
 import { unblockUser } from "../services/block";
-import { useFollow } from "../hooks/useFollow";
-import { getFollowers, getFollowing } from "../services/follow";
+import { useFollowPet } from "../hooks/useFollow";
+import { getFollowingPets, type FollowingPet } from "../services/follow";
 import { getPostById, getPostsByUser, getUserStats, type Post } from "../services/posts";
-import { getUserProfile, getUsersByIds, type UserProfile } from "../services/users";
+import {
+  getRelationshipLabel,
+  getUserPets,
+  type Pet,
+} from "../services/pets";
+import { getUserProfile, type UserProfile } from "../services/users";
+
+function PetFollowButton({
+  petId,
+}: {
+  petId: string;
+}) {
+  const { user } = useAuth();
+  const { isFollowing, toggleFollow, loading } = useFollowPet(petId);
+  if (!user) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={toggleFollow}
+      disabled={loading}
+      className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-200 hover:scale-105 ${
+        isFollowing
+          ? "border border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-300"
+          : "bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-[0_10px_25px_-15px_rgba(168,85,247,0.7)]"
+      }`}
+    >
+      {isFollowing ? "Following" : "Follow"}
+    </button>
+  );
+}
 
 export function UserProfile() {
   const navigate = useNavigate();
@@ -18,14 +47,13 @@ export function UserProfile() {
   const { user } = useAuth();
   const { isBlocked } = useBlockedUsers(user?.uid ?? null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [pets, setPets] = useState<Pet[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [followingPets, setFollowingPets] = useState<FollowingPet[]>([]);
   const [pinnedPost, setPinnedPost] = useState<Post | null>(null);
   const [stats, setStats] = useState({ postCount: 0, totalLikes: 0 });
   const [loading, setLoading] = useState(true);
-  const [modalTitle, setModalTitle] = useState<string | null>(null);
-  const [modalUsers, setModalUsers] = useState<UserProfile[]>([]);
-
-  const { isFollowing, toggleFollow, followerCount } = useFollow(userId ?? "");
+  const [followingModalOpen, setFollowingModalOpen] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -34,15 +62,19 @@ export function UserProfile() {
     const load = async () => {
       setLoading(true);
       try {
-        const [postList, userStats, profileData] = await Promise.all([
+        const [postList, userStats, profileData, petList, followingList] = await Promise.all([
           getPostsByUser(userId),
           getUserStats(userId),
           getUserProfile(userId),
+          getUserPets(userId),
+          getFollowingPets(userId),
         ]);
         if (ignore) return;
         setPosts(postList);
         setStats(userStats);
         setProfile(profileData);
+        setPets(petList);
+        setFollowingPets(followingList);
         if (profileData?.pinnedPostId) {
           const pinned =
             postList.find((item) => item.id === profileData.pinnedPostId) ??
@@ -174,40 +206,22 @@ export function UserProfile() {
             ) : null}
           </div>
 
-          <div className="grid grid-cols-3 divide-x divide-slate-200 text-center dark:divide-slate-800">
+          <div className="grid grid-cols-2 divide-x divide-slate-200 text-center dark:divide-slate-800">
             <div className="px-2 py-2">
               <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                {stats.postCount}
+                {pets.length}
               </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Posts</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Pets</p>
             </div>
             <button
               type="button"
               onClick={async () => {
-                const ids = await getFollowers(userId);
-                const profiles = await getUsersByIds(ids);
-                setModalTitle("Followers");
-                setModalUsers(profiles);
+                setFollowingModalOpen(true);
               }}
               className="px-2 py-2"
             >
               <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                {followerCount}
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Followers</p>
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                const ids = await getFollowing(userId);
-                const profiles = await getUsersByIds(ids);
-                setModalTitle("Following");
-                setModalUsers(profiles);
-              }}
-              className="px-2 py-2"
-            >
-              <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                {profile?.followingCount ?? 0}
+                {profile?.followingPetsCount ?? followingPets.length}
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400">Following</p>
             </button>
@@ -217,32 +231,65 @@ export function UserProfile() {
             ❤️ {formatLikes(stats.totalLikes)} likes received
           </p>
 
-          {user?.uid !== userId ? (
-            <div className="flex items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={toggleFollow}
-                className={`rounded-full px-6 py-2 text-sm font-semibold transition-all duration-200 hover:scale-105 ${
-                  isFollowing
-                    ? "border border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-300"
-                    : "bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-[0_10px_25px_-15px_rgba(168,85,247,0.7)]"
-                }`}
-              >
-                {isFollowing ? "Following" : "Follow"}
-              </button>
-              <button
-                type="button"
-                className="rounded-full border border-slate-200 px-6 py-2 text-sm font-semibold text-slate-500 dark:border-slate-700 dark:text-slate-300"
-              >
-                Message
-              </button>
-            </div>
-          ) : null}
-
           <p className="text-center text-xs text-slate-400 dark:text-slate-500">
             Joined {joinedDate}
           </p>
         </section>
+        ) : null}
+
+        {!blocked ? (
+          <section className="space-y-3">
+            <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+              Pets
+            </h3>
+            {pets.length === 0 ? (
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                No pets yet
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {pets.map((pet) => (
+                  <div
+                    key={pet.id}
+                    className="flex items-center justify-between rounded-2xl bg-white px-4 py-3 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/pet/${pet.id}`)}
+                      className="flex items-center gap-3 text-left"
+                    >
+                      <Avatar
+                        src={pet.avatarUrl || undefined}
+                        alt={pet.name}
+                        userId={pet.id}
+                        size={44}
+                        className="h-11 w-11"
+                      />
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                          {pet.name}
+                        </p>
+                        {pet.breed ? (
+                          <p className="text-xs text-slate-400 dark:text-slate-500">
+                            {pet.breed}
+                          </p>
+                        ) : null}
+                        {pet.relationship ? (
+                          <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                            {getRelationshipLabel(
+                              pet.relationship,
+                              pet.customRelationship
+                            )}
+                          </p>
+                        ) : null}
+                      </div>
+                    </button>
+                    <PetFollowButton petId={pet.id} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
         ) : null}
 
         {!blocked ? (
@@ -324,18 +371,17 @@ export function UserProfile() {
         ) : null}
       </main>
 
-      {modalTitle ? (
+      {followingModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-3xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)] dark:bg-slate-800">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-                {modalTitle}
+                Following Pets
               </h3>
               <button
                 type="button"
                 onClick={() => {
-                  setModalTitle(null);
-                  setModalUsers([]);
+                  setFollowingModalOpen(false);
                 }}
                 className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-300"
               >
@@ -343,17 +389,29 @@ export function UserProfile() {
               </button>
             </div>
             <div className="mt-4 space-y-3">
-              {modalUsers.length === 0 ? (
+              {followingPets.length === 0 ? (
                 <p className="text-center text-sm text-slate-500 dark:text-slate-300">
-                  No users yet
+                  No followed pets yet
                 </p>
               ) : (
-                modalUsers.map((profileItem) => (
-                  <UserCard
-                    key={profileItem.id}
-                    user={profileItem}
-                    currentUid={user?.uid ?? null}
-                  />
+                followingPets.map((pet) => (
+                  <button
+                    key={pet.petId}
+                    type="button"
+                    onClick={() => navigate(`/pet/${pet.petId}`)}
+                    className="flex w-full items-center gap-3 rounded-2xl bg-white px-4 py-3 text-left shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 transition-all duration-200 hover:-translate-y-0.5 dark:bg-slate-800 dark:ring-slate-700"
+                  >
+                    <Avatar
+                      src={pet.petAvatar || undefined}
+                      alt={pet.petName || "Pet"}
+                      userId={pet.petId}
+                      size={40}
+                      className="h-10 w-10"
+                    />
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                      {pet.petName || "Pet"}
+                    </p>
+                  </button>
                 ))
               )}
             </div>

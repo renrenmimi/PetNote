@@ -22,7 +22,7 @@ import {
 import { db } from "./firebase";
 import { decrementTag, incrementTag } from "./hashtags";
 import { createNotification } from "./notifications";
-import { getFollowing } from "./follow";
+import { getFollowingPets } from "./follow";
 import { getUserProfile } from "./users";
 
 export type MediaItem = {
@@ -213,14 +213,18 @@ export async function getFollowingPosts(
   lastDoc: QueryDocumentSnapshot | null;
   hasMore: boolean;
 }> {
-  const followingIds = await getFollowing(userId);
-  if (followingIds.length === 0) {
+  const followingPets = await getFollowingPets(userId);
+  const petIds = Array.from(
+    new Set(followingPets.map((item) => item.petId).filter(Boolean))
+  );
+  if (petIds.length === 0) {
     return { posts: [], lastDoc: null, hasMore: false };
   }
-  const targetIds = followingIds.slice(0, 10);
+
+  const targetIds = petIds.slice(0, 30);
   const postsRef = collection(db, "posts");
   const constraints: QueryConstraint[] = [
-    where("authorId", "in", targetIds),
+    where("petId", "in", targetIds),
     orderBy("createdAt", "desc"),
     limit(limitCount),
   ];
