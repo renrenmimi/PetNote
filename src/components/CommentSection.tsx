@@ -46,6 +46,7 @@ export function CommentSection({
   } | null>(null);
   const [commentToDelete, setCommentToDelete] = useState<Comment | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const isEmailVerified = !!user?.emailVerified;
   const remaining = 500 - text.length;
   const counterTone =
     remaining <= 0
@@ -105,6 +106,10 @@ export function CommentSection({
   const handleSend = async () => {
     if (!user) {
       navigate("/login");
+      return;
+    }
+    if (!isEmailVerified) {
+      showToast("Please verify your email first", "warning");
       return;
     }
     if (isBanned) {
@@ -331,18 +336,26 @@ export function CommentSection({
             placeholder={
               isBanned
                 ? "Account suspended"
+                : !isEmailVerified
+                ? "Verify your email to comment"
                 : user
                 ? "Add a comment..."
                 : "Login to comment"
             }
             className="flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-700 dark:text-white"
             value={text}
-            readOnly={!user || isBanned}
+            readOnly={!user || isBanned || !isEmailVerified}
             onFocus={() => {
               if (!user) navigate("/login");
+              if (user && !isEmailVerified) {
+                showToast("Please verify your email first", "warning");
+              }
             }}
             onClick={() => {
               if (!user) navigate("/login");
+              if (user && !isEmailVerified) {
+                showToast("Please verify your email first", "warning");
+              }
             }}
             onChange={(event) => setText(event.target.value)}
             maxLength={500}
@@ -356,7 +369,7 @@ export function CommentSection({
           <button
             type="button"
             onClick={handleSend}
-            disabled={!user || !text.trim() || isBanned}
+            disabled={!user || !text.trim() || isBanned || !isEmailVerified}
             className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Send
