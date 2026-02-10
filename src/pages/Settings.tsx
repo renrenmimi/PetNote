@@ -10,7 +10,11 @@ import { useTheme } from "../contexts/ThemeContext";
 import { useToast } from "../contexts/ToastContext";
 import { PasswordStrengthIndicator } from "../components/PasswordStrengthIndicator";
 import { validatePassword } from "../utils/passwordValidator";
-import { clearUserLocation, getCityFromCoords, saveUserLocation } from "../services/location";
+import {
+  clearUserLocation,
+  getCityFromCoords,
+  saveUserLocation,
+} from "../services/location";
 import {
   deleteAccount,
   getSettings,
@@ -25,39 +29,91 @@ const defaultSettings: UserSettings = {
   privateAccount: false,
 };
 
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+      {children}
+    </p>
+  );
+}
+
 function Toggle({
   enabled,
-  onToggle,
+  onChange,
   disabled,
 }: {
   enabled: boolean;
-  onToggle: () => void;
+  onChange: (value: boolean) => void;
   disabled?: boolean;
 }) {
   return (
     <button
       type="button"
-      onClick={onToggle}
+      onClick={() => onChange(!enabled)}
       disabled={disabled}
-      className={`relative h-6 w-11 rounded-full transition-all duration-200 ${
-        enabled
-          ? "bg-gradient-to-r from-purple-500 to-pink-500"
-          : "bg-slate-200 dark:bg-slate-700"
-      } ${disabled ? "opacity-60" : ""}`}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+        enabled ? "bg-purple-500" : "bg-gray-300 dark:bg-gray-600"
+      } ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
     >
       <span
-        className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all duration-200 ${
-          enabled ? "left-5" : "left-0.5"
+        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+          enabled ? "translate-x-6" : "translate-x-1"
         }`}
       />
     </button>
   );
 }
 
+function SettingRow({
+  label,
+  value,
+  onClick,
+  rightElement,
+  danger = false,
+  border = true,
+}: {
+  label: string;
+  value?: string;
+  onClick?: () => void;
+  rightElement?: React.ReactNode;
+  danger?: boolean;
+  border?: boolean;
+}) {
+  return (
+    <div
+      onClick={onClick}
+      className={`flex items-center justify-between px-4 py-3.5 text-left ${
+        border ? "border-b border-gray-100 dark:border-gray-800" : ""
+      } ${
+        onClick
+          ? "cursor-pointer active:bg-gray-50 dark:active:bg-gray-800"
+          : ""
+      }`}
+    >
+      <span
+        className={`text-sm ${
+          danger
+            ? "font-medium text-red-500"
+            : "text-gray-900 dark:text-gray-100"
+        }`}
+      >
+        {label}
+      </span>
+      {rightElement ? (
+        rightElement
+      ) : value ? (
+        <span className="text-sm text-gray-500 dark:text-gray-400">{value}</span>
+      ) : onClick ? (
+        <span className="text-gray-400">›</span>
+      ) : null}
+    </div>
+  );
+}
+
 export function Settings() {
   const navigate = useNavigate();
   const { user, profile, signOut } = useAuth();
-  const { isDark, mode, setMode } = useTheme();
+  const { isDark, setMode } = useTheme();
   const { showToast } = useToast();
   const [settings, setSettings] = useState<UserSettings>(defaultSettings);
   const [loading, setLoading] = useState(true);
@@ -71,6 +127,7 @@ export function Settings() {
   const [deleting, setDeleting] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
+  const [locationSheetOpen, setLocationSheetOpen] = useState(false);
 
   const locationLabel = useMemo(() => {
     if (!profile?.location) return "Not set";
@@ -89,29 +146,44 @@ export function Settings() {
     if (!user) return;
     const load = async () => {
       setLoading(true);
-      const data = await getSettings(user.uid);
-      if (!ignore) {
-        setSettings(data);
-        setLoading(false);
+      try {
+        const data = await getSettings(user.uid);
+        if (!ignore) {
+          setSettings(data);
+        }
+      } catch (error) {
+        if (!ignore) {
+          showToast("Failed to load settings.", "error");
+        }
+      } finally {
+        if (!ignore) {
+          setLoading(false);
+        }
       }
     };
     void load();
     return () => {
       ignore = true;
     };
-  }, [user]);
+  }, [showToast, user]);
 
   if (!user) return null;
 
   const handleSettingsUpdate = async (patch: Partial<UserSettings>) => {
     const next = { ...settings, ...patch };
     setSettings(next);
-    await updateSettings(user.uid, patch);
-    showToast("Settings saved", "success");
+    try {
+      await updateSettings(user.uid, patch);
+    } catch (error) {
+      setSettings(settings);
+      const message =
+        error instanceof Error ? error.message : "Failed to save settings.";
+      showToast(message, "error");
+    }
   };
 
   const handlePasswordSave = async () => {
-    if (!user?.email) return;
+    if (!user.email) return;
     if (newPassword !== confirmPassword) {
       showToast("Passwords don't match", "error");
       return;
@@ -136,9 +208,10 @@ export function Settings() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-    } catch (err) {
+      setExpandedPassword(false);
+    } catch (error) {
       const message =
-        err instanceof Error ? err.message : "Failed to update password";
+        error instanceof Error ? error.message : "Failed to update password";
       showToast(message, "error");
     } finally {
       setSavingPassword(false);
@@ -146,7 +219,6 @@ export function Settings() {
   };
 
   const handleDeleteAccount = async () => {
-    if (!user) return;
     if (deleteInput !== "DELETE") {
       showToast("Please type DELETE to confirm.", "warning");
       return;
@@ -155,9 +227,9 @@ export function Settings() {
     try {
       await deleteAccount(user.uid);
       navigate("/login", { replace: true });
-    } catch (err) {
+    } catch (error) {
       const message =
-        err instanceof Error ? err.message : "Failed to delete account.";
+        error instanceof Error ? error.message : "Failed to delete account.";
       showToast(message, "error");
     } finally {
       setDeleting(false);
@@ -165,7 +237,7 @@ export function Settings() {
   };
 
   const handleUpdateLocation = async () => {
-    if (!user || locationLoading) return;
+    if (locationLoading) return;
     setLocationLoading(true);
     showToast("PetNote needs your location to show nearby meetups.", "info");
     try {
@@ -208,23 +280,29 @@ export function Settings() {
         }
       );
       const { latitude, longitude } = position.coords;
-      const lat = latitude;
-      const lng = longitude;
-      const { city, state } = await getCityFromCoords(lat, lng);
-      await saveUserLocation(user.uid, { lat, lng, city, state });
+      const { city, state } = await getCityFromCoords(latitude, longitude);
+      await saveUserLocation(user.uid, {
+        lat: latitude,
+        lng: longitude,
+        city,
+        state,
+      });
       showToast("Location updated", "success");
-    } catch (err) {
-      const error = err as { code?: number; message?: string };
-      if (error?.code === 1) {
+    } catch (error) {
+      const geolocationError = error as { code?: number; message?: string };
+      if (geolocationError.code === 1) {
         showToast(
           "Location access denied. Please enable location in your browser settings.",
           "error"
         );
-      } else if (error?.code === 3 || error?.message === "timeout") {
+      } else if (
+        geolocationError.code === 3 ||
+        geolocationError.message === "timeout"
+      ) {
         showToast("Location request timed out. Please try again.", "error");
       } else {
         const message =
-          err instanceof Error ? err.message : "Failed to update location.";
+          error instanceof Error ? error.message : "Failed to update location.";
         showToast(message, "error");
       }
     } finally {
@@ -233,21 +311,19 @@ export function Settings() {
   };
 
   const handleClearLocation = async () => {
-    if (!user || locationLoading) return;
+    if (locationLoading) return;
     setLocationLoading(true);
     try {
       await clearUserLocation(user.uid);
       showToast("Location cleared", "info");
-    } catch (err) {
+    } catch (error) {
       const message =
-        err instanceof Error ? err.message : "Failed to clear location.";
+        error instanceof Error ? error.message : "Failed to clear location.";
       showToast(message, "error");
     } finally {
       setLocationLoading(false);
     }
   };
-
-  const systemEnabled = mode === "system";
 
   return (
     <div className="min-h-screen bg-white pb-16 dark:bg-slate-900">
@@ -268,45 +344,40 @@ export function Settings() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-md space-y-6 px-4 py-6">
+      <main className="mx-auto w-full max-w-md space-y-6 px-4 py-6 text-left">
         {loading ? (
           <div className="rounded-2xl bg-slate-50 p-6 text-center text-sm text-slate-500 dark:bg-slate-800 dark:text-slate-300">
             Loading settings...
           </div>
         ) : null}
 
-        <section className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-            Account
-          </p>
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-            <button
-              type="button"
+        <section>
+          <SectionTitle>Account</SectionTitle>
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-slate-900">
+            <SettingRow
+              label="Change Password"
               onClick={() => setExpandedPassword((prev) => !prev)}
-              className="flex w-full items-center justify-between text-sm font-semibold text-slate-900 dark:text-white"
-            >
-              Change Password
-              <span className="text-slate-400 dark:text-slate-500">
-                {expandedPassword ? "−" : "+"}
-              </span>
-            </button>
+              rightElement={
+                <span className="text-gray-400">{expandedPassword ? "⌄" : "›"}</span>
+              }
+            />
             {expandedPassword ? (
-              <div className="mt-4 space-y-3">
+              <div className="space-y-3 border-b border-gray-100 px-4 pb-4 dark:border-gray-800">
                 <input
                   type="password"
                   placeholder="Current password"
                   value={currentPassword}
                   onChange={(event) => setCurrentPassword(event.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-700 dark:text-white"
                   maxLength={64}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
                 <input
                   type="password"
                   placeholder="New password"
                   value={newPassword}
                   onChange={(event) => setNewPassword(event.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-700 dark:text-white"
                   maxLength={64}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
                 <PasswordStrengthIndicator password={newPassword} />
                 <input
@@ -314,8 +385,8 @@ export function Settings() {
                   placeholder="Confirm new password"
                   value={confirmPassword}
                   onChange={(event) => setConfirmPassword(event.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-700 dark:text-white"
                   maxLength={64}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
                 <button
                   type="button"
@@ -333,212 +404,172 @@ export function Settings() {
                 </button>
               </div>
             ) : null}
+            <SettingRow label="Email" value={user.email || "-"} />
+            <SettingRow
+              label="Sign Out"
+              onClick={() => setSignOutOpen(true)}
+              danger
+              border={false}
+            />
           </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-            Email
-            <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-              {user.email}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setSignOutOpen(true)}
-            className="w-full rounded-2xl border border-slate-200 bg-white p-4 text-center text-sm font-semibold text-red-500 transition-all duration-200 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700"
-          >
-            Sign Out
-          </button>
         </section>
 
-        <section className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-            Appearance
-          </p>
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                  Dark Mode
-                </p>
-                <p className="text-xs text-slate-400 dark:text-slate-500">
-                  Toggle dark theme
-                </p>
-              </div>
-              <Toggle
-                enabled={isDark}
-                onToggle={() => {
-                  if (systemEnabled) {
-                    setMode(isDark ? "light" : "dark");
-                  } else {
-                    setMode(isDark ? "light" : "dark");
+        <section>
+          <SectionTitle>Appearance</SectionTitle>
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-slate-900">
+            <SettingRow
+              label="Dark Mode"
+              rightElement={
+                <Toggle
+                  enabled={isDark}
+                  onChange={(nextEnabled) =>
+                    setMode(nextEnabled ? "dark" : "light")
                   }
-                }}
-              />
-            </div>
-            <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-3 text-sm dark:border-slate-700">
-              <div>
-                <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                  Use System Setting
-                </p>
-                <p className="text-xs text-slate-400 dark:text-slate-500">
-                  Follow your device theme
-                </p>
-              </div>
-              <Toggle
-                enabled={systemEnabled}
-                onToggle={() => {
-                  if (systemEnabled) {
-                    setMode(isDark ? "dark" : "light");
-                  } else {
-                    setMode("system");
+                />
+              }
+              border={false}
+            />
+          </div>
+        </section>
+
+        <section>
+          <SectionTitle>Notifications</SectionTitle>
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-slate-900">
+            <SettingRow
+              label="Likes"
+              rightElement={
+                <Toggle
+                  enabled={settings.likeNotifications}
+                  onChange={(nextEnabled) =>
+                    void handleSettingsUpdate({ likeNotifications: nextEnabled })
                   }
-                }}
-              />
-            </div>
+                />
+              }
+            />
+            <SettingRow
+              label="Comments"
+              rightElement={
+                <Toggle
+                  enabled={settings.commentNotifications}
+                  onChange={(nextEnabled) =>
+                    void handleSettingsUpdate({ commentNotifications: nextEnabled })
+                  }
+                />
+              }
+            />
+            <SettingRow
+              label="Follows"
+              rightElement={
+                <Toggle
+                  enabled={settings.followNotifications}
+                  onChange={(nextEnabled) =>
+                    void handleSettingsUpdate({ followNotifications: nextEnabled })
+                  }
+                />
+              }
+              border={false}
+            />
           </div>
         </section>
 
-        <section className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-            Notifications
-          </p>
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-            <div className="flex items-center justify-between py-2">
-              <span className="text-sm text-slate-700 dark:text-slate-200">
-                Like Notifications
-              </span>
-              <Toggle
-                enabled={settings.likeNotifications}
-                onToggle={() =>
-                  handleSettingsUpdate({
-                    likeNotifications: !settings.likeNotifications,
-                  })
-                }
-              />
-            </div>
-            <div className="flex items-center justify-between border-t border-slate-200 py-2 dark:border-slate-700">
-              <span className="text-sm text-slate-700 dark:text-slate-200">
-                Comment Notifications
-              </span>
-              <Toggle
-                enabled={settings.commentNotifications}
-                onToggle={() =>
-                  handleSettingsUpdate({
-                    commentNotifications: !settings.commentNotifications,
-                  })
-                }
-              />
-            </div>
-            <div className="flex items-center justify-between border-t border-slate-200 py-2 dark:border-slate-700">
-              <span className="text-sm text-slate-700 dark:text-slate-200">
-                Follow Notifications
-              </span>
-              <Toggle
-                enabled={settings.followNotifications}
-                onToggle={() =>
-                  handleSettingsUpdate({
-                    followNotifications: !settings.followNotifications,
-                  })
-                }
-              />
-            </div>
-          </div>
-        </section>
-
-        <section className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-            Privacy
-          </p>
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                    My Location
-                  </p>
-                  <p className="text-xs text-slate-400 dark:text-slate-500">
+        <section>
+          <SectionTitle>Privacy</SectionTitle>
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-slate-900">
+            <SettingRow
+              label="My Location"
+              onClick={() => setLocationSheetOpen(true)}
+              rightElement={
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
                     {locationLabel}
-                  </p>
+                  </span>
+                  <span className="text-gray-400">›</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleUpdateLocation}
-                  disabled={locationLoading}
-                  className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-3 py-1.5 text-xs font-semibold text-white transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {locationLoading ? "Updating..." : "Update Location"}
-                </button>
-              </div>
-              <div className="mt-2 flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
-                <span>
-                  Your location is used to show distance to meetups. Only your
-                  city is visible to others.
-                </span>
-                {profile?.location ? (
-                  <button
-                    type="button"
-                    onClick={handleClearLocation}
-                    disabled={locationLoading}
-                    className="ml-3 text-red-500 hover:text-red-600"
-                  >
-                    Clear
-                  </button>
-                ) : null}
-              </div>
-            </div>
-            <button
-              type="button"
+              }
+            />
+            <SettingRow
+              label="Blocked Users"
               onClick={() => navigate("/blocked-users")}
-              className="mt-4 w-full rounded-xl border border-slate-200 px-3 py-2 text-left text-sm text-slate-700 transition-all duration-200 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700"
-            >
-              Blocked Users
-            </button>
+              border={false}
+            />
           </div>
         </section>
 
-        <section className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-red-400">
-            Danger Zone
-          </p>
-          <div className="rounded-2xl border border-red-200 bg-white p-4 dark:border-red-500/40 dark:bg-slate-800">
-            <button
-              type="button"
+        <section>
+          <SectionTitle>Danger Zone</SectionTitle>
+          <div className="overflow-hidden rounded-2xl border border-red-200 bg-white dark:border-red-500/40 dark:bg-slate-900">
+            <SettingRow
+              label="Delete Account"
               onClick={() => setDeleteOpen(true)}
-              className="text-sm font-semibold text-red-500"
-            >
-              Delete Account
-            </button>
+              danger
+              border={false}
+            />
           </div>
         </section>
 
-        <section className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
-            About
-          </p>
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 text-center text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-            <p>Version 1.0.0</p>
-            <button
-              type="button"
+        <section>
+          <SectionTitle>About</SectionTitle>
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-slate-900">
+            <SettingRow
+              label="Contact Us & Feedback"
               onClick={() => navigate("/contact")}
-              className="mt-3 w-full text-center text-xs font-semibold text-purple-600 transition-all duration-200 hover:text-purple-500"
-            >
-              Contact Us / Feedback
-            </button>
-            <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
-              Contact: support@petnote.app
-            </p>
-            <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
-              Terms of Service
-            </p>
-            <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-              Privacy Policy
-            </p>
-            <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-              Made with ❤️ and 🐾
-            </p>
+            />
+            <SettingRow
+              label="Terms of Service"
+              onClick={() => showToast("Terms of Service coming soon.", "info")}
+            />
+            <SettingRow
+              label="Privacy Policy"
+              onClick={() => showToast("Privacy Policy coming soon.", "info")}
+            />
+            <SettingRow label="Version" value="1.0.0" border={false} />
           </div>
+          <p className="mt-3 text-center text-xs text-gray-500 dark:text-gray-400">
+            Made with ❤️ and 🐾
+          </p>
         </section>
       </main>
+
+      {locationSheetOpen ? (
+        <div className="fixed inset-0 z-40">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setLocationSheetOpen(false)}
+            aria-label="Close location sheet"
+          />
+          <div className="absolute bottom-0 left-0 right-0 rounded-t-3xl bg-white px-4 pb-6 pt-4 dark:bg-slate-900">
+            <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-300 dark:bg-slate-700" />
+            <h3 className="text-left text-base font-semibold text-slate-900 dark:text-white">
+              My Location
+            </h3>
+            <p className="mt-1 text-left text-sm text-slate-500 dark:text-slate-400">
+              Current: {locationLabel}
+            </p>
+            <button
+              type="button"
+              onClick={() => void handleUpdateLocation()}
+              disabled={locationLoading}
+              className="mt-4 w-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {locationLoading ? "Updating..." : "Update Location"}
+            </button>
+            {profile?.location ? (
+              <button
+                type="button"
+                onClick={() => void handleClearLocation()}
+                disabled={locationLoading}
+                className="mt-3 w-full text-sm font-medium text-slate-500 transition hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+              >
+                Clear Location
+              </button>
+            ) : null}
+            <p className="mt-4 text-left text-xs text-slate-400 dark:text-slate-500">
+              Your location is used to show distances to meetups and places.
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       {signOutOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -563,7 +594,7 @@ export function Settings() {
                   await signOut();
                   navigate("/login", { replace: true });
                 }}
-                className="rounded-full bg-red-500 px-4 py-2 text-sm font-semibold text-white transition-all duration-200 hover:brightness-110"
+                className="w-24 rounded-full bg-red-500 px-4 py-2 text-center text-sm font-semibold text-white transition-all duration-200 hover:brightness-110"
               >
                 Sign Out
               </button>

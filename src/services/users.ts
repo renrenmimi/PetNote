@@ -17,6 +17,7 @@ import { generateRandomUsername } from "../utils/randomName";
 export type UserProfile = {
   id: string;
   displayName?: string;
+  displayNameLower?: string;
   email?: string;
   avatarUrl?: string;
   bio?: string;
@@ -56,7 +57,11 @@ export async function updateUserProfile(
   data: Partial<UserProfile>
 ): Promise<void> {
   const userRef = doc(db, "users", userId);
-  await setDoc(userRef, data, { merge: true });
+  const payload = {
+    ...data,
+    ...(data.displayName ? { displayNameLower: data.displayName.toLowerCase() } : {}),
+  };
+  await setDoc(userRef, payload, { merge: true });
 
   if (auth.currentUser && auth.currentUser.uid === userId) {
     await updateProfile(auth.currentUser, {
@@ -87,6 +92,9 @@ export async function createUserProfile(
   const userRef = doc(db, "users", userId);
   const payload = {
     ...data,
+    ...(data.displayName
+      ? { displayNameLower: data.displayName.toLowerCase() }
+      : {}),
     createdAt: data.createdAt ?? serverTimestamp(),
     followerCount: data.followerCount ?? 0,
     followingCount: data.followingCount ?? 0,
@@ -101,6 +109,34 @@ export async function createUserProfile(
   }
 }
 
+export function validateUsername(
+  username: string
+): { valid: boolean; error?: string } {
+  const normalized = username.trim();
+  if (normalized.length < 3) {
+    return { valid: false, error: "Username must be at least 3 characters" };
+  }
+  if (normalized.length > 20) {
+    return { valid: false, error: "Username must be under 20 characters" };
+  }
+  if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(normalized)) {
+    if (/^[0-9]/.test(normalized)) {
+      return { valid: false, error: "Username cannot start with a number" };
+    }
+    if (/^_/.test(normalized)) {
+      return {
+        valid: false,
+        error: "Username cannot start with an underscore",
+      };
+    }
+    return {
+      valid: false,
+      error: "Only letters, numbers, and underscores allowed",
+    };
+  }
+  return { valid: true };
+}
+
 export async function isUsernameTaken(
   username: string,
   excludeUserId?: string
@@ -109,21 +145,35 @@ export async function isUsernameTaken(
   if (!normalized) {
     return false;
   }
+  const normalizedLower = normalized.toLowerCase();
 
   const usersRef = collection(db, "users");
   const usersQuery = query(
     usersRef,
-    where("displayName", "==", normalized),
+    where("displayNameLower", "==", normalizedLower),
     limit(10)
   );
   const snapshot = await getDocs(usersQuery);
-  if (snapshot.empty) {
-    return false;
+  if (!snapshot.empty) {
+    if (!excludeUserId) {
+      return true;
+    }
+    return snapshot.docs.some((docSnap) => docSnap.id !== excludeUserId);
   }
-  if (!excludeUserId) {
+
+  // Backward compatible fallback for users without displayNameLower.
+  const fallbackSnapshot = await getDocs(query(usersRef, limit(200)));
+  const taken = fallbackSnapshot.docs.some((docSnap) => {
+    if (excludeUserId && docSnap.id === excludeUserId) {
+      return false;
+    }
+    const value = (docSnap.data().displayName as string | undefined) ?? "";
+    return value.trim().toLowerCase() === normalizedLower;
+  });
+  if (taken) {
     return true;
   }
-  return snapshot.docs.some((docSnap) => docSnap.id !== excludeUserId);
+  return false;
 }
 
 export async function generateUniqueUsername(): Promise<string> {

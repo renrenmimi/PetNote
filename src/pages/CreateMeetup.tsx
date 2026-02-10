@@ -64,6 +64,7 @@ export function CreateMeetup() {
   const [additionalNotes, setAdditionalNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [pets, setPets] = useState<Pet[]>([]);
+  const requiresEmailVerification = !!user && !user.emailVerified;
 
   useEffect(() => {
     if (!coverFile) return;
@@ -179,6 +180,10 @@ export function CreateMeetup() {
 
   const handleCreate = async () => {
     if (!user || saving) return;
+    if (requiresEmailVerification) {
+      showToast("Please verify your email before creating meetups", "warning");
+      return;
+    }
     if (!title.trim() || !description.trim()) {
       showToast("Please fill in title and description.", "error");
       return;
@@ -284,15 +289,24 @@ export function CreateMeetup() {
           <button
             type="button"
             onClick={handleCreate}
-            disabled={saving}
+            disabled={saving || requiresEmailVerification}
             className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-1.5 text-sm font-semibold text-white transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            {saving ? "Creating..." : "Create"}
+            {saving
+              ? "Creating..."
+              : requiresEmailVerification
+              ? "🔒 Verify Email"
+              : "Create"}
           </button>
         </div>
       </header>
 
       <main className="mx-auto w-full max-w-md space-y-6 px-4 py-6">
+        {requiresEmailVerification ? (
+          <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+            Verify your email to create meetups.
+          </section>
+        ) : null}
         <section className="space-y-3 rounded-2xl bg-white p-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
           <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
             Cover Image

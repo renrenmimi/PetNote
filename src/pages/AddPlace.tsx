@@ -60,6 +60,7 @@ export function AddPlace() {
   const [cleanliness, setCleanliness] = useState(0);
   const [saving, setSaving] = useState(false);
   const [warningPlaceId, setWarningPlaceId] = useState<string | null>(null);
+  const requiresEmailVerification = !!user && !user.emailVerified;
 
   useEffect(() => {
     const urls = photos.map((file) => URL.createObjectURL(file));
@@ -138,6 +139,10 @@ export function AddPlace() {
   const handleSubmit = async () => {
     if (!user) {
       showToast("Please login to add a place.", "error");
+      return;
+    }
+    if (requiresEmailVerification) {
+      showToast("Please verify your email before creating places", "warning");
       return;
     }
     if (!name.trim() || !description.trim()) {
@@ -221,15 +226,24 @@ export function AddPlace() {
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={saving}
+            disabled={saving || requiresEmailVerification}
             className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-1.5 text-sm font-semibold text-white transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            {saving ? "Submitting..." : "Submit"}
+            {saving
+              ? "Submitting..."
+              : requiresEmailVerification
+              ? "🔒 Verify Email"
+              : "Submit"}
           </button>
         </div>
       </header>
 
       <main className="mx-auto w-full max-w-md space-y-6 px-4 py-6">
+        {requiresEmailVerification ? (
+          <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+            Verify your email to create new places.
+          </section>
+        ) : null}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">

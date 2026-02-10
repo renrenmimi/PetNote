@@ -31,15 +31,25 @@ export function EmailVerificationBanner() {
   };
 
   return (
-    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 shadow-[0_12px_30px_-20px_rgba(15,23,42,0.5)] dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left text-sm text-amber-700 shadow-[0_12px_30px_-20px_rgba(15,23,42,0.5)] dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
       <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
-          <p className="font-semibold">Please verify your email address</p>
-          <p className="text-xs text-amber-600/80 dark:text-amber-200/80">
-            We&apos;ll send you a quick verification email.
+        <div className="min-w-0 text-left">
+          <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+            Verify your email to start posting and commenting
           </p>
+          <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+            Check your inbox for a verification link from PetNote.
+          </p>
+          <button
+            type="button"
+            onClick={handleResend}
+            disabled={sending}
+            className="mt-2 text-left text-xs font-semibold text-amber-800 underline transition hover:text-amber-900 disabled:cursor-not-allowed disabled:opacity-70 dark:text-amber-300 dark:hover:text-amber-200"
+          >
+            {sending ? "Sending..." : "Resend Email"}
+          </button>
           {sent ? (
-            <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-300">
+            <p className="mt-1 text-xs font-semibold text-emerald-600 dark:text-emerald-300">
               Verification email sent!
             </p>
           ) : null}
@@ -51,16 +61,6 @@ export function EmailVerificationBanner() {
           aria-label="Dismiss banner"
         >
           ✕
-        </button>
-      </div>
-      <div className="mt-3 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={handleResend}
-          disabled={sending}
-          className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-1.5 text-xs font-semibold text-white transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
-        >
-          {sending ? "Sending..." : "Resend verification email"}
         </button>
       </div>
     </div>

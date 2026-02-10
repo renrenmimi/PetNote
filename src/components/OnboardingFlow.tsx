@@ -14,6 +14,9 @@ import {
   completeOnboarding,
   createUserProfile,
   generateUniqueUsername,
+  isUsernameTaken,
+  updateUserProfile,
+  validateUsername,
 } from "../services/users";
 import { PET_SPECIES, type PetSpecies } from "../utils/petHelpers";
 import { useToast } from "../contexts/ToastContext";
@@ -26,7 +29,7 @@ type OnboardingFlowProps = {
   onComplete: () => void;
 };
 
-const stepCount = 4;
+const stepCount = 5;
 
 const normalizeInviteCode = (value: string): string =>
   value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 8);
@@ -41,8 +44,15 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
     if (typeof window === "undefined") return 0;
     const saved = window.localStorage.getItem("onboardingStep");
     const value = saved ? Number(saved) : 0;
-    return Number.isFinite(value) ? Math.max(0, Math.min(value, 3)) : 0;
+    return Number.isFinite(value)
+      ? Math.max(0, Math.min(value, stepCount - 1))
+      : 0;
   });
+  const [username, setUsername] = useState("");
+  const [initialUsername, setInitialUsername] = useState("");
+  const [usernameChecking, setUsernameChecking] = useState(false);
+  const [usernameTaken, setUsernameTaken] = useState(false);
+  const [savingUsername, setSavingUsername] = useState(false);
   const [petName, setPetName] = useState("");
   const [species, setSpecies] = useState<PetSpecies | null>(null);
   const [relationship, setRelationship] = useState<PetFamilyRelationship | null>(
@@ -84,6 +94,74 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
 
   useEffect(() => {
     let ignore = false;
+    const loadUsername = async () => {
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+      const current = currentUser.displayName?.trim();
+      if (current) {
+        if (!ignore) {
+          setUsername(current);
+          setInitialUsername(current);
+        }
+        return;
+      }
+      try {
+        const generated = await generateUniqueUsername();
+        if (!ignore) {
+          setUsername(generated);
+          setInitialUsername(generated);
+        }
+      } catch {
+        // Keep empty and let user type manually.
+      }
+    };
+    void loadUsername();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  const usernameValidation = useMemo(
+    () => validateUsername(username.trim()),
+    [username]
+  );
+
+  useEffect(() => {
+    let ignore = false;
+    const normalized = username.trim();
+    const unchanged =
+      normalized.toLowerCase() === initialUsername.trim().toLowerCase();
+    if (!normalized || !usernameValidation.valid || unchanged) {
+      setUsernameChecking(false);
+      setUsernameTaken(false);
+      return;
+    }
+    setUsernameChecking(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const taken = await isUsernameTaken(normalized, userId);
+        if (!ignore) {
+          setUsernameTaken(taken);
+        }
+      } catch {
+        if (!ignore) {
+          setUsernameTaken(false);
+        }
+      } finally {
+        if (!ignore) {
+          setUsernameChecking(false);
+        }
+      }
+    }, 500);
+
+    return () => {
+      ignore = true;
+      window.clearTimeout(timer);
+    };
+  }, [initialUsername, userId, username, usernameValidation.valid]);
+
+  useEffect(() => {
+    let ignore = false;
     if (!userId) return;
     const loadSuggested = async () => {
       setSuggestedLoading(true);
@@ -115,7 +193,7 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
     [step]
   );
 
-  const handleNext = () => setStep((prev) => Math.min(prev + 1, 3));
+  const handleNext = () => setStep((prev) => Math.min(prev + 1, stepCount - 1));
   const handleBack = () => setStep((prev) => Math.max(prev - 1, 0));
 
   const handleFinish = async () => {
@@ -254,6 +332,49 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
     }
   };
 
+  const handleContinueUsername = async () => {
+    const currentUser = auth.currentUser;
+    const normalized = username.trim();
+    if (!currentUser) {
+      showToast("Please log in to continue.", "error");
+      return;
+    }
+    if (!usernameValidation.valid) {
+      showToast(usernameValidation.error || "Invalid username.", "error");
+      return;
+    }
+    if (usernameTaken) {
+      showToast("This username is taken.", "error");
+      return;
+    }
+    if (usernameChecking || savingUsername) {
+      return;
+    }
+
+    setSavingUsername(true);
+    try {
+      await updateUserProfile(currentUser.uid, { displayName: normalized });
+      setInitialUsername(normalized);
+      handleNext();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to save username.";
+      showToast(message, "error");
+    } finally {
+      setSavingUsername(false);
+    }
+  };
+
+  const normalizedUsername = username.trim();
+  const usernameUnchanged =
+    normalizedUsername.toLowerCase() === initialUsername.trim().toLowerCase();
+  const canContinueUsername =
+    normalizedUsername.length > 0 &&
+    usernameValidation.valid &&
+    !usernameChecking &&
+    !savingUsername &&
+    (usernameUnchanged || !usernameTaken);
+
   return (
     <div
       className="fixed inset-0 z-50 flex flex-col items-center justify-between bg-white px-6 py-10 text-center dark:bg-slate-900"
@@ -293,6 +414,92 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
         ) : null}
 
         {step === 1 ? (
+          <>
+            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
+              Choose your username
+            </h1>
+            <p className="text-sm text-slate-500 dark:text-slate-300">
+              This is how other pet lovers will find you.
+            </p>
+
+            <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+              <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                Current username
+              </p>
+              <p className="text-lg font-semibold text-slate-900 dark:text-white">
+                @{initialUsername || normalizedUsername || "PetNoteUser"}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-800">
+              <label className="mb-2 block text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Username
+              </label>
+              <div className="flex items-center gap-3">
+                <span className="text-xl text-slate-400">@</span>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                  placeholder={initialUsername || "HappyPanda42"}
+                  maxLength={20}
+                  className="w-full bg-transparent text-xl text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
+                />
+                {normalizedUsername ? (
+                  usernameChecking ? (
+                    <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-purple-500" />
+                  ) : canContinueUsername ? (
+                    <span className="text-green-500">✓</span>
+                  ) : (
+                    <span className="text-red-500">✕</span>
+                  )
+                ) : null}
+              </div>
+            </div>
+
+            <div className="space-y-1 text-left text-xs text-slate-500 dark:text-slate-400">
+              <p>3-20 characters</p>
+              <p>Only letters, numbers, and underscores</p>
+              <p>Must start with a letter</p>
+            </div>
+
+            {normalizedUsername && !usernameValidation.valid ? (
+              <p className="text-sm text-red-500">{usernameValidation.error}</p>
+            ) : null}
+            {normalizedUsername &&
+            usernameValidation.valid &&
+            usernameTaken &&
+            !usernameChecking ? (
+              <p className="text-sm text-red-500">This username is taken</p>
+            ) : null}
+            {normalizedUsername &&
+            usernameValidation.valid &&
+            !usernameTaken &&
+            !usernameChecking ? (
+              <p className="text-sm text-green-500">Username available</p>
+            ) : null}
+
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={handleNext}
+                className="text-xs font-semibold text-slate-500 transition hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+              >
+                Skip
+              </button>
+              <button
+                type="button"
+                onClick={handleContinueUsername}
+                disabled={!canContinueUsername}
+                className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-5 py-2 text-xs font-semibold text-white transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {savingUsername ? "Saving..." : "Continue"}
+              </button>
+            </div>
+          </>
+        ) : null}
+
+        {step === 2 ? (
           <>
             <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
               Let&apos;s meet your pet!
@@ -500,7 +707,7 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
           </>
         ) : null}
 
-        {step === 2 ? (
+        {step === 3 ? (
           <>
             <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
               Share Your Pet&apos;s Moments!
@@ -522,7 +729,7 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
           </>
         ) : null}
 
-        {step === 3 ? (
+        {step === 4 ? (
           <>
             <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
               Find your community!

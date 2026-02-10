@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { sendEmailVerification } from "firebase/auth";
 import { useAuth } from "../hooks/useAuth";
 import { uploadMedia } from "../services/cloudinary";
 import { createPost, type MediaItem } from "../services/posts";
@@ -57,6 +58,8 @@ export function Create() {
   const [draft, setDraft] = useState<PostDraft | null>(null);
   const [showDraftBanner, setShowDraftBanner] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
+  const [sendingVerification, setSendingVerification] = useState(false);
+  const isEmailVerified = !!user?.emailVerified;
 
   const remaining = useMemo(() => MAX_CHARS - caption.length, [caption]);
   const counterTone =
@@ -389,6 +392,10 @@ export function Create() {
 
   const handleShare = async () => {
     if (files.length === 0 || !user || loading) return;
+    if (!isEmailVerified) {
+      showToast("Please verify your email before posting", "warning");
+      return;
+    }
     if (!selectedPetId) {
       showToast("Please select a pet", "warning");
       return;
@@ -461,6 +468,23 @@ export function Create() {
     } finally {
       setLoading(false);
       setUploadingIndex(null);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (!user || sendingVerification) return;
+    setSendingVerification(true);
+    try {
+      await sendEmailVerification(user);
+      showToast("Verification email sent!", "success");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to send verification email.";
+      showToast(message, "error");
+    } finally {
+      setSendingVerification(false);
     }
   };
 
@@ -595,7 +619,8 @@ export function Create() {
               files.length === 0 ||
               converting ||
               isBanned ||
-              !selectedPetId
+              !selectedPetId ||
+              !isEmailVerified
             }
             className="flex items-center gap-2 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-1.5 text-sm font-semibold text-white shadow-md transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-slate-700 dark:disabled:text-slate-500"
           >
@@ -638,7 +663,24 @@ export function Create() {
             </div>
           </div>
         ) : null}
-        {pets.length === 0 ? (
+        {user && !isEmailVerified ? (
+          <section className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center dark:border-amber-500/30 dark:bg-amber-500/10">
+            <p className="text-base font-semibold text-amber-800 dark:text-amber-200">
+              Please verify your email before posting
+            </p>
+            <p className="text-sm text-amber-700/90 dark:text-amber-300/90">
+              Check your inbox for a verification link from PetNote.
+            </p>
+            <button
+              type="button"
+              onClick={handleResendVerification}
+              disabled={sendingVerification}
+              className="mx-auto rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {sendingVerification ? "Sending..." : "Resend Verification Email"}
+            </button>
+          </section>
+        ) : pets.length === 0 ? (
           <section className="space-y-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center dark:border-slate-700 dark:bg-slate-800">
             <h2 className="text-base font-semibold text-slate-900 dark:text-white">
               You need to add a pet before posting
