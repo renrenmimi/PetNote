@@ -12,6 +12,7 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { removeUndefined } from "../utils/removeUndefined";
 
 export type Checkin = {
   id: string;
@@ -63,10 +64,13 @@ export async function checkIn(
       : 0;
     const nextTotal = currentTotal + 1;
 
-    transaction.set(checkinRef, {
-      ...data,
-      createdAt: serverTimestamp(),
-    });
+    transaction.set(
+      checkinRef,
+      removeUndefined({
+        ...data,
+        createdAt: serverTimestamp(),
+      })
+    );
 
     transaction.set(
       locationRef,

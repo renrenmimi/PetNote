@@ -12,6 +12,7 @@ import {
   type QueryConstraint,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { removeUndefined } from "../utils/removeUndefined";
 
 export type FeedbackType = "bug" | "feature" | "complaint" | "other";
 export type FeedbackStatus = "new" | "read" | "resolved";
@@ -37,11 +38,11 @@ export async function submitFeedback(data: {
   message: string;
 }): Promise<void> {
   const ref = collection(db, "feedback");
-  await addDoc(ref, {
+  await addDoc(ref, removeUndefined({
     ...data,
     status: "new",
     createdAt: serverTimestamp(),
-  });
+  }));
 }
 
 export async function getAllFeedback(

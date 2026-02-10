@@ -24,6 +24,7 @@ import { getUserProfile } from "./users";
 import { getUserStats } from "./posts";
 import { createNotification } from "./notifications";
 import { getOrCreateLocation } from "./locations";
+import { removeUndefined } from "../utils/removeUndefined";
 
 export type MeetupStatus = "upcoming" | "ongoing" | "completed" | "cancelled";
 
@@ -100,7 +101,7 @@ export async function createMeetup(data: MeetupData): Promise<string> {
     category: "community_park",
     source: "meetup",
   });
-  const payload = {
+  const payload = removeUndefined({
     ...data,
     locationId,
     status: data.status ?? "upcoming",
@@ -109,7 +110,7 @@ export async function createMeetup(data: MeetupData): Promise<string> {
     isRatingOpen: data.isRatingOpen ?? false,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-  };
+  });
   const result = await addDoc(meetupsRef, payload);
   return result.id;
 }
@@ -119,7 +120,10 @@ export async function updateMeetup(
   data: Partial<MeetupData>
 ): Promise<void> {
   const meetupRef = doc(db, "meetups", meetupId);
-  await updateDoc(meetupRef, { ...data, updatedAt: serverTimestamp() });
+  await updateDoc(
+    meetupRef,
+    removeUndefined({ ...data, updatedAt: serverTimestamp() })
+  );
 }
 
 export async function checkAndUpdateMeetupStatus(

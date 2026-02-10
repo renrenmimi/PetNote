@@ -28,77 +28,45 @@ const markAsSeen = (postId: string) => {
   }
 };
 
-const pawVariants = ["paw-shape-4"];
-const getPawClipId = (index: number) => pawVariants[index % pawVariants.length];
-
 const PawAvatar = ({
   src,
+  name,
   seen,
-  variant,
 }: {
   src?: string | null;
+  name: string;
   seen: boolean;
-  variant: number;
 }) => {
-  const clipId = getPawClipId(variant);
-
   return (
-    <div className="relative h-16 w-16">
-      {!seen ? (
-        <div
-          className="absolute inset-0"
-          style={{
-            clipPath: `url(#${clipId})`,
-            background: "linear-gradient(135deg, #8B5CF6, #EC4899, #F59E0B)",
-          }}
-        />
-      ) : null}
-      {!seen ? (
-        <div
-          className="absolute"
-          style={{
-            inset: 3,
-            clipPath: `url(#${clipId})`,
-            background: "white",
-          }}
-        />
-      ) : null}
-      {src ? (
-        <img
-          src={src}
-          alt=""
-          className={`absolute object-cover ${seen ? "opacity-60" : ""}`}
-          style={{
-            top: seen ? 0 : 5,
-            left: seen ? 0 : 5,
-            right: seen ? 0 : 5,
-            bottom: seen ? 0 : 5,
-            width: seen ? 64 : 54,
-            height: seen ? 64 : 54,
-            clipPath: `url(#${clipId})`,
-          }}
-        />
-      ) : (
-        <div
-          className="absolute flex items-center justify-center text-white"
-          style={{
-            top: seen ? 0 : 5,
-            left: seen ? 0 : 5,
-            right: seen ? 0 : 5,
-            bottom: seen ? 0 : 5,
-            clipPath: `url(#${clipId})`,
-            background: "linear-gradient(135deg, #8B5CF6, #EC4899)",
-          }}
-        >
-          🐾
-        </div>
-      )}
-      {seen ? (
-        <div
-          className="absolute inset-0 border border-slate-200 dark:border-slate-700"
-          style={{ clipPath: `url(#${clipId})` }}
-        />
-      ) : null}
+    <div
+      className="relative h-[62px] w-[62px] active:scale-95 transition-transform"
+      style={{ clipPath: "url(#chubbyHeartClip)" }}
+    >
+      <div
+        className={`absolute inset-0 ${
+          seen
+            ? "bg-gray-200 dark:bg-gray-700"
+            : "bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400"
+        }`}
+      />
+      <div className="absolute inset-[2.5px] bg-white dark:bg-gray-900" />
+      <div className="absolute inset-[4px]">
+        {src ? (
+          <img
+            src={src}
+            alt={name}
+            className={`h-full w-full object-cover ${
+              seen ? "opacity-70" : ""
+            }`}
+          />
+        ) : (
+          <div
+            className={`h-full w-full bg-gradient-to-br from-purple-500 to-pink-500 ${
+              seen ? "opacity-70" : ""
+            }`}
+          />
+        )}
+      </div>
     </div>
   );
 };
@@ -150,27 +118,19 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
       <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
         ⭐ Popular Pets
       </h2>
-
       <svg width="0" height="0" className="absolute">
         <defs>
-          <clipPath id="paw-shape-4" clipPathUnits="objectBoundingBox">
-            <ellipse cx="0.5" cy="0.67" rx="0.39" ry="0.33" />
-            <ellipse cx="0.16" cy="0.31" rx="0.14" ry="0.18" />
-            <ellipse cx="0.38" cy="0.21" rx="0.13" ry="0.2" />
-            <ellipse cx="0.62" cy="0.21" rx="0.13" ry="0.2" />
-            <ellipse cx="0.84" cy="0.31" rx="0.14" ry="0.18" />
-            <ellipse cx="0.25" cy="0.44" rx="0.16" ry="0.12" />
-            <ellipse cx="0.5" cy="0.39" rx="0.22" ry="0.12" />
-            <ellipse cx="0.75" cy="0.44" rx="0.16" ry="0.12" />
+          <clipPath id="chubbyHeartClip" clipPathUnits="objectBoundingBox">
+            <path d="M0.5,0.93 C0.1,0.7 0,0.45 0,0.3 C0,0.12 0.15,0 0.35,0 C0.48,0 0.5,0.15 0.5,0.25 C0.5,0.15 0.52,0 0.65,0 C0.85,0 1,0.12 1,0.3 C1,0.45 0.9,0.7 0.5,0.93 Z" />
           </clipPath>
         </defs>
       </svg>
 
       {loading ? (
-        <div className="mt-4 flex gap-4 overflow-x-auto pb-1">
+        <div className="mt-4 flex gap-3 overflow-x-auto overflow-y-visible pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {Array.from({ length: 5 }).map((_, index) => (
-            <div key={index} className="flex flex-col items-center gap-2">
-              <div className="h-16 w-16 animate-pulse rounded-full bg-slate-200 dark:bg-slate-700" />
+            <div key={index} className="flex w-[72px] flex-col items-center gap-1.5">
+              <div className="h-16 w-16 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-700" />
               <div className="h-3 w-12 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
             </div>
           ))}
@@ -180,8 +140,8 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
           Share your pet to get featured! 🐾
         </p>
       ) : (
-        <div className="mt-4 flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {sortedPosts.map((post, index) => {
+        <div className="mt-4 flex gap-3 overflow-x-auto overflow-y-visible pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {sortedPosts.map((post) => {
             const isSeen = seenPosts.includes(post.id);
             const mediaUrl =
               post.media && post.media.length > 0
@@ -189,22 +149,35 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
                 : post.mediaUrl;
 
             return (
-            <button
-              key={post.id}
-              type="button"
-              onClick={() => {
-                markAsSeen(post.id);
-                setSeenPosts((prev) => (prev.includes(post.id) ? prev : [...prev, post.id]));
-                navigate(`/post/${post.id}`);
-              }}
-              className="flex w-[72px] flex-col items-center gap-2 transition-transform duration-150 active:scale-95"
-            >
-              <PawAvatar src={mediaUrl} seen={isSeen} variant={index} />
-              <span className="text-xs text-slate-600 dark:text-slate-300">
-                {truncate(post.authorName || "Pet")}
-              </span>
-            </button>
-          );
+              <button
+                key={post.id}
+                type="button"
+                onClick={() => {
+                  markAsSeen(post.id);
+                  setSeenPosts((prev) =>
+                    prev.includes(post.id) ? prev : [...prev, post.id]
+                  );
+                  navigate(`/post/${post.id}`);
+                }}
+                className="flex flex-shrink-0 flex-col items-center"
+                style={{ width: 72 }}
+              >
+                <PawAvatar
+                  src={mediaUrl}
+                  name={post.authorName || "Pet"}
+                  seen={isSeen}
+                />
+                <span
+                  className={`mt-1.5 w-full truncate text-center text-[11px] font-medium ${
+                    isSeen
+                      ? "text-gray-400"
+                      : "text-gray-700 dark:text-gray-300"
+                  }`}
+                >
+                  {truncate(post.authorName || "Pet")}
+                </span>
+              </button>
+            );
           })}
         </div>
       )}

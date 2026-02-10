@@ -39,6 +39,7 @@ export function useAuth(): UseAuthResult {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
+      setProfileLoading(!!nextUser);
       setUser(nextUser);
       setLoading(false);
     });

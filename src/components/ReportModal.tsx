@@ -54,14 +54,17 @@ export function ReportModal({
     if (!reason) return;
     setSubmitting(true);
     try {
+      const trimmedDetail = customReason.trim();
       await reportContent({
         reporterId: user.uid,
         reporterName: user.displayName || "PetNote User",
-        reporterAvatar: user.photoURL || undefined,
+        ...(user.photoURL ? { reporterAvatar: user.photoURL } : {}),
         targetType,
         targetId,
         reason,
-        description: selected === "Other" ? customReason.trim() : undefined,
+        ...(selected === "Other" && trimmedDetail
+          ? { description: trimmedDetail }
+          : {}),
       });
       showToast("Thank you for reporting. We'll review this shortly.", "success");
       onClose();

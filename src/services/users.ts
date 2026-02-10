@@ -13,6 +13,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
 import { generateRandomUsername } from "../utils/randomName";
+import { removeUndefined } from "../utils/removeUndefined";
 
 export type UserProfile = {
   id: string;
@@ -61,7 +62,7 @@ export async function updateUserProfile(
     ...data,
     ...(data.displayName ? { displayNameLower: data.displayName.toLowerCase() } : {}),
   };
-  await setDoc(userRef, payload, { merge: true });
+  await setDoc(userRef, removeUndefined(payload), { merge: true });
 
   if (auth.currentUser && auth.currentUser.uid === userId) {
     await updateProfile(auth.currentUser, {
@@ -101,11 +102,11 @@ export async function createUserProfile(
     followingPetsCount: data.followingPetsCount ?? 0,
   };
   try {
-    await setDoc(userRef, payload, { merge: true });
+    await setDoc(userRef, removeUndefined(payload), { merge: true });
   } catch (error) {
     console.error("Failed to create user profile:", error);
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    await setDoc(userRef, payload, { merge: true });
+    await setDoc(userRef, removeUndefined(payload), { merge: true });
   }
 }
 
