@@ -25,6 +25,7 @@ import { createNotification } from "./notifications";
 import { getFollowingPets } from "./follow";
 import { getUserProfile } from "./users";
 import { getPetFamily } from "./pets";
+import { removeUndefined } from "../utils/removeUndefined";
 
 export type MediaItem = {
   url: string;
@@ -105,7 +106,7 @@ export async function createPost(data: CreatePostInput): Promise<string> {
   const postsRef = collection(db, "posts");
   const tags = normalizeTags(data.tags);
   const firstMedia = data.media[0];
-  const payload = {
+  const payload = removeUndefined({
     ...data,
     tags,
     mediaUrl: firstMedia?.url,
@@ -113,7 +114,7 @@ export async function createPost(data: CreatePostInput): Promise<string> {
     createdAt: serverTimestamp(),
     likeCount: 0,
     commentCount: 0,
-  };
+  });
   const result = await addDoc(postsRef, payload);
   await Promise.all(tags.map((tag) => incrementTag(tag)));
   return result.id;
@@ -379,7 +380,7 @@ export async function addComment(
   const postData = postSnap.data() as PostData;
   const result = await runTransaction(db, async (transaction) => {
     const newCommentRef = doc(commentsRef);
-    transaction.set(newCommentRef, payload);
+    transaction.set(newCommentRef, removeUndefined(payload));
     transaction.update(postRef, {
       commentCount: increment(1),
     });

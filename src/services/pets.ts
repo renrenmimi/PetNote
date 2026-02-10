@@ -16,6 +16,7 @@ import { db } from "./firebase";
 import type { PostData, Post } from "./posts";
 import type { PetGender, PetSpecies } from "../utils/petHelpers";
 import { getUserProfile } from "./users";
+import { removeUndefined } from "../utils/removeUndefined";
 
 export type PetFamilyRelationship =
   | "mom"
@@ -157,13 +158,16 @@ export async function createPet(
       throw new Error("Maximum 5 pets allowed");
     }
 
-    const result = await addDoc(petsRef, {
-      ...data,
-      ownerId,
-      primaryOwnerId: ownerId,
-      followerCount: 0,
-      createdAt: serverTimestamp(),
-    });
+    const result = await addDoc(
+      petsRef,
+      removeUndefined({
+        ...data,
+        ownerId,
+        primaryOwnerId: ownerId,
+        followerCount: 0,
+        createdAt: serverTimestamp(),
+      })
+    );
 
     const creatorProfile = await getUserProfile(ownerId);
     const relationshipData = sanitizeRelationship(relationship, customRelationship);
@@ -194,7 +198,7 @@ export async function updatePet(
   data: Partial<Omit<Pet, "id" | "ownerId">>
 ): Promise<void> {
   const petRef = doc(db, "pets", petId);
-  await setDoc(petRef, data, { merge: true });
+  await setDoc(petRef, removeUndefined(data), { merge: true });
 }
 
 export async function deletePet(petId: string): Promise<void> {

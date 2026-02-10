@@ -13,6 +13,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { getSettings } from "./settings";
+import { removeUndefined } from "../utils/removeUndefined";
 
 export type NotificationType =
   | "like"
@@ -62,11 +63,11 @@ export async function createNotification(
     return "";
   }
   const notificationsRef = collection(db, "notifications");
-  const payload = {
+  const payload = removeUndefined({
     ...data,
     read: data.read ?? false,
     createdAt: data.createdAt ?? serverTimestamp(),
-  };
+  });
   const result = await addDoc(notificationsRef, payload);
   return result.id;
 }

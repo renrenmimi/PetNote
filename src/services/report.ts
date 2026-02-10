@@ -8,6 +8,7 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { removeUndefined } from "../utils/removeUndefined";
 
 export type ReportTargetType = "post" | "comment" | "user";
 
@@ -30,11 +31,13 @@ export type ReportItem = ReportInput & {
 
 export async function reportContent(data: ReportInput): Promise<void> {
   const reportsRef = collection(db, "reports");
-  await addDoc(reportsRef, {
+  const payload = removeUndefined({
     ...data,
+    description: data.description?.trim(),
     status: "pending",
     createdAt: serverTimestamp(),
   });
+  await addDoc(reportsRef, payload);
 }
 
 export async function getReportsByUser(userId: string) {

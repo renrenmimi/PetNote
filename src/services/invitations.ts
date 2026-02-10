@@ -14,6 +14,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import type { PetFamilyRelationship } from "./pets";
+import { removeUndefined } from "../utils/removeUndefined";
 
 export type Invitation = {
   code: string;
@@ -196,16 +197,19 @@ export async function useInvitation(
     preview.invitationRefPath || `pets/${preview.petId}/invitations/${normalized}`
   );
 
-  await setDoc(familyRef, {
-    userId,
-    userName,
-    userAvatar:
-      userAvatar || `https://api.dicebear.com/7.x/thumbs/svg?seed=${userId}`,
-    relationship,
-    role: "member",
-    ...withCustomRelationship(relationship, customRelationship),
-    joinedAt: serverTimestamp(),
-  });
+  await setDoc(
+    familyRef,
+    removeUndefined({
+      userId,
+      userName,
+      userAvatar:
+        userAvatar || `https://api.dicebear.com/7.x/thumbs/svg?seed=${userId}`,
+      relationship,
+      role: "member",
+      ...withCustomRelationship(relationship, customRelationship),
+      joinedAt: serverTimestamp(),
+    })
+  );
 
   await updateDoc(invitationRef, {
     used: true,

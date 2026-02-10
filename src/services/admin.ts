@@ -91,7 +91,8 @@ export async function resolveReport(
     }
   }
 
-  const status = action === "dismiss" ? "resolved" : "reviewed";
+  const status =
+    action === "dismiss" || action === "delete" ? "resolved" : "reviewed";
   await updateDoc(reportRef, { status, updatedAt: serverTimestamp() });
 }
 

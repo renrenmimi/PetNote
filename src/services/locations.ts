@@ -18,6 +18,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { calculateDistance } from "./location";
+import { removeUndefined } from "../utils/removeUndefined";
 
 export type PlaceCategory =
   | "dog_park"
@@ -119,32 +120,35 @@ export async function getOrCreateLocation(data: {
     await runTransaction(db, async (transaction) => {
       const fresh = await transaction.get(locationRef);
       if (!fresh.exists()) {
-        transaction.set(locationRef, {
-          ...data,
-          category: data.category ?? "community_park",
-          description: data.description ?? "",
-          features: data.features ?? [],
-          photos: data.photos ?? [],
-          addedBy: data.addedBy ?? "",
-          addedByName: data.addedByName ?? "",
-          averageRating: 0,
-          totalRatings: 0,
-          totalPhotos: data.photos?.length ?? 0,
-          totalCheckins: 0,
-          verifiedByCheckins: false,
-          tags: [],
-          source: data.source ?? "meetup",
-          verified: false,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
+        transaction.set(
+          locationRef,
+          removeUndefined({
+            ...data,
+            category: data.category ?? "community_park",
+            description: data.description ?? "",
+            features: data.features ?? [],
+            photos: data.photos ?? [],
+            addedBy: data.addedBy ?? "",
+            addedByName: data.addedByName ?? "",
+            averageRating: 0,
+            totalRatings: 0,
+            totalPhotos: data.photos?.length ?? 0,
+            totalCheckins: 0,
+            verifiedByCheckins: false,
+            tags: [],
+            source: data.source ?? "meetup",
+            verified: false,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
       }
     });
   } else {
     await runTransaction(db, async (transaction) => {
       transaction.set(
         locationRef,
-        {
+        removeUndefined({
           name: data.name,
           address: data.address,
           city: data.city,
@@ -155,7 +159,7 @@ export async function getOrCreateLocation(data: {
           photos: data.photos,
           totalPhotos: data.photos?.length,
           updatedAt: serverTimestamp(),
-        },
+        }),
         { merge: true }
       );
     });
@@ -186,13 +190,10 @@ export async function submitReview(
         reviewData.rating) /
       totalRatings;
 
-    const payload: Record<string, unknown> = {
+    const payload: Record<string, unknown> = removeUndefined({
       ...reviewData,
       createdAt: serverTimestamp(),
-    };
-    if (!reviewData.meetupId) {
-      delete payload.meetupId;
-    }
+    });
     transaction.set(reviewRef, payload);
     const updatePayload: Record<string, unknown> = {
       averageRating: Number(averageRating.toFixed(2)),

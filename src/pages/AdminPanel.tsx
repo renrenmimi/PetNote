@@ -1,457 +1,797 @@
-import { useEffect, useState } from "react";
+import {
+  collectionGroup,
+  doc,
+  documentId,
+  getDoc,
+  getDocs,
+  limit,
+  query,
+  where,
+} from "firebase/firestore";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import Avatar from "../components/Avatar";
 import {
   getPendingReports,
   getReviewedReports,
   resolveReport,
-  type ResolveAction,
 } from "../services/admin";
+import {
+  deleteFeedback,
+  getAllFeedback,
+  updateFeedbackStatus,
+  type Feedback,
+} from "../services/feedback";
+import { db } from "../services/firebase";
 import { type ReportItem } from "../services/report";
-import { deleteFeedback, getAllFeedback, updateFeedbackStatus, type Feedback } from "../services/feedback";
-import { getPostById } from "../services/posts";
-import { getUserProfile } from "../services/users";
 import { timeAgo } from "../utils/timeAgo";
-import Avatar from "../components/Avatar";
 
-type ReportPreview = {
-  imageUrl?: string;
+type AdminTab = "reports" | "feedback";
+type ConfirmDeleteState =
+  | { kind: "report"; report: ReportItem }
+  | { kind: "feedback"; feedback: Feedback }
+  | null;
+
+type PostPreviewData = {
+  id: string;
+  authorName?: string;
+  petName?: string;
+  petAvatarUrl?: string;
   text?: string;
-  userName?: string;
-  userAvatar?: string;
+  mediaUrl?: string;
+  media?: Array<{ url?: string; thumbUrl?: string }>;
 };
+
+type UserPreviewData = {
+  id: string;
+  displayName?: string;
+  avatarUrl?: string;
+};
+
+type CommentPreviewData = {
+  id: string;
+  text?: string;
+};
+
+type ReportContentState =
+  | { kind: "post"; data: PostPreviewData }
+  | { kind: "user"; data: UserPreviewData }
+  | { kind: "comment"; data: CommentPreviewData }
+  | { kind: "deleted" }
+  | { kind: "unavailable" };
+
+function toMillis(value: unknown): number {
+  if (!value) return 0;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "object" && value !== null) {
+    const maybeTimestamp = value as {
+      toDate?: () => Date;
+      seconds?: number;
+    };
+    if (typeof maybeTimestamp.toDate === "function") {
+      return maybeTimestamp.toDate().getTime();
+    }
+    if (typeof maybeTimestamp.seconds === "number") {
+      return maybeTimestamp.seconds * 1000;
+    }
+  }
+  return 0;
+}
+
+function formatReportType(type: ReportItem["targetType"]): string {
+  if (type === "post") return "Post reported";
+  if (type === "comment") return "Comment reported";
+  return "User reported";
+}
+
+function formatFeedbackType(type: Feedback["type"]): string {
+  if (type === "bug") return "Bug Report";
+  if (type === "feature") return "Feature Request";
+  if (type === "complaint") return "Complaint";
+  return "Other";
+}
+
+function formatReportStatus(status: ReportItem["status"]): string {
+  if (status === "pending") return "NEW";
+  if (status === "reviewed") return "Reviewed";
+  return "Resolved";
+}
+
+function formatFeedbackStatus(status: Feedback["status"]): string {
+  if (status === "new") return "NEW";
+  if (status === "read") return "Reviewed";
+  return "Resolved";
+}
+
+function getPostImageUrl(post: PostPreviewData): string | undefined {
+  if (Array.isArray(post.media) && post.media.length > 0) {
+    return post.media[0].thumbUrl || post.media[0].url;
+  }
+  return post.mediaUrl;
+}
+
+function clipText(text?: string, maxLength = 200): string {
+  if (!text) return "";
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength)}...`;
+}
 
 export function AdminPanel() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"pending" | "reviewed" | "feedback">("pending");
-  const [pending, setPending] = useState<ReportItem[]>([]);
-  const [reviewed, setReviewed] = useState<ReportItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [feedback, setFeedback] = useState<Feedback[]>([]);
+  const [activeTab, setActiveTab] = useState<AdminTab>("reports");
+  const [reportsLoading, setReportsLoading] = useState(true);
   const [feedbackLoading, setFeedbackLoading] = useState(true);
-  const [expandedFeedbackId, setExpandedFeedbackId] = useState<string | null>(null);
-  const [feedbackActionLoading, setFeedbackActionLoading] = useState<string | null>(null);
-  const [previews, setPreviews] = useState<Record<string, ReportPreview>>({});
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [reports, setReports] = useState<ReportItem[]>([]);
+  const [feedback, setFeedback] = useState<Feedback[]>([]);
+  const [reportActionLoadingId, setReportActionLoadingId] = useState<
+    string | null
+  >(null);
+  const [feedbackActionLoadingId, setFeedbackActionLoadingId] = useState<
+    string | null
+  >(null);
+  const [expandedFeedbackId, setExpandedFeedbackId] = useState<string | null>(
+    null
+  );
+  const [expandedReportId, setExpandedReportId] = useState<string | null>(null);
+  const [reportContentMap, setReportContentMap] = useState<
+    Record<string, ReportContentState>
+  >({});
+  const [reportContentLoading, setReportContentLoading] = useState<
+    Record<string, boolean>
+  >({});
+  const [confirmDelete, setConfirmDelete] = useState<ConfirmDeleteState>(null);
 
   useEffect(() => {
-    let ignore = false;
-    const load = async () => {
-      setLoading(true);
-      const [pendingReports, reviewedReports] = await Promise.all([
-        getPendingReports(),
-        getReviewedReports(),
-      ]);
-      if (!ignore) {
-        setPending(pendingReports);
-        setReviewed(reviewedReports);
-        setLoading(false);
+    let active = true;
+    const loadReports = async () => {
+      setReportsLoading(true);
+      try {
+        const [pending, reviewed] = await Promise.all([
+          getPendingReports(),
+          getReviewedReports(),
+        ]);
+        if (!active) return;
+        const merged = [...pending, ...reviewed].sort(
+          (a, b) => toMillis(b.createdAt) - toMillis(a.createdAt)
+        );
+        setReports(merged);
+      } finally {
+        if (active) setReportsLoading(false);
       }
     };
-    void load();
+    void loadReports();
     return () => {
-      ignore = true;
+      active = false;
     };
   }, []);
 
   useEffect(() => {
-    let ignore = false;
+    let active = true;
     const loadFeedback = async () => {
       setFeedbackLoading(true);
-      const list = await getAllFeedback();
-      if (!ignore) {
-        setFeedback(list);
-        setFeedbackLoading(false);
+      try {
+        const entries = await getAllFeedback();
+        if (active) {
+          setFeedback(entries);
+        }
+      } finally {
+        if (active) setFeedbackLoading(false);
       }
     };
     void loadFeedback();
     return () => {
-      ignore = true;
+      active = false;
     };
   }, []);
 
-  useEffect(() => {
-    let ignore = false;
-    if (activeTab === "feedback") return () => {
-      ignore = true;
-    };
-    const list = activeTab === "pending" ? pending : reviewed;
-
-    const loadPreviews = async () => {
-      const next: Record<string, ReportPreview> = {};
-      for (const report of list) {
-        if (report.targetType === "post") {
-          const post = await getPostById(report.targetId);
-          next[report.id] = {
-            imageUrl:
-              post?.media && post.media.length > 0
-                ? post.media[0].thumbUrl || post.media[0].url
-                : post?.mediaUrl,
-            text: post?.text,
-          };
-        }
-        if (report.targetType === "user") {
-          const profile = await getUserProfile(report.targetId);
-          next[report.id] = {
-            userName: profile?.displayName || "User",
-            userAvatar: profile?.avatarUrl,
-          };
-        }
-      }
-      if (!ignore) {
-        setPreviews((prev) => ({ ...prev, ...next }));
-      }
-    };
-
-    void loadPreviews();
-    return () => {
-      ignore = true;
-    };
-  }, [activeTab, pending, reviewed]);
-
-  const activeReports = activeTab === "pending" ? pending : reviewed;
-  const pendingCount = pending.length;
-  const newFeedbackCount = feedback.filter((item) => item.status === "new").length;
-  const emptyReportsMessage = activeTab === "pending" ? "No pending reports 👍" : "No reviewed reports";
-  const tabIndex = activeTab === "pending" ? 0 : activeTab === "reviewed" ? 1 : 2;
-  const feedbackStatusStyles: Record<string, string> = {
-    new: "bg-blue-500 animate-pulse",
-    read: "bg-amber-400",
-    resolved: "bg-slate-300 dark:bg-slate-600",
-  };
-  const feedbackTypeIcons: Record<string, string> = {
-    bug: "🐛",
-    feature: "💡",
-    complaint: "😕",
-    other: "💬",
-  };
-
-  const handleAction = async (report: ReportItem, action: ResolveAction) => {
-    setActionLoading(report.id + action);
-    await resolveReport(report.id, action, report);
-    const nextStatus = action === "dismiss" ? "resolved" : "reviewed";
-    setPending((prev) => prev.filter((item) => item.id !== report.id));
-    setReviewed((prev) => [
-      { ...report, status: nextStatus },
-      ...prev,
-    ]);
-    setActionLoading(null);
-  };
-
-  const getStatusColor = (status?: string) =>
-    status === "pending" ? "bg-orange-400" : "bg-emerald-400";
-
-  const handleFeedbackStatus = async (item: Feedback, status: "read" | "resolved") => {
-    setFeedbackActionLoading(item.id + status);
-    await updateFeedbackStatus(item.id, status);
-    setFeedback((prev) =>
-      prev.map((entry) =>
-        entry.id === item.id ? { ...entry, status } : entry
-      )
-    );
-    setFeedbackActionLoading(null);
-  };
-
-  const handleFeedbackDelete = async (item: Feedback) => {
-    setFeedbackActionLoading(item.id + "delete");
-    await deleteFeedback(item.id);
-    setFeedback((prev) => prev.filter((entry) => entry.id !== item.id));
-    setFeedbackActionLoading(null);
-  };
-
-  const feedbackSection = feedbackLoading ? (
-    <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-500">
-      Loading feedback...
-    </div>
-  ) : feedback.length === 0 ? (
-    <div className="rounded-2xl bg-white p-8 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-300">
-      No new feedback
-    </div>
-  ) : (
-    <div className="space-y-4">
-      {feedback.map((item) => {
-        const statusColor = feedbackStatusStyles[item.status] || "bg-slate-300";
-        const icon = feedbackTypeIcons[item.type] || "💬";
-        const expanded = expandedFeedbackId === item.id;
-        return (
-          <div
-            key={item.id}
-            className="relative overflow-hidden rounded-2xl bg-white p-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700"
-          >
-            <span className={`absolute left-0 top-0 h-full w-1 ${statusColor}`} />
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs text-slate-400 dark:text-slate-500">
-                  {icon} {item.type.toUpperCase()}
-                </p>
-                <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                  {item.subject}
-                </p>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  {item.userName} · {item.userEmail}
-                </p>
-              </div>
-              <span className="text-xs text-slate-400 dark:text-slate-500">
-                {timeAgo(item.createdAt as Date)}
-              </span>
-            </div>
-
-            {expanded ? (
-              <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
-                {item.message}
-              </div>
-            ) : null}
-
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setExpandedFeedbackId(expanded ? null : item.id)}
-                className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700"
-              >
-                {expanded ? "Hide" : "View"}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleFeedbackStatus(item, "read")}
-                disabled={feedbackActionLoading === item.id + "read"}
-                className="rounded-full bg-amber-400 px-3 py-1.5 text-xs font-semibold text-white transition-all duration-200 hover:brightness-110 disabled:opacity-60"
-              >
-                {feedbackActionLoading === item.id + "read" ? "Saving..." : "Mark as Read"}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleFeedbackStatus(item, "resolved")}
-                disabled={feedbackActionLoading === item.id + "resolved"}
-                className="rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition-all duration-200 hover:brightness-110 disabled:opacity-60"
-              >
-                {feedbackActionLoading === item.id + "resolved" ? "Saving..." : "Mark as Resolved"}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleFeedbackDelete(item)}
-                disabled={feedbackActionLoading === item.id + "delete"}
-                className="rounded-full bg-red-500 px-3 py-1.5 text-xs font-semibold text-white transition-all duration-200 hover:brightness-110 disabled:opacity-60"
-              >
-                {feedbackActionLoading === item.id + "delete" ? "Deleting..." : "Delete"}
-              </button>
-            </div>
-          </div>
-        );
-      })}
-    </div>
+  const pendingCount = useMemo(
+    () => reports.filter((item) => item.status === "pending").length,
+    [reports]
+  );
+  const newFeedbackCount = useMemo(
+    () => feedback.filter((item) => item.status === "new").length,
+    [feedback]
   );
 
-  const reportsSection = loading ? (
-    <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-500">
-      Loading reports...
-    </div>
-  ) : activeReports.length === 0 ? (
-    <div className="rounded-2xl bg-white p-8 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-300">
-      {emptyReportsMessage}
-    </div>
-  ) : (
-    <div className="space-y-4">
-      {activeReports.map((report) => {
-        const preview = previews[report.id];
-        const isPending = report.status === "pending";
-        const actionKey = report.id;
-        return (
-          <div
-            key={report.id}
-            className="relative overflow-hidden rounded-2xl bg-white p-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700"
-          >
-            <span
-              className={`absolute left-0 top-0 h-full w-1 ${getStatusColor(
-                report.status
-              )}`}
+  const loadReportedContent = async (report: ReportItem) => {
+    if (reportContentMap[report.id] || reportContentLoading[report.id]) {
+      return;
+    }
+
+    setReportContentLoading((prev) => ({ ...prev, [report.id]: true }));
+    try {
+      if (report.targetType === "post") {
+        const postDoc = await getDoc(doc(db, "posts", report.targetId));
+        if (!postDoc.exists()) {
+          setReportContentMap((prev) => ({ ...prev, [report.id]: { kind: "deleted" } }));
+          return;
+        }
+        const postData = postDoc.data() as Omit<PostPreviewData, "id">;
+        setReportContentMap((prev) => ({
+          ...prev,
+          [report.id]: { kind: "post", data: { id: postDoc.id, ...postData } },
+        }));
+        return;
+      }
+
+      if (report.targetType === "user") {
+        const userDoc = await getDoc(doc(db, "users", report.targetId));
+        if (!userDoc.exists()) {
+          setReportContentMap((prev) => ({ ...prev, [report.id]: { kind: "deleted" } }));
+          return;
+        }
+        const userData = userDoc.data() as Omit<UserPreviewData, "id">;
+        setReportContentMap((prev) => ({
+          ...prev,
+          [report.id]: { kind: "user", data: { id: userDoc.id, ...userData } },
+        }));
+        return;
+      }
+
+      if (report.targetType === "comment") {
+        if (report.postId) {
+          const commentDoc = await getDoc(
+            doc(db, "posts", report.postId, "comments", report.targetId)
+          );
+          if (commentDoc.exists()) {
+            const commentData = commentDoc.data() as Omit<CommentPreviewData, "id">;
+            setReportContentMap((prev) => ({
+              ...prev,
+              [report.id]: {
+                kind: "comment",
+                data: { id: commentDoc.id, ...commentData },
+              },
+            }));
+            return;
+          }
+        }
+
+        const commentQuery = query(
+          collectionGroup(db, "comments"),
+          where(documentId(), "==", report.targetId),
+          limit(1)
+        );
+        const commentSnapshot = await getDocs(commentQuery);
+        if (commentSnapshot.empty) {
+          setReportContentMap((prev) => ({ ...prev, [report.id]: { kind: "deleted" } }));
+          return;
+        }
+
+        const commentDoc = commentSnapshot.docs[0];
+        const commentData = commentDoc.data() as Omit<CommentPreviewData, "id">;
+        setReportContentMap((prev) => ({
+          ...prev,
+          [report.id]: {
+            kind: "comment",
+            data: { id: commentDoc.id, ...commentData },
+          },
+        }));
+        return;
+      }
+    } catch (error) {
+      console.warn("Failed to load reported content:", error);
+      setReportContentMap((prev) => ({ ...prev, [report.id]: { kind: "unavailable" } }));
+    } finally {
+      setReportContentLoading((prev) => ({ ...prev, [report.id]: false }));
+    }
+  };
+
+  const handleToggleReport = (report: ReportItem) => {
+    const expanded = expandedReportId === report.id;
+    if (expanded) {
+      setExpandedReportId(null);
+      return;
+    }
+    setExpandedReportId(report.id);
+    void loadReportedContent(report);
+  };
+
+  const handleDismissReport = async (report: ReportItem) => {
+    setReportActionLoadingId(`dismiss-${report.id}`);
+    try {
+      await resolveReport(report.id, "dismiss", report);
+      setReports((prev) =>
+        prev.map((item) =>
+          item.id === report.id ? { ...item, status: "resolved" } : item
+        )
+      );
+    } finally {
+      setReportActionLoadingId(null);
+    }
+  };
+
+  const handleDeleteReport = async (report: ReportItem) => {
+    setReportActionLoadingId(`delete-${report.id}`);
+    try {
+      await resolveReport(report.id, "delete", report);
+      setReports((prev) =>
+        prev.map((item) =>
+          item.id === report.id ? { ...item, status: "resolved" } : item
+        )
+      );
+      setReportContentMap((prev) => ({
+        ...prev,
+        [report.id]: { kind: "deleted" },
+      }));
+    } finally {
+      setReportActionLoadingId(null);
+    }
+  };
+
+  const handleResolveFeedback = async (entry: Feedback) => {
+    setFeedbackActionLoadingId(`resolve-${entry.id}`);
+    try {
+      await updateFeedbackStatus(entry.id, "resolved");
+      setFeedback((prev) =>
+        prev.map((item) =>
+          item.id === entry.id ? { ...item, status: "resolved" } : item
+        )
+      );
+    } finally {
+      setFeedbackActionLoadingId(null);
+    }
+  };
+
+  const handleDeleteFeedback = async (entry: Feedback) => {
+    setFeedbackActionLoadingId(`delete-${entry.id}`);
+    try {
+      await deleteFeedback(entry.id);
+      setFeedback((prev) => prev.filter((item) => item.id !== entry.id));
+      if (expandedFeedbackId === entry.id) {
+        setExpandedFeedbackId(null);
+      }
+    } finally {
+      setFeedbackActionLoadingId(null);
+    }
+  };
+
+  const renderReportedContent = (report: ReportItem) => {
+    const loading = !!reportContentLoading[report.id];
+    const content = reportContentMap[report.id];
+
+    if (loading) {
+      return (
+        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-500 dark:border-gray-600 dark:border-t-gray-300" />
+          Loading reported content...
+        </div>
+      );
+    }
+
+    if (!content) {
+      return (
+        <p className="text-xs italic text-gray-500 dark:text-gray-400">
+          No preview available.
+        </p>
+      );
+    }
+
+    if (content.kind === "deleted") {
+      return (
+        <p className="text-xs italic text-gray-500 dark:text-gray-400">
+          This content has been deleted.
+        </p>
+      );
+    }
+
+    if (content.kind === "unavailable") {
+      return (
+        <p className="text-xs italic text-gray-500 dark:text-gray-400">
+          Unable to load this content.
+        </p>
+      );
+    }
+
+    if (content.kind === "post") {
+      const imageUrl = getPostImageUrl(content.data);
+      const petName = content.data.petName || "Pet";
+      const authorName = content.data.authorName || "Unknown";
+      return (
+        <div className="space-y-2">
+          <div className="flex items-start gap-3">
+            <Avatar
+              src={content.data.petAvatarUrl}
+              alt={petName}
+              userId={content.data.id}
+              size={28}
+              className="h-7 w-7"
             />
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {report.targetType.toUpperCase()}
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-gray-900 dark:text-white">
+                {petName}
+                <span className="ml-1 text-xs font-normal text-gray-500 dark:text-gray-400">
+                  by {authorName}
+                </span>
+              </p>
+              {content.data.text ? (
+                <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">
+                  {clipText(content.data.text)}
                 </p>
-                <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                  {report.reason}
+              ) : null}
+            </div>
+            {imageUrl ? (
+              <img
+                src={imageUrl}
+                alt={petName}
+                className="h-20 w-20 rounded-lg object-cover"
+              />
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              navigate(`/post/${content.data.id}`);
+            }}
+            className="text-xs font-medium text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300"
+          >
+            View Full Post {"->"}
+          </button>
+        </div>
+      );
+    }
+
+    if (content.kind === "user") {
+      const name = content.data.displayName || "User";
+      return (
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <Avatar
+              src={content.data.avatarUrl}
+              alt={name}
+              userId={content.data.id}
+              size={32}
+              className="h-8 w-8"
+            />
+            <p className="text-sm text-gray-900 dark:text-white">{name}</p>
+          </div>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              navigate(`/profile/${content.data.id}`);
+            }}
+            className="text-xs font-medium text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300"
+          >
+            View Profile {"->"}
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-2">
+        <p className="text-xs text-gray-600 dark:text-gray-300">
+          {content.data.text
+            ? clipText(content.data.text)
+            : "Comment content not available."}
+        </p>
+        {report.postId ? (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              navigate(`/post/${report.postId}`);
+            }}
+            className="text-xs font-medium text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300"
+          >
+            View Related Post {"->"}
+          </button>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderReports = () => {
+    if (reportsLoading) {
+      return (
+        <div className="rounded-lg border border-gray-200 bg-white p-4 text-left text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
+          Loading reports...
+        </div>
+      );
+    }
+
+    if (reports.length === 0) {
+      return (
+        <div className="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+          No pending reports
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-2">
+        {reports.map((report) => {
+          const dismissLoading =
+            reportActionLoadingId === `dismiss-${report.id}`;
+          const deleteLoading = reportActionLoadingId === `delete-${report.id}`;
+          const isResolved = report.status === "resolved";
+          const expanded = expandedReportId === report.id;
+          return (
+            <div
+              key={report.id}
+              className="rounded-lg border border-gray-200 bg-white p-4 text-left dark:border-gray-700 dark:bg-gray-800"
+            >
+              <button
+                type="button"
+                onClick={() => handleToggleReport(report)}
+                className="w-full text-left"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    {formatReportType(report.targetType)} ·{" "}
+                    {timeAgo(report.createdAt as Date)}
+                  </p>
+                  <span
+                    className={`text-xs font-semibold ${
+                      report.status === "pending"
+                        ? "text-purple-500"
+                        : "text-gray-500 dark:text-gray-400"
+                    }`}
+                  >
+                    {formatReportStatus(report.status)}
+                  </span>
+                </div>
+
+                <p className="mt-3 text-sm text-gray-900 dark:text-white">
+                  <span className="font-medium">Reason:</span> {report.reason}
                 </p>
+
                 {report.description ? (
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                     {report.description}
                   </p>
                 ) : null}
-              </div>
-              <span className="text-xs text-slate-400 dark:text-slate-500">
-                {timeAgo(report.createdAt as Date)}
-              </span>
-            </div>
 
-            <div className="mt-3 flex items-center gap-3">
-              <Avatar
-                src={report.reporterAvatar}
-                alt={report.reporterName}
-                userId={report.reporterId}
-                size={32}
-                className="h-8 w-8"
-              />
-              <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                {report.reporterName}
-              </span>
-            </div>
-
-            <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/40">
-              {report.targetType === "post" ? (
-                <div className="flex items-center gap-3">
-                  {preview?.imageUrl ? (
-                    <img
-                      src={preview.imageUrl}
-                      alt="post"
-                      className="h-12 w-12 rounded-lg object-cover"
-                    />
-                  ) : null}
-                  <p className="text-xs text-slate-600 dark:text-slate-300">
-                    {preview?.text
-                      ? `${preview.text.slice(0, 50)}...`
-                      : "Post preview"}
-                  </p>
-                </div>
-              ) : report.targetType === "user" ? (
-                <div className="flex items-center gap-3">
-                  <Avatar
-                    src={preview?.userAvatar}
-                    alt={preview?.userName || "User"}
-                    userId={report.targetId}
-                    size={48}
-                    className="h-12 w-12"
-                  />
-                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                    {preview?.userName || "User"}
-                  </p>
-                </div>
-              ) : (
-                <p className="text-xs text-slate-500 dark:text-slate-300">
-                  Comment reported
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  Reported by: {report.reporterName}
                 </p>
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  if (report.targetType === "post") {
-                    navigate(`/post/${report.targetId}`);
-                  } else if (report.targetType === "user") {
-                    navigate(`/profile/${report.targetId}`);
-                  }
-                }}
-                className="text-xs font-semibold text-blue-500 hover:text-blue-600"
-              >
-                View
               </button>
-            </div>
 
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                disabled={!isPending}
-                onClick={() => handleAction(report, "delete")}
-                className="rounded-full bg-red-500 px-3 py-1.5 text-xs font-semibold text-white transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {actionLoading === actionKey + "delete"
-                  ? "Deleting..."
-                  : "Delete Content"}
-              </button>
-              <button
-                type="button"
-                disabled={!isPending}
-                onClick={() => handleAction(report, "ban")}
-                className="rounded-full bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {actionLoading === actionKey + "ban" ? "Banning..." : "Ban User"}
-              </button>
-              <button
-                type="button"
-                disabled={!isPending}
-                onClick={() => handleAction(report, "dismiss")}
-                className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700"
-              >
-                {actionLoading === actionKey + "dismiss" ? "Dismissing..." : "Dismiss"}
-              </button>
+              {expanded ? (
+                <div className="mt-3 border-t border-gray-200 pt-3 dark:border-gray-700">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Reported Content
+                  </p>
+                  <div className="mt-2 rounded-lg bg-gray-50 p-3 dark:bg-gray-800">
+                    {renderReportedContent(report)}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="mt-4 flex justify-end gap-4">
+                <button
+                  type="button"
+                  onClick={() => void handleDismissReport(report)}
+                  disabled={dismissLoading || isResolved}
+                  className="text-xs font-medium text-gray-500 transition-colors hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  {dismissLoading ? "Dismissing..." : "Dismiss"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete({ kind: "report", report })}
+                  disabled={deleteLoading}
+                  className="text-xs font-medium text-red-500 transition-colors hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {deleteLoading ? "Deleting..." : "Delete"}
+                </button>
+              </div>
             </div>
-          </div>
-        );
-      })}
-    </div>
-  );
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderFeedback = () => {
+    if (feedbackLoading) {
+      return (
+        <div className="rounded-lg border border-gray-200 bg-white p-4 text-left text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
+          Loading feedback...
+        </div>
+      );
+    }
+
+    if (feedback.length === 0) {
+      return (
+        <div className="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+          No new feedback
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-2">
+        {feedback.map((entry) => {
+          const expanded = expandedFeedbackId === entry.id;
+          const resolveLoading =
+            feedbackActionLoadingId === `resolve-${entry.id}`;
+          const deleteLoading = feedbackActionLoadingId === `delete-${entry.id}`;
+          const isResolved = entry.status === "resolved";
+
+          return (
+            <div
+              key={entry.id}
+              className="rounded-lg border border-gray-200 bg-white p-4 text-left dark:border-gray-700 dark:bg-gray-800"
+            >
+              <button
+                type="button"
+                onClick={() =>
+                  setExpandedFeedbackId(expanded ? null : entry.id)
+                }
+                className="w-full text-left"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    {formatFeedbackType(entry.type)} ·{" "}
+                    {timeAgo(entry.createdAt as Date)}
+                  </p>
+                  <span
+                    className={`text-xs font-semibold ${
+                      entry.status === "new"
+                        ? "text-purple-500"
+                        : "text-gray-500 dark:text-gray-400"
+                    }`}
+                  >
+                    {formatFeedbackStatus(entry.status)}
+                  </span>
+                </div>
+
+                <p className="mt-3 text-sm font-medium text-gray-900 dark:text-white">
+                  Subject: {entry.subject}
+                </p>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  From: {entry.userEmail}
+                </p>
+
+                <div
+                  className={`mt-3 overflow-hidden transition-[max-height] duration-300 ${
+                    expanded ? "max-h-96" : "max-h-16"
+                  }`}
+                >
+                  <p
+                    className="text-sm text-gray-500 dark:text-gray-400"
+                    style={
+                      expanded
+                        ? undefined
+                        : {
+                            display: "-webkit-box",
+                            WebkitLineClamp: 3,
+                            WebkitBoxOrient: "vertical",
+                            overflow: "hidden",
+                          }
+                    }
+                  >
+                    Message: {entry.message}
+                  </p>
+                </div>
+              </button>
+
+              <div className="mt-4 flex justify-end gap-4">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void handleResolveFeedback(entry);
+                  }}
+                  disabled={resolveLoading || isResolved}
+                  className="text-xs font-medium text-gray-500 transition-colors hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  {resolveLoading ? "Resolving..." : "Resolve"}
+                </button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setConfirmDelete({ kind: "feedback", feedback: entry });
+                  }}
+                  disabled={deleteLoading}
+                  className="text-xs font-medium text-red-500 transition-colors hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {deleteLoading ? "Deleting..." : "Delete"}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20 dark:bg-slate-900">
-      <header className="sticky top-0 z-10 bg-gray-900 text-white dark:bg-gray-950">
-        <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-3">
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="text-xl text-white/80 hover:text-white"
-            aria-label="Go back"
-          >
-            ←
-          </button>
-          <div className="flex items-center gap-2">
-            <h1 className="text-base font-semibold">Admin Panel</h1>
-            <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">Admin</span>
-          </div>
-          <div className="w-6" />
-        </div>
-      </header>
+    <div className="min-h-screen bg-gray-50 p-4 dark:bg-gray-900">
+      <div className="mx-auto w-full max-w-md">
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          className="mb-3 text-xl text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+          aria-label="Go back"
+        >
+          ←
+        </button>
 
-      <main className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
-        <p className="text-xs text-slate-500 dark:text-slate-400">You are logged in as Admin</p>
-        <div className="relative grid grid-cols-3 border-b border-slate-200 dark:border-slate-700">
-          <button
-            type="button"
-            onClick={() => setActiveTab("pending")}
-            className={`flex items-center justify-center gap-2 pb-2 text-sm font-semibold transition-all duration-200 ${
-              activeTab === "pending"
-                ? "text-slate-900 dark:text-white"
-                : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
-            }`}
-          >
-            <span>Pending</span>
-            {pendingCount > 0 ? (
-              <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold text-orange-600 dark:bg-orange-500/20 dark:text-orange-200">
-                {pendingCount}
+        <h1 className="text-left text-lg font-semibold text-gray-900 dark:text-white">
+          Admin Panel
+        </h1>
+        <p className="mt-1 text-left text-xs text-gray-500 dark:text-gray-400">
+          {pendingCount} pending reports · {newFeedbackCount} new feedback
+        </p>
+
+        <div className="mt-4 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex gap-6">
+            <button
+              type="button"
+              onClick={() => setActiveTab("reports")}
+              className={`border-b-2 pb-2 text-sm font-medium transition-colors ${
+                activeTab === "reports"
+                  ? "border-gray-900 text-gray-900 dark:border-white dark:text-white"
+                  : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              }`}
+            >
+              Reports{" "}
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                ({pendingCount})
               </span>
-            ) : null}
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("reviewed")}
-            className={`flex items-center justify-center gap-2 pb-2 text-sm font-semibold transition-all duration-200 ${
-              activeTab === "reviewed"
-                ? "text-slate-900 dark:text-white"
-                : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
-            }`}
-          >
-            <span>Reviewed</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("feedback")}
-            className={`flex items-center justify-center gap-2 pb-2 text-sm font-semibold transition-all duration-200 ${
-              activeTab === "feedback"
-                ? "text-slate-900 dark:text-white"
-                : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
-            }`}
-          >
-            <span>Feedback</span>
-            {newFeedbackCount > 0 ? (
-              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:bg-blue-500/20 dark:text-blue-200">
-                {newFeedbackCount}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("feedback")}
+              className={`border-b-2 pb-2 text-sm font-medium transition-colors ${
+                activeTab === "feedback"
+                  ? "border-gray-900 text-gray-900 dark:border-white dark:text-white"
+                  : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              }`}
+            >
+              Feedback{" "}
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                ({newFeedbackCount})
               </span>
-            ) : null}
-          </button>
-          <span
-            className={`absolute bottom-0 h-0.5 w-1/3 rounded-full transition-all duration-300 ${activeTab === "feedback" ? "bg-blue-500" : "bg-orange-400"}`}
-            style={{ transform: `translateX(${tabIndex * 100}%)` }}
-          />
+            </button>
+          </div>
         </div>
-        {activeTab === "feedback" ? feedbackSection : reportsSection}
-      </main>
+
+        <div className="mt-4">
+          {activeTab === "reports" ? renderReports() : renderFeedback()}
+        </div>
+      </div>
+
+      {confirmDelete ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+            <p className="text-sm font-medium text-gray-900 dark:text-white">
+              {confirmDelete.kind === "report"
+                ? "Delete this content?"
+                : "Delete this feedback?"}
+            </p>
+            <div className="mt-4 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(null)}
+                className="text-xs font-medium text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const payload = confirmDelete;
+                  setConfirmDelete(null);
+                  if (payload.kind === "report") {
+                    await handleDeleteReport(payload.report);
+                    return;
+                  }
+                  await handleDeleteFeedback(payload.feedback);
+                }}
+                className="text-xs font-medium text-red-500 transition-colors hover:text-red-600"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
