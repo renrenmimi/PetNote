@@ -12,9 +12,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Avatar from "../components/Avatar";
 import {
+  blockUserByAdmin,
+  deleteContentAndWarn,
   getPendingReports,
+  getReportTargetUser,
   getReviewedReports,
   resolveReport,
+  type ReportTargetUser,
 } from "../services/admin";
 import {
   deleteFeedback,
@@ -27,10 +31,7 @@ import { type ReportItem } from "../services/report";
 import { timeAgo } from "../utils/timeAgo";
 
 type AdminTab = "reports" | "feedback";
-type ConfirmDeleteState =
-  | { kind: "report"; report: ReportItem }
-  | { kind: "feedback"; feedback: Feedback }
-  | null;
+type FeedbackDeleteTarget = Feedback | null;
 
 type PostPreviewData = {
   id: string;
@@ -59,6 +60,29 @@ type ReportContentState =
   | { kind: "comment"; data: CommentPreviewData }
   | { kind: "deleted" }
   | { kind: "unavailable" };
+
+type WarningModalState = {
+  report: ReportItem;
+  targetUser: ReportTargetUser | null;
+  selectedReason: string;
+  additionalDetails: string;
+  loadingTarget: boolean;
+};
+
+type BlockModalState = {
+  report: ReportItem;
+  targetUser: ReportTargetUser | null;
+  reason: string;
+  loadingTarget: boolean;
+};
+
+const quickWarningReasons = [
+  "Inappropriate content",
+  "Spam or misleading",
+  "Harassment or bullying",
+  "Animal abuse content",
+  "Violates community guidelines",
+];
 
 function toMillis(value: unknown): number {
   if (!value) return 0;
@@ -139,7 +163,12 @@ export function AdminPanel() {
   const [reportContentLoading, setReportContentLoading] = useState<
     Record<string, boolean>
   >({});
-  const [confirmDelete, setConfirmDelete] = useState<ConfirmDeleteState>(null);
+  const [warningModal, setWarningModal] = useState<WarningModalState | null>(
+    null
+  );
+  const [blockModal, setBlockModal] = useState<BlockModalState | null>(null);
+  const [feedbackDeleteTarget, setFeedbackDeleteTarget] =
+    useState<FeedbackDeleteTarget>(null);
 
   useEffect(() => {
     let active = true;
@@ -193,6 +222,14 @@ export function AdminPanel() {
     [feedback]
   );
 
+  const markReportResolvedLocally = (reportId: string) => {
+    setReports((prev) =>
+      prev.map((item) =>
+        item.id === reportId ? { ...item, status: "resolved" } : item
+      )
+    );
+  };
+
   const loadReportedContent = async (report: ReportItem) => {
     if (reportContentMap[report.id] || reportContentLoading[report.id]) {
       return;
@@ -203,7 +240,10 @@ export function AdminPanel() {
       if (report.targetType === "post") {
         const postDoc = await getDoc(doc(db, "posts", report.targetId));
         if (!postDoc.exists()) {
-          setReportContentMap((prev) => ({ ...prev, [report.id]: { kind: "deleted" } }));
+          setReportContentMap((prev) => ({
+            ...prev,
+            [report.id]: { kind: "deleted" },
+          }));
           return;
         }
         const postData = postDoc.data() as Omit<PostPreviewData, "id">;
@@ -217,7 +257,10 @@ export function AdminPanel() {
       if (report.targetType === "user") {
         const userDoc = await getDoc(doc(db, "users", report.targetId));
         if (!userDoc.exists()) {
-          setReportContentMap((prev) => ({ ...prev, [report.id]: { kind: "deleted" } }));
+          setReportContentMap((prev) => ({
+            ...prev,
+            [report.id]: { kind: "deleted" },
+          }));
           return;
         }
         const userData = userDoc.data() as Omit<UserPreviewData, "id">;
@@ -253,7 +296,10 @@ export function AdminPanel() {
         );
         const commentSnapshot = await getDocs(commentQuery);
         if (commentSnapshot.empty) {
-          setReportContentMap((prev) => ({ ...prev, [report.id]: { kind: "deleted" } }));
+          setReportContentMap((prev) => ({
+            ...prev,
+            [report.id]: { kind: "deleted" },
+          }));
           return;
         }
 
@@ -270,9 +316,61 @@ export function AdminPanel() {
       }
     } catch (error) {
       console.warn("Failed to load reported content:", error);
-      setReportContentMap((prev) => ({ ...prev, [report.id]: { kind: "unavailable" } }));
+      setReportContentMap((prev) => ({
+        ...prev,
+        [report.id]: { kind: "unavailable" },
+      }));
     } finally {
       setReportContentLoading((prev) => ({ ...prev, [report.id]: false }));
+    }
+  };
+
+  const openWarningModal = async (report: ReportItem) => {
+    setWarningModal({
+      report,
+      targetUser: null,
+      selectedReason: "",
+      additionalDetails: "",
+      loadingTarget: true,
+    });
+    try {
+      const targetUser = await getReportTargetUser(report);
+      setWarningModal((prev) =>
+        prev && prev.report.id === report.id
+          ? { ...prev, targetUser, loadingTarget: false }
+          : prev
+      );
+    } catch (error) {
+      console.warn("Failed to resolve warning target user:", error);
+      setWarningModal((prev) =>
+        prev && prev.report.id === report.id
+          ? { ...prev, targetUser: null, loadingTarget: false }
+          : prev
+      );
+    }
+  };
+
+  const openBlockModal = async (report: ReportItem) => {
+    setBlockModal({
+      report,
+      targetUser: null,
+      reason: "",
+      loadingTarget: true,
+    });
+    try {
+      const targetUser = await getReportTargetUser(report);
+      setBlockModal((prev) =>
+        prev && prev.report.id === report.id
+          ? { ...prev, targetUser, loadingTarget: false }
+          : prev
+      );
+    } catch (error) {
+      console.warn("Failed to resolve block target user:", error);
+      setBlockModal((prev) =>
+        prev && prev.report.id === report.id
+          ? { ...prev, targetUser: null, loadingTarget: false }
+          : prev
+      );
     }
   };
 
@@ -290,29 +388,46 @@ export function AdminPanel() {
     setReportActionLoadingId(`dismiss-${report.id}`);
     try {
       await resolveReport(report.id, "dismiss", report);
-      setReports((prev) =>
-        prev.map((item) =>
-          item.id === report.id ? { ...item, status: "resolved" } : item
-        )
-      );
+      markReportResolvedLocally(report.id);
     } finally {
       setReportActionLoadingId(null);
     }
   };
 
-  const handleDeleteReport = async (report: ReportItem) => {
-    setReportActionLoadingId(`delete-${report.id}`);
+  const handleSendWarning = async () => {
+    if (!warningModal || !warningModal.targetUser) return;
+    const reason = warningModal.selectedReason.trim();
+    if (!reason) return;
+
+    const { report, targetUser } = warningModal;
+    setReportActionLoadingId(`warn-${report.id}`);
     try {
-      await resolveReport(report.id, "delete", report);
-      setReports((prev) =>
-        prev.map((item) =>
-          item.id === report.id ? { ...item, status: "resolved" } : item
-        )
-      );
+      await deleteContentAndWarn({
+        report,
+        targetUserId: targetUser.userId,
+        warningReason: reason,
+        additionalDetails: warningModal.additionalDetails,
+      });
+      markReportResolvedLocally(report.id);
       setReportContentMap((prev) => ({
         ...prev,
         [report.id]: { kind: "deleted" },
       }));
+      setWarningModal(null);
+    } finally {
+      setReportActionLoadingId(null);
+    }
+  };
+
+  const handleConfirmBlock = async () => {
+    if (!blockModal || !blockModal.targetUser) return;
+    const { report, targetUser } = blockModal;
+    setReportActionLoadingId(`block-${report.id}`);
+    try {
+      await blockUserByAdmin(targetUser.userId, blockModal.reason.trim());
+      await resolveReport(report.id, "dismiss", report);
+      markReportResolvedLocally(report.id);
+      setBlockModal(null);
     } finally {
       setReportActionLoadingId(null);
     }
@@ -340,6 +455,7 @@ export function AdminPanel() {
       if (expandedFeedbackId === entry.id) {
         setExpandedFeedbackId(null);
       }
+      setFeedbackDeleteTarget(null);
     } finally {
       setFeedbackActionLoadingId(null);
     }
@@ -504,7 +620,8 @@ export function AdminPanel() {
         {reports.map((report) => {
           const dismissLoading =
             reportActionLoadingId === `dismiss-${report.id}`;
-          const deleteLoading = reportActionLoadingId === `delete-${report.id}`;
+          const warnLoading = reportActionLoadingId === `warn-${report.id}`;
+          const blockLoading = reportActionLoadingId === `block-${report.id}`;
           const isResolved = report.status === "resolved";
           const expanded = expandedReportId === report.id;
           return (
@@ -570,11 +687,19 @@ export function AdminPanel() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setConfirmDelete({ kind: "report", report })}
-                  disabled={deleteLoading}
+                  onClick={() => void openWarningModal(report)}
+                  disabled={warnLoading || isResolved}
                   className="text-xs font-medium text-red-500 transition-colors hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {deleteLoading ? "Deleting..." : "Delete"}
+                  {warnLoading ? "Working..." : "Delete & Warn"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void openBlockModal(report)}
+                  disabled={blockLoading || isResolved}
+                  className="text-xs font-medium text-red-500 transition-colors hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {blockLoading ? "Blocking..." : "Block User"}
                 </button>
               </div>
             </div>
@@ -684,7 +809,7 @@ export function AdminPanel() {
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation();
-                    setConfirmDelete({ kind: "feedback", feedback: entry });
+                    setFeedbackDeleteTarget(entry);
                   }}
                   disabled={deleteLoading}
                   className="text-xs font-medium text-red-500 transition-colors hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
@@ -757,33 +882,179 @@ export function AdminPanel() {
         </div>
       </div>
 
-      {confirmDelete ? (
+      {warningModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-            <p className="text-sm font-medium text-gray-900 dark:text-white">
-              {confirmDelete.kind === "report"
-                ? "Delete this content?"
-                : "Delete this feedback?"}
+          <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+              Delete content and warn user
+            </h3>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {warningModal.loadingTarget
+                ? "Loading user..."
+                : warningModal.targetUser
+                ? `User: ${warningModal.targetUser.userName}`
+                : "Unable to resolve target user"}
+            </p>
+            <label className="mt-4 block text-xs font-medium text-gray-600 dark:text-gray-300">
+              Reason
+            </label>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {quickWarningReasons.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() =>
+                    setWarningModal((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            selectedReason:
+                              prev.selectedReason === item ? "" : item,
+                          }
+                        : prev
+                    )
+                  }
+                  className={`rounded-full px-3 py-1.5 text-xs transition-colors ${
+                    warningModal.selectedReason === item
+                      ? "bg-gradient-to-r from-purple-500 to-pink-500 text-white"
+                      : "border border-gray-200 bg-gray-100 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                  }`}
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
+            <label className="mt-4 block text-xs font-medium text-gray-600 dark:text-gray-300">
+              Additional details (optional)
+            </label>
+            <textarea
+              value={warningModal.additionalDetails}
+              onChange={(event) =>
+                setWarningModal((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        additionalDetails: event.target.value.slice(0, 300),
+                      }
+                    : prev
+                )
+              }
+              placeholder="Add more context if needed..."
+              maxLength={300}
+              rows={4}
+              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-purple-400 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+            />
+            <p className="mt-1 text-right text-[11px] text-gray-500 dark:text-gray-400">
+              {warningModal.additionalDetails.length}/300
             </p>
             <div className="mt-4 flex justify-end gap-3">
               <button
                 type="button"
-                onClick={() => setConfirmDelete(null)}
+                onClick={() => setWarningModal(null)}
                 className="text-xs font-medium text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={async () => {
-                  const payload = confirmDelete;
-                  setConfirmDelete(null);
-                  if (payload.kind === "report") {
-                    await handleDeleteReport(payload.report);
-                    return;
-                  }
-                  await handleDeleteFeedback(payload.feedback);
-                }}
+                onClick={() => void handleSendWarning()}
+                disabled={
+                  warningModal.loadingTarget ||
+                  !warningModal.targetUser ||
+                  !warningModal.selectedReason.trim()
+                }
+                className="text-xs font-medium text-red-500 transition-colors hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Send Warning
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {blockModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+              Block this user?
+            </h3>
+            {blockModal.loadingTarget ? (
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                Loading user...
+              </p>
+            ) : blockModal.targetUser ? (
+              <>
+                <p className="mt-2 text-sm text-gray-900 dark:text-white">
+                  {blockModal.targetUser.userName}
+                </p>
+                {blockModal.targetUser.userEmail ? (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {blockModal.targetUser.userEmail}
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                Unable to resolve user.
+              </p>
+            )}
+            <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+              This user will not be able to post, comment, or interact. They can
+              still browse content.
+            </p>
+            <label className="mt-4 block text-xs font-medium text-gray-600 dark:text-gray-300">
+              Ban reason (optional)
+            </label>
+            <textarea
+              value={blockModal.reason}
+              onChange={(event) =>
+                setBlockModal((prev) =>
+                  prev ? { ...prev, reason: event.target.value.slice(0, 300) } : prev
+                )
+              }
+              placeholder="Optional reason..."
+              maxLength={300}
+              rows={3}
+              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-purple-400 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+            />
+            <div className="mt-4 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setBlockModal(null)}
+                className="text-xs font-medium text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleConfirmBlock()}
+                disabled={blockModal.loadingTarget || !blockModal.targetUser}
+                className="text-xs font-medium text-red-500 transition-colors hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Block User
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {feedbackDeleteTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+            <p className="text-sm font-medium text-gray-900 dark:text-white">
+              Delete this feedback?
+            </p>
+            <div className="mt-4 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setFeedbackDeleteTarget(null)}
+                className="text-xs font-medium text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDeleteFeedback(feedbackDeleteTarget)}
                 className="text-xs font-medium text-red-500 transition-colors hover:text-red-600"
               >
                 Delete
