@@ -31,6 +31,9 @@ import { UserProfile } from "./pages/UserProfile";
 import { CreateMeetup } from "./pages/CreateMeetup";
 import { EditMeetup } from "./pages/EditMeetup";
 import { ContactUs } from "./pages/ContactUs";
+import { TermsOfService } from "./pages/TermsOfService";
+import { PrivacyPolicy } from "./pages/PrivacyPolicy";
+import { NotFound } from "./pages/NotFound";
 
 function App() {
   const [splashVisible, setSplashVisible] = useState(true);
@@ -58,6 +61,8 @@ function App() {
         <Route path="/login" element={wrap(<Login />)} />
         <Route path="/forgot-password" element={wrap(<ForgotPassword />)} />
         <Route path="/signup" element={wrap(<SignUp />)} />
+        <Route path="/terms" element={wrap(<TermsOfService />)} />
+        <Route path="/privacy" element={wrap(<PrivacyPolicy />)} />
         <Route path="/search" element={wrap(<Search />)} />
         <Route path="/places" element={wrap(<Places />)} />
         <Route path="/meetups" element={wrap(<Meetups />)} />
@@ -206,6 +211,7 @@ function App() {
           }
         />
         <Route path="/profile/:userId" element={wrap(<UserProfile />)} />
+        <Route path="*" element={wrap(<NotFound />)} />
       </Routes>
     </BrowserRouter>
   );

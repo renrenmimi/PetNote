@@ -516,11 +516,11 @@ export function Settings() {
             />
             <SettingRow
               label="Terms of Service"
-              onClick={() => showToast("Terms of Service coming soon.", "info")}
+              onClick={() => navigate("/terms")}
             />
             <SettingRow
               label="Privacy Policy"
-              onClick={() => showToast("Privacy Policy coming soon.", "info")}
+              onClick={() => navigate("/privacy")}
             />
             <SettingRow label="Version" value="1.0.0" border={false} />
           </div>

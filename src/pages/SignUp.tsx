@@ -216,6 +216,22 @@ export function SignUp() {
           >
             {loading ? "Creating account..." : "Sign Up"}
           </button>
+          <p className="text-center text-xs text-gray-500 dark:text-gray-400">
+            By signing up, you agree to our{" "}
+            <Link
+              to="/terms"
+              className="font-semibold text-purple-600 underline underline-offset-2"
+            >
+              Terms of Service
+            </Link>{" "}
+            and{" "}
+            <Link
+              to="/privacy"
+              className="font-semibold text-purple-600 underline underline-offset-2"
+            >
+              Privacy Policy
+            </Link>
+          </p>
         </form>
 
         <div className="my-6 flex items-center gap-3 text-xs text-slate-400 dark:text-slate-500">
