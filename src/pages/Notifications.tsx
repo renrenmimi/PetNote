@@ -3,6 +3,7 @@ import { BottomNav } from "../components/BottomNav";
 import { Navbar } from "../components/Navbar";
 import { EmptyState } from "../components/EmptyState";
 import Avatar from "../components/Avatar";
+import PawIcon from "../components/PawIcon";
 import { useAuth } from "../hooks/useAuth";
 import { useNotifications } from "../hooks/useNotifications";
 import { timeAgo } from "../utils/timeAgo";
@@ -46,53 +47,87 @@ export function Notifications() {
         ) : null}
 
         <div className="space-y-3">
-          {notifications.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => {
-                void markAsRead(item.id);
-                if (item.type === "follow") {
-                  navigate(`/profile/${item.fromUserId}`);
-                } else if (item.postId) {
-                  navigate(`/post/${item.postId}`);
-                } else {
-                  navigate("/");
-                }
-              }}
-              className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all duration-200 hover:scale-[1.01] ${
-                item.read
-                  ? "border-slate-100 bg-white dark:border-slate-700 dark:bg-slate-800"
-                  : "border-purple-100 bg-purple-50 dark:border-purple-500/40 dark:bg-purple-500/10"
-              }`}
-            >
-              <Avatar
-                src={item.fromUserAvatar}
-                alt={item.fromUserName}
-                userId={item.fromUserId}
-                size={48}
-                className="h-12 w-12"
-              />
-              <div className="flex-1">
-                <p className="text-sm text-slate-700 dark:text-slate-200">
-                  <span className="font-semibold text-slate-900 dark:text-white">
-                    {item.fromUserName}
-                  </span>{" "}
-                  {item.message}
-                </p>
-                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                  {timeAgo(item.createdAt as Date)}
-                </p>
-              </div>
-              {item.postImage ? (
-                <img
-                  src={item.postImage}
-                  alt="post"
-                  className="h-12 w-12 rounded-xl object-cover"
+          {notifications.map((item) => {
+            const isWarning = item.type === "warning";
+            const cardClass = isWarning
+              ? "border-red-100 bg-red-50 dark:border-red-900/40 dark:bg-red-900/10"
+              : item.read
+              ? "border-slate-100 bg-white dark:border-slate-700 dark:bg-slate-800"
+              : "border-purple-100 bg-purple-50 dark:border-purple-500/40 dark:bg-purple-500/10";
+
+            if (isWarning) {
+              return (
+                <div
+                  key={item.id}
+                  className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left ${cardClass}`}
+                >
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white dark:bg-slate-800">
+                    <PawIcon size={18} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm text-slate-700 dark:text-slate-200">
+                      <span className="font-semibold text-slate-900 dark:text-white">
+                        ⚠️ PetNote Team
+                      </span>{" "}
+                      {item.message}
+                    </p>
+                    {item.warningDetails ? (
+                      <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                        Details: {item.warningDetails}
+                      </p>
+                    ) : null}
+                    <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                      {timeAgo(item.createdAt as Date)}
+                    </p>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  void markAsRead(item.id);
+                  if (item.type === "follow") {
+                    navigate(`/profile/${item.fromUserId}`);
+                  } else if (item.postId) {
+                    navigate(`/post/${item.postId}`);
+                  } else {
+                    navigate("/");
+                  }
+                }}
+                className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all duration-200 hover:scale-[1.01] ${cardClass}`}
+              >
+                <Avatar
+                  src={item.fromUserAvatar}
+                  alt={item.fromUserName}
+                  userId={item.fromUserId}
+                  size={48}
+                  className="h-12 w-12"
                 />
-              ) : null}
-            </button>
-          ))}
+                <div className="flex-1">
+                  <p className="text-sm text-slate-700 dark:text-slate-200">
+                    <span className="font-semibold text-slate-900 dark:text-white">
+                      {item.fromUserName}
+                    </span>{" "}
+                    {item.message}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                    {timeAgo(item.createdAt as Date)}
+                  </p>
+                </div>
+                {item.postImage ? (
+                  <img
+                    src={item.postImage}
+                    alt="post"
+                    className="h-12 w-12 rounded-xl object-cover"
+                  />
+                ) : null}
+              </button>
+            );
+          })}
         </div>
 
         {unreadCount > 0 ? (

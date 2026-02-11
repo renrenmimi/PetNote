@@ -22,7 +22,8 @@ export type NotificationType =
   | "pet_follow"
   | "reply"
   | "meetup_join"
-  | "meetup_cancelled";
+  | "meetup_cancelled"
+  | "warning";
 
 export type NotificationItem = {
   id: string;
@@ -35,6 +36,8 @@ export type NotificationItem = {
   commentId?: string;
   postImage?: string;
   message: string;
+  warningReason?: string;
+  warningDetails?: string;
   read: boolean;
   createdAt: unknown;
 };
@@ -53,6 +56,7 @@ export async function createNotification(
   const settings = await getSettings(data.userId);
   const mappedType = data.type === "reply" ? "comment" : data.type;
   const shouldNotify =
+    data.type === "warning" ||
     data.type === "meetup_join" ||
     data.type === "meetup_cancelled" ||
     (mappedType === "like" && settings.likeNotifications) ||
