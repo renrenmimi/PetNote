@@ -237,6 +237,15 @@ export function Login() {
             Sign up
           </Link>
         </p>
+        <p className="mt-3 text-center text-xs text-slate-400 dark:text-slate-500">
+          <Link to="/terms" className="hover:text-slate-600 dark:hover:text-slate-300">
+            Terms of Service
+          </Link>{" "}
+          ·{" "}
+          <Link to="/privacy" className="hover:text-slate-600 dark:hover:text-slate-300">
+            Privacy Policy
+          </Link>
+        </p>
       </div>
     </main>
   );
