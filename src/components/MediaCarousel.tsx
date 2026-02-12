@@ -7,6 +7,7 @@ type MediaCarouselProps = {
   mediaUrl?: string;
   mediaType?: "image" | "video";
   onDoubleTap?: () => void;
+  imageSize?: "medium" | "large";
 };
 
 const formatDuration = (value?: number) => {
@@ -21,6 +22,7 @@ export function MediaCarousel({
   mediaUrl,
   mediaType,
   onDoubleTap,
+  imageSize = "medium",
 }: MediaCarouselProps) {
   const items = useMemo<MediaItem[]>(() => {
     if (media && media.length > 0) return media;
@@ -211,6 +213,7 @@ export function MediaCarousel({
                     alt="Post media"
                     className="max-h-[500px] w-full"
                     imgClassName="object-contain"
+                    cloudinarySize={imageSize}
                   />
                 ) : (
                   <div className="max-h-[500px] w-full bg-slate-200 dark:bg-slate-700" />

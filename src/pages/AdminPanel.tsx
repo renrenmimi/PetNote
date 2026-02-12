@@ -28,6 +28,7 @@ import {
 } from "../services/feedback";
 import { db } from "../services/firebase";
 import { type ReportItem } from "../services/report";
+import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 import { timeAgo } from "../utils/timeAgo";
 
 type AdminTab = "reports" | "feedback";
@@ -527,7 +528,7 @@ export function AdminPanel() {
             </div>
             {imageUrl ? (
               <img
-                src={imageUrl}
+                src={optimizeCloudinaryUrl(imageUrl, "thumbnail")}
                 alt={petName}
                 className="h-20 w-20 rounded-lg object-cover"
               />

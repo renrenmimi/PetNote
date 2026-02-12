@@ -12,6 +12,7 @@ import {
   type MeetupRequirements,
 } from "../services/meetups";
 import { buildLocationId, getLocation, type Location } from "../services/locations";
+import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 
 const durations = [
   { label: "30 min", value: 30 },
@@ -314,7 +315,7 @@ export function CreateMeetup() {
           <div className="flex flex-col items-center gap-3">
             {coverPreview ? (
               <img
-                src={coverPreview}
+                src={optimizeCloudinaryUrl(coverPreview, "large")}
                 alt="Cover preview"
                 className="h-40 w-full rounded-xl object-cover"
               />

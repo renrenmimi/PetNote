@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getBirthdayPets, isBirthdayToday, type Pet } from "../services/pets";
+import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 import { getSpeciesMeta } from "../utils/petHelpers";
 
 type BirthdayCelebrationProps = {
@@ -68,7 +69,7 @@ export function BirthdayCelebration({ ownerId }: BirthdayCelebrationProps) {
           <div className="rounded-full bg-gradient-to-r from-amber-200 to-amber-500 p-1">
             {birthdayPet.avatarUrl ? (
               <img
-                src={birthdayPet.avatarUrl}
+                src={optimizeCloudinaryUrl(birthdayPet.avatarUrl, "avatar")}
                 alt={birthdayPet.name}
                 className="h-12 w-12 rounded-full border-2 border-white object-cover"
               />

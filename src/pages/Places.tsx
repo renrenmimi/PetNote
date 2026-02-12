@@ -277,6 +277,7 @@ export function Places() {
                       src={place.photos[0]}
                       alt={place.name}
                       className="h-20 w-20 rounded-xl"
+                      cloudinarySize="small"
                     />
                   ) : (
                     <div className="flex h-20 w-20 items-center justify-center rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 text-2xl text-white">

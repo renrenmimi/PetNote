@@ -27,6 +27,7 @@ import {
   getUserReview,
   type Location,
 } from "../services/locations";
+import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 
 const toDate = (value: unknown): Date | null => {
   if (!value) return null;
@@ -511,7 +512,7 @@ export function MeetupDetail() {
         <div className="overflow-hidden rounded-2xl shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)]">
           {meetup.coverImage ? (
             <img
-              src={meetup.coverImage}
+              src={optimizeCloudinaryUrl(meetup.coverImage, "large")}
               alt={meetup.title}
               className="h-48 w-full object-cover"
             />

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 
 interface AvatarProps {
   src?: string;
@@ -15,6 +16,11 @@ export default function Avatar({
   className = "",
   userId,
 }: AvatarProps) {
+  const optimizedSrc = useMemo(
+    () => (src ? optimizeCloudinaryUrl(src, "avatar") : undefined),
+    [src]
+  );
+
   const fallbackUrl = useMemo(
     () =>
       userId
@@ -24,11 +30,11 @@ export default function Avatar({
           )}`,
     [alt, userId]
   );
-  const [imgSrc, setImgSrc] = useState(src || fallbackUrl);
+  const [imgSrc, setImgSrc] = useState(optimizedSrc || fallbackUrl);
 
   useEffect(() => {
-    setImgSrc(src || fallbackUrl);
-  }, [src, fallbackUrl]);
+    setImgSrc(optimizedSrc || fallbackUrl);
+  }, [optimizedSrc, fallbackUrl]);
 
   return (
     <img

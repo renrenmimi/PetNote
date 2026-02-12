@@ -28,6 +28,7 @@ import { getUserPets, type Pet } from "../services/pets";
 import { type Location } from "../services/locations";
 import { type Meetup } from "../services/meetups";
 import { useFollowPet } from "../hooks/useFollow";
+import { getVideoThumbnail } from "../utils/cloudinaryUrl";
 import { timeAgo } from "../utils/timeAgo";
 
 type PopularPet = Pet & { postCount: number };
@@ -402,6 +403,12 @@ export function Search() {
                         (post.mediaUrl
                           ? { url: post.mediaUrl, type: post.mediaType || "image" }
                           : null);
+                      const thumbSrc = media
+                        ? media.type === "video"
+                          ? getVideoThumbnail(media.url, "thumbnail")
+                          : ("thumbUrl" in media ? media.thumbUrl : undefined) ||
+                            media.url
+                        : null;
                       return (
                         <button
                           key={post.id}
@@ -409,11 +416,12 @@ export function Search() {
                           onClick={() => navigate(`/post/${post.id}`)}
                           className="relative aspect-square overflow-hidden rounded-lg bg-slate-100"
                         >
-                          {media ? (
+                          {thumbSrc ? (
                             <LazyImage
-                              src={media.url}
+                              src={thumbSrc}
                               alt={post.text}
                               className="h-full w-full"
+                              cloudinarySize="thumbnail"
                             />
                           ) : null}
                           {post.media?.length && post.media.length > 1 ? (
@@ -514,6 +522,7 @@ export function Search() {
                           src={place.photos[0]}
                           alt={place.name}
                           className="h-12 w-12 rounded-xl"
+                          cloudinarySize="small"
                         />
                       ) : (
                         <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 text-white">

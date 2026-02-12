@@ -7,6 +7,7 @@ import { createPost, type MediaItem } from "../services/posts";
 import { getUserPets, type Pet } from "../services/pets";
 import { getUserProfile, type UserProfile } from "../services/users";
 import { compressImage } from "../utils/imageCompressor";
+import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 import { getSpeciesMeta } from "../utils/petHelpers";
 import { useToast } from "../contexts/ToastContext";
 import { FILTER_MAP, ImageFilter, type FilterName } from "../components/ImageFilter";
@@ -887,7 +888,7 @@ export function Create() {
                 >
                   {petItem.avatarUrl ? (
                     <img
-                      src={petItem.avatarUrl}
+                      src={optimizeCloudinaryUrl(petItem.avatarUrl, "avatar")}
                       alt={petItem.name}
                       className={`h-12 w-12 rounded-full object-cover transition-all duration-200 ${
                         selected

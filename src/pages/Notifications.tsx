@@ -6,6 +6,7 @@ import Avatar from "../components/Avatar";
 import PawIcon from "../components/PawIcon";
 import { useAuth } from "../hooks/useAuth";
 import { useNotifications } from "../hooks/useNotifications";
+import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 import { timeAgo } from "../utils/timeAgo";
 
 export function Notifications() {
@@ -120,7 +121,7 @@ export function Notifications() {
                 </div>
                 {item.postImage ? (
                   <img
-                    src={item.postImage}
+                    src={optimizeCloudinaryUrl(item.postImage, "thumbnail")}
                     alt="post"
                     className="h-12 w-12 rounded-xl object-cover"
                   />

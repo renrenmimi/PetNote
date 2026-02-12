@@ -19,6 +19,7 @@ import {
   type Review,
 } from "../services/locations";
 import { getMeetupsByLocation, type Meetup } from "../services/meetups";
+import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 import { timeAgo } from "../utils/timeAgo";
 
 type CategoryMeta = {
@@ -311,6 +312,7 @@ export function LocationDetail() {
           {heroPhotos.length > 0 ? (
             <MediaCarousel
               media={heroPhotos.map((photo) => ({ url: photo, type: "image" }))}
+              imageSize="medium"
             />
           ) : (
             <div className="flex h-44 items-center justify-center bg-gradient-to-br from-purple-400 to-pink-400 text-4xl text-white">
@@ -471,7 +473,12 @@ export function LocationDetail() {
                   onClick={() => setLightboxIndex(idx)}
                   className="relative aspect-square overflow-hidden rounded-xl"
                 >
-                  <LazyImage src={item.url} alt="Location" className="h-full w-full" />
+                  <LazyImage
+                    src={item.url}
+                    alt="Location"
+                    className="h-full w-full"
+                    cloudinarySize="thumbnail"
+                  />
                   {item.source === "checkin" ? (
                     <span className="absolute bottom-1 right-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
                       📍
@@ -534,7 +541,12 @@ export function LocationDetail() {
                     }}
                     className="h-16 w-16 overflow-hidden rounded-xl"
                   >
-                    <LazyImage src={checkin.photoUrl} alt="Check-in" className="h-full w-full" />
+                    <LazyImage
+                      src={checkin.photoUrl}
+                      alt="Check-in"
+                      className="h-full w-full"
+                      cloudinarySize="small"
+                    />
                   </button>
                 </div>
               ))}
@@ -601,7 +613,12 @@ export function LocationDetail() {
                     <div className="grid grid-cols-3 gap-2">
                       {review.photos.map((photo) => (
                         <div key={photo} className="aspect-square overflow-hidden rounded-lg">
-                          <LazyImage src={photo} alt="Review" className="h-full w-full" />
+                          <LazyImage
+                            src={photo}
+                            alt="Review"
+                            className="h-full w-full"
+                            cloudinarySize="thumbnail"
+                          />
                         </div>
                       ))}
                     </div>
@@ -739,7 +756,7 @@ export function LocationDetail() {
             ‹
           </button>
           <img
-            src={allPhotos[lightboxIndex]}
+            src={optimizeCloudinaryUrl(allPhotos[lightboxIndex], "large")}
             alt="Location"
             className="max-h-[80vh] w-full max-w-md rounded-xl object-contain"
             onClick={(event) => event.stopPropagation()}

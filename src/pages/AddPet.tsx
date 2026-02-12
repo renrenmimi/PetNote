@@ -21,6 +21,7 @@ import {
   type PetGender,
   type PetSpecies,
 } from "../utils/petHelpers";
+import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 import { useToast } from "../contexts/ToastContext";
 
 const MAX_BIO = 150;
@@ -375,7 +376,7 @@ export function AddPet() {
                 <div className={`rounded-full bg-gradient-to-r ${speciesMeta.gradient} p-1`}>
                   {avatarUrl ? (
                     <img
-                      src={avatarUrl}
+                      src={optimizeCloudinaryUrl(avatarUrl, "avatar")}
                       alt={name || "Pet avatar"}
                       className="h-24 w-24 rounded-full border-4 border-white object-cover dark:border-slate-800"
                     />

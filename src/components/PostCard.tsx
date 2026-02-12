@@ -515,7 +515,11 @@ export function PostCard({
       </header>
 
       <div className="relative">
-        <MediaCarousel media={mediaItems} onDoubleTap={handleDoubleLike} />
+        <MediaCarousel
+          media={mediaItems}
+          onDoubleTap={handleDoubleLike}
+          imageSize="medium"
+        />
         {showHeart ? (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <svg
