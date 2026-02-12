@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getPopularPosts, type Post } from "../services/posts";
+import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 
 type PetSpotlightProps = {
   limitCount?: number;
@@ -53,7 +54,7 @@ const PawAvatar = ({
       <div className="absolute inset-[4px]">
         {src ? (
           <img
-            src={src}
+            src={src ? optimizeCloudinaryUrl(src, "spotlight") : src}
             alt={name}
             className={`h-full w-full object-cover ${
               seen ? "opacity-70" : ""
@@ -163,7 +164,7 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
                 style={{ width: 72 }}
               >
                 <PawAvatar
-                  src={mediaUrl}
+                  src={mediaUrl ? optimizeCloudinaryUrl(mediaUrl, "spotlight") : mediaUrl}
                   name={post.authorName || "Pet"}
                   seen={isSeen}
                 />

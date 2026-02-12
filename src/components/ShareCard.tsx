@@ -1,4 +1,5 @@
 import type { Post } from "../services/posts";
+import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 
 const loadImage = (src?: string): Promise<HTMLImageElement | null> => {
   if (!src) return Promise.resolve(null);
@@ -54,7 +55,10 @@ export async function generateShareCard(post: Post): Promise<Blob> {
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, width, height);
 
-  const mediaUrl = post.media?.[0]?.url || post.mediaUrl || "";
+  const mediaUrl = optimizeCloudinaryUrl(
+    post.media?.[0]?.url || post.mediaUrl || "",
+    "medium"
+  );
   const heroImage = await loadImage(mediaUrl);
   if (heroImage) {
     ctx.drawImage(heroImage, 0, 0, 400, 400);

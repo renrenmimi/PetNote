@@ -284,7 +284,7 @@ export function PostDetail() {
               ) : null}
             </div>
 
-            <MediaCarousel media={mediaItems} />
+            <MediaCarousel media={mediaItems} imageSize="large" />
 
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4 text-slate-600 dark:text-slate-300">

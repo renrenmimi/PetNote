@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import {
+  optimizeCloudinaryUrl,
+  type ImageSize,
+} from "../utils/cloudinaryUrl";
 
 interface LazyImageProps {
   src: string;
@@ -7,6 +11,7 @@ interface LazyImageProps {
   imgClassName?: string;
   style?: React.CSSProperties;
   onClick?: () => void;
+  cloudinarySize?: ImageSize;
 }
 
 export default function LazyImage({
@@ -16,11 +21,15 @@ export default function LazyImage({
   imgClassName = "",
   style,
   onClick,
+  cloudinarySize,
 }: LazyImageProps) {
   const [loaded, setLoaded] = useState(false);
   const [inView, setInView] = useState(false);
   const [error, setError] = useState(false);
   const imgRef = useRef<HTMLDivElement>(null);
+  const resolvedSrc = cloudinarySize
+    ? optimizeCloudinaryUrl(src, cloudinarySize)
+    : src;
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -35,6 +44,11 @@ export default function LazyImage({
     if (imgRef.current) observer.observe(imgRef.current);
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    setLoaded(false);
+    setError(false);
+  }, [resolvedSrc]);
 
   return (
     <div
@@ -55,7 +69,7 @@ export default function LazyImage({
 
       {inView && !error ? (
         <img
-          src={src}
+          src={resolvedSrc}
           alt={alt}
           className={`h-full w-full ${imgClassName || "object-cover"} transition-opacity duration-300 ${
             loaded ? "opacity-100" : "opacity-0"

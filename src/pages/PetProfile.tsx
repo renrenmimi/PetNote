@@ -23,6 +23,7 @@ import {
 import type { Post } from "../services/posts";
 import { getUserProfile } from "../services/users";
 import { getSpeciesMeta } from "../utils/petHelpers";
+import { getVideoThumbnail, optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 import { timeAgo } from "../utils/timeAgo";
 
 const genderSymbolClass = "text-lg font-bold";
@@ -210,7 +211,7 @@ export function PetProfile() {
           <div className={`mx-auto w-fit rounded-full bg-gradient-to-r ${speciesMeta.gradient} p-1`}>
             {pet.avatarUrl ? (
               <img
-                src={pet.avatarUrl}
+                src={optimizeCloudinaryUrl(pet.avatarUrl, "avatar")}
                 alt={pet.name}
                 className="h-24 w-24 rounded-full border-4 border-white object-cover dark:border-slate-800"
               />
@@ -416,6 +417,9 @@ export function PetProfile() {
                   const first = mediaList[0];
                   const isVideo = first?.type === "video";
                   const isMulti = mediaList.length > 1;
+                  const thumbSrc = isVideo
+                    ? getVideoThumbnail(first?.url || post.mediaUrl || "", "thumbnail")
+                    : first?.thumbUrl || first?.url || post.mediaUrl;
                   return (
                     <button
                       key={post.id}
@@ -423,11 +427,12 @@ export function PetProfile() {
                       onClick={() => navigate(`/post/${post.id}`)}
                       className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100 transition-all duration-200 hover:scale-[1.02] dark:bg-slate-800"
                     >
-                      {first?.url ? (
+                      {thumbSrc ? (
                         <LazyImage
-                          src={first.thumbUrl || first.url}
+                          src={thumbSrc}
                           alt={post.text}
                           className="h-full w-full"
+                          cloudinarySize="thumbnail"
                         />
                       ) : null}
                       {isVideo ? (
@@ -468,6 +473,7 @@ export function PetProfile() {
                           src={checkin.photoUrl}
                           alt="Check-in"
                           className="h-full w-full"
+                          cloudinarySize="small"
                         />
                       </div>
                       <div className="flex-1">

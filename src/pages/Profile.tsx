@@ -22,6 +22,7 @@ import {
   type Pet,
 } from "../services/pets";
 import { getUserProfile } from "../services/users";
+import { getVideoThumbnail } from "../utils/cloudinaryUrl";
 import { getSpeciesMeta } from "../utils/petHelpers";
 import { timeAgo } from "../utils/timeAgo";
 
@@ -449,7 +450,12 @@ export function Profile() {
                     const first = mediaList[0];
                     const isMulti = mediaList.length > 1;
                     const isVideo = first?.type === "video";
-                    const thumbSrc = first?.thumbUrl || first?.url || post.mediaUrl;
+                    const thumbSrc = isVideo
+                      ? getVideoThumbnail(
+                          first?.url || post.mediaUrl || "",
+                          "thumbnail"
+                        )
+                      : first?.thumbUrl || first?.url || post.mediaUrl;
                     return (
                       <button
                         key={post.id}
@@ -462,6 +468,7 @@ export function Profile() {
                             src={thumbSrc}
                             alt={post.text}
                             className="h-full w-full"
+                            cloudinarySize="thumbnail"
                           />
                         ) : null}
                         {isVideo ? (
@@ -514,6 +521,7 @@ export function Profile() {
                             src={locationPhoto}
                             alt={locationName}
                             className="h-14 w-14 rounded-xl"
+                            cloudinarySize="small"
                           />
                         ) : (
                           <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 text-lg text-white">
@@ -533,6 +541,7 @@ export function Profile() {
                             src={checkin.photoUrl}
                             alt="Check-in"
                             className="h-full w-full"
+                            cloudinarySize="small"
                           />
                         </div>
                       </button>

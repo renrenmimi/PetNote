@@ -13,6 +13,7 @@ import {
   getUpcomingMeetups,
   type Meetup,
 } from "../services/meetups";
+import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 import { calculateDistance } from "../services/location";
 import { getLocation, type Location } from "../services/locations";
 
@@ -255,7 +256,7 @@ export function Meetups() {
                 >
                   {meetup.coverImage ? (
                     <img
-                      src={meetup.coverImage}
+                      src={optimizeCloudinaryUrl(meetup.coverImage, "small")}
                       alt={meetup.title}
                       className="h-20 w-20 rounded-xl object-cover"
                     />

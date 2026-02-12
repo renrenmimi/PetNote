@@ -4,6 +4,7 @@ import { useAuth } from "../hooks/useAuth";
 import { MediaCarousel } from "../components/MediaCarousel";
 import { getPetsByOwner, type Pet } from "../services/pets";
 import { getPostById, updatePost, type Post } from "../services/posts";
+import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 import { getSpeciesMeta } from "../utils/petHelpers";
 import { useToast } from "../contexts/ToastContext";
 
@@ -239,7 +240,7 @@ export function EditPost() {
                     >
                       {petItem.avatarUrl ? (
                         <img
-                          src={petItem.avatarUrl}
+                          src={optimizeCloudinaryUrl(petItem.avatarUrl, "avatar")}
                           alt={petItem.name}
                           className="h-12 w-12 rounded-full border-2 border-white object-cover dark:border-slate-800"
                         />
