@@ -33,13 +33,17 @@ export function BottomNav() {
     {
       label: "Profile",
       icon: "👤",
+      path: "/profile",
       action: () => requireAuth("/profile"),
     },
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-20 border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-      <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-2">
+    <nav
+      className="fixed bottom-0 left-0 right-0 z-50 border-t border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
+      style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+    >
+      <div className="mx-auto flex h-14 w-full max-w-md items-center justify-around px-3">
         {items.map((item) => {
           const isActive = item.path
             ? location.pathname === item.path ||
@@ -62,7 +66,7 @@ export function BottomNav() {
                 }`}
               >
                 {item.label === "Create" ? (
-                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-2xl font-semibold text-white shadow-[0_12px_25px_-15px_rgba(168,85,247,0.8)] transition-all duration-200 hover:scale-105">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-xl font-semibold text-white shadow-[0_12px_25px_-15px_rgba(168,85,247,0.8)] transition-all duration-200 hover:scale-105">
                     {item.icon}
                   </span>
                 ) : (

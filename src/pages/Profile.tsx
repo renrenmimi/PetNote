@@ -203,17 +203,9 @@ export function Profile() {
   }
 
   return (
-    <div className="min-h-screen bg-white pb-10 dark:bg-slate-900">
+    <div className="min-h-screen bg-white pb-24 dark:bg-slate-900">
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-3">
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="text-xl text-slate-500 hover:text-slate-700 dark:text-slate-300"
-            aria-label="Go back"
-          >
-            ←
-          </button>
           <h1 className="text-base font-semibold text-slate-900 dark:text-white">
             Profile
           </h1>
@@ -563,7 +555,7 @@ export function Profile() {
       </main>
 
       {followingModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-3xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)] dark:bg-slate-800">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold text-slate-900 dark:text-white">
@@ -629,6 +621,7 @@ export function Profile() {
           </div>
         </div>
       ) : null}
+
     </div>
   );
 }

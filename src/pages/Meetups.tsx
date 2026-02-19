@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { BottomNav } from "../components/BottomNav";
 import { Navbar } from "../components/Navbar";
 import { EmptyState } from "../components/EmptyState";
 import FilterTag from "../components/FilterTag";
@@ -318,7 +317,6 @@ export function Meetups() {
         )}
       </main>
 
-      <BottomNav />
     </div>
   );
 }

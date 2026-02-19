@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { BottomNav } from "../components/BottomNav";
 import { Navbar } from "../components/Navbar";
 import { PostCard } from "../components/PostCard";
 import { EmptyState } from "../components/EmptyState";
@@ -39,6 +38,10 @@ type SearchResults = {
   tags: Hashtag[];
   posts: Post[];
 };
+
+const EMPTY_USERS: UserProfile[] = [];
+const EMPTY_PETS: Pet[] = [];
+const EMPTY_TAGS: Hashtag[] = [];
 
 const petSpeciesEmoji: Record<string, string> = {
   dog: "🐕",
@@ -294,14 +297,16 @@ export function Search() {
     return trendingPosts.filter((post) => !blockedUserIds.includes(post.authorId));
   }, [blockedUserIds, trendingPosts]);
 
-  const peopleResults = searchResults?.users ?? [];
-  const petResults = searchResults?.pets ?? [];
-  const tagResults = searchResults?.tags ?? [];
+  const peopleResults = searchResults?.users ?? EMPTY_USERS;
+  const petResults = searchResults?.pets ?? EMPTY_PETS;
+  const tagResults = searchResults?.tags ?? EMPTY_TAGS;
 
   useEffect(() => {
     let ignore = false;
     if (peopleResults.length === 0) {
-      setPeoplePetCounts({});
+      setPeoplePetCounts((prev) =>
+        Object.keys(prev).length === 0 ? prev : {}
+      );
       return;
     }
     const loadCounts = async () => {
@@ -742,7 +747,6 @@ export function Search() {
         ) : null}
       </main>
 
-      <BottomNav />
     </div>
   );
 }

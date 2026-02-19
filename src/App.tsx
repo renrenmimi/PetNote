@@ -1,6 +1,7 @@
 import "./App.css";
 import { useEffect, useState } from "react";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
+import { BottomNav } from "./components/BottomNav";
 import { RequireAuth } from "./components/RequireAuth";
 import { RequireAdmin } from "./components/RequireAdmin";
 import { SuspendedBanner } from "./components/SuspendedBanner";
@@ -35,25 +36,28 @@ import { TermsOfService } from "./pages/TermsOfService";
 import { PrivacyPolicy } from "./pages/PrivacyPolicy";
 import { NotFound } from "./pages/NotFound";
 
-function App() {
-  const [splashVisible, setSplashVisible] = useState(true);
-  const [splashFading, setSplashFading] = useState(false);
+type AppContentProps = {
+  splashVisible: boolean;
+  splashFading: boolean;
+};
 
-  useEffect(() => {
-    const fadeTimer = window.setTimeout(() => setSplashFading(true), 1500);
-    const removeTimer = window.setTimeout(() => setSplashVisible(false), 2000);
-    return () => {
-      window.clearTimeout(fadeTimer);
-      window.clearTimeout(removeTimer);
-    };
-  }, []);
+function AppContent({ splashVisible, splashFading }: AppContentProps) {
+  const location = useLocation();
 
   const wrap = (element: React.ReactNode) => (
     <PageTransition>{element}</PageTransition>
   );
 
+  const showBottomNav =
+    location.pathname === "/" ||
+    location.pathname === "/places" ||
+    location.pathname === "/meetups" ||
+    location.pathname === "/search" ||
+    location.pathname === "/notifications" ||
+    location.pathname === "/profile";
+
   return (
-    <BrowserRouter>
+    <>
       <SuspendedBanner />
       {splashVisible ? <SplashScreen visible={!splashFading} /> : null}
       <Routes>
@@ -213,6 +217,27 @@ function App() {
         <Route path="/profile/:userId" element={wrap(<UserProfile />)} />
         <Route path="*" element={wrap(<NotFound />)} />
       </Routes>
+      {showBottomNav ? <BottomNav /> : null}
+    </>
+  );
+}
+
+function App() {
+  const [splashVisible, setSplashVisible] = useState(true);
+  const [splashFading, setSplashFading] = useState(false);
+
+  useEffect(() => {
+    const fadeTimer = window.setTimeout(() => setSplashFading(true), 1500);
+    const removeTimer = window.setTimeout(() => setSplashVisible(false), 2000);
+    return () => {
+      window.clearTimeout(fadeTimer);
+      window.clearTimeout(removeTimer);
+    };
+  }, []);
+
+  return (
+    <BrowserRouter>
+      <AppContent splashVisible={splashVisible} splashFading={splashFading} />
     </BrowserRouter>
   );
 }
