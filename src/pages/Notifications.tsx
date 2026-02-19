@@ -1,5 +1,4 @@
 import { useNavigate } from "react-router-dom";
-import { BottomNav } from "../components/BottomNav";
 import { Navbar } from "../components/Navbar";
 import { EmptyState } from "../components/EmptyState";
 import Avatar from "../components/Avatar";
@@ -138,7 +137,6 @@ export function Notifications() {
         ) : null}
       </main>
 
-      <BottomNav />
     </div>
   );
 }

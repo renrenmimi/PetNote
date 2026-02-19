@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { BottomNav } from "../components/BottomNav";
 import { Navbar } from "../components/Navbar";
 import { OnboardingFlow } from "../components/OnboardingFlow";
 import { PetSpotlight } from "../components/PetSpotlight";
@@ -279,7 +278,6 @@ export function Feed() {
         </div>
       </main>
 
-      <BottomNav />
       <ScrollToTop />
 
       {user && !profileLoading && showOnboarding ? (

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { BottomNav } from "../components/BottomNav";
 import { Navbar } from "../components/Navbar";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { EmptyState } from "../components/EmptyState";
@@ -337,7 +336,6 @@ export function Places() {
         )}
       </main>
 
-      <BottomNav />
     </div>
   );
 }
