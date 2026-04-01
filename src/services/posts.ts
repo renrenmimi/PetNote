@@ -245,17 +245,20 @@ export async function getFollowingPosts(
     return { posts: [], lastDoc: null, hasMore: false };
   }
 
-  // Firestore "in" queries support max 30 values; split into chunks and merge
+  // Firestore "in" queries support max 30 values; split into chunks and merge.
+  // Each chunk uses the same timestamp cursor for consistent pagination.
   const chunkSize = 30;
   const postsRef = collection(db, "posts");
   const allDocs: QueryDocumentSnapshot[] = [];
+  // Fetch extra to ensure we have enough after deduplication/merge
+  const perChunkLimit = limitCount + 5;
 
   for (let i = 0; i < petIds.length; i += chunkSize) {
     const chunk = petIds.slice(i, i + chunkSize);
     const constraints: QueryConstraint[] = [
       where("petId", "in", chunk),
       orderBy("createdAt", "desc"),
-      limit(limitCount),
+      limit(perChunkLimit),
     ];
     if (lastDoc) {
       constraints.push(startAfter(lastDoc));
@@ -264,18 +267,25 @@ export async function getFollowingPosts(
     allDocs.push(...snapshot.docs);
   }
 
-  // Sort all results by createdAt desc and take the requested limit
-  allDocs.sort((a, b) => {
+  // Deduplicate by doc ID (in case of overlap), sort by createdAt desc
+  const seen = new Set<string>();
+  const unique = allDocs.filter((d) => {
+    if (seen.has(d.id)) return false;
+    seen.add(d.id);
+    return true;
+  });
+  unique.sort((a, b) => {
     const aTime = (a.data() as PostData).createdAt?.toMillis?.() ?? 0;
     const bTime = (b.data() as PostData).createdAt?.toMillis?.() ?? 0;
     return bTime - aTime;
   });
 
-  const limited = allDocs.slice(0, limitCount);
+  const limited = unique.slice(0, limitCount);
   const posts = limited.map((docSnap) => ({
     id: docSnap.id,
     ...(docSnap.data() as PostData),
   }));
+  // Use the last doc from the merged result as the cursor for next page
   const nextLastDoc = limited[limited.length - 1] ?? null;
   const hasMore = limited.length === limitCount;
   return { posts, lastDoc: nextLastDoc, hasMore };
