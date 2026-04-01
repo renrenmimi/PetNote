@@ -11,6 +11,7 @@ import {
   serverTimestamp,
   setDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import type { PostData, Post } from "./posts";
@@ -201,7 +202,25 @@ export async function updatePet(
   await setDoc(petRef, removeUndefined(data), { merge: true });
 }
 
+async function deleteSubcollection(parentPath: string, subcollection: string): Promise<void> {
+  const ref = collection(db, parentPath, subcollection);
+  const snapshot = await getDocs(ref);
+  if (snapshot.empty) return;
+  const chunkSize = 450;
+  for (let i = 0; i < snapshot.docs.length; i += chunkSize) {
+    const batch = writeBatch(db);
+    snapshot.docs.slice(i, i + chunkSize).forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  }
+}
+
 export async function deletePet(petId: string): Promise<void> {
+  // Delete subcollections first (Firestore doesn't auto-delete them)
+  await deleteSubcollection(`pets/${petId}`, "family");
+  await deleteSubcollection(`pets/${petId}`, "followers");
+  await deleteSubcollection(`pets/${petId}`, "invitations");
+
+  // Delete the pet document
   const petRef = doc(db, "pets", petId);
   await deleteDoc(petRef);
 }

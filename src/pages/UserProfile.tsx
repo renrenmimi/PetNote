@@ -162,7 +162,7 @@ export function UserProfile() {
                 {profile?.displayName || "PetNote User"}
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                @{profile?.email || "unknown"}
+                @{profile?.displayName || "unknown"}
               </p>
               {profile?.bio ? (
                 <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">

@@ -241,7 +241,7 @@ export function Profile() {
                 {profileName || user.displayName || "PetNote User"}
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                @{user.email || authProfile?.email || "unknown"}
+                @{profileName || user.displayName || "unknown"}
               </p>
               {profileBio ? (
                 <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
