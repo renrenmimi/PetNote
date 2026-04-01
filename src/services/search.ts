@@ -49,7 +49,7 @@ export async function searchUsers(name: string): Promise<UserProfile[]> {
       usersRef,
       orderBy("displayName"),
       where("displayName", ">=", name),
-      where("displayName", "<=", `${name}\\uf8ff`),
+      where("displayName", "<=", `${name}\uf8ff`),
       limit(10)
     )
   );
@@ -67,7 +67,7 @@ export async function searchPets(name: string): Promise<Pet[]> {
       petsRef,
       orderBy("name"),
       where("name", ">=", name),
-      where("name", "<=", `${name}\\uf8ff`),
+      where("name", "<=", `${name}\uf8ff`),
       limit(10)
     )
   );

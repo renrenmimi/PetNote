@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  collectionGroup,
   deleteField,
   doc,
   getDoc,
@@ -503,6 +504,39 @@ export async function deletePost(postId: string): Promise<void> {
 
   await deleteInChunks(likesSnap.docs);
   await deleteInChunks(commentsSnap.docs);
+
+  // Clean up notifications referencing this post
+  const notifQuery = query(
+    collection(db, "notifications"),
+    where("postId", "==", postId)
+  );
+  const notifSnap = await getDocs(notifQuery);
+  if (!notifSnap.empty) {
+    await deleteInChunks(notifSnap.docs);
+  }
+
+  // Clean up reports referencing this post
+  const reportQuery = query(
+    collection(db, "reports"),
+    where("targetId", "==", postId),
+    where("targetType", "==", "post")
+  );
+  const reportSnap = await getDocs(reportQuery);
+  if (!reportSnap.empty) {
+    await deleteInChunks(reportSnap.docs);
+  }
+
+  // Clean up bookmarks referencing this post (collection group)
+  const bookmarkQuery = query(
+    collectionGroup(db, "bookmarks"),
+    where("__name__", "==", postId)
+  );
+  const bookmarkSnap = await getDocs(bookmarkQuery);
+  if (!bookmarkSnap.empty) {
+    const batch = writeBatch(db);
+    bookmarkSnap.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  }
 
   const finalBatch = writeBatch(db);
   finalBatch.delete(postRef);

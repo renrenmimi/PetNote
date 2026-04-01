@@ -1,6 +1,7 @@
 import { updateProfile } from "firebase/auth";
 import {
   collection,
+  collectionGroup,
   doc,
   getDoc,
   getDocs,
@@ -72,17 +73,57 @@ export async function updateUserProfile(
   }
 
   if (data.displayName || data.avatarUrl) {
-    const postsRef = collection(db, "posts");
-    const postsQuery = query(postsRef, where("authorId", "==", userId));
-    const snapshot = await getDocs(postsQuery);
-    const batch = writeBatch(db);
-    snapshot.docs.forEach((docSnap) => {
-      batch.update(docSnap.ref, {
-        ...(data.displayName ? { authorName: data.displayName } : {}),
-        ...(data.avatarUrl ? { authorAvatar: data.avatarUrl } : {}),
-      });
-    });
-    await batch.commit();
+    const nameUpdate = data.displayName ? { authorName: data.displayName } : {};
+    const avatarUpdate = data.avatarUrl ? { authorAvatar: data.avatarUrl } : {};
+    const updates = { ...nameUpdate, ...avatarUpdate };
+
+    const batchUpdate = async (docs: { ref: import("firebase/firestore").DocumentReference }[], fields: Record<string, unknown>) => {
+      const chunkSize = 450;
+      for (let i = 0; i < docs.length; i += chunkSize) {
+        const batch = writeBatch(db);
+        docs.slice(i, i + chunkSize).forEach((d) => batch.update(d.ref, fields));
+        await batch.commit();
+      }
+    };
+
+    // Sync posts
+    const postsSnap = await getDocs(query(collection(db, "posts"), where("authorId", "==", userId)));
+    if (!postsSnap.empty) await batchUpdate(postsSnap.docs, updates);
+
+    // Sync comments
+    const commentFields: Record<string, unknown> = {};
+    if (data.displayName) commentFields.authorName = data.displayName;
+    if (data.avatarUrl) commentFields.authorAvatar = data.avatarUrl;
+    const commentsSnap = await getDocs(query(collectionGroup(db, "comments"), where("authorId", "==", userId)));
+    if (!commentsSnap.empty) await batchUpdate(commentsSnap.docs, commentFields);
+
+    // Sync notifications (where user is the sender)
+    const notifFields: Record<string, unknown> = {};
+    if (data.displayName) notifFields.fromUserName = data.displayName;
+    if (data.avatarUrl) notifFields.fromUserAvatar = data.avatarUrl;
+    const notifSnap = await getDocs(query(collection(db, "notifications"), where("fromUserId", "==", userId)));
+    if (!notifSnap.empty) await batchUpdate(notifSnap.docs, notifFields);
+
+    // Sync meetup participants
+    const participantFields: Record<string, unknown> = {};
+    if (data.displayName) participantFields.userName = data.displayName;
+    if (data.avatarUrl) participantFields.userAvatar = data.avatarUrl;
+    const participantsSnap = await getDocs(query(collectionGroup(db, "participants"), where("userId", "==", userId)));
+    if (!participantsSnap.empty) await batchUpdate(participantsSnap.docs, participantFields);
+
+    // Sync location reviews
+    const reviewFields: Record<string, unknown> = {};
+    if (data.displayName) reviewFields.userName = data.displayName;
+    if (data.avatarUrl) reviewFields.userAvatar = data.avatarUrl;
+    const reviewsSnap = await getDocs(query(collectionGroup(db, "reviews"), where("userId", "==", userId)));
+    if (!reviewsSnap.empty) await batchUpdate(reviewsSnap.docs, reviewFields);
+
+    // Sync pet family memberships
+    const familyFields: Record<string, unknown> = {};
+    if (data.displayName) familyFields.userName = data.displayName;
+    if (data.avatarUrl) familyFields.userAvatar = data.avatarUrl;
+    const familySnap = await getDocs(query(collectionGroup(db, "family"), where("userId", "==", userId)));
+    if (!familySnap.empty) await batchUpdate(familySnap.docs, familyFields);
   }
 }
 
