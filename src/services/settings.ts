@@ -75,6 +75,12 @@ async function deleteCollectionGroupDocs(collectionName: string, field: string, 
 }
 
 export async function deleteAccount(userId: string): Promise<void> {
+  // Delete Firebase Auth account FIRST (requires recent login, may throw)
+  // Do this before deleting data so we don't end up with orphaned auth account
+  if (auth.currentUser && auth.currentUser.uid === userId) {
+    await deleteUser(auth.currentUser);
+  }
+
   // Delete user's posts (each post cascades its own likes/comments/tags)
   const posts = await getPostsByUser(userId);
   for (const post of posts) {
@@ -87,17 +93,11 @@ export async function deleteAccount(userId: string): Promise<void> {
     await deletePet(pet.id);
   }
 
-  // Clean up user's notifications
-  const notificationsQuery = query(
-    collection(db, "notifications"),
-    where("userId", "==", userId)
-  );
-  const notifSnap = await getDocs(notificationsQuery);
-  if (!notifSnap.empty) {
-    const batch = writeBatch(db);
-    notifSnap.docs.forEach((d) => batch.delete(d.ref));
-    await batch.commit();
-  }
+  // Clean up notifications received by user
+  await deleteCollectionGroupDocs("notifications", "userId", userId);
+
+  // Clean up notifications sent by user
+  await deleteCollectionGroupDocs("notifications", "fromUserId", userId);
 
   // Clean up user's comments across all posts
   await deleteCollectionGroupDocs("comments", "authorId", userId);
@@ -117,6 +117,41 @@ export async function deleteAccount(userId: string): Promise<void> {
   // Clean up user's pet family memberships (where user is a member, not owner)
   await deleteCollectionGroupDocs("family", "userId", userId);
 
+  // Clean up meetups organized by user
+  const meetupsQuery = query(
+    collection(db, "meetups"),
+    where("organizerId", "==", userId)
+  );
+  const meetupsSnap = await getDocs(meetupsQuery);
+  for (const meetupDoc of meetupsSnap.docs) {
+    await deleteSubcollection(`meetups/${meetupDoc.id}`, "participants");
+    await deleteDoc(meetupDoc.ref);
+  }
+
+  // Clean up reports submitted by user
+  const reportsQuery = query(
+    collection(db, "reports"),
+    where("reporterId", "==", userId)
+  );
+  const reportsSnap = await getDocs(reportsQuery);
+  if (!reportsSnap.empty) {
+    const batch = writeBatch(db);
+    reportsSnap.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  }
+
+  // Clean up feedback submitted by user
+  const feedbackQuery = query(
+    collection(db, "feedback"),
+    where("userId", "==", userId)
+  );
+  const feedbackSnap = await getDocs(feedbackQuery);
+  if (!feedbackSnap.empty) {
+    const batch = writeBatch(db);
+    feedbackSnap.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  }
+
   // Clean up user subcollections
   await deleteSubcollection(`users/${userId}`, "bookmarks");
   await deleteSubcollection(`users/${userId}`, "followingPets");
@@ -127,9 +162,4 @@ export async function deleteAccount(userId: string): Promise<void> {
   // Delete settings and user document
   await deleteDoc(settingsRef(userId));
   await deleteDoc(doc(db, "users", userId));
-
-  // Delete Firebase Auth account
-  if (auth.currentUser && auth.currentUser.uid === userId) {
-    await deleteUser(auth.currentUser);
-  }
 }

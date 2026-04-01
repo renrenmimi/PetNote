@@ -24,6 +24,7 @@ import { getUserProfile } from "./users";
 import { getUserStats } from "./posts";
 import { createNotification } from "./notifications";
 import { getOrCreateLocation } from "./locations";
+import { getFollowingPets } from "./follow";
 import { removeUndefined } from "../utils/removeUndefined";
 
 export type MeetupStatus = "upcoming" | "ongoing" | "completed" | "cancelled";
@@ -477,9 +478,10 @@ export async function checkRequirements(
   }
 
   if (requirements.minFollowers > 0) {
-    const followScore =
-      profile?.followingPetsCount ?? profile?.followerCount ?? 0;
-    if (followScore < requirements.minFollowers) {
+    // Count actual followingPets subcollection instead of trusting
+    // the denormalized counter (which could be tampered with)
+    const followingPets = await getFollowingPets(userId);
+    if (followingPets.length < requirements.minFollowers) {
       reasons.push(
         `Requires at least ${requirements.minFollowers} followed pets.`
       );
