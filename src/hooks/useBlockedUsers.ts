@@ -14,6 +14,7 @@ export function useBlockedUsers(userId: string | null): UseBlockedUsersResult {
 
   useEffect(() => {
     if (!userId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setBlockedUserIds([]);
       return;
     }

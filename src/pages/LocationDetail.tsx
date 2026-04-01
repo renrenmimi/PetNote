@@ -163,6 +163,7 @@ export function LocationDetail() {
   useEffect(() => {
     let ignore = false;
     if (!user?.uid) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setUserPets([]);
       return;
     }
@@ -208,6 +209,7 @@ export function LocationDetail() {
     return Object.entries(counts).sort((a, b) => b[1] - a[1]);
   }, [reviews]);
 
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const distance = useMemo(() => {
     if (!location || !profile?.location) return null;
     return calculateDistance(

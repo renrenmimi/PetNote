@@ -10,6 +10,7 @@ export type FilterName =
   | "soft"
   | "rose";
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const FILTERS: Array<{
   key: FilterName;
   label: string;

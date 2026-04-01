@@ -30,6 +30,7 @@ export function useNotifications(
 
   useEffect(() => {
     if (!userId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setNotifications([]);
       setUnreadCount(0);
       setLoading(false);

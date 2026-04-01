@@ -52,6 +52,7 @@ export function MediaCarousel({
   const hasMultiple = items.length > 1;
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIndex(0);
     setDragX(0);
   }, [items.length]);

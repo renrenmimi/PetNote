@@ -12,7 +12,7 @@ import {
   type PetFamilyRelationship,
 } from "../services/pets";
 import {
-  useInvitation,
+  redeemInvitation,
   validateInvitationCode,
 } from "../services/invitations";
 import {
@@ -284,7 +284,7 @@ export function AddPet() {
     }
     setJoiningFamily(true);
     try {
-      const result = await useInvitation(
+      const result = await redeemInvitation(
         pendingInvite.code,
         user.uid,
         user.displayName || "User",
@@ -298,7 +298,7 @@ export function AddPet() {
       }
       showToast(`Welcome to ${result.petName || pendingInvite.petName}'s family!`, "success");
       navigate(`/pet/${result.petId}`, { replace: true });
-    } catch (error) {
+    } catch {
       showToast("Could not join family.", "error");
     } finally {
       setJoiningFamily(false);

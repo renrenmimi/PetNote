@@ -178,14 +178,15 @@ export function EditMeetup() {
       setLocationCity(city);
       setLocationState(state);
       setLocationStatus("success");
-    } catch (err: any) {
-      if (err?.code === 1) {
+    } catch (err: unknown) {
+      const geoErr = err as GeolocationPositionError;
+      if (geoErr?.code === 1) {
         setLocationError(
           "Location access denied. Please enable location in your browser settings."
         );
-      } else if (err?.code === 2) {
+      } else if (geoErr?.code === 2) {
         setLocationError("Unable to determine your location. Please try again.");
-      } else if (err?.code === 3 || err?.message === "timeout") {
+      } else if (geoErr?.code === 3 || (err as Error)?.message === "timeout") {
         setLocationError("Location request timed out. Please try again.");
       } else {
         setLocationError(
@@ -632,7 +633,7 @@ export function EditMeetup() {
 
           <div className="space-y-2">
             <label className="text-xs font-semibold text-slate-500 dark:text-slate-300">
-              Minimum followers
+              Minimum followed pets
             </label>
             <input
               type="number"

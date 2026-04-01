@@ -65,7 +65,7 @@ export function AddressAutocomplete({
           return;
         }
         const features = Array.isArray(data.features) ? data.features : [];
-        const mapped = features.map((item: any) => {
+        const mapped = features.map((item: Record<string, Record<string, unknown>>) => {
           const props = item?.properties || {};
           return {
             name: props.name || props.street || props.formatted || "",

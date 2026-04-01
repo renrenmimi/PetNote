@@ -49,6 +49,7 @@ export function useAuth(): UseAuthResult {
 
   useEffect(() => {
     if (!user) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setProfile(null);
       setProfileLoading(false);
       return;
@@ -76,35 +77,31 @@ export function useAuth(): UseAuthResult {
   }, []);
 
   const signUp = useCallback(async (email: string, password: string) => {
+    const result = await createUserWithEmailAndPassword(auth, email, password);
+    const createdUser = result.user;
+    const randomName = await generateUniqueUsername();
+    const avatarUrl = `https://api.dicebear.com/7.x/thumbs/svg?seed=${createdUser.uid}`;
+    await updateProfile(createdUser, {
+      displayName: randomName,
+      photoURL: avatarUrl,
+    });
+    await createUserProfile(createdUser.uid, {
+      displayName: randomName,
+      avatarUrl,
+      bio: "",
+      email: createdUser.email || email,
+      followerCount: 0,
+      followingCount: 0,
+      followingPetsCount: 0,
+      onboardingComplete: false,
+      createdAt: serverTimestamp(),
+    });
     try {
-      const result = await createUserWithEmailAndPassword(auth, email, password);
-      const createdUser = result.user;
-      const randomName = await generateUniqueUsername();
-      const avatarUrl = `https://api.dicebear.com/7.x/thumbs/svg?seed=${createdUser.uid}`;
-      await updateProfile(createdUser, {
-        displayName: randomName,
-        photoURL: avatarUrl,
-      });
-      await createUserProfile(createdUser.uid, {
-        displayName: randomName,
-        avatarUrl,
-        bio: "",
-        email: createdUser.email || email,
-        followerCount: 0,
-        followingCount: 0,
-        followingPetsCount: 0,
-        onboardingComplete: false,
-        createdAt: serverTimestamp(),
-      });
-      try {
-        await sendEmailVerification(createdUser);
-      } catch {
-        // Ignore verification errors so sign-up can still finish.
-      }
-      return createdUser;
-    } catch (error) {
-      throw error;
+      await sendEmailVerification(createdUser);
+    } catch {
+      // Ignore verification errors so sign-up can still finish.
     }
+    return createdUser;
   }, []);
 
   const signInWithGoogle = useCallback(async () => {

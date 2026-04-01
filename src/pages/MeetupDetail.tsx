@@ -419,7 +419,7 @@ export function MeetupDetail() {
     if (requirements.minFollowers > 0) {
       items.push({
         icon: "⭐",
-        label: `Minimum followers: ${requirements.minFollowers}`,
+        label: `Minimum followed pets: ${requirements.minFollowers}`,
       });
     }
     if (requirements.additionalNotes) {

@@ -115,7 +115,7 @@ export function EditProfile() {
         if (!ignore) {
           setUsernameTaken(taken);
         }
-      } catch (error) {
+      } catch {
         if (!ignore) {
           setUsernameTaken(false);
         }
