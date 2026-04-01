@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  getNotifications,
-  getUnreadCount,
+  collection,
+  onSnapshot,
+  orderBy,
+  query,
+  where,
+} from "firebase/firestore";
+import { db } from "../services/firebase";
+import {
   markAllAsRead as markAll,
   markAsRead as markOne,
   type NotificationItem,
@@ -22,7 +28,7 @@ export function useNotifications(
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  const refresh = useCallback(async () => {
+  useEffect(() => {
     if (!userId) {
       setNotifications([]);
       setUnreadCount(0);
@@ -30,19 +36,25 @@ export function useNotifications(
       return;
     }
 
-    setLoading(true);
-    const [list, count] = await Promise.all([
-      getNotifications(userId),
-      getUnreadCount(userId),
-    ]);
-    setNotifications(list);
-    setUnreadCount(count);
-    setLoading(false);
-  }, [userId]);
+    const notificationsRef = collection(db, "notifications");
+    const notificationsQuery = query(
+      notificationsRef,
+      where("userId", "==", userId),
+      orderBy("createdAt", "desc")
+    );
 
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    const unsubscribe = onSnapshot(notificationsQuery, (snapshot) => {
+      const list = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() as Omit<NotificationItem, "id">),
+      }));
+      setNotifications(list);
+      setUnreadCount(list.filter((item) => !item.read).length);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [userId]);
 
   const markAsRead = useCallback(
     async (id: string) => {

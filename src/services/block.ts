@@ -8,7 +8,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { unfollowUser } from "./follow";
+import { getFollowingPets, unfollowPet } from "./follow";
 
 export async function blockUser(
   myUid: string,
@@ -23,10 +23,23 @@ export async function blockUser(
     },
     { merge: true }
   );
-  await Promise.all([
-    unfollowUser(myUid, targetUid),
-    unfollowUser(targetUid, myUid),
-  ]);
+
+  // Unfollow any pets owned by the blocked user
+  try {
+    const myFollowing = await getFollowingPets(myUid);
+    for (const follow of myFollowing) {
+      const petRef = doc(db, "pets", follow.petId);
+      const petSnap = await getDoc(petRef);
+      if (petSnap.exists()) {
+        const petData = petSnap.data() as { ownerId?: string; primaryOwnerId?: string };
+        if (petData.ownerId === targetUid || petData.primaryOwnerId === targetUid) {
+          await unfollowPet(myUid, follow.petId);
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Failed to unfollow blocked user's pets:", error);
+  }
 }
 
 export async function unblockUser(
