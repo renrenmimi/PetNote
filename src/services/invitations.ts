@@ -166,7 +166,7 @@ export async function validateInvitationCode(code: string): Promise<{
   }
 }
 
-export async function useInvitation(
+export async function redeemInvitation(
   code: string,
   userId: string,
   userName: string,

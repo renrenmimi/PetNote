@@ -45,7 +45,7 @@ export interface PostData {
   petId?: string;
   petName?: string;
   petAvatarUrl?: string;
-  createdAt: any;
+  createdAt: Timestamp;
   likeCount: number;
   commentCount: number;
   tags: string[];

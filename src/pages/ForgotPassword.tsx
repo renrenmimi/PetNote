@@ -88,7 +88,7 @@ export function ForgotPassword() {
       await sendPasswordResetEmail(auth, email.trim());
       setStatus("success");
       setMessage("Reset link sent! Check your email.");
-    } catch (err) {
+    } catch {
       setStatus("error");
       setMessage(
         "If an account exists with this email, we've sent a reset link. If you signed up with Google, please use Google Sign-In instead."

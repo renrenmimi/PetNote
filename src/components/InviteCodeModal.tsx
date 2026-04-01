@@ -63,7 +63,7 @@ export function InviteCodeModal({
         if (!ignore) {
           setActiveInvitation(invites[0] || null);
         }
-      } catch (error) {
+      } catch {
         if (!ignore) {
           showToast("Failed to load invitation codes.", "error");
         }

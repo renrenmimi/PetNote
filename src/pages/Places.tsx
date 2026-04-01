@@ -7,6 +7,7 @@ import LazyImage from "../components/LazyImage";
 import FilterTag from "../components/FilterTag";
 import { useAuth } from "../hooks/useAuth";
 import { Coffee, Leaf, Mountain, PawPrint, ShoppingBag, Stethoscope, Trees, Waves } from "lucide-react";
+import { type QueryDocumentSnapshot } from "firebase/firestore";
 import {
   getPlaces,
   searchPlaces,
@@ -101,7 +102,7 @@ export function Places() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [lastDoc, setLastDoc] = useState<any>(null);
+  const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchCenter, setSearchCenter] = useState<{ lat: number; lng: number } | null>(
     null
@@ -122,7 +123,7 @@ export function Places() {
       userLat: activeCenter?.lat,
       userLng: activeCenter?.lng,
       limit: 10,
-      lastDoc: reset ? undefined : lastDoc,
+      lastDoc: reset ? undefined : (lastDoc ?? undefined),
     });
     setPlaces((prev) => (reset ? result.places : [...prev, ...result.places]));
     setLastDoc(result.lastDoc);
@@ -153,6 +154,7 @@ export function Places() {
     );
     observer.observe(sentinelRef.current);
     return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasMore, loadingMore, loading, searchMode]);
 
   useEffect(() => {

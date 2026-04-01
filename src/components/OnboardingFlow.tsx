@@ -22,7 +22,7 @@ import { PET_SPECIES, type PetSpecies } from "../utils/petHelpers";
 import { useToast } from "../contexts/ToastContext";
 import { getSuggestedPets } from "../services/explore";
 import { followPet } from "../services/follow";
-import { useInvitation, validateInvitationCode } from "../services/invitations";
+import { redeemInvitation, validateInvitationCode } from "../services/invitations";
 
 type OnboardingFlowProps = {
   userId: string;
@@ -283,7 +283,7 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
       setInviteCode(normalized);
       setPendingInvite({ code: normalized, petName: result.petName });
       showToast(`Code accepted for ${result.petName}.`, "success");
-    } catch (error) {
+    } catch {
       showToast("Unable to validate invitation code.", "error");
     } finally {
       setValidatingInvite(false);
@@ -298,7 +298,7 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
     setJoiningFamily(true);
     try {
       const currentUser = await ensureUserProfile();
-      const result = await useInvitation(
+      const result = await redeemInvitation(
         pendingInvite.code,
         currentUser.uid,
         currentUser.displayName || "User",
@@ -313,7 +313,7 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
       }
       showToast(`Welcome to ${pendingInvite.petName}'s family.`, "success");
       handleNext();
-    } catch (error) {
+    } catch {
       showToast("Could not join this pet family.", "error");
     } finally {
       setJoiningFamily(false);

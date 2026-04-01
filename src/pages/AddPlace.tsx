@@ -131,7 +131,7 @@ export function AddPlace() {
       setCity(placeCity);
       setState(placeState);
       if (!name) setName(props.name || props.street || formatted);
-    } catch (err) {
+    } catch {
       showToast("Unable to fetch location. Please enter address manually.", "error");
     }
   };
@@ -198,7 +198,7 @@ export function AddPlace() {
       }
       showToast("Place added!", "success");
       navigate(`/location/${locationId}`, { replace: true });
-    } catch (err) {
+    } catch {
       showToast("Failed to add place.", "error");
     } finally {
       setSaving(false);

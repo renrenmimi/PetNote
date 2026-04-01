@@ -151,7 +151,7 @@ export function Settings() {
         if (!ignore) {
           setSettings(data);
         }
-      } catch (error) {
+      } catch {
         if (!ignore) {
           showToast("Failed to load settings.", "error");
         }

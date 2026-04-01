@@ -46,6 +46,7 @@ export default function LazyImage({
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoaded(false);
     setError(false);
   }, [resolvedSrc]);

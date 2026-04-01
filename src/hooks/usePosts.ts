@@ -104,6 +104,7 @@ export function usePosts(mode: FeedMode = "all", userId?: string | null): UsePos
 
   useEffect(() => {
     if (mode === "following" && !userId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFeeds((prev) => ({
         ...prev,
         following: {

@@ -76,7 +76,7 @@ export function PostDetail() {
   }, [post?.authorId, post?.authorAvatar, post?.authorName]);
 
   const timeLabel = useMemo(
-    () => (post?.createdAt ? timeAgo(post.createdAt as Date) : ""),
+    () => (post?.createdAt ? timeAgo(post.createdAt) : ""),
     [post?.createdAt]
   );
   const mediaItems =

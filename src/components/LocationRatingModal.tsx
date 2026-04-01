@@ -117,7 +117,7 @@ export function LocationRatingModal({
       showToast("Thanks for your review! 🐾", "success");
       onSubmitted?.();
       onClose();
-    } catch (err) {
+    } catch {
       showToast("Failed to submit review.", "error");
     } finally {
       setSubmitting(false);

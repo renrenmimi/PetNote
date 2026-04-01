@@ -224,7 +224,7 @@ export function PostCard({
       if (!onDeleted) {
         setHidden(true);
       }
-    } catch (err) {
+    } catch {
       showToast("Failed to delete post", "error");
     } finally {
       setDeleting(false);

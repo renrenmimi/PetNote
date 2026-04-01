@@ -33,6 +33,7 @@ export default function Avatar({
   const [imgSrc, setImgSrc] = useState(optimizedSrc || fallbackUrl);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setImgSrc(optimizedSrc || fallbackUrl);
   }, [optimizedSrc, fallbackUrl]);
 
