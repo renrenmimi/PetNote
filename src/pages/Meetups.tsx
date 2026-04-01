@@ -6,6 +6,7 @@ import FilterTag from "../components/FilterTag";
 import { useAuth } from "../hooks/useAuth";
 import { Calendar, MapPin, PawPrint, User } from "lucide-react";
 import {
+  checkAndUpdateMeetupStatus,
   getMyMeetups,
   getNearbyMeetups,
   getThisWeekMeetups,
@@ -118,8 +119,16 @@ export function Meetups() {
           return true;
         });
       }
+      // Update stale meetup statuses (e.g. upcoming → completed)
+      const updated = await Promise.all(
+        data.map((m) =>
+          m.status === "upcoming" || m.status === "ongoing"
+            ? checkAndUpdateMeetupStatus(m.id).then((result) => result ?? m)
+            : Promise.resolve(m)
+        )
+      );
       if (!ignore) {
-        setMeetups(data);
+        setMeetups(updated);
         setLoading(false);
       }
     };
