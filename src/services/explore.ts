@@ -1,7 +1,5 @@
 import {
   collection,
-  doc,
-  getDoc,
   getDocs,
   limit,
   orderBy,
@@ -99,18 +97,27 @@ export async function getPopularPets(limitCount = 8): Promise<Array<Pet & { post
     .sort((a, b) => b[1] - a[1])
     .slice(0, limitCount);
 
-  const results: Array<Pet & { postCount: number }> = [];
-  for (const [petId, postCount] of sorted) {
-    const petSnap = await getDoc(doc(db, "pets", petId));
-    if (petSnap.exists()) {
-      results.push({
-        id: petSnap.id,
-        ...(petSnap.data() as Omit<Pet, "id">),
-        postCount,
-      });
-    }
+  const petIds = sorted.map(([petId]) => petId);
+  if (petIds.length === 0) return [];
+
+  // Batch fetch all pet documents instead of N+1 individual queries
+  const petsRef = collection(db, "pets");
+  const petMap = new Map<string, Pet>();
+  const chunkSize = 10;
+  for (let i = 0; i < petIds.length; i += chunkSize) {
+    const chunk = petIds.slice(i, i + chunkSize);
+    const petSnapshot = await getDocs(query(petsRef, where("__name__", "in", chunk)));
+    petSnapshot.docs.forEach((petDoc) => {
+      petMap.set(petDoc.id, { id: petDoc.id, ...(petDoc.data() as Omit<Pet, "id">) });
+    });
   }
-  return results;
+
+  return sorted
+    .filter(([petId]) => petMap.has(petId))
+    .map(([petId, postCount]) => ({
+      ...petMap.get(petId)!,
+      postCount,
+    }));
 }
 
 export async function getTopRatedPlaces(limitCount = 5): Promise<Location[]> {
