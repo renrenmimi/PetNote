@@ -206,6 +206,7 @@ export async function useInvitation(
         userAvatar || `https://api.dicebear.com/7.x/thumbs/svg?seed=${userId}`,
       relationship,
       role: "member",
+      invitationCode: normalized,
       ...withCustomRelationship(relationship, customRelationship),
       joinedAt: serverTimestamp(),
     })

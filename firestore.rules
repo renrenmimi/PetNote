@@ -24,12 +24,23 @@ service cloud.firestore {
         get(userDoc).data.banned != true;
     }
 
+    // P0 #1: Only allow owner to update whitelisted fields.
+    // Sensitive fields (role, banned, followerCount, etc.) are admin-only.
+    function isAllowedUserUpdate() {
+      let allowed = ['displayName', 'displayNameLower', 'avatarUrl', 'bio',
+                      'location', 'onboardingComplete', 'pinnedPostId',
+                      'followingPetsCount', 'followingCount'];
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
+    }
+
     // ========= users =========
     match /users/{userId} {
       allow read: if true;
       allow create: if isOwner(userId);
-      allow update: if isOwner(userId) || isAdmin();
-      allow delete: if isAdmin();
+      // P0 #1: owner can only update whitelisted fields; admin can update anything
+      allow update: if (isOwner(userId) && isAllowedUserUpdate()) || isAdmin();
+      // P0 #4 (partial): allow owner OR admin to delete their own user doc
+      allow delete: if isOwner(userId) || isAdmin();
 
       match /bookmarks/{bookmarkId} {
         allow read: if isOwner(userId);
@@ -43,12 +54,13 @@ service cloud.firestore {
 
       match /followingPets/{petId} {
         allow read: if isOwner(userId);
-        allow write: if isOwner(userId);
+        allow write: if isOwner(userId) && isNotBanned();
       }
 
       match /followers/{followerId} {
         allow read: if true;
-        allow write: if isAuthenticated() && request.auth.uid == followerId;
+        // P0 #5: add isNotBanned check
+        allow write: if isAuthenticated() && request.auth.uid == followerId && isNotBanned();
       }
 
       match /blockedUsers/{blockedId} {
@@ -65,7 +77,8 @@ service cloud.firestore {
     // ========= posts =========
     match /posts/{postId} {
       allow read: if true;
-      allow create: if isAuthenticated();
+      // P0 #5: add isNotBanned check to create
+      allow create: if isAuthenticated() && isNotBanned();
       allow update: if isAuthenticated() &&
         (resource.data.authorId == request.auth.uid || isAdmin());
       allow delete: if isAuthenticated() &&
@@ -92,7 +105,7 @@ service cloud.firestore {
     // ========= pets =========
     match /pets/{petId} {
       allow read: if true;
-      allow create: if isAuthenticated() &&
+      allow create: if isAuthenticated() && isNotBanned() &&
         request.resource.data.ownerId == request.auth.uid;
       allow update: if isAuthenticated() &&
         (resource.data.ownerId == request.auth.uid || resource.data.primaryOwnerId == request.auth.uid);
@@ -101,9 +114,16 @@ service cloud.firestore {
 
       match /family/{userId} {
         allow read: if true;
-        allow create: if request.auth != null && request.auth.uid == userId;
-        allow update: if request.auth != null && request.auth.uid == userId;
-        allow delete: if request.auth != null && (
+        // P0 #3: family creation requires either:
+        //   a) user is the pet's primary owner (initial setup), OR
+        //   b) user provides a valid invitation code that exists in the invitations subcollection
+        allow create: if isAuthenticated() && request.auth.uid == userId && (
+          get(/databases/$(database)/documents/pets/$(petId)).data.primaryOwnerId == request.auth.uid ||
+          ('invitationCode' in request.resource.data &&
+           exists(/databases/$(database)/documents/pets/$(petId)/invitations/$(request.resource.data.invitationCode)))
+        );
+        allow update: if isAuthenticated() && request.auth.uid == userId;
+        allow delete: if isAuthenticated() && (
           request.auth.uid == userId ||
           get(/databases/$(database)/documents/pets/$(petId)).data.primaryOwnerId == request.auth.uid ||
           get(/databases/$(database)/documents/pets/$(petId)).data.ownerId == request.auth.uid
@@ -111,17 +131,24 @@ service cloud.firestore {
       }
 
       match /invitations/{code} {
-        allow read: if request.auth != null;
-        allow create: if request.auth != null &&
+        allow read: if isAuthenticated();
+        // Only family members can create invitations
+        allow create: if isAuthenticated() &&
           exists(/databases/$(database)/documents/pets/$(petId)/family/$(request.auth.uid));
-        allow update: if request.auth != null;
+        // P0 #3: only the invitation creator, primary owner, or admin can update
+        allow update: if isAuthenticated() && (
+          resource.data.createdBy == request.auth.uid ||
+          get(/databases/$(database)/documents/pets/$(petId)).data.primaryOwnerId == request.auth.uid ||
+          isAdmin()
+        );
         allow delete: if false;
       }
 
       match /followers/{userId} {
         allow read: if true;
-        allow create: if request.auth != null && request.auth.uid == userId;
-        allow delete: if request.auth != null && request.auth.uid == userId;
+        // P0 #5: add isNotBanned check
+        allow create: if isAuthenticated() && request.auth.uid == userId && isNotBanned();
+        allow delete: if isAuthenticated() && request.auth.uid == userId;
         allow update: if false;
       }
     }
@@ -129,7 +156,9 @@ service cloud.firestore {
     // ========= notifications =========
     match /notifications/{notificationId} {
       allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow create: if isAuthenticated();
+      // P0 #2: prevent non-admin from creating warning notifications
+      allow create: if isAuthenticated() && isNotBanned() &&
+        (request.resource.data.type != 'warning' || isAdmin());
       allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
       allow delete: if isAuthenticated() &&
         (resource.data.userId == request.auth.uid || isAdmin());
@@ -138,7 +167,8 @@ service cloud.firestore {
     // ========= meetups =========
     match /meetups/{meetupId} {
       allow read: if true;
-      allow create: if isAuthenticated();
+      // P0 #5: add isNotBanned check to create
+      allow create: if isAuthenticated() && isNotBanned();
       allow update: if isAuthenticated() &&
         (resource.data.organizerId == request.auth.uid || isAdmin());
       allow delete: if isAuthenticated() &&
@@ -159,8 +189,18 @@ service cloud.firestore {
     // ========= locations =========
     match /locations/{locationId} {
       allow read: if true;
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
+      // P0 #5: add isNotBanned check to create
+      allow create: if isAuthenticated() && isNotBanned();
+      // P0 #4: location creator or admin can update anything;
+      // other authenticated users can only update aggregation fields (from reviews/checkins)
+      allow update: if isAuthenticated() && isNotBanned() && (
+        resource.data.addedBy == request.auth.uid ||
+        isAdmin() ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+          ['averageRating', 'totalRatings', 'totalCheckins', 'verifiedByCheckins',
+           'totalPhotos', 'photos', 'tags', 'updatedAt']
+        )
+      );
       allow delete: if isAdmin();
 
       match /reviews/{reviewId} {
@@ -182,8 +222,11 @@ service cloud.firestore {
     // ========= hashtags =========
     match /hashtags/{tagId} {
       allow read: if true;
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
+      allow create: if isAuthenticated() && isNotBanned();
+      // P0 #4: only allow updating postCount and lastUsed (tag counting);
+      // name and other fields cannot be tampered with
+      allow update: if isAuthenticated() && isNotBanned() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['postCount', 'lastUsed']);
       allow delete: if isAdmin();
     }
 
@@ -225,7 +268,7 @@ service cloud.firestore {
     }
 
     match /{path=**}/bookmarks/{bookmarkId} {
-      allow read: if request.auth != null && request.auth.uid == bookmarkId;
+      allow read: if isAuthenticated() && request.auth.uid == bookmarkId;
     }
 
     match /{path=**}/family/{userId} {
@@ -233,12 +276,11 @@ service cloud.firestore {
     }
 
     match /{path=**}/invitations/{code} {
-      allow read: if request.auth != null;
+      allow read: if isAuthenticated();
     }
 
-    match /{path=**}/followingPets/{petId} {
-      allow read: if true;
-      allow write: if request.auth != null;
-    }
+    // P0 #6: REMOVED the overly permissive followingPets collection group rule.
+    // The specific path /users/{userId}/followingPets/{petId} already has proper
+    // owner-only rules above. No collection group query is needed for this data.
   }
 }
