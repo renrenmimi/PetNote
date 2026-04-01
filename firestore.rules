@@ -24,18 +24,12 @@ service cloud.firestore {
         get(userDoc).data.banned != true;
     }
 
-    // P0 #1: Only allow owner to update whitelisted fields.
-    // Sensitive fields (role, banned, followerCount, etc.) are admin-only.
     function isAllowedUserUpdate() {
       let allowed = ['displayName', 'displayNameLower', 'avatarUrl', 'bio',
                       'location', 'onboardingComplete', 'pinnedPostId'];
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
     }
 
-    // Count fields (followingPetsCount, followingCount, followerCount) are only
-    // writable via the followingPets/followers subcollection rules below, which
-    // trigger updates to the parent user doc. This separate check allows only
-    // numeric increment-style updates to count fields.
     function isCounterUpdate() {
       let counters = ['followingPetsCount', 'followingCount', 'followerCount'];
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(counters);
@@ -45,9 +39,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if true;
       allow create: if isOwner(userId);
-      // P0 #1: owner can only update whitelisted fields; admin can update anything
       allow update: if (isOwner(userId) && (isAllowedUserUpdate() || isCounterUpdate())) || isAdmin();
-      // P0 #4 (partial): allow owner OR admin to delete their own user doc
       allow delete: if isOwner(userId) || isAdmin();
 
       match /bookmarks/{bookmarkId} {
@@ -67,7 +59,6 @@ service cloud.firestore {
 
       match /followers/{followerId} {
         allow read: if true;
-        // P0 #5: add isNotBanned check
         allow write: if isAuthenticated() && request.auth.uid == followerId && isNotBanned();
       }
 
@@ -85,7 +76,6 @@ service cloud.firestore {
     // ========= posts =========
     match /posts/{postId} {
       allow read: if true;
-      // P0 #5: add isNotBanned check to create
       allow create: if isAuthenticated() && isNotBanned();
       allow update: if isAuthenticated() &&
         (resource.data.authorId == request.auth.uid || isAdmin());
@@ -122,9 +112,6 @@ service cloud.firestore {
 
       match /family/{userId} {
         allow read: if true;
-        // P0 #3: family creation requires either:
-        //   a) user is the pet's primary owner (initial setup), OR
-        //   b) user provides a valid invitation code that exists in the invitations subcollection
         allow create: if isAuthenticated() && request.auth.uid == userId && (
           get(/databases/$(database)/documents/pets/$(petId)).data.primaryOwnerId == request.auth.uid ||
           ('invitationCode' in request.resource.data &&
@@ -142,21 +129,22 @@ service cloud.firestore {
 
       match /invitations/{code} {
         allow read: if isAuthenticated();
-        // Only family members can create invitations
         allow create: if isAuthenticated() &&
           exists(/databases/$(database)/documents/pets/$(petId)/family/$(request.auth.uid));
-        // P0 #3: only the invitation creator, primary owner, or admin can update
+        // Allow: creator, primaryOwner, admin (full update)
+        // Allow: any authenticated user to redeem (mark as used) if not yet used
         allow update: if isAuthenticated() && (
           resource.data.createdBy == request.auth.uid ||
           get(/databases/$(database)/documents/pets/$(petId)).data.primaryOwnerId == request.auth.uid ||
-          isAdmin()
+          isAdmin() ||
+          (resource.data.used == false &&
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedBy', 'usedByName']))
         );
         allow delete: if false;
       }
 
       match /followers/{userId} {
         allow read: if true;
-        // P0 #5: add isNotBanned check
         allow create: if isAuthenticated() && request.auth.uid == userId && isNotBanned();
         allow delete: if isAuthenticated() && request.auth.uid == userId;
         allow update: if false;
@@ -165,21 +153,23 @@ service cloud.firestore {
 
     // ========= notifications =========
     match /notifications/{notificationId} {
-      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      // P0 #2: prevent non-admin from creating warning notifications
-      // Also require fromUserId matches auth uid to prevent impersonation
+      // Allow read by recipient OR sender (sender needs read for name-sync and cleanup)
+      allow read: if isAuthenticated() &&
+        (resource.data.userId == request.auth.uid || resource.data.fromUserId == request.auth.uid);
       allow create: if isAuthenticated() && isNotBanned() &&
         request.resource.data.fromUserId == request.auth.uid &&
         (request.resource.data.type != 'warning' || isAdmin());
       allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      // Allow delete by recipient, sender, or admin
       allow delete: if isAuthenticated() &&
-        (resource.data.userId == request.auth.uid || isAdmin());
+        (resource.data.userId == request.auth.uid ||
+         resource.data.fromUserId == request.auth.uid ||
+         isAdmin());
     }
 
     // ========= meetups =========
     match /meetups/{meetupId} {
       allow read: if true;
-      // P0 #5: add isNotBanned check to create
       allow create: if isAuthenticated() && isNotBanned();
       allow update: if isAuthenticated() &&
         (resource.data.organizerId == request.auth.uid || isAdmin());
@@ -201,10 +191,7 @@ service cloud.firestore {
     // ========= locations =========
     match /locations/{locationId} {
       allow read: if true;
-      // P0 #5: add isNotBanned check to create
       allow create: if isAuthenticated() && isNotBanned();
-      // P0 #4: location creator or admin can update anything;
-      // other authenticated users can only update aggregation fields (from reviews/checkins)
       allow update: if isAuthenticated() && isNotBanned() && (
         resource.data.addedBy == request.auth.uid ||
         isAdmin() ||
@@ -235,8 +222,6 @@ service cloud.firestore {
     match /hashtags/{tagId} {
       allow read: if true;
       allow create: if isAuthenticated() && isNotBanned();
-      // P0 #4: only allow updating postCount and lastUsed (tag counting);
-      // name and other fields cannot be tampered with
       allow update: if isAuthenticated() && isNotBanned() &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['postCount', 'lastUsed']);
       allow delete: if isAdmin();
@@ -244,18 +229,24 @@ service cloud.firestore {
 
     // ========= reports =========
     match /reports/{reportId} {
-      allow read: if isAdmin();
+      // Allow reporter to read/delete their own reports (for account deletion cleanup)
+      allow read: if isAdmin() ||
+        (isAuthenticated() && resource.data.reporterId == request.auth.uid);
       allow create: if isAuthenticated() && isNotBanned();
       allow update: if isAdmin();
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() ||
+        (isAuthenticated() && resource.data.reporterId == request.auth.uid);
     }
 
     // ========= feedback =========
     match /feedback/{feedbackId} {
-      allow read: if isAdmin();
+      // Allow creator to read/delete their own feedback (for account deletion cleanup)
+      allow read: if isAdmin() ||
+        (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow create: if isAuthenticated();
       allow update: if isAdmin();
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() ||
+        (isAuthenticated() && resource.data.userId == request.auth.uid);
     }
 
     // ========= Collection Group queries =========
@@ -290,9 +281,5 @@ service cloud.firestore {
     match /{path=**}/invitations/{code} {
       allow read: if isAuthenticated();
     }
-
-    // P0 #6: REMOVED the overly permissive followingPets collection group rule.
-    // The specific path /users/{userId}/followingPets/{petId} already has proper
-    // owner-only rules above. No collection group query is needed for this data.
   }
 }
