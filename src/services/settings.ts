@@ -75,11 +75,8 @@ async function deleteCollectionGroupDocs(collectionName: string, field: string, 
 }
 
 export async function deleteAccount(userId: string): Promise<void> {
-  // Delete Firebase Auth account FIRST (requires recent login, may throw)
-  // Do this before deleting data so we don't end up with orphaned auth account
-  if (auth.currentUser && auth.currentUser.uid === userId) {
-    await deleteUser(auth.currentUser);
-  }
+  // All Firestore cleanup runs WHILE the user is still authenticated.
+  // deleteUser() is called LAST because it invalidates the auth token.
 
   // Delete user's posts (each post cascades its own likes/comments/tags)
   const posts = await getPostsByUser(userId);
@@ -93,31 +90,49 @@ export async function deleteAccount(userId: string): Promise<void> {
     await deletePet(pet.id);
   }
 
-  // Clean up notifications received by user
-  await deleteCollectionGroupDocs("notifications", "userId", userId);
+  // Clean up notifications received by user (rules: userId == auth.uid)
+  const receivedNotifQuery = query(
+    collection(db, "notifications"),
+    where("userId", "==", userId)
+  );
+  const receivedNotifSnap = await getDocs(receivedNotifQuery);
+  if (!receivedNotifSnap.empty) {
+    const batch = writeBatch(db);
+    receivedNotifSnap.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  }
 
-  // Clean up notifications sent by user
-  await deleteCollectionGroupDocs("notifications", "fromUserId", userId);
+  // Clean up notifications sent by user (rules: fromUserId == auth.uid)
+  const sentNotifQuery = query(
+    collection(db, "notifications"),
+    where("fromUserId", "==", userId)
+  );
+  const sentNotifSnap = await getDocs(sentNotifQuery);
+  if (!sentNotifSnap.empty) {
+    const batch = writeBatch(db);
+    sentNotifSnap.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  }
 
-  // Clean up user's comments across all posts
+  // Clean up user's comments across all posts (rules: collection group read allowed)
   await deleteCollectionGroupDocs("comments", "authorId", userId);
 
-  // Clean up user's likes across all posts
+  // Clean up user's likes across all posts (rules: collection group read allowed)
   await deleteCollectionGroupDocs("likes", "userId", userId);
 
-  // Clean up user's checkins across all locations
+  // Clean up user's checkins across all locations (rules: collection group read allowed)
   await deleteCollectionGroupDocs("checkins", "userId", userId);
 
-  // Clean up user's reviews across all locations
+  // Clean up user's reviews across all locations (rules: collection group read allowed)
   await deleteCollectionGroupDocs("reviews", "userId", userId);
 
-  // Clean up user's meetup participations
+  // Clean up user's meetup participations (rules: collection group read allowed)
   await deleteCollectionGroupDocs("participants", "userId", userId);
 
-  // Clean up user's pet family memberships (where user is a member, not owner)
+  // Clean up user's pet family memberships (rules: collection group read allowed)
   await deleteCollectionGroupDocs("family", "userId", userId);
 
-  // Clean up meetups organized by user
+  // Clean up meetups organized by user (rules: meetups readable by all, deletable by organizer)
   const meetupsQuery = query(
     collection(db, "meetups"),
     where("organizerId", "==", userId)
@@ -128,7 +143,7 @@ export async function deleteAccount(userId: string): Promise<void> {
     await deleteDoc(meetupDoc.ref);
   }
 
-  // Clean up reports submitted by user
+  // Clean up reports submitted by user (rules: reporterId == auth.uid can read/delete)
   const reportsQuery = query(
     collection(db, "reports"),
     where("reporterId", "==", userId)
@@ -140,7 +155,7 @@ export async function deleteAccount(userId: string): Promise<void> {
     await batch.commit();
   }
 
-  // Clean up feedback submitted by user
+  // Clean up feedback submitted by user (rules: userId == auth.uid can read/delete)
   const feedbackQuery = query(
     collection(db, "feedback"),
     where("userId", "==", userId)
@@ -152,7 +167,7 @@ export async function deleteAccount(userId: string): Promise<void> {
     await batch.commit();
   }
 
-  // Clean up user subcollections
+  // Clean up user subcollections (rules: owner can read/write own subcollections)
   await deleteSubcollection(`users/${userId}`, "bookmarks");
   await deleteSubcollection(`users/${userId}`, "followingPets");
   await deleteSubcollection(`users/${userId}`, "followers");
@@ -162,4 +177,10 @@ export async function deleteAccount(userId: string): Promise<void> {
   // Delete settings and user document
   await deleteDoc(settingsRef(userId));
   await deleteDoc(doc(db, "users", userId));
+
+  // Delete Firebase Auth account LAST — after all Firestore cleanup is done.
+  // This must come last because all operations above require a valid auth token.
+  if (auth.currentUser && auth.currentUser.uid === userId) {
+    await deleteUser(auth.currentUser);
+  }
 }

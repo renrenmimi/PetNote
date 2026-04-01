@@ -220,34 +220,11 @@ export async function deletePet(petId: string): Promise<void> {
   await deleteSubcollection(`pets/${petId}`, "followers");
   await deleteSubcollection(`pets/${petId}`, "invitations");
 
-  // Clean up followingPets mirrors in all users who follow this pet
-  const followingQuery = query(
-    collectionGroup(db, "followingPets"),
-    where("petId", "==", petId)
-  );
-  const followingSnap = await getDocs(followingQuery);
-  if (!followingSnap.empty) {
-    const batch = writeBatch(db);
-    followingSnap.docs.forEach((d) => batch.delete(d.ref));
-    await batch.commit();
-  }
-
-  // Clear petId references from posts (set to empty so posts remain but unlinked)
-  const postsQuery = query(
-    collection(db, "posts"),
-    where("petId", "==", petId)
-  );
-  const postsSnap = await getDocs(postsQuery);
-  if (!postsSnap.empty) {
-    const chunkSize = 450;
-    for (let i = 0; i < postsSnap.docs.length; i += chunkSize) {
-      const batch = writeBatch(db);
-      postsSnap.docs.slice(i, i + chunkSize).forEach((d) => {
-        batch.update(d.ref, { petId: "", petName: "", petAvatarUrl: "" });
-      });
-      await batch.commit();
-    }
-  }
+  // NOTE: Cross-user cleanup (other users' followingPets mirrors and other
+  // authors' posts referencing this petId) cannot be done client-side because
+  // followingPets is owner-only and posts are author-only. These orphaned
+  // references should be cleaned up via Cloud Functions (onDelete trigger)
+  // or handled gracefully in the UI (check if pet exists before rendering).
 
   // Delete the pet document
   const petRef = doc(db, "pets", petId);

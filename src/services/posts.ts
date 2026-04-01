@@ -1,7 +1,6 @@
 import {
   addDoc,
   collection,
-  collectionGroup,
   deleteField,
   doc,
   getDoc,
@@ -538,38 +537,24 @@ export async function deletePost(postId: string): Promise<void> {
   await deleteInChunks(likesSnap.docs);
   await deleteInChunks(commentsSnap.docs);
 
-  // Clean up notifications referencing this post
+  // Clean up notifications referencing this post that the current user
+  // has permission to delete (sent by them via fromUserId match)
   const notifQuery = query(
     collection(db, "notifications"),
-    where("postId", "==", postId)
+    where("postId", "==", postId),
+    where("fromUserId", "==", postData.authorId)
   );
   const notifSnap = await getDocs(notifQuery);
   if (!notifSnap.empty) {
     await deleteInChunks(notifSnap.docs);
   }
 
-  // Clean up reports referencing this post
-  const reportQuery = query(
-    collection(db, "reports"),
-    where("targetId", "==", postId),
-    where("targetType", "==", "post")
-  );
-  const reportSnap = await getDocs(reportQuery);
-  if (!reportSnap.empty) {
-    await deleteInChunks(reportSnap.docs);
-  }
-
-  // Clean up bookmarks referencing this post (collection group)
-  const bookmarkQuery = query(
-    collectionGroup(db, "bookmarks"),
-    where("__name__", "==", postId)
-  );
-  const bookmarkSnap = await getDocs(bookmarkQuery);
-  if (!bookmarkSnap.empty) {
-    const batch = writeBatch(db);
-    bookmarkSnap.docs.forEach((d) => batch.delete(d.ref));
-    await batch.commit();
-  }
+  // NOTE: Reports referencing this post and bookmarks from other users
+  // cannot be cleaned up client-side due to permission restrictions.
+  // Reports: only admin or the reporter can delete.
+  // Bookmarks: only the bookmark owner can read/delete.
+  // These should be handled by Cloud Functions (onDelete trigger)
+  // or the UI should gracefully handle references to deleted posts.
 
   const finalBatch = writeBatch(db);
   finalBatch.delete(postRef);
