@@ -117,7 +117,11 @@ export async function createPost(data: CreatePostInput): Promise<string> {
     commentCount: 0,
   });
   const result = await addDoc(postsRef, payload);
-  await Promise.all(tags.map((tag) => incrementTag(tag)));
+  try {
+    await Promise.all(tags.map((tag) => incrementTag(tag)));
+  } catch (error) {
+    console.error("Failed to increment tags for post:", result.id, error);
+  }
   return result.id;
 }
 
@@ -152,10 +156,14 @@ export async function updatePost(
 
   await updateDoc(postRef, updates);
 
-  await Promise.all([
-    ...toAdd.map((tag) => incrementTag(tag)),
-    ...toRemove.map((tag) => decrementTag(tag)),
-  ]);
+  try {
+    await Promise.all([
+      ...toAdd.map((tag) => incrementTag(tag)),
+      ...toRemove.map((tag) => decrementTag(tag)),
+    ]);
+  } catch (error) {
+    console.error("Failed to update tags for post:", postId, error);
+  }
 }
 
 export async function getPosts(
@@ -237,24 +245,39 @@ export async function getFollowingPosts(
     return { posts: [], lastDoc: null, hasMore: false };
   }
 
-  const targetIds = petIds.slice(0, 30);
+  // Firestore "in" queries support max 30 values; split into chunks and merge
+  const chunkSize = 30;
   const postsRef = collection(db, "posts");
-  const constraints: QueryConstraint[] = [
-    where("petId", "in", targetIds),
-    orderBy("createdAt", "desc"),
-    limit(limitCount),
-  ];
-  if (lastDoc) {
-    constraints.push(startAfter(lastDoc));
+  const allDocs: QueryDocumentSnapshot[] = [];
+
+  for (let i = 0; i < petIds.length; i += chunkSize) {
+    const chunk = petIds.slice(i, i + chunkSize);
+    const constraints: QueryConstraint[] = [
+      where("petId", "in", chunk),
+      orderBy("createdAt", "desc"),
+      limit(limitCount),
+    ];
+    if (lastDoc) {
+      constraints.push(startAfter(lastDoc));
+    }
+    const snapshot = await getDocs(query(postsRef, ...constraints));
+    allDocs.push(...snapshot.docs);
   }
-  const postsQuery = query(postsRef, ...constraints);
-  const snapshot = await getDocs(postsQuery);
-  const posts = snapshot.docs.map((docSnap) => ({
+
+  // Sort all results by createdAt desc and take the requested limit
+  allDocs.sort((a, b) => {
+    const aTime = (a.data() as PostData).createdAt?.toMillis?.() ?? 0;
+    const bTime = (b.data() as PostData).createdAt?.toMillis?.() ?? 0;
+    return bTime - aTime;
+  });
+
+  const limited = allDocs.slice(0, limitCount);
+  const posts = limited.map((docSnap) => ({
     id: docSnap.id,
     ...(docSnap.data() as PostData),
   }));
-  const nextLastDoc = snapshot.docs[snapshot.docs.length - 1] ?? null;
-  const hasMore = snapshot.docs.length === limitCount;
+  const nextLastDoc = limited[limited.length - 1] ?? null;
+  const hasMore = limited.length === limitCount;
   return { posts, lastDoc: nextLastDoc, hasMore };
 }
 

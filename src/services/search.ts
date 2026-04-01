@@ -29,16 +29,24 @@ export async function searchByTag(tag: string): Promise<Post[]> {
 
 export async function searchByText(text: string): Promise<Post[]> {
   if (!text) return [];
+  const keyword = text.trim().toLowerCase();
+  if (!keyword) return [];
+
+  // Firestore doesn't support full-text search natively.
+  // Search by tag if input looks like a hashtag, otherwise search by tag match
+  // as a best-effort structured search.
   const postsRef = collection(db, "posts");
-  const snapshot = await getDocs(postsRef);
-  const keyword = text.toLowerCase();
-  return snapshot.docs
-    .map((docSnap) => ({
-      id: docSnap.id,
-      ...(docSnap.data() as Omit<Post, "id">),
-    }))
-    .filter((post) => post.text?.toLowerCase().includes(keyword))
-    .slice(0, 20);
+  const tagQuery = query(
+    postsRef,
+    where("tags", "array-contains", keyword.replace(/^#/, "")),
+    orderBy("createdAt", "desc"),
+    limit(20)
+  );
+  const snapshot = await getDocs(tagQuery);
+  return snapshot.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...(docSnap.data() as Omit<Post, "id">),
+  }));
 }
 
 export async function searchUsers(name: string): Promise<UserProfile[]> {

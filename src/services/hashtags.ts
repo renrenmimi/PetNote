@@ -56,12 +56,17 @@ export async function searchTags(queryText: string): Promise<Hashtag[]> {
   const keyword = queryText.trim().toLowerCase();
   if (!keyword) return [];
   const tagsRef = collection(db, "hashtags");
-  const snapshot = await getDocs(tagsRef);
+  const tagsQuery = query(
+    tagsRef,
+    where("name", ">=", keyword),
+    where("name", "<=", `${keyword}\uf8ff`),
+    orderBy("name"),
+    limit(10)
+  );
+  const snapshot = await getDocs(tagsQuery);
   return snapshot.docs
     .map((docSnap) => docSnap.data() as Hashtag)
-    .filter((tag) => tag.name.includes(keyword))
-    .sort((a, b) => (b.postCount ?? 0) - (a.postCount ?? 0))
-    .slice(0, 10);
+    .sort((a, b) => (b.postCount ?? 0) - (a.postCount ?? 0));
 }
 
 export async function getTrendingTags(limitCount = 8): Promise<Hashtag[]> {

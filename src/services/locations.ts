@@ -274,17 +274,21 @@ export async function getPlaces(options: {
 }
 
 export async function searchPlaces(queryText: string): Promise<Location[]> {
-  if (!queryText.trim()) return [];
+  const needle = queryText.trim();
+  if (!needle) return [];
   const locationsRef = collection(db, "locations");
-  const placesQuery = query(locationsRef, orderBy("createdAt", "desc"), limit(50));
+  const placesQuery = query(
+    locationsRef,
+    where("name", ">=", needle),
+    where("name", "<=", `${needle}\uf8ff`),
+    orderBy("name"),
+    limit(20)
+  );
   const snapshot = await getDocs(placesQuery);
-  const needle = queryText.toLowerCase();
-  return snapshot.docs
-    .map((docSnap) => ({
-      id: docSnap.id,
-      ...(docSnap.data() as Omit<Location, "id">),
-    }))
-    .filter((place) => place.name.toLowerCase().includes(needle));
+  return snapshot.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...(docSnap.data() as Omit<Location, "id">),
+  }));
 }
 
 export async function addPlace(data: {
