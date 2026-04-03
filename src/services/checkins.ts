@@ -1,13 +1,11 @@
 import {
+  addDoc,
   collection,
   collectionGroup,
-  doc,
   getDocs,
-  increment,
   limit,
   orderBy,
   query,
-  runTransaction,
   serverTimestamp,
   where,
 } from "firebase/firestore";
@@ -53,34 +51,14 @@ export async function checkIn(
     petName?: string;
   }
 ): Promise<void> {
-  const locationRef = doc(db, "locations", locationId);
+  // Only create the checkin document. Location aggregation (totalCheckins,
+  // verifiedByCheckins) is maintained by the onCheckinCreated Cloud Function.
   const checkinsRef = collection(db, "locations", locationId, "checkins");
-  const checkinRef = doc(checkinsRef);
-
-  await runTransaction(db, async (transaction) => {
-    const snapshot = await transaction.get(locationRef);
-    const currentTotal = snapshot.exists()
-      ? ((snapshot.data().totalCheckins as number | undefined) ?? 0)
-      : 0;
-    const nextTotal = currentTotal + 1;
-
-    transaction.set(
-      checkinRef,
-      removeUndefined({
-        ...data,
-        createdAt: serverTimestamp(),
-      })
-    );
-
-    transaction.set(
-      locationRef,
-      {
-        totalCheckins: increment(1),
-        verifiedByCheckins: nextTotal >= 3,
-      },
-      { merge: true }
-    );
-  });
+  await addDoc(checkinsRef, removeUndefined({
+    ...data,
+    locationId,
+    createdAt: serverTimestamp(),
+  }));
 }
 
 export async function getCheckins(

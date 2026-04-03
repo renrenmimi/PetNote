@@ -1,4 +1,5 @@
 import {
+  addDoc,
   arrayUnion,
   collection,
   doc,
@@ -171,43 +172,14 @@ export async function submitReview(
   locationId: string,
   reviewData: Omit<Review, "id" | "createdAt">
 ): Promise<void> {
-  const locationRef = doc(db, "locations", locationId);
+  // Only create the review document. Location aggregation (averageRating,
+  // totalRatings, photos, tags, totalPhotos) is maintained exclusively by
+  // the onReviewCreated Cloud Function to prevent client-side tampering.
   const reviewsRef = collection(db, "locations", locationId, "reviews");
-  const reviewRef = doc(reviewsRef);
-
-  await runTransaction(db, async (transaction) => {
-    const snapshot = await transaction.get(locationRef);
-    const current = snapshot.exists()
-      ? (snapshot.data() as Location)
-      : {
-          averageRating: 0,
-          totalRatings: 0,
-          tags: [],
-        };
-    const totalRatings = (current.totalRatings || 0) + 1;
-    const averageRating =
-      ((current.averageRating || 0) * (current.totalRatings || 0) +
-        reviewData.rating) /
-      totalRatings;
-
-    const payload: Record<string, unknown> = removeUndefined({
-      ...reviewData,
-      createdAt: serverTimestamp(),
-    });
-    transaction.set(reviewRef, payload);
-    const updatePayload: Record<string, unknown> = {
-      averageRating: Number(averageRating.toFixed(2)),
-      totalRatings,
-    };
-    if (reviewData.tags.length > 0) {
-      updatePayload.tags = arrayUnion(...reviewData.tags);
-    }
-    if (reviewData.photos.length > 0) {
-      updatePayload.photos = arrayUnion(...reviewData.photos);
-      updatePayload.totalPhotos = increment(reviewData.photos.length);
-    }
-    transaction.set(locationRef, updatePayload, { merge: true });
-  });
+  await addDoc(reviewsRef, removeUndefined({
+    ...reviewData,
+    createdAt: serverTimestamp(),
+  }));
 }
 
 export async function getLocation(locationId: string): Promise<Location | null> {
