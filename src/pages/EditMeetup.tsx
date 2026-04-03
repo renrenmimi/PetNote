@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Timestamp, doc as firestoreDoc, setDoc, deleteDoc } from "firebase/firestore";
+import { Timestamp, doc as firestoreDoc, setDoc, deleteDoc, deleteField } from "firebase/firestore";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../contexts/ToastContext";
@@ -312,7 +312,7 @@ export function EditMeetup() {
         date: Timestamp.fromDate(start),
         duration,
         location: publicLocation,
-        locationId: resolvedLocationId ?? "",
+        locationId: resolvedLocationId ?? (deleteField() as unknown as string),
         locationVisibility,
         requirements,
       });
