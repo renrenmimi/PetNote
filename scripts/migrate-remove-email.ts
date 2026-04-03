@@ -4,11 +4,11 @@
  * Email is private data that should not be stored in publicly readable user documents.
  * New signups no longer write email; this script cleans up historical data.
  *
- * Usage:
- *   npx ts-node scripts/migrate-remove-email.ts
+ * IMPORTANT: Must be run from the functions/ directory (which has firebase-admin installed):
  *
- * Or via Firebase Admin (must be run with service account credentials):
- *   GOOGLE_APPLICATION_CREDENTIALS=path/to/serviceAccount.json npx ts-node scripts/migrate-remove-email.ts
+ *   cd functions && GOOGLE_APPLICATION_CREDENTIALS=../serviceAccountKey.json npx ts-node ../scripts/migrate-remove-email.ts
+ *
+ * Already executed on 2026-04-02: cleaned 5 users, 0 skipped.
  */
 
 import * as admin from "firebase-admin";
