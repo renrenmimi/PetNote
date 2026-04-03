@@ -24,6 +24,10 @@ service cloud.firestore {
         get(userDoc).data.banned != true;
     }
 
+    function isEmailVerified() {
+      return request.auth.token.email_verified == true;
+    }
+
     function isAllowedUserUpdate() {
       let allowed = ['displayName', 'displayNameLower', 'avatarUrl', 'bio',
                       'location', 'onboardingComplete', 'pinnedPostId'];
@@ -76,7 +80,8 @@ service cloud.firestore {
     // ========= posts =========
     match /posts/{postId} {
       allow read: if true;
-      allow create: if isAuthenticated() && isNotBanned();
+      // Require email verification for content creation
+      allow create: if isAuthenticated() && isNotBanned() && isEmailVerified();
       allow update: if isAuthenticated() &&
         (resource.data.authorId == request.auth.uid || isAdmin());
       allow delete: if isAuthenticated() &&
@@ -90,7 +95,7 @@ service cloud.firestore {
 
       match /comments/{commentId} {
         allow read: if true;
-        allow create: if isAuthenticated() && isNotBanned();
+        allow create: if isAuthenticated() && isNotBanned() && isEmailVerified();
         allow delete: if isAuthenticated() && (
           resource.data.authorId == request.auth.uid ||
           get(/databases/$(database)/documents/posts/$(postId)).data.authorId == request.auth.uid ||
@@ -131,14 +136,15 @@ service cloud.firestore {
         allow read: if isAuthenticated();
         allow create: if isAuthenticated() &&
           exists(/databases/$(database)/documents/pets/$(petId)/family/$(request.auth.uid));
-        // Allow: creator, primaryOwner, admin (full update)
-        // Allow: any authenticated user to redeem (mark as used) if not yet used
+        // Redemption: any authenticated user can mark unused invitation as used,
+        // but usedBy MUST match their own UID (prevents claiming as someone else)
         allow update: if isAuthenticated() && (
           resource.data.createdBy == request.auth.uid ||
           get(/databases/$(database)/documents/pets/$(petId)).data.primaryOwnerId == request.auth.uid ||
           isAdmin() ||
           (resource.data.used == false &&
-           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedBy', 'usedByName']))
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedBy', 'usedByName']) &&
+           request.resource.data.usedBy == request.auth.uid)
         );
         allow delete: if false;
       }
@@ -153,14 +159,12 @@ service cloud.firestore {
 
     // ========= notifications =========
     match /notifications/{notificationId} {
-      // Allow read by recipient OR sender (sender needs read for name-sync and cleanup)
       allow read: if isAuthenticated() &&
         (resource.data.userId == request.auth.uid || resource.data.fromUserId == request.auth.uid);
       allow create: if isAuthenticated() && isNotBanned() &&
         request.resource.data.fromUserId == request.auth.uid &&
         (request.resource.data.type != 'warning' || isAdmin());
       allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      // Allow delete by recipient, sender, or admin
       allow delete: if isAuthenticated() &&
         (resource.data.userId == request.auth.uid ||
          resource.data.fromUserId == request.auth.uid ||
@@ -170,7 +174,7 @@ service cloud.firestore {
     // ========= meetups =========
     match /meetups/{meetupId} {
       allow read: if true;
-      allow create: if isAuthenticated() && isNotBanned();
+      allow create: if isAuthenticated() && isNotBanned() && isEmailVerified();
       allow update: if isAuthenticated() &&
         (resource.data.organizerId == request.auth.uid || isAdmin());
       allow delete: if isAuthenticated() &&
@@ -191,20 +195,17 @@ service cloud.firestore {
     // ========= locations =========
     match /locations/{locationId} {
       allow read: if true;
-      allow create: if isAuthenticated() && isNotBanned();
-      allow update: if isAuthenticated() && isNotBanned() && (
-        resource.data.addedBy == request.auth.uid ||
-        isAdmin() ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(
-          ['averageRating', 'totalRatings', 'totalCheckins', 'verifiedByCheckins',
-           'totalPhotos', 'photos', 'tags', 'updatedAt']
-        )
-      );
+      allow create: if isAuthenticated() && isNotBanned() && isEmailVerified();
+      // Only location creator or admin can update. Aggregation fields
+      // (averageRating, totalRatings, totalCheckins, etc.) are maintained
+      // exclusively by Cloud Functions using admin SDK.
+      allow update: if isAuthenticated() && isNotBanned() &&
+        (resource.data.addedBy == request.auth.uid || isAdmin());
       allow delete: if isAdmin();
 
       match /reviews/{reviewId} {
         allow read: if true;
-        allow create: if isAuthenticated() && isNotBanned();
+        allow create: if isAuthenticated() && isNotBanned() && isEmailVerified();
         allow delete: if isAuthenticated() &&
           (resource.data.userId == request.auth.uid || isAdmin());
         allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
@@ -221,15 +222,15 @@ service cloud.firestore {
     // ========= hashtags =========
     match /hashtags/{tagId} {
       allow read: if true;
-      allow create: if isAuthenticated() && isNotBanned();
-      allow update: if isAuthenticated() && isNotBanned() &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['postCount', 'lastUsed']);
+      // Tag creation and updates are handled exclusively by Cloud Functions.
+      // Client cannot write to hashtags directly.
+      allow create: if isAdmin();
+      allow update: if isAdmin();
       allow delete: if isAdmin();
     }
 
     // ========= reports =========
     match /reports/{reportId} {
-      // Allow reporter to read/delete their own reports (for account deletion cleanup)
       allow read: if isAdmin() ||
         (isAuthenticated() && resource.data.reporterId == request.auth.uid);
       allow create: if isAuthenticated() && isNotBanned();
@@ -240,7 +241,6 @@ service cloud.firestore {
 
     // ========= feedback =========
     match /feedback/{feedbackId} {
-      // Allow creator to read/delete their own feedback (for account deletion cleanup)
       allow read: if isAdmin() ||
         (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow create: if isAuthenticated();

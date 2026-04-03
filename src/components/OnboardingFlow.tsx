@@ -218,7 +218,6 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
         displayName,
         avatarUrl,
         bio: "",
-        email: currentUser.email || "",
         followerCount: 0,
         followingCount: 0,
         followingPetsCount: 0,

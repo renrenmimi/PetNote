@@ -20,7 +20,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { decrementTag, incrementTag } from "./hashtags";
+// Tag counting handled by onPostWritten Cloud Function
 import { createNotification } from "./notifications";
 import { getFollowingPets } from "./follow";
 import { getUserProfile } from "./users";
@@ -115,12 +115,8 @@ export async function createPost(data: CreatePostInput): Promise<string> {
     likeCount: 0,
     commentCount: 0,
   });
+  // Tag counting is handled by the onPostWritten Cloud Function.
   const result = await addDoc(postsRef, payload);
-  try {
-    await Promise.all(tags.map((tag) => incrementTag(tag)));
-  } catch (error) {
-    console.error("Failed to increment tags for post:", result.id, error);
-  }
   return result.id;
 }
 
@@ -134,9 +130,6 @@ export async function updatePost(
   const current = snapshot.data() as PostData;
 
   const nextTags = normalizeTags(data.tags);
-  const prevTags = normalizeTags(current.tags || []);
-  const toAdd = nextTags.filter((tag) => !prevTags.includes(tag));
-  const toRemove = prevTags.filter((tag) => !nextTags.includes(tag));
 
   const updates: Record<string, unknown> = {
     text: data.text,
@@ -153,16 +146,8 @@ export async function updatePost(
     updates.petAvatarUrl = deleteField();
   }
 
+  // Tag counting is handled by the onPostWritten Cloud Function.
   await updateDoc(postRef, updates);
-
-  try {
-    await Promise.all([
-      ...toAdd.map((tag) => incrementTag(tag)),
-      ...toRemove.map((tag) => decrementTag(tag)),
-    ]);
-  } catch (error) {
-    console.error("Failed to update tags for post:", postId, error);
-  }
 }
 
 export async function getPosts(
@@ -556,11 +541,10 @@ export async function deletePost(postId: string): Promise<void> {
   // These should be handled by Cloud Functions (onDelete trigger)
   // or the UI should gracefully handle references to deleted posts.
 
+  // Tag decrementing is handled by the onPostWritten Cloud Function.
   const finalBatch = writeBatch(db);
   finalBatch.delete(postRef);
   await finalBatch.commit();
-
-  await Promise.all(postData.tags.map((tag) => decrementTag(tag)));
 }
 
 export async function getComments(postId: string): Promise<Comment[]> {
