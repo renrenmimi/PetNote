@@ -23,9 +23,7 @@ import {
 import { getPetsByOwner, type Pet } from "../services/pets";
 import { getSpeciesMeta } from "../utils/petHelpers";
 import {
-  buildLocationId,
   getLocation,
-  getOrCreateLocation,
   getUserReview,
   type Location,
 } from "../services/locations";
@@ -243,29 +241,19 @@ export function MeetupDetail() {
     let ignore = false;
     if (!meetup) return;
     const loadLocation = async () => {
-      const locationId =
-        meetup.locationId ??
-        buildLocationId(meetup.location.lat, meetup.location.lng);
+      // Private meetups don't have a public locationId — skip location loading
+      if (!meetup.locationId) {
+        return;
+      }
       if (!ignore) {
-        setResolvedLocationId(locationId);
+        setResolvedLocationId(meetup.locationId);
       }
-      let data = await getLocation(locationId);
-      if (!data) {
-        await getOrCreateLocation({
-          name: meetup.location.name,
-          address: meetup.location.address,
-          lat: meetup.location.lat,
-          lng: meetup.location.lng,
-          city: meetup.location.city || "",
-          state: meetup.location.state || "",
-        });
-        data = await getLocation(locationId);
-      }
+      const data = await getLocation(meetup.locationId);
       if (!ignore) {
         setLocationInfo(data);
       }
       if (user && meetup.status === "completed" && meetup.isRatingOpen) {
-        const review = await getUserReview(locationId, user.uid, meetup.id);
+        const review = await getUserReview(meetup.locationId!, user.uid, meetup.id);
         if (!ignore) {
           setHasReviewed(!!review);
           setUserReviewRating(review?.rating ?? null);
@@ -296,13 +284,16 @@ export function MeetupDetail() {
     .join(", ");
   const distance = useMemo(() => {
     if (!meetup || !profile?.location) return null;
+    // Use private address coordinates when available, fall back to public
+    const loc = privateAddress ?? meetup.location;
+    if (!loc.lat || !loc.lng) return null;
     return calculateDistance(
       profile.location.lat,
       profile.location.lng,
-      meetup.location.lat,
-      meetup.location.lng
+      loc.lat,
+      loc.lng
     );
-  }, [meetup, profile?.location]);
+  }, [meetup, profile?.location, privateAddress]);
 
   const handleJoin = async () => {
     if (!user || !meetup || joining) return;

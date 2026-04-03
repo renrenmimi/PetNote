@@ -93,21 +93,24 @@ export type Participant = {
 
 export async function createMeetup(data: MeetupData): Promise<string> {
   const meetupsRef = collection(db, "meetups");
-  const locationId = await getOrCreateLocation({
-    name: data.location.name,
-    address: data.location.address,
-    lat: data.location.lat,
-    lng: data.location.lng,
-    city: data.location.city || "",
-    state: data.location.state || "",
-    category: "community_park",
-    source: "meetup",
-  });
-
   const isPrivate = (data.locationVisibility ?? "participants_only") === "participants_only";
 
-  // For participants_only meetups, store only city/state/name in public doc.
-  // Full address goes to private subcollection.
+  // For private meetups: do NOT create a public location with precise coordinates.
+  // Full address lives only in the private subcollection.
+  let locationId: string | undefined;
+  if (!isPrivate) {
+    locationId = await getOrCreateLocation({
+      name: data.location.name,
+      address: data.location.address,
+      lat: data.location.lat,
+      lng: data.location.lng,
+      city: data.location.city || "",
+      state: data.location.state || "",
+      category: "community_park",
+      source: "meetup",
+    });
+  }
+
   const publicLocation: MeetupLocation = isPrivate
     ? {
         name: data.location.name,
@@ -122,7 +125,7 @@ export async function createMeetup(data: MeetupData): Promise<string> {
   const payload = removeUndefined({
     ...data,
     location: publicLocation,
-    locationId,
+    ...(locationId ? { locationId } : {}),
     status: data.status ?? "upcoming",
     participantCount: data.participantCount ?? 0,
     locationVisibility: data.locationVisibility ?? "participants_only",
@@ -132,7 +135,6 @@ export async function createMeetup(data: MeetupData): Promise<string> {
   });
   const result = await addDoc(meetupsRef, payload);
 
-  // Store full address in private subcollection
   if (isPrivate) {
     await setDoc(doc(db, "meetups", result.id, "private", "address"), {
       address: data.location.address,

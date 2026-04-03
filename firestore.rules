@@ -143,6 +143,7 @@ service cloud.firestore {
           get(/databases/$(database)/documents/pets/$(petId)).data.primaryOwnerId == request.auth.uid ||
           isAdmin() ||
           (resource.data.used == false &&
+           request.resource.data.used == true &&
            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedBy', 'usedByName']) &&
            request.resource.data.usedBy == request.auth.uid)
         );

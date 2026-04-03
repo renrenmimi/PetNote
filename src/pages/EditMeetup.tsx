@@ -7,6 +7,7 @@ import { useToast } from "../contexts/ToastContext";
 import { uploadImage } from "../services/cloudinary";
 import {
   getMeetupById,
+  getMeetupPrivateAddress,
   getParticipants,
   updateMeetup,
   type Meetup,
@@ -88,12 +89,33 @@ export function EditMeetup() {
       setDate(dateValue.toISOString().slice(0, 10));
       setTime(dateValue.toTimeString().slice(0, 5));
       setDuration(data.duration);
-      setLocationName(data.location.name);
-      setAddress(data.location.address);
-      setLat(data.location.lat);
-      setLng(data.location.lng);
-      setLocationCity(data.location.city || "");
-      setLocationState(data.location.state || "");
+      // For private meetups, read full address from private subcollection
+      const isPrivate = (data.locationVisibility ?? "participants_only") === "participants_only";
+      if (isPrivate) {
+        const privateAddr = await getMeetupPrivateAddress(meetupId);
+        if (privateAddr) {
+          setLocationName(privateAddr.name);
+          setAddress(privateAddr.address);
+          setLat(privateAddr.lat);
+          setLng(privateAddr.lng);
+          setLocationCity(privateAddr.city || "");
+          setLocationState(privateAddr.state || "");
+        } else {
+          setLocationName(data.location.name);
+          setAddress(data.location.address);
+          setLat(data.location.lat);
+          setLng(data.location.lng);
+          setLocationCity(data.location.city || "");
+          setLocationState(data.location.state || "");
+        }
+      } else {
+        setLocationName(data.location.name);
+        setAddress(data.location.address);
+        setLat(data.location.lat);
+        setLng(data.location.lng);
+        setLocationCity(data.location.city || "");
+        setLocationState(data.location.state || "");
+      }
       setLocationVisibility(data.locationVisibility ?? "participants_only");
       setLocationStatus("success");
       setPetType(data.requirements.petType);
