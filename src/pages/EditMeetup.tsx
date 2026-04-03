@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Timestamp } from "firebase/firestore";
+import { Timestamp, doc as firestoreDoc, setDoc, deleteDoc } from "firebase/firestore";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../contexts/ToastContext";
@@ -14,6 +14,7 @@ import {
   type MeetupRequirements,
 } from "../services/meetups";
 import { getOrCreateLocation } from "../services/locations";
+import { db } from "../services/firebase";
 import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 
 const durations = [
@@ -311,16 +312,15 @@ export function EditMeetup() {
         date: Timestamp.fromDate(start),
         duration,
         location: publicLocation,
-        ...(resolvedLocationId ? { locationId: resolvedLocationId } : {}),
+        locationId: resolvedLocationId ?? "",
         locationVisibility,
         requirements,
       });
 
-      // Update private address subcollection
+      const privateRef = firestoreDoc(db, "meetups", meetup.id, "private", "address");
       if (isPrivate) {
-        const { doc: firestoreDoc, setDoc } = await import("firebase/firestore");
-        const { db } = await import("../services/firebase");
-        await setDoc(firestoreDoc(db, "meetups", meetup.id, "private", "address"), {
+        // Write full address to private subcollection
+        await setDoc(privateRef, {
           address: address.trim(),
           lat,
           lng,
@@ -328,6 +328,9 @@ export function EditMeetup() {
           city: locationCity.trim(),
           state: locationState.trim(),
         });
+      } else {
+        // Switching from private to public: clean up private address doc
+        try { await deleteDoc(privateRef); } catch { /* may not exist */ }
       }
       showToast("Meetup updated", "success");
       navigate(`/meetups/${meetup.id}`, { replace: true });

@@ -78,7 +78,7 @@ export function BlockedUsers() {
                     {profile.displayName || "User"}
                   </p>
                   <p className="text-xs text-slate-400 dark:text-slate-500">
-                    {profile.email}
+                    @{profile.displayName || "unknown"}
                   </p>
                 </div>
               </div>
