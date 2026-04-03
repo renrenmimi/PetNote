@@ -2,6 +2,7 @@ import {
   addDoc,
   collection,
   collectionGroup,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -481,7 +482,6 @@ export async function leaveMeetup(
   meetupId: string,
   userId: string
 ): Promise<void> {
-  const meetupRef = doc(db, "meetups", meetupId);
   const participantRef = doc(
     db,
     "meetups",
@@ -489,15 +489,11 @@ export async function leaveMeetup(
     "participants",
     userId
   );
-  await runTransaction(db, async (transaction) => {
-    const participantSnap = await transaction.get(participantRef);
-    if (!participantSnap.exists()) return;
-    transaction.delete(participantRef);
-    transaction.update(meetupRef, {
-      participantCount: increment(-1),
-      updatedAt: serverTimestamp(),
-    });
-  });
+  // Only delete the participant doc. Count decrement is handled by
+  // onParticipantDeleted Cloud Function to avoid double-decrement.
+  const participantSnap = await getDoc(participantRef);
+  if (!participantSnap.exists()) return;
+  await deleteDoc(participantRef);
 }
 
 export async function checkRequirements(
