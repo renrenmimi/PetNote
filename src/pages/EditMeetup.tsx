@@ -269,16 +269,40 @@ export function EditMeetup() {
       };
 
       const resolvedLocationName = locationName.trim() || address.trim();
-      const locationId = await getOrCreateLocation({
-        name: resolvedLocationName,
-        address: address.trim(),
-        lat,
-        lng,
-        city: locationCity.trim(),
-        state: locationState.trim(),
-        category: "community_park",
-        source: "meetup",
-      });
+      const isPrivate = locationVisibility === "participants_only";
+
+      // For private meetups: don't create public location, don't expose address
+      let resolvedLocationId: string | undefined;
+      if (!isPrivate) {
+        resolvedLocationId = await getOrCreateLocation({
+          name: resolvedLocationName,
+          address: address.trim(),
+          lat,
+          lng,
+          city: locationCity.trim(),
+          state: locationState.trim(),
+          category: "community_park",
+          source: "meetup",
+        });
+      }
+
+      const publicLocation = isPrivate
+        ? {
+            name: resolvedLocationName,
+            address: "",
+            lat: 0,
+            lng: 0,
+            city: locationCity.trim() || undefined,
+            state: locationState.trim() || undefined,
+          }
+        : {
+            name: resolvedLocationName,
+            address: address.trim(),
+            lat,
+            lng,
+            city: locationCity.trim() || undefined,
+            state: locationState.trim() || undefined,
+          };
 
       await updateMeetup(meetup.id, {
         title: title.trim(),
@@ -286,18 +310,25 @@ export function EditMeetup() {
         coverImage,
         date: Timestamp.fromDate(start),
         duration,
-        location: {
-          name: resolvedLocationName,
-          address: address.trim(),
-          lat,
-          lng,
-          city: locationCity.trim() || undefined,
-          state: locationState.trim() || undefined,
-        },
-        locationId,
+        location: publicLocation,
+        ...(resolvedLocationId ? { locationId: resolvedLocationId } : {}),
         locationVisibility,
         requirements,
       });
+
+      // Update private address subcollection
+      if (isPrivate) {
+        const { doc: firestoreDoc, setDoc } = await import("firebase/firestore");
+        const { db } = await import("../services/firebase");
+        await setDoc(firestoreDoc(db, "meetups", meetup.id, "private", "address"), {
+          address: address.trim(),
+          lat,
+          lng,
+          name: resolvedLocationName,
+          city: locationCity.trim(),
+          state: locationState.trim(),
+        });
+      }
       showToast("Meetup updated", "success");
       navigate(`/meetups/${meetup.id}`, { replace: true });
     } catch (err) {

@@ -148,6 +148,23 @@ export const onCheckinCreated = onDocumentCreated(
 );
 
 // ============================================================
+// 4b. Checkin deleted: recompute totalCheckins + verified
+// ============================================================
+export const onCheckinDeleted = onDocumentDeleted(
+  "locations/{locationId}/checkins/{checkinId}",
+  async (event) => {
+    const locationId = event.params.locationId;
+    const locationRef = db.doc(`locations/${locationId}`);
+    const checkinsSnap = await db.collection(`locations/${locationId}/checkins`).get();
+    const count = checkinsSnap.size;
+    await locationRef.update({
+      totalCheckins: count,
+      verifiedByCheckins: count >= 3,
+    });
+  }
+);
+
+// ============================================================
 // 5. Post written: maintain hashtag postCount server-side
 // ============================================================
 export const onPostWritten = onDocumentWritten("posts/{postId}", async (event) => {

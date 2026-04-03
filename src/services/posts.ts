@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   deleteField,
   doc,
   getDoc,
@@ -352,20 +353,12 @@ export async function likePost(postId: string, userId: string): Promise<void> {
 }
 
 export async function unlikePost(postId: string, userId: string): Promise<void> {
-  const postRef = doc(db, "posts", postId);
+  // Only delete the like doc. Count decrement is handled by
+  // onLikeDeleted Cloud Function to avoid double-decrement.
   const likeRef = doc(db, "posts", postId, "likes", userId);
-
-  await runTransaction(db, async (transaction) => {
-    const likeSnap = await transaction.get(likeRef);
-    if (!likeSnap.exists()) {
-      return;
-    }
-
-    transaction.delete(likeRef);
-    transaction.update(postRef, {
-      likeCount: increment(-1),
-    });
-  });
+  const likeSnap = await getDoc(likeRef);
+  if (!likeSnap.exists()) return;
+  await deleteDoc(likeRef);
 }
 
 export async function checkIfLiked(
@@ -470,16 +463,14 @@ export async function deleteComment(
   commentId: string
 ): Promise<void> {
   const commentRef = doc(db, "posts", postId, "comments", commentId);
-  const postRef = doc(db, "posts", postId);
   let didDelete = false;
 
-  await runTransaction(db, async (transaction) => {
-    const commentSnap = await transaction.get(commentRef);
-    if (!commentSnap.exists()) return;
-    transaction.delete(commentRef);
-    transaction.update(postRef, { commentCount: increment(-1) });
-    didDelete = true;
-  });
+  // Only delete the comment doc. Count decrement is handled by
+  // onCommentDeleted Cloud Function to avoid double-decrement.
+  const commentSnap = await getDoc(commentRef);
+  if (!commentSnap.exists()) return;
+  await deleteDoc(commentRef);
+  didDelete = true;
 
   if (!didDelete) return;
   const notificationsRef = collection(db, "notifications");
