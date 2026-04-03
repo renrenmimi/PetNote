@@ -12,6 +12,7 @@ dist
 dist-ssr
 *.local
 functions/lib
+serviceAccountKey.json
 
 # Editor directories and files
 .vscode/*
