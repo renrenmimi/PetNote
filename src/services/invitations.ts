@@ -7,9 +7,9 @@ import {
   getDocs,
   limit,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
-  updateDoc,
   where,
 } from "firebase/firestore";
 import { db } from "./firebase";
@@ -183,42 +183,72 @@ export async function redeemInvitation(
     };
   }
 
-  const familyRef = doc(db, `pets/${preview.petId}/family/${userId}`);
-  const existingFamilySnap = await getDoc(familyRef);
-  if (existingFamilySnap.exists()) {
+  const petId = preview.petId;
+  const familyRef = doc(db, `pets/${petId}/family/${userId}`);
+  const invitationRef = doc(
+    db,
+    preview.invitationRefPath || `pets/${petId}/invitations/${normalized}`
+  );
+
+  // Single transaction: validate invitation, create family member, mark used.
+  // Prevents race conditions where two users redeem the same code.
+  try {
+    await runTransaction(db, async (transaction) => {
+      const [familySnap, invitationSnap] = await Promise.all([
+        transaction.get(familyRef),
+        transaction.get(invitationRef),
+      ]);
+
+      if (familySnap.exists()) {
+        throw new Error("You are already a family member of this pet.");
+      }
+
+      if (!invitationSnap.exists()) {
+        throw new Error("Invalid invitation code.");
+      }
+
+      const invData = invitationSnap.data() as Invitation;
+      if (invData.used) {
+        throw new Error("This invitation code has already been used.");
+      }
+
+      const expiresDate =
+        invData.expiresAt &&
+        typeof invData.expiresAt === "object" &&
+        "toDate" in invData.expiresAt &&
+        typeof (invData.expiresAt as { toDate: () => Date }).toDate === "function"
+          ? (invData.expiresAt as { toDate: () => Date }).toDate()
+          : null;
+      if (!expiresDate || expiresDate.getTime() < Date.now()) {
+        throw new Error("This invitation code has expired.");
+      }
+
+      transaction.set(familyRef, removeUndefined({
+        userId,
+        userName,
+        userAvatar:
+          userAvatar || `https://api.dicebear.com/7.x/thumbs/svg?seed=${userId}`,
+        relationship,
+        role: "member",
+        invitationCode: normalized,
+        ...withCustomRelationship(relationship, customRelationship),
+        joinedAt: serverTimestamp(),
+      }));
+
+      transaction.update(invitationRef, {
+        used: true,
+        usedBy: userId,
+        usedByName: userName,
+      });
+    });
+  } catch (error) {
     return {
       success: false,
-      error: "You are already a family member of this pet.",
+      error: error instanceof Error ? error.message : "Failed to redeem invitation.",
     };
   }
 
-  const invitationRef = doc(
-    db,
-    preview.invitationRefPath || `pets/${preview.petId}/invitations/${normalized}`
-  );
-
-  await setDoc(
-    familyRef,
-    removeUndefined({
-      userId,
-      userName,
-      userAvatar:
-        userAvatar || `https://api.dicebear.com/7.x/thumbs/svg?seed=${userId}`,
-      relationship,
-      role: "member",
-      invitationCode: normalized,
-      ...withCustomRelationship(relationship, customRelationship),
-      joinedAt: serverTimestamp(),
-    })
-  );
-
-  await updateDoc(invitationRef, {
-    used: true,
-    usedBy: userId,
-    usedByName: userName,
-  });
-
-  return { success: true, petId: preview.petId, petName: preview.petName };
+  return { success: true, petId, petName: preview.petName };
 }
 
 export async function getActiveInvitations(

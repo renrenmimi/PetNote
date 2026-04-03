@@ -145,26 +145,10 @@ export async function getOrCreateLocation(data: {
         );
       }
     });
-  } else {
-    await runTransaction(db, async (transaction) => {
-      transaction.set(
-        locationRef,
-        removeUndefined({
-          name: data.name,
-          address: data.address,
-          city: data.city,
-          state: data.state,
-          category: data.category,
-          description: data.description,
-          features: data.features,
-          photos: data.photos,
-          totalPhotos: data.photos?.length,
-          updatedAt: serverTimestamp(),
-        }),
-        { merge: true }
-      );
-    });
   }
+  // If location already exists, just return the ID.
+  // Don't try to merge-update — only the original creator or admin
+  // has update permission per firestore.rules.
   return locationId;
 }
 

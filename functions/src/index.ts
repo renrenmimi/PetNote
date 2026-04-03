@@ -7,7 +7,7 @@ setGlobalOptions({ maxInstances: 5 });
 admin.initializeApp();
 const db = admin.firestore();
 
-// Helper: batch delete/update in chunks of 450 (under Firestore 500 limit)
+// Helper: batch operations in chunks of 450 (under Firestore 500 limit)
 async function batchChunked(
   docs: admin.firestore.QueryDocumentSnapshot[],
   operation: (batch: admin.firestore.WriteBatch, doc: admin.firestore.QueryDocumentSnapshot) => void
@@ -18,6 +18,34 @@ async function batchChunked(
     docs.slice(i, i + chunkSize).forEach((d) => operation(batch, d));
     await batch.commit();
   }
+}
+
+// Helper: recompute location aggregation from all remaining reviews
+async function recomputeLocationAggregation(locationId: string): Promise<void> {
+  const locationRef = db.doc(`locations/${locationId}`);
+  const reviewsSnap = await db.collection(`locations/${locationId}/reviews`).get();
+
+  let totalRatings = 0;
+  let sumRatings = 0;
+  const allTags = new Set<string>();
+  const allPhotos = new Set<string>();
+
+  reviewsSnap.docs.forEach((d) => {
+    const data = d.data();
+    totalRatings++;
+    sumRatings += data.rating || 0;
+    (data.tags || []).forEach((t: string) => allTags.add(t));
+    (data.photos || []).forEach((p: string) => allPhotos.add(p));
+  });
+
+  const averageRating = totalRatings === 0 ? 0 : sumRatings / totalRatings;
+  await locationRef.update({
+    averageRating: Number(averageRating.toFixed(2)),
+    totalRatings,
+    tags: Array.from(allTags),
+    photos: Array.from(allPhotos),
+    totalPhotos: allPhotos.size,
+  });
 }
 
 // ============================================================
@@ -50,12 +78,11 @@ export const onPetDeleted = onDocumentDeleted("pets/{petId}", async (event) => {
 });
 
 // ============================================================
-// 2. Post deleted: clean up bookmarks, reports, AND notifications
+// 2. Post deleted: clean up bookmarks, reports, notifications
 // ============================================================
 export const onPostDeleted = onDocumentDeleted("posts/{postId}", async (event) => {
   const postId = event.params.postId;
 
-  // Clean bookmarks referencing this post
   const bookmarksSnap = await db.collectionGroup("bookmarks").get();
   const matchingBookmarks = bookmarksSnap.docs.filter((d) => d.id === postId);
   if (matchingBookmarks.length > 0) {
@@ -64,7 +91,6 @@ export const onPostDeleted = onDocumentDeleted("posts/{postId}", async (event) =
     });
   }
 
-  // Clean reports targeting this post
   const reportsSnap = await db.collection("reports")
     .where("targetId", "==", postId)
     .where("targetType", "==", "post").get();
@@ -74,7 +100,6 @@ export const onPostDeleted = onDocumentDeleted("posts/{postId}", async (event) =
     });
   }
 
-  // Clean ALL notifications referencing this post
   const notifSnap = await db.collection("notifications")
     .where("postId", "==", postId).get();
   if (!notifSnap.empty) {
@@ -85,69 +110,25 @@ export const onPostDeleted = onDocumentDeleted("posts/{postId}", async (event) =
 });
 
 // ============================================================
-// 3. Review created: update location aggregation
+// 3. Review created/deleted: recompute location aggregation
+//    Recount from all remaining reviews — no incremental math.
 // ============================================================
 export const onReviewCreated = onDocumentCreated(
   "locations/{locationId}/reviews/{reviewId}",
   async (event) => {
-    const locationId = event.params.locationId;
-    const reviewData = event.data?.data();
-    if (!reviewData) return;
-
-    const locationRef = db.doc(`locations/${locationId}`);
-    await db.runTransaction(async (t) => {
-      const locSnap = await t.get(locationRef);
-      const current = locSnap.data() || { averageRating: 0, totalRatings: 0 };
-      const totalRatings = (current.totalRatings || 0) + 1;
-      const averageRating =
-        ((current.averageRating || 0) * (current.totalRatings || 0) + reviewData.rating) /
-        totalRatings;
-
-      const update: Record<string, unknown> = {
-        averageRating: Number(averageRating.toFixed(2)),
-        totalRatings,
-      };
-      if (reviewData.tags?.length > 0) {
-        update.tags = admin.firestore.FieldValue.arrayUnion(...reviewData.tags);
-      }
-      if (reviewData.photos?.length > 0) {
-        update.photos = admin.firestore.FieldValue.arrayUnion(...reviewData.photos);
-        update.totalPhotos = admin.firestore.FieldValue.increment(reviewData.photos.length);
-      }
-      t.update(locationRef, update);
-    });
+    await recomputeLocationAggregation(event.params.locationId);
   }
 );
 
-// ============================================================
-// 4. Review deleted: update location aggregation
-// ============================================================
 export const onReviewDeleted = onDocumentDeleted(
   "locations/{locationId}/reviews/{reviewId}",
   async (event) => {
-    const locationId = event.params.locationId;
-    const reviewData = event.data?.data();
-    if (!reviewData) return;
-
-    const locationRef = db.doc(`locations/${locationId}`);
-    await db.runTransaction(async (t) => {
-      const locSnap = await t.get(locationRef);
-      const current = locSnap.data() || { averageRating: 0, totalRatings: 0 };
-      const totalRatings = Math.max(0, (current.totalRatings || 0) - 1);
-      const averageRating = totalRatings === 0
-        ? 0
-        : ((current.averageRating || 0) * (current.totalRatings || 0) - reviewData.rating) /
-          totalRatings;
-      t.update(locationRef, {
-        averageRating: Number(Math.max(0, averageRating).toFixed(2)),
-        totalRatings,
-      });
-    });
+    await recomputeLocationAggregation(event.params.locationId);
   }
 );
 
 // ============================================================
-// 5. Checkin created: update location totalCheckins + verified
+// 4. Checkin created: update location totalCheckins + verified
 // ============================================================
 export const onCheckinCreated = onDocumentCreated(
   "locations/{locationId}/checkins/{checkinId}",
@@ -167,7 +148,7 @@ export const onCheckinCreated = onDocumentCreated(
 );
 
 // ============================================================
-// 6. Post written: maintain hashtag postCount server-side
+// 5. Post written: maintain hashtag postCount server-side
 // ============================================================
 export const onPostWritten = onDocumentWritten("posts/{postId}", async (event) => {
   const before = event.data?.before?.data();
@@ -201,7 +182,52 @@ export const onPostWritten = onDocumentWritten("posts/{postId}", async (event) =
 });
 
 // ============================================================
-// 7. User updated: sync displayName/avatarUrl to denormalized copies
+// 6. Like deleted: decrement post likeCount
+// ============================================================
+export const onLikeDeleted = onDocumentDeleted(
+  "posts/{postId}/likes/{likeId}",
+  async (event) => {
+    const postRef = db.doc(`posts/${event.params.postId}`);
+    const postSnap = await postRef.get();
+    if (!postSnap.exists) return;
+    await postRef.update({
+      likeCount: admin.firestore.FieldValue.increment(-1),
+    });
+  }
+);
+
+// ============================================================
+// 7. Comment deleted: decrement post commentCount
+// ============================================================
+export const onCommentDeleted = onDocumentDeleted(
+  "posts/{postId}/comments/{commentId}",
+  async (event) => {
+    const postRef = db.doc(`posts/${event.params.postId}`);
+    const postSnap = await postRef.get();
+    if (!postSnap.exists) return;
+    await postRef.update({
+      commentCount: admin.firestore.FieldValue.increment(-1),
+    });
+  }
+);
+
+// ============================================================
+// 8. Participant deleted: decrement meetup participantCount
+// ============================================================
+export const onParticipantDeleted = onDocumentDeleted(
+  "meetups/{meetupId}/participants/{participantId}",
+  async (event) => {
+    const meetupRef = db.doc(`meetups/${event.params.meetupId}`);
+    const meetupSnap = await meetupRef.get();
+    if (!meetupSnap.exists) return;
+    await meetupRef.update({
+      participantCount: admin.firestore.FieldValue.increment(-1),
+    });
+  }
+);
+
+// ============================================================
+// 9. User updated: sync displayName/avatarUrl to denormalized copies
 // ============================================================
 export const onUserUpdated = onDocumentWritten("users/{userId}", async (event) => {
   const before = event.data?.before?.data();
@@ -225,37 +251,31 @@ export const onUserUpdated = onDocumentWritten("users/{userId}", async (event) =
     });
   };
 
-  // Posts
   const postFields: Record<string, string> = {};
   if (nameChanged) postFields.authorName = after.displayName;
   if (avatarChanged) postFields.authorAvatar = after.avatarUrl;
   await syncCollection(db.collection("posts").where("authorId", "==", userId), postFields);
 
-  // Comments
   const commentFields: Record<string, string> = {};
   if (nameChanged) commentFields.authorName = after.displayName;
   if (avatarChanged) commentFields.authorAvatar = after.avatarUrl;
   await syncCollection(db.collectionGroup("comments").where("authorId", "==", userId), commentFields);
 
-  // Notifications
   const notifFields: Record<string, string> = {};
   if (nameChanged) notifFields.fromUserName = after.displayName;
   if (avatarChanged) notifFields.fromUserAvatar = after.avatarUrl;
   await syncCollection(db.collection("notifications").where("fromUserId", "==", userId), notifFields);
 
-  // Participants
   const partFields: Record<string, string> = {};
   if (nameChanged) partFields.userName = after.displayName;
   if (avatarChanged) partFields.userAvatar = after.avatarUrl;
   await syncCollection(db.collectionGroup("participants").where("userId", "==", userId), partFields);
 
-  // Reviews
   const reviewFields: Record<string, string> = {};
   if (nameChanged) reviewFields.userName = after.displayName;
   if (avatarChanged) reviewFields.userAvatar = after.avatarUrl;
   await syncCollection(db.collectionGroup("reviews").where("userId", "==", userId), reviewFields);
 
-  // Family
   const familyFields: Record<string, string> = {};
   if (nameChanged) familyFields.userName = after.displayName;
   if (avatarChanged) familyFields.userAvatar = after.avatarUrl;
