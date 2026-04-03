@@ -139,7 +139,7 @@ export async function getReportTargetUser(
   return {
     userId,
     userName: userData?.displayName || "Unknown User",
-    userEmail: userData?.email || "",
+    userEmail: "",
   };
 }
 
