@@ -17,6 +17,7 @@ import {
   type QueryConstraint,
   type QueryDocumentSnapshot,
   runTransaction,
+  setDoc,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { calculateDistance } from "./location";
@@ -102,8 +103,25 @@ export async function createMeetup(data: MeetupData): Promise<string> {
     category: "community_park",
     source: "meetup",
   });
+
+  const isPrivate = (data.locationVisibility ?? "participants_only") === "participants_only";
+
+  // For participants_only meetups, store only city/state/name in public doc.
+  // Full address goes to private subcollection.
+  const publicLocation: MeetupLocation = isPrivate
+    ? {
+        name: data.location.name,
+        address: "",
+        lat: 0,
+        lng: 0,
+        city: data.location.city,
+        state: data.location.state,
+      }
+    : data.location;
+
   const payload = removeUndefined({
     ...data,
+    location: publicLocation,
     locationId,
     status: data.status ?? "upcoming",
     participantCount: data.participantCount ?? 0,
@@ -113,6 +131,19 @@ export async function createMeetup(data: MeetupData): Promise<string> {
     updatedAt: serverTimestamp(),
   });
   const result = await addDoc(meetupsRef, payload);
+
+  // Store full address in private subcollection
+  if (isPrivate) {
+    await setDoc(doc(db, "meetups", result.id, "private", "address"), {
+      address: data.location.address,
+      lat: data.location.lat,
+      lng: data.location.lng,
+      name: data.location.name,
+      city: data.location.city || "",
+      state: data.location.state || "",
+    });
+  }
+
   return result.id;
 }
 
@@ -184,6 +215,20 @@ export async function getMeetupById(id: string): Promise<Meetup | null> {
   const snapshot = await getDoc(meetupRef);
   if (!snapshot.exists()) return null;
   return { id: snapshot.id, ...(snapshot.data() as MeetupData) };
+}
+
+export async function getMeetupPrivateAddress(
+  meetupId: string
+): Promise<MeetupLocation | null> {
+  try {
+    const privateRef = doc(db, "meetups", meetupId, "private", "address");
+    const snapshot = await getDoc(privateRef);
+    if (!snapshot.exists()) return null;
+    return snapshot.data() as MeetupLocation;
+  } catch {
+    // Permission denied — user is not organizer/participant/admin
+    return null;
+  }
 }
 
 export async function getMeetupsByLocation(

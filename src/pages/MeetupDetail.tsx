@@ -11,10 +11,12 @@ import {
   cancelMeetup,
   checkRequirements,
   getMeetupById,
+  getMeetupPrivateAddress,
   getParticipants,
   joinMeetup,
   leaveMeetup,
   type Meetup,
+  type MeetupLocation,
   type MeetupRequirements,
   type Participant,
 } from "../services/meetups";
@@ -122,6 +124,7 @@ export function MeetupDetail() {
   const [resolvedLocationId, setResolvedLocationId] = useState<string | null>(
     null
   );
+  const [privateAddress, setPrivateAddress] = useState<MeetupLocation | null>(null);
   const [userReviewRating, setUserReviewRating] = useState<number | null>(null);
   const [eligibility, setEligibility] = useState<{
     eligible: boolean;
@@ -162,6 +165,22 @@ export function MeetupDetail() {
       ignore = true;
     };
   }, [meetupId]);
+
+  // Fetch private address when user has access (organizer or participant)
+  useEffect(() => {
+    if (!meetupId || !meetup || !user) return;
+    if (meetup.locationVisibility !== "participants_only") return;
+    const isOrg = meetup.organizerId === user.uid;
+    const isPart = participants.some((p) => p.userId === user.uid);
+    if (!isOrg && !isPart) return;
+    let ignore = false;
+    const load = async () => {
+      const addr = await getMeetupPrivateAddress(meetupId);
+      if (!ignore && addr) setPrivateAddress(addr);
+    };
+    void load();
+    return () => { ignore = true; };
+  }, [meetupId, meetup, user, participants]);
 
   useEffect(() => {
     let ignore = false;
@@ -268,6 +287,10 @@ export function MeetupDetail() {
   const visibility = meetup?.locationVisibility ?? "participants_only";
   const canSeeFullAddress =
     visibility === "everyone" || isOrganizer || isJoined;
+  // Use private address data when available (truly restricted by rules)
+  const displayLocation = canSeeFullAddress && privateAddress
+    ? privateAddress
+    : meetup?.location;
   const locationCityLabel = [meetup?.location.city, meetup?.location.state]
     .filter(Boolean)
     .join(", ");
@@ -550,10 +573,10 @@ export function MeetupDetail() {
 
           <div className="space-y-1 text-sm text-slate-600 dark:text-slate-300">
             <p className="font-semibold text-slate-900 dark:text-white">
-              📍 {canSeeFullAddress ? meetup.location.name : locationCityLabel || "City hidden"}
+              📍 {canSeeFullAddress && displayLocation ? displayLocation.name : locationCityLabel || "City hidden"}
             </p>
-            {canSeeFullAddress ? (
-              <p>{meetup.location.address}</p>
+            {canSeeFullAddress && displayLocation?.address ? (
+              <p>{displayLocation.address}</p>
             ) : (
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 Join this meetup to see the full address.

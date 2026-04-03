@@ -190,6 +190,18 @@ service cloud.firestore {
         );
         allow update: if isAuthenticated() && request.auth.uid == participantId;
       }
+
+      // Private address: only organizer, confirmed participants, or admin can read.
+      // Full address/coordinates stored here when locationVisibility == "participants_only".
+      match /private/{docId} {
+        allow read: if isAuthenticated() && (
+          get(/databases/$(database)/documents/meetups/$(meetupId)).data.organizerId == request.auth.uid ||
+          exists(/databases/$(database)/documents/meetups/$(meetupId)/participants/$(request.auth.uid)) ||
+          isAdmin()
+        );
+        allow write: if isAuthenticated() &&
+          (get(/databases/$(database)/documents/meetups/$(meetupId)).data.organizerId == request.auth.uid || isAdmin());
+      }
     }
 
     // ========= locations =========
