@@ -84,9 +84,7 @@ service cloud.firestore {
       }
 
       match /settings/{settingId} {
-        // Any authenticated user can read settings (needed for notification
-        // delivery to check recipient's preferences before creating notification)
-        allow read: if isAuthenticated();
+        allow read: if isOwner(userId);
         allow write: if isOwner(userId);
       }
     }

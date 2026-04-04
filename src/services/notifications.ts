@@ -1,5 +1,4 @@
 import {
-  addDoc,
   collection,
   doc,
   getCountFromServer,
@@ -9,11 +8,9 @@ import {
   updateDoc,
   where,
   writeBatch,
-  serverTimestamp,
 } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import { db } from "./firebase";
-import { getSettings } from "./settings";
-import { removeUndefined } from "../utils/removeUndefined";
 
 export type NotificationType =
   | "like"
@@ -53,27 +50,19 @@ export type CreateNotificationInput = Omit<
 export async function createNotification(
   data: CreateNotificationInput
 ): Promise<string> {
-  const settings = await getSettings(data.userId);
-  const mappedType = data.type === "reply" ? "comment" : data.type;
-  const shouldNotify =
-    data.type === "warning" ||
-    data.type === "meetup_join" ||
-    data.type === "meetup_cancelled" ||
-    (mappedType === "like" && settings.likeNotifications) ||
-    (mappedType === "comment" && settings.commentNotifications) ||
-    ((mappedType === "follow" || mappedType === "pet_follow") &&
-      settings.followNotifications);
-  if (!shouldNotify) {
+  // Notification creation is handled by a Cloud Function (sendNotification)
+  // which uses admin SDK to read recipient's settings and create the
+  // notification. This avoids exposing settings to other users.
+  try {
+    const functions = getFunctions();
+    const result = await httpsCallable<CreateNotificationInput, { id: string }>(
+      functions, "sendNotification"
+    )(data);
+    return result.data.id;
+  } catch {
+    // Silently fail — notification delivery should not block main operations
     return "";
   }
-  const notificationsRef = collection(db, "notifications");
-  const payload = removeUndefined({
-    ...data,
-    read: data.read ?? false,
-    createdAt: data.createdAt ?? serverTimestamp(),
-  });
-  const result = await addDoc(notificationsRef, payload);
-  return result.id;
 }
 
 export async function getNotifications(

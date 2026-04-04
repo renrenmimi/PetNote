@@ -163,7 +163,7 @@ export function AddPlace() {
       const photoUrls = await Promise.all(
         photos.map((file) => uploadImage(file))
       );
-      const locationId = await addPlace({
+      const { locationId } = await addPlace({
         name: name.trim(),
         category,
         description: description.trim(),

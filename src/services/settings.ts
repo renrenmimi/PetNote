@@ -18,14 +18,12 @@ export type UserSettings = {
   likeNotifications: boolean;
   commentNotifications: boolean;
   followNotifications: boolean;
-  privateAccount: boolean;
 };
 
 const defaultSettings: UserSettings = {
   likeNotifications: true,
   commentNotifications: true,
   followNotifications: true,
-  privateAccount: false,
 };
 
 const settingsRef = (userId: string) =>

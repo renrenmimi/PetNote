@@ -260,14 +260,14 @@ export async function addPlace(data: {
   photos: string[];
   addedBy: string;
   addedByName: string;
-}): Promise<string> {
+}): Promise<{ locationId: string; alreadyExisted: boolean }> {
   const locationId = buildLocationId(data.lat, data.lng);
   const locationRef = doc(db, "locations", locationId);
+  let alreadyExisted = false;
   await runTransaction(db, async (transaction) => {
     const snapshot = await transaction.get(locationRef);
     if (snapshot.exists()) {
-      // Location already exists at these coordinates — just return the ID.
-      // Don't merge-update: only the original creator or admin can update.
+      alreadyExisted = true;
       return;
     }
     transaction.set(locationRef, {
@@ -282,7 +282,22 @@ export async function addPlace(data: {
       updatedAt: serverTimestamp(),
     });
   });
-  return locationId;
+
+  // If location already existed and caller has photos, append via CF
+  if (alreadyExisted && data.photos.length > 0) {
+    try {
+      const { getFunctions, httpsCallable } = await import("firebase/functions");
+      const functions = getFunctions();
+      await httpsCallable(functions, "appendLocationPhotos")({
+        locationId,
+        photos: data.photos,
+      });
+    } catch {
+      // Non-critical — photos not appended but location still returned
+    }
+  }
+
+  return { locationId, alreadyExisted };
 }
 
 export async function addPhotosToPlace(

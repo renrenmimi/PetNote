@@ -51,13 +51,15 @@ export async function searchByText(text: string): Promise<Post[]> {
 
 export async function searchUsers(name: string): Promise<UserProfile[]> {
   if (!name) return [];
+  const keyword = name.trim().toLowerCase();
+  if (!keyword) return [];
   const usersRef = collection(db, "users");
   const snapshot = await getDocs(
     query(
       usersRef,
-      orderBy("displayName"),
-      where("displayName", ">=", name),
-      where("displayName", "<=", `${name}\uf8ff`),
+      orderBy("displayNameLower"),
+      where("displayNameLower", ">=", keyword),
+      where("displayNameLower", "<=", `${keyword}\uf8ff`),
       limit(10)
     )
   );

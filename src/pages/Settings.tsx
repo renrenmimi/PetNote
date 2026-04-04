@@ -26,7 +26,6 @@ const defaultSettings: UserSettings = {
   likeNotifications: true,
   commentNotifications: true,
   followNotifications: true,
-  privateAccount: false,
 };
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
