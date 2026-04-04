@@ -10,8 +10,7 @@ import {
   writeBatch,
   collectionGroup,
 } from "firebase/firestore";
-import { deleteUser } from "firebase/auth";
-import { auth, db } from "./firebase";
+import { db } from "./firebase";
 import { deletePost, getPostsByUser } from "./posts";
 import { deletePet, getPetsByOwner } from "./pets";
 
@@ -174,13 +173,13 @@ export async function deleteAccount(userId: string): Promise<void> {
   await deleteSubcollection(`users/${userId}`, "following");
   await deleteSubcollection(`users/${userId}`, "blockedUsers");
 
-  // Delete settings and user document
+  // Delete settings (owner can write own settings)
   await deleteDoc(settingsRef(userId));
-  await deleteDoc(doc(db, "users", userId));
 
-  // Delete Firebase Auth account LAST — after all Firestore cleanup is done.
-  // This must come last because all operations above require a valid auth token.
-  if (auth.currentUser && auth.currentUser.uid === userId) {
-    await deleteUser(auth.currentUser);
-  }
+  // User document deletion and Auth account deletion are handled by
+  // the deleteUserAccount Cloud Function (callable), which uses admin SDK
+  // to bypass the admin-only delete rule and ensure atomicity.
+  const { getFunctions, httpsCallable } = await import("firebase/functions");
+  const functions = getFunctions();
+  await httpsCallable(functions, "deleteUserAccount")({ userId });
 }

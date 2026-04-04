@@ -13,7 +13,7 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { auth, db } from "./firebase";
 import { deleteComment, deletePost } from "./posts";
 import { type ReportItem } from "./report";
 import { removeUndefined } from "../utils/removeUndefined";
@@ -167,7 +167,7 @@ export async function deleteContentAndWarn(params: {
     removeUndefined({
       userId: targetUserId,
       type: "warning",
-      fromUserId: "admin",
+      fromUserId: auth.currentUser?.uid || "",
       fromUserName: "PetNote Team",
       fromUserAvatar: "",
       message,
@@ -200,7 +200,7 @@ export async function blockUserByAdmin(
     removeUndefined({
       userId,
       type: "warning",
-      fromUserId: "admin",
+      fromUserId: auth.currentUser?.uid || "",
       fromUserName: "PetNote Team",
       fromUserAvatar: "",
       message: `Your account has been suspended: ${safeReason}`,

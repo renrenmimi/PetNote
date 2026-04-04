@@ -168,6 +168,10 @@ export function Meetups() {
   const cards = useMemo(() => {
     if (!userLocation) return meetups;
     return meetups.map((meetup) => {
+      // Skip distance for private meetups with zeroed coordinates
+      if (meetup.location.lat === 0 && meetup.location.lng === 0) {
+        return meetup;
+      }
       const distance = calculateDistance(
         userLocation.lat,
         userLocation.lng,

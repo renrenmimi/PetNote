@@ -278,6 +278,8 @@ export async function getNearbyMeetups(
 ): Promise<Meetup[]> {
   const { meetups } = await getUpcomingMeetups(50);
   return meetups
+    // Skip private meetups with zeroed coordinates
+    .filter((meetup) => meetup.location.lat !== 0 || meetup.location.lng !== 0)
     .map((meetup) => ({
       meetup,
       distance: calculateDistance(
