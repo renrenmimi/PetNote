@@ -266,38 +266,21 @@ export async function addPlace(data: {
   await runTransaction(db, async (transaction) => {
     const snapshot = await transaction.get(locationRef);
     if (snapshot.exists()) {
-      transaction.set(
-        locationRef,
-        {
-          name: data.name,
-          category: data.category,
-          description: data.description,
-          address: data.address,
-          city: data.city,
-          state: data.state,
-          features: data.features,
-          photos: data.photos,
-          totalPhotos: data.photos.length,
-          addedBy: data.addedBy,
-          addedByName: data.addedByName,
-          source: "user",
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-    } else {
-      transaction.set(locationRef, {
-        ...data,
-        averageRating: 0,
-        totalRatings: 0,
-        totalPhotos: data.photos.length,
-        tags: [],
-        source: "user",
-        verified: false,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      // Location already exists at these coordinates — just return the ID.
+      // Don't merge-update: only the original creator or admin can update.
+      return;
     }
+    transaction.set(locationRef, {
+      ...data,
+      averageRating: 0,
+      totalRatings: 0,
+      totalPhotos: data.photos.length,
+      tags: [],
+      source: "user",
+      verified: false,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
   });
   return locationId;
 }

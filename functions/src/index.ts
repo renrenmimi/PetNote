@@ -1,6 +1,7 @@
 import * as admin from "firebase-admin";
 import { setGlobalOptions } from "firebase-functions/v2";
 import { onDocumentDeleted, onDocumentCreated, onDocumentWritten } from "firebase-functions/v2/firestore";
+import { onCall, HttpsError } from "firebase-functions/v2/https";
 
 setGlobalOptions({ maxInstances: 5 });
 
@@ -297,4 +298,37 @@ export const onUserUpdated = onDocumentWritten("users/{userId}", async (event) =
   if (nameChanged) familyFields.userName = after.displayName;
   if (avatarChanged) familyFields.userAvatar = after.avatarUrl;
   await syncCollection(db.collectionGroup("family").where("userId", "==", userId), familyFields);
+});
+
+// ============================================================
+// 10. Callable: delete user document + Firebase Auth account
+//     Uses admin SDK to bypass admin-only delete rule.
+//     Called from client deleteAccount() after Firestore cleanup.
+// ============================================================
+export const deleteUserAccount = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Must be logged in.");
+  }
+
+  const { userId } = request.data as { userId: string };
+  if (callerUid !== userId) {
+    throw new HttpsError("permission-denied", "Can only delete your own account.");
+  }
+
+  // Delete user document with admin SDK
+  try {
+    await db.doc(`users/${userId}`).delete();
+  } catch {
+    // May already be deleted
+  }
+
+  // Delete Firebase Auth account with admin SDK (no recent-login required)
+  try {
+    await admin.auth().deleteUser(userId);
+  } catch {
+    // May already be deleted
+  }
+
+  return { success: true };
 });

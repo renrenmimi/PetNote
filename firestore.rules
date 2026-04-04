@@ -39,12 +39,24 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(counters);
     }
 
+    // Safe fields allowed during user document creation.
+    // Prevents setting role, banned, or other sensitive fields on create.
+    function isAllowedUserCreate() {
+      let allowed = ['displayName', 'displayNameLower', 'avatarUrl', 'bio',
+                      'location', 'onboardingComplete', 'createdAt',
+                      'followerCount', 'followingCount', 'followingPetsCount'];
+      return request.resource.data.keys().hasOnly(allowed);
+    }
+
     // ========= users =========
     match /users/{userId} {
       allow read: if true;
-      allow create: if isOwner(userId);
+      // Owner can only create with safe fields — no role, banned, email
+      allow create: if isOwner(userId) && isAllowedUserCreate();
       allow update: if (isOwner(userId) && (isAllowedUserUpdate() || isCounterUpdate())) || isAdmin();
-      allow delete: if isOwner(userId) || isAdmin();
+      // Only admin can delete user documents. Account deletion flow uses
+      // admin SDK via Cloud Function, not client-side deleteDoc.
+      allow delete: if isAdmin();
 
       match /bookmarks/{bookmarkId} {
         allow read: if isOwner(userId);
@@ -72,7 +84,9 @@ service cloud.firestore {
       }
 
       match /settings/{settingId} {
-        allow read: if isOwner(userId);
+        // Any authenticated user can read settings (needed for notification
+        // delivery to check recipient's preferences before creating notification)
+        allow read: if isAuthenticated();
         allow write: if isOwner(userId);
       }
     }
