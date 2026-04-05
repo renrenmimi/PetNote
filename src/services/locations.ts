@@ -283,20 +283,6 @@ export async function addPlace(data: {
     });
   });
 
-  // If location already existed and caller has photos, append via CF
-  if (alreadyExisted && data.photos.length > 0) {
-    try {
-      const { getFunctions, httpsCallable } = await import("firebase/functions");
-      const functions = getFunctions();
-      await httpsCallable(functions, "appendLocationPhotos")({
-        locationId,
-        photos: data.photos,
-      });
-    } catch {
-      // Non-critical — photos not appended but location still returned
-    }
-  }
-
   return { locationId, alreadyExisted };
 }
 
