@@ -332,3 +332,88 @@ export const deleteUserAccount = onCall(async (request) => {
 
   return { success: true };
 });
+
+// ============================================================
+// 11. Callable: create notification with server-side settings check
+//     Reads recipient's settings with admin SDK (owner-only rule)
+//     then creates notification if preferences allow it.
+// ============================================================
+export const sendNotification = onCall(async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError("unauthenticated", "Must be logged in.");
+  }
+
+  const data = request.data as {
+    userId: string;
+    type: string;
+    fromUserId: string;
+    fromUserName: string;
+    fromUserAvatar: string;
+    postId?: string;
+    commentId?: string;
+    postImage?: string;
+    message: string;
+    warningReason?: string;
+    warningDetails?: string;
+    read?: boolean;
+  };
+
+  // Verify fromUserId matches caller (except admin warning)
+  if (data.type !== "warning" && data.fromUserId !== request.auth.uid) {
+    throw new HttpsError("permission-denied", "fromUserId must match caller.");
+  }
+
+  // Read recipient's settings with admin SDK
+  const settingsSnap = await db.doc(`users/${data.userId}/settings/preferences`).get();
+  const settings = settingsSnap.exists ? settingsSnap.data() : {};
+  const likeNotif = settings?.likeNotifications ?? true;
+  const commentNotif = settings?.commentNotifications ?? true;
+  const followNotif = settings?.followNotifications ?? true;
+
+  const mappedType = data.type === "reply" ? "comment" : data.type;
+  const shouldNotify =
+    data.type === "warning" ||
+    data.type === "meetup_join" ||
+    data.type === "meetup_cancelled" ||
+    (mappedType === "like" && likeNotif) ||
+    (mappedType === "comment" && commentNotif) ||
+    ((mappedType === "follow" || mappedType === "pet_follow") && followNotif);
+
+  if (!shouldNotify) {
+    return { id: "" };
+  }
+
+  const payload: Record<string, unknown> = { ...data };
+  delete payload.read;
+  payload.read = data.read ?? false;
+  payload.createdAt = admin.firestore.FieldValue.serverTimestamp();
+
+  // Remove undefined values
+  Object.keys(payload).forEach((key) => {
+    if (payload[key] === undefined) delete payload[key];
+  });
+
+  const result = await db.collection("notifications").add(payload);
+  return { id: result.id };
+});
+
+// ============================================================
+// 12. Callable: append photos to existing location (admin SDK)
+//     Used when addPlace finds location already exists — client
+//     can't update due to creator-only rule.
+// ============================================================
+export const appendLocationPhotos = onCall(async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError("unauthenticated", "Must be logged in.");
+  }
+  const { locationId, photos } = request.data as { locationId: string; photos: string[] };
+  if (!locationId || !photos?.length) return { success: false };
+
+  const locationRef = db.doc(`locations/${locationId}`);
+  await locationRef.update({
+    photos: admin.firestore.FieldValue.arrayUnion(...photos),
+    totalPhotos: admin.firestore.FieldValue.increment(photos.length),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return { success: true };
+});
