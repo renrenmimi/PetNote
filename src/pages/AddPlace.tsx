@@ -159,11 +159,18 @@ export function AddPlace() {
       if (existing) {
         setWarningPlaceId(existing.id);
         showToast("This place may already exist.", "warning");
+        if (photos.length > 0 && rating === 0) {
+          showToast(
+            "To attach photos to an existing place, please add a rating first.",
+            "warning"
+          );
+          return;
+        }
       }
       const photoUrls = await Promise.all(
         photos.map((file) => uploadImage(file))
       );
-      const { locationId } = await addPlace({
+      const { locationId, alreadyExisted } = await addPlace({
         name: name.trim(),
         category,
         description: description.trim(),
@@ -187,7 +194,7 @@ export function AddPlace() {
             `https://api.dicebear.com/7.x/thumbs/svg?seed=${user.uid}`,
           rating,
           comment: "",
-          photos: [],
+          photos: photoUrls,
           tags: [],
           petFriendly: {
             space: space || rating,
@@ -196,7 +203,7 @@ export function AddPlace() {
           },
         });
       }
-      showToast("Place added!", "success");
+      showToast(alreadyExisted ? "Place contribution added!" : "Place added!", "success");
       navigate(`/location/${locationId}`, { replace: true });
     } catch {
       showToast("Failed to add place.", "error");

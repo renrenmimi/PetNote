@@ -39,6 +39,7 @@ export type Pet = {
   ownerId: string;
   primaryOwnerId?: string;
   name: string;
+  nameLower?: string;
   species: PetSpecies;
   breed?: string;
   birthday?: unknown;
@@ -163,6 +164,7 @@ export async function createPet(
       petsRef,
       removeUndefined({
         ...data,
+        nameLower: data.name.toLowerCase(),
         ownerId,
         primaryOwnerId: ownerId,
         followerCount: 0,
@@ -199,7 +201,14 @@ export async function updatePet(
   data: Partial<Omit<Pet, "id" | "ownerId">>
 ): Promise<void> {
   const petRef = doc(db, "pets", petId);
-  await setDoc(petRef, removeUndefined(data), { merge: true });
+  await setDoc(
+    petRef,
+    removeUndefined({
+      ...data,
+      ...(data.name ? { nameLower: data.name.toLowerCase() } : {}),
+    }),
+    { merge: true }
+  );
 }
 
 async function deleteSubcollection(parentPath: string, subcollection: string): Promise<void> {

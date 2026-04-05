@@ -343,6 +343,7 @@ export const sendNotification = onCall(async (request) => {
     throw new HttpsError("unauthenticated", "Must be logged in.");
   }
 
+  const callerUid = request.auth.uid;
   const data = request.data as {
     userId: string;
     type: string;
@@ -358,9 +359,32 @@ export const sendNotification = onCall(async (request) => {
     read?: boolean;
   };
 
-  // Verify fromUserId matches caller (except admin warning)
-  if (data.type !== "warning" && data.fromUserId !== request.auth.uid) {
+  const allowedTypes = new Set([
+    "like",
+    "comment",
+    "follow",
+    "pet_follow",
+    "reply",
+    "meetup_join",
+    "meetup_cancelled",
+    "warning",
+  ]);
+  if (!allowedTypes.has(data.type)) {
+    throw new HttpsError("invalid-argument", "Unsupported notification type.");
+  }
+
+  if (data.fromUserId !== callerUid) {
     throw new HttpsError("permission-denied", "fromUserId must match caller.");
+  }
+
+  if (!data.userId) {
+    throw new HttpsError("invalid-argument", "Missing notification recipient.");
+  }
+
+  const callerSnap = await db.doc(`users/${callerUid}`).get();
+  const isCallerAdmin = callerSnap.exists && callerSnap.data()?.role === "admin";
+  if (data.type === "warning" && !isCallerAdmin) {
+    throw new HttpsError("permission-denied", "Only admins can send warning notifications.");
   }
 
   // Read recipient's settings with admin SDK
@@ -395,25 +419,4 @@ export const sendNotification = onCall(async (request) => {
 
   const result = await db.collection("notifications").add(payload);
   return { id: result.id };
-});
-
-// ============================================================
-// 12. Callable: append photos to existing location (admin SDK)
-//     Used when addPlace finds location already exists — client
-//     can't update due to creator-only rule.
-// ============================================================
-export const appendLocationPhotos = onCall(async (request) => {
-  if (!request.auth?.uid) {
-    throw new HttpsError("unauthenticated", "Must be logged in.");
-  }
-  const { locationId, photos } = request.data as { locationId: string; photos: string[] };
-  if (!locationId || !photos?.length) return { success: false };
-
-  const locationRef = db.doc(`locations/${locationId}`);
-  await locationRef.update({
-    photos: admin.firestore.FieldValue.arrayUnion(...photos),
-    totalPhotos: admin.firestore.FieldValue.increment(photos.length),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
-  return { success: true };
 });

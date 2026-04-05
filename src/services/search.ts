@@ -71,7 +71,25 @@ export async function searchUsers(name: string): Promise<UserProfile[]> {
 
 export async function searchPets(name: string): Promise<Pet[]> {
   if (!name) return [];
+  const keyword = name.trim().toLowerCase();
+  if (!keyword) return [];
   const petsRef = collection(db, "pets");
+  const lowerSnapshot = await getDocs(
+    query(
+      petsRef,
+      orderBy("nameLower"),
+      where("nameLower", ">=", keyword),
+      where("nameLower", "<=", `${keyword}\uf8ff`),
+      limit(10)
+    )
+  );
+  if (!lowerSnapshot.empty) {
+    return lowerSnapshot.docs.map((docSnap) => ({
+      id: docSnap.id,
+      ...(docSnap.data() as Omit<Pet, "id">),
+    }));
+  }
+
   const snapshot = await getDocs(
     query(
       petsRef,
