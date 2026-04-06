@@ -116,7 +116,7 @@ export async function ensureUserDoc(
   const userRef = doc(db, "users", uid);
   await setDoc(
     userRef,
-    { followingPetsCount: 0, followerCount: 0, followingCount: 0, ...payload },
+    { ...payload },
     { merge: true }
   );
 }

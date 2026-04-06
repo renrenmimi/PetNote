@@ -86,9 +86,6 @@ export async function createUserProfile(
       ? { displayNameLower: data.displayName.toLowerCase() }
       : {}),
     createdAt: data.createdAt ?? serverTimestamp(),
-    followerCount: data.followerCount ?? 0,
-    followingCount: data.followingCount ?? 0,
-    followingPetsCount: data.followingPetsCount ?? 0,
   };
   try {
     await setDoc(userRef, removeUndefined(payload), { merge: true });

@@ -24,12 +24,19 @@ async function batchChunked(
 // Helper: recompute location aggregation from all remaining reviews
 async function recomputeLocationAggregation(locationId: string): Promise<void> {
   const locationRef = db.doc(`locations/${locationId}`);
+  const locationSnap = await locationRef.get();
+  const locationData = locationSnap.exists ? locationSnap.data() ?? {} : {};
   const reviewsSnap = await db.collection(`locations/${locationId}/reviews`).get();
 
   let totalRatings = 0;
   let sumRatings = 0;
   const allTags = new Set<string>();
-  const allPhotos = new Set<string>();
+  const basePhotos = Array.isArray(locationData.locationPhotos)
+    ? (locationData.locationPhotos as string[])
+    : Array.isArray(locationData.photos)
+    ? (locationData.photos as string[])
+    : [];
+  const allPhotos = new Set<string>(basePhotos);
 
   reviewsSnap.docs.forEach((d) => {
     const data = d.data();
@@ -44,6 +51,7 @@ async function recomputeLocationAggregation(locationId: string): Promise<void> {
     averageRating: Number(averageRating.toFixed(2)),
     totalRatings,
     tags: Array.from(allTags),
+    locationPhotos: basePhotos,
     photos: Array.from(allPhotos),
     totalPhotos: allPhotos.size,
   });
@@ -357,7 +365,8 @@ export const onCommentCreated = onDocumentCreated(
     }
 
     if (postData.petId) {
-      const recipients = await getPetFamilyRecipientIds(postData.petId, commenterId);
+      const recipients = (await getPetFamilyRecipientIds(postData.petId, commenterId))
+        .filter((recipientId) => recipientId !== replyTargetUserId);
       const petName = postData.petName || "this pet";
       await Promise.all(
         recipients.map((recipientId) =>
@@ -719,18 +728,21 @@ export const deleteUserAccount = onCall(async (request) => {
     throw new HttpsError("permission-denied", "Can only delete your own account.");
   }
 
-  // Delete user document with admin SDK
-  try {
-    await db.doc(`users/${userId}`).delete();
-  } catch {
-    // May already be deleted
-  }
+  await db.doc(`users/${userId}`).delete();
 
-  // Delete Firebase Auth account with admin SDK (no recent-login required)
   try {
     await admin.auth().deleteUser(userId);
-  } catch {
-    // May already be deleted
+  } catch (error) {
+    const code =
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      typeof (error as { code?: unknown }).code === "string"
+        ? ((error as { code: string }).code)
+        : "";
+    if (code !== "auth/user-not-found") {
+      throw new HttpsError("internal", "Failed to delete auth account.");
+    }
   }
 
   return { success: true };

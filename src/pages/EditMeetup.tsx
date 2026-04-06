@@ -283,6 +283,8 @@ export function EditMeetup() {
           city: locationCity.trim(),
           state: locationState.trim(),
           category: "community_park",
+          addedBy: meetup.organizerId,
+          addedByName: meetup.organizerName,
           source: "meetup",
         });
       }

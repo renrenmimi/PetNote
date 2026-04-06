@@ -93,9 +93,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       displayName: randomName,
       avatarUrl,
       bio: "",
-      followerCount: 0,
-      followingCount: 0,
-      followingPetsCount: 0,
       onboardingComplete: false,
       createdAt: serverTimestamp(),
     });
@@ -133,9 +130,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         displayName,
         avatarUrl,
         bio: "",
-        followingCount: 0,
-        followerCount: 0,
-        followingPetsCount: 0,
         onboardingComplete: false,
         createdAt: serverTimestamp(),
       });

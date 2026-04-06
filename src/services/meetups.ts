@@ -20,7 +20,7 @@ import {
   runTransaction,
   setDoc,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { auth, db } from "./firebase";
 import { calculateDistance } from "./location";
 import { getUserProfile } from "./users";
 import { getUserStats } from "./posts";
@@ -99,16 +99,18 @@ export async function createMeetup(data: MeetupData): Promise<string> {
   // Full address lives only in the private subcollection.
   let locationId: string | undefined;
   if (!isPrivate) {
-    locationId = await getOrCreateLocation({
-      name: data.location.name,
-      address: data.location.address,
-      lat: data.location.lat,
-      lng: data.location.lng,
-      city: data.location.city || "",
-      state: data.location.state || "",
-      category: "community_park",
-      source: "meetup",
-    });
+      locationId = await getOrCreateLocation({
+        name: data.location.name,
+        address: data.location.address,
+        lat: data.location.lat,
+        lng: data.location.lng,
+        city: data.location.city || "",
+        state: data.location.state || "",
+        category: "community_park",
+        addedBy: data.organizerId,
+        addedByName: data.organizerName,
+        source: "meetup",
+      });
   }
 
   const publicLocation: MeetupLocation = isPrivate
@@ -176,12 +178,19 @@ export async function checkAndUpdateMeetupStatus(
     dateValue.getTime() + (meetup.duration || 0) * 60 * 1000
   );
   if (new Date() >= endTime) {
-    await updateDoc(meetupRef, {
-      status: "completed",
-      isRatingOpen: true,
-      updatedAt: serverTimestamp(),
-    });
-    return { ...meetup, status: "completed", isRatingOpen: true };
+    if (auth.currentUser?.uid === meetup.organizerId) {
+      try {
+        await updateDoc(meetupRef, {
+          status: "completed",
+          isRatingOpen: true,
+          updatedAt: serverTimestamp(),
+        });
+        return { ...meetup, status: "completed", isRatingOpen: true };
+      } catch {
+        return meetup;
+      }
+    }
+    return meetup;
   }
   return meetup;
 }
@@ -426,11 +435,19 @@ export async function joinMeetup(
       : `https://api.dicebear.com/7.x/thumbs/svg?seed=${petData.petId}`;
 
   await runTransaction(db, async (transaction) => {
+    const freshMeetupSnap = await transaction.get(meetupRef);
     const participantSnap = await transaction.get(participantRef);
+    if (!freshMeetupSnap.exists()) {
+      throw new Error("Meetup not found");
+    }
+    const freshMeetup = freshMeetupSnap.data() as MeetupData;
     if (participantSnap.exists()) return;
+    if (freshMeetup.status === "cancelled" || freshMeetup.status === "completed") {
+      throw new Error("Meetup is no longer accepting participants");
+    }
     if (
-      meetup.requirements.maxPets > 0 &&
-      (meetup.participantCount ?? 0) >= meetup.requirements.maxPets
+      freshMeetup.requirements.maxPets > 0 &&
+      (freshMeetup.participantCount ?? 0) >= freshMeetup.requirements.maxPets
     ) {
       throw new Error("Meetup is full");
     }

@@ -218,9 +218,6 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
         displayName,
         avatarUrl,
         bio: "",
-        followerCount: 0,
-        followingCount: 0,
-        followingPetsCount: 0,
         onboardingComplete: false,
         createdAt: serverTimestamp(),
       });
