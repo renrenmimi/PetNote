@@ -3,13 +3,10 @@ import {
   doc,
   getDoc,
   getDocs,
-  runTransaction,
-  serverTimestamp,
   setDoc,
 } from "firebase/firestore";
-import { db } from "./firebase";
-import { getPetById } from "./pets";
-import { getUserProfile } from "./users";
+import { httpsCallable } from "firebase/functions";
+import { db, functions } from "./firebase";
 
 export type FollowingPet = {
   id: string;
@@ -27,56 +24,20 @@ export type PetFollower = {
   followedAt?: unknown;
 };
 
-export async function followPet(userId: string, petId: string): Promise<void> {
-  if (!userId || !petId) return;
-
-  const [pet, profile] = await Promise.all([
-    getPetById(petId),
-    getUserProfile(userId),
-  ]);
-  if (!pet) return;
-
-  const followingRef = doc(db, "users", userId, "followingPets", petId);
-  const followerRef = doc(db, "pets", petId, "followers", userId);
-  let created = false;
-
-  await runTransaction(db, async (transaction) => {
-    const existing = await transaction.get(followingRef);
-    if (existing.exists()) return;
-
-    transaction.set(followingRef, {
-      petId,
-      petName: pet.name,
-      petAvatar: pet.avatarUrl || "",
-      followedAt: serverTimestamp(),
-    });
-    transaction.set(followerRef, {
-      userId,
-      userName: profile?.displayName || "PetNote User",
-      userAvatar:
-        profile?.avatarUrl ||
-        `https://api.dicebear.com/7.x/thumbs/svg?seed=${userId}`,
-      followedAt: serverTimestamp(),
-    });
-    created = true;
-  });
-
-  if (!created) return;
+export async function followPet(_userId: string, petId: string): Promise<void> {
+  if (!petId) return;
+  await httpsCallable<{ petId: string }, { success: boolean }>(
+    functions,
+    "followPetCallable"
+  )({ petId });
 }
 
-export async function unfollowPet(userId: string, petId: string): Promise<void> {
-  if (!userId || !petId) return;
-
-  const followingRef = doc(db, "users", userId, "followingPets", petId);
-  const followerRef = doc(db, "pets", petId, "followers", userId);
-
-  await runTransaction(db, async (transaction) => {
-    const existing = await transaction.get(followingRef);
-    if (!existing.exists()) return;
-
-    transaction.delete(followingRef);
-    transaction.delete(followerRef);
-  });
+export async function unfollowPet(_userId: string, petId: string): Promise<void> {
+  if (!petId) return;
+  await httpsCallable<{ petId: string }, { success: boolean }>(
+    functions,
+    "unfollowPetCallable"
+  )({ petId });
 }
 
 export async function checkIfFollowingPet(

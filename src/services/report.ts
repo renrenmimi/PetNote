@@ -1,14 +1,12 @@
 import {
-  addDoc,
   collection,
   getDocs,
   orderBy,
   query,
-  serverTimestamp,
   where,
 } from "firebase/firestore";
-import { db } from "./firebase";
-import { removeUndefined } from "../utils/removeUndefined";
+import { httpsCallable } from "firebase/functions";
+import { db, functions } from "./firebase";
 
 export type ReportTargetType = "post" | "comment" | "user";
 
@@ -30,14 +28,20 @@ export type ReportItem = ReportInput & {
 };
 
 export async function reportContent(data: ReportInput): Promise<void> {
-  const reportsRef = collection(db, "reports");
-  const payload = removeUndefined({
-    ...data,
-    description: data.description?.trim(),
-    status: "pending",
-    createdAt: serverTimestamp(),
+  await httpsCallable<
+    {
+      targetType: ReportTargetType;
+      targetId: string;
+      reason: string;
+      description?: string;
+    },
+    { id: string }
+  >(functions, "reportContentCallable")({
+    targetType: data.targetType,
+    targetId: data.targetId,
+    reason: data.reason,
+    description: data.description,
   });
-  await addDoc(reportsRef, payload);
 }
 
 export async function getReportsByUser(userId: string) {

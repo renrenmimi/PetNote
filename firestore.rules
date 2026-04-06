@@ -42,21 +42,6 @@ service cloud.firestore {
       return request.resource.data.keys().hasOnly(allowed);
     }
 
-    function isAllowedPostCreate() {
-      let allowed = ['authorId', 'authorName', 'authorAvatar', 'text', 'media',
-                      'mediaUrl', 'mediaType', 'petId', 'petName', 'petAvatarUrl',
-                      'createdAt', 'likeCount', 'commentCount', 'tags'];
-      return request.resource.data.keys().hasOnly(allowed) &&
-        request.resource.data.authorId == request.auth.uid &&
-        request.resource.data.likeCount == 0 &&
-        request.resource.data.commentCount == 0;
-    }
-
-    function isAllowedPostUpdate() {
-      let allowed = ['text', 'tags', 'petId', 'petName', 'petAvatarUrl'];
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
-    }
-
     function isAllowedPetCreate() {
       let allowed = ['ownerId', 'primaryOwnerId', 'name', 'nameLower', 'species',
                       'breed', 'birthday', 'age', 'gender', 'bio', 'avatarUrl',
@@ -133,7 +118,9 @@ service cloud.firestore {
 
       match /followingPets/{petId} {
         allow read: if isOwner(userId);
-        allow write: if isOwner(userId) && isNotBanned();
+        allow create: if false;
+        allow update: if false;
+        allow delete: if isOwner(userId);
       }
 
       match /followers/{followerId} {
@@ -155,11 +142,8 @@ service cloud.firestore {
     // ========= posts =========
     match /posts/{postId} {
       allow read: if true;
-      // Require email verification for content creation
-      allow create: if isAuthenticated() && isNotBanned() && isEmailVerified() &&
-        isAllowedPostCreate();
-      allow update: if isAuthenticated() &&
-        ((resource.data.authorId == request.auth.uid && isAllowedPostUpdate()) || isAdmin());
+      allow create: if false;
+      allow update: if false;
       allow delete: if isAuthenticated() &&
         (resource.data.authorId == request.auth.uid || isAdmin());
 
@@ -171,10 +155,7 @@ service cloud.firestore {
 
       match /comments/{commentId} {
         allow read: if true;
-        allow create: if isAuthenticated() && isNotBanned() && isEmailVerified() &&
-          request.resource.data.authorId == request.auth.uid &&
-          request.resource.data.keys().hasOnly(
-            ['authorId', 'authorName', 'authorAvatar', 'text', 'createdAt', 'replyTo']);
+        allow create: if false;
         allow delete: if isAuthenticated() && (
           resource.data.authorId == request.auth.uid ||
           get(/databases/$(database)/documents/posts/$(postId)).data.authorId == request.auth.uid ||
@@ -232,8 +213,12 @@ service cloud.firestore {
 
       match /followers/{userId} {
         allow read: if true;
-        allow create: if isAuthenticated() && request.auth.uid == userId && isNotBanned();
-        allow delete: if isAuthenticated() && request.auth.uid == userId;
+        allow create: if false;
+        allow delete: if isAuthenticated() && (
+          get(/databases/$(database)/documents/pets/$(petId)).data.ownerId == request.auth.uid ||
+          get(/databases/$(database)/documents/pets/$(petId)).data.primaryOwnerId == request.auth.uid ||
+          isAdmin()
+        );
         allow update: if false;
       }
     }
@@ -302,29 +287,17 @@ service cloud.firestore {
       // Reviews: doc ID must be "{userId}" or "{userId}_{meetupId}" to enforce one-per-user.
       match /reviews/{reviewId} {
         allow read: if true;
-        allow create: if isAuthenticated() && isNotBanned() && isEmailVerified() &&
-          request.resource.data.userId == request.auth.uid &&
-          // Enforce deterministic ID: must start with caller's UID
-          reviewId[0:request.auth.uid.size()] == request.auth.uid &&
-          request.resource.data.keys().hasOnly(
-            ['userId', 'userName', 'userAvatar', 'meetupId', 'rating', 'comment',
-             'photos', 'tags', 'petFriendly', 'createdAt']);
+        allow create: if false;
         allow delete: if isAuthenticated() &&
           (resource.data.userId == request.auth.uid || isAdmin());
-        allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+        allow update: if false;
       }
 
-      // Checkins: doc ID must be "{userId}" to enforce one-per-user (latest overwrites).
+      // Checkins are created by callable with deterministic daily doc IDs.
       match /checkins/{checkinId} {
         allow read: if true;
-        allow create: if isAuthenticated() && isNotBanned() &&
-          request.resource.data.userId == request.auth.uid &&
-          checkinId == request.auth.uid &&
-          request.resource.data.keys().hasOnly(
-            ['userId', 'userName', 'userAvatar', 'photoUrl', 'caption',
-             'petId', 'petName', 'locationId', 'createdAt']);
-        // Allow overwrite (set with merge) for same-day re-checkin
-        allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+        allow create: if false;
+        allow update: if false;
         allow delete: if isAuthenticated() &&
           (resource.data.userId == request.auth.uid || isAdmin());
       }
@@ -344,7 +317,7 @@ service cloud.firestore {
     match /reports/{reportId} {
       allow read: if isAdmin() ||
         (isAuthenticated() && resource.data.reporterId == request.auth.uid);
-      allow create: if isAuthenticated() && isNotBanned();
+      allow create: if false;
       allow update: if isAdmin();
       allow delete: if isAdmin() ||
         (isAuthenticated() && resource.data.reporterId == request.auth.uid);
@@ -354,7 +327,7 @@ service cloud.firestore {
     match /feedback/{feedbackId} {
       allow read: if isAdmin() ||
         (isAuthenticated() && resource.data.userId == request.auth.uid);
-      allow create: if isAuthenticated();
+      allow create: if false;
       allow update: if isAdmin();
       allow delete: if isAdmin() ||
         (isAuthenticated() && resource.data.userId == request.auth.uid);

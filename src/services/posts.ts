@@ -1,5 +1,4 @@
 import {
-  addDoc,
   collection,
   deleteDoc,
   deleteField,
@@ -19,10 +18,10 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { httpsCallable } from "firebase/functions";
+import { db, functions } from "./firebase";
 // Tag counting handled by onPostWritten Cloud Function
 import { getFollowingPets } from "./follow";
-import { removeUndefined } from "../utils/removeUndefined";
 
 export type MediaItem = {
   url: string;
@@ -87,64 +86,35 @@ export type UpdatePostInput = {
   petAvatarUrl?: string;
 };
 
-const normalizeTags = (tags: string[]) => {
-  const set = new Set(
-    tags
-      .map((tag) => tag.trim().toLowerCase().replace(/^#/, ""))
-      .filter(Boolean)
-  );
-  return Array.from(set);
-};
-
 export async function createPost(data: CreatePostInput): Promise<string> {
   if (!data.petId) {
     throw new Error("Please select a pet before posting.");
   }
-  const postsRef = collection(db, "posts");
-  const tags = normalizeTags(data.tags);
-  const firstMedia = data.media[0];
-  const payload = removeUndefined({
-    ...data,
-    tags,
-    mediaUrl: firstMedia?.url,
-    mediaType: firstMedia?.type,
-    createdAt: serverTimestamp(),
-    likeCount: 0,
-    commentCount: 0,
+  const result = await httpsCallable<
+    { text: string; tags: string[]; media: MediaItem[]; petId: string },
+    { id: string }
+  >(functions, "createPostCallable")({
+    text: data.text,
+    tags: data.tags,
+    media: data.media,
+    petId: data.petId,
   });
-  // Tag counting is handled by the onPostWritten Cloud Function.
-  const result = await addDoc(postsRef, payload);
-  return result.id;
+  return result.data.id;
 }
 
 export async function updatePost(
   postId: string,
   data: UpdatePostInput
 ): Promise<void> {
-  const postRef = doc(db, "posts", postId);
-  const snapshot = await getDoc(postRef);
-  if (!snapshot.exists()) return;
-  const current = snapshot.data() as PostData;
-
-  const nextTags = normalizeTags(data.tags);
-
-  const updates: Record<string, unknown> = {
+  await httpsCallable<
+    { postId: string; text: string; tags: string[]; petId?: string | null },
+    { success: boolean }
+  >(functions, "updatePostCallable")({
+    postId,
     text: data.text,
-    tags: nextTags,
-  };
-
-  if (data.petId) {
-    updates.petId = data.petId;
-    updates.petName = data.petName ?? current.petName ?? "";
-    updates.petAvatarUrl = data.petAvatarUrl ?? current.petAvatarUrl ?? "";
-  } else if (data.petId === null) {
-    updates.petId = deleteField();
-    updates.petName = deleteField();
-    updates.petAvatarUrl = deleteField();
-  }
-
-  // Tag counting is handled by the onPostWritten Cloud Function.
-  await updateDoc(postRef, updates);
+    tags: data.tags,
+    petId: data.petId ?? null,
+  });
 }
 
 export async function getPosts(
@@ -169,7 +139,8 @@ export async function getPosts(
     id: docSnap.id,
     ...(docSnap.data() as PostData),
   }));
-  const nextLastDoc = snapshot.docs[snapshot.docs.length - 1] ?? null;
+  const nextLastDoc =
+    (snapshot.docs[snapshot.docs.length - 1] as QueryDocumentSnapshot | undefined) ?? null;
   const hasMore = snapshot.docs.length === limitCount;
   return { posts, lastDoc: nextLastDoc, hasMore };
 }
@@ -245,7 +216,7 @@ export async function getFollowingPosts(
       constraints.push(startAfter(lastDoc));
     }
     const snapshot = await getDocs(query(postsRef, ...constraints));
-    allDocs.push(...snapshot.docs);
+    allDocs.push(...(snapshot.docs as QueryDocumentSnapshot[]));
   }
 
   // Deduplicate by doc ID (in case of overlap), sort by createdAt desc
@@ -320,26 +291,15 @@ export async function addComment(
   postId: string,
   comment: Comment
 ): Promise<string> {
-  const commentsRef = collection(db, "posts", postId, "comments");
-  const payload: Comment = {
-    ...comment,
-    createdAt: comment.createdAt ?? serverTimestamp(),
-  };
-  if (!payload.replyTo) {
-    delete payload.replyTo;
-  }
-  const postRef = doc(db, "posts", postId);
-  const postSnap = await getDoc(postRef);
-  if (!postSnap.exists()) {
-    return "";
-  }
-  // Count increment handled by onCommentCreated Cloud Function.
-  const result = await runTransaction(db, async (transaction) => {
-    const newCommentRef = doc(commentsRef);
-    transaction.set(newCommentRef, removeUndefined(payload));
-    return newCommentRef.id;
+  const result = await httpsCallable<
+    { postId: string; text: string; replyToCommentId?: string },
+    { id: string }
+  >(functions, "createCommentCallable")({
+    postId,
+    text: comment.text,
+    replyToCommentId: comment.replyTo?.commentId,
   });
-  return result;
+  return result.data.id;
 }
 
 export async function deleteComment(

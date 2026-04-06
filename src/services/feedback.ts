@@ -1,18 +1,16 @@
 import {
-  addDoc,
   collection,
   deleteDoc,
   doc,
   getDocs,
   orderBy,
   query,
-  serverTimestamp,
   updateDoc,
   where,
   type QueryConstraint,
 } from "firebase/firestore";
-import { db } from "./firebase";
-import { removeUndefined } from "../utils/removeUndefined";
+import { httpsCallable } from "firebase/functions";
+import { db, functions } from "./firebase";
 
 export type FeedbackType = "bug" | "feature" | "complaint" | "other";
 export type FeedbackStatus = "new" | "read" | "resolved";
@@ -37,12 +35,14 @@ export async function submitFeedback(data: {
   subject: string;
   message: string;
 }): Promise<void> {
-  const ref = collection(db, "feedback");
-  await addDoc(ref, removeUndefined({
-    ...data,
-    status: "new",
-    createdAt: serverTimestamp(),
-  }));
+  await httpsCallable<
+    { type: FeedbackType; subject: string; message: string },
+    { id: string }
+  >(functions, "submitFeedbackCallable")({
+    type: data.type,
+    subject: data.subject,
+    message: data.message,
+  });
 }
 
 export async function getAllFeedback(

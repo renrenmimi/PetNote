@@ -10,7 +10,8 @@ import {
   writeBatch,
   collectionGroup,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { httpsCallable } from "firebase/functions";
+import { db, functions } from "./firebase";
 import { deletePost, getPostsByUser } from "./posts";
 import { deletePet, getPetsByOwner } from "./pets";
 
@@ -178,7 +179,5 @@ export async function deleteAccount(userId: string): Promise<void> {
   // User document deletion and Auth account deletion are handled by
   // the deleteUserAccount Cloud Function (callable), which uses admin SDK
   // to bypass the admin-only delete rule and ensure atomicity.
-  const { getFunctions, httpsCallable } = await import("firebase/functions");
-  const functions = getFunctions();
   await httpsCallable(functions, "deleteUserAccount")({ userId });
 }

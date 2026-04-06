@@ -2,16 +2,15 @@ import {
   collection,
   collectionGroup,
   doc,
+  getDoc,
   getDocs,
   limit,
   orderBy,
   query,
-  serverTimestamp,
-  setDoc,
   where,
 } from "firebase/firestore";
-import { db } from "./firebase";
-import { removeUndefined } from "../utils/removeUndefined";
+import { httpsCallable } from "firebase/functions";
+import { db, functions } from "./firebase";
 
 export type Checkin = {
   id: string;
@@ -29,16 +28,18 @@ export type Checkin = {
 const toDate = (value: unknown): Date | null => {
   if (!value) return null;
   if (value instanceof Date) return value;
-  if (typeof value === "object" && "toDate" in (value as { toDate: () => Date })) {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "toDate" in value &&
+    typeof (value as { toDate: () => Date }).toDate === "function"
+  ) {
     return (value as { toDate: () => Date }).toDate();
   }
   return null;
 };
 
-const isSameDay = (a: Date, b: Date) =>
-  a.getFullYear() === b.getFullYear() &&
-  a.getMonth() === b.getMonth() &&
-  a.getDate() === b.getDate();
+const getUtcDayKey = (date = new Date()) => date.toISOString().slice(0, 10);
 
 export async function checkIn(
   locationId: string,
@@ -52,14 +53,20 @@ export async function checkIn(
     petName?: string;
   }
 ): Promise<void> {
-  // Deterministic doc ID: "{userId}" enforces one checkin per user per location.
-  // Rules validate checkinId == auth.uid. setDoc overwrites previous checkin.
-  const checkinRef = doc(db, "locations", locationId, "checkins", data.userId);
-  await setDoc(checkinRef, removeUndefined({
-    ...data,
+  await httpsCallable<
+    {
+      locationId: string;
+      photoUrl: string;
+      caption?: string;
+      petId?: string;
+    },
+    { id: string }
+  >(functions, "checkInCallable")({
     locationId,
-    createdAt: serverTimestamp(),
-  }));
+    photoUrl: data.photoUrl,
+    caption: data.caption,
+    petId: data.petId,
+  });
 }
 
 export async function getCheckins(
@@ -81,15 +88,15 @@ export async function hasUserCheckedIn(
   locationId: string,
   userId: string
 ): Promise<boolean> {
-  const ref = collection(db, "locations", locationId, "checkins");
-  const snapshot = await getDocs(
-    query(ref, where("userId", "==", userId), orderBy("createdAt", "desc"), limit(1))
+  const checkinRef = doc(
+    db,
+    "locations",
+    locationId,
+    "checkins",
+    `${userId}_${getUtcDayKey()}`
   );
-  if (snapshot.empty) return false;
-  const data = snapshot.docs[0].data();
-  const created = toDate(data.createdAt);
-  if (!created) return false;
-  return isSameDay(created, new Date());
+  const snapshot = await getDoc(checkinRef);
+  return snapshot.exists();
 }
 
 export async function getUserCheckins(userId: string): Promise<Checkin[]> {

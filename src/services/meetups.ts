@@ -18,7 +18,8 @@ import {
   type QueryDocumentSnapshot,
   setDoc,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { httpsCallable } from "firebase/functions";
+import { db, functions } from "./firebase";
 import { calculateDistance } from "./location";
 import { getUserProfile } from "./users";
 import { getUserStats } from "./posts";
@@ -176,10 +177,7 @@ export async function checkAndUpdateMeetupStatus(
     dateValue.getTime() + (meetup.duration || 0) * 60 * 1000
   );
   if (new Date() >= endTime) {
-    // Use callable CF to update status (admin SDK, any user can trigger)
     try {
-      const { getFunctions, httpsCallable } = await import("firebase/functions");
-      const functions = getFunctions();
       await httpsCallable(functions, "checkMeetupStatusCallable")({ meetupId });
       return { ...meetup, status: "completed", isRatingOpen: true };
     } catch {
@@ -378,20 +376,12 @@ export async function joinMeetup(
     petSpecies?: string;
   }
 ): Promise<void> {
-  // userId is unused — the CF gets it from auth.uid.
-  // Kept in signature for call-site compatibility.
-  // This prevents clients from bypassing business rules by writing directly.
-  const { getFunctions, httpsCallable } = await import("firebase/functions");
-  const functions = getFunctions();
   const result = await httpsCallable<
-    { meetupId: string; petId: string; petName: string; petAvatar: string; petSpecies?: string },
+    { meetupId: string; petId?: string },
     { success: boolean; error?: string }
   >(functions, "joinMeetupCallable")({
     meetupId,
-    petId: petData.petId,
-    petName: petData.petName,
-    petAvatar: petData.petAvatar,
-    petSpecies: petData.petSpecies,
+    petId: petData.petId || undefined,
   });
   if (!result.data.success && result.data.error) {
     throw new Error(result.data.error);
