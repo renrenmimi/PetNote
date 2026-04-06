@@ -1,5 +1,4 @@
 import {
-  addDoc,
   arrayUnion,
   collection,
   doc,
@@ -11,6 +10,7 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  setDoc,
   where,
   updateDoc,
   startAfter,
@@ -158,11 +158,13 @@ export async function submitReview(
   locationId: string,
   reviewData: Omit<Review, "id" | "createdAt">
 ): Promise<void> {
-  // Only create the review document. Location aggregation (averageRating,
-  // totalRatings, photos, tags, totalPhotos) is maintained exclusively by
-  // the onReviewCreated Cloud Function to prevent client-side tampering.
-  const reviewsRef = collection(db, "locations", locationId, "reviews");
-  await addDoc(reviewsRef, removeUndefined({
+  // Deterministic doc ID: "{userId}" or "{userId}_{meetupId}" enforces one-per-user.
+  // Rules validate reviewId starts with auth.uid.
+  const reviewId = reviewData.meetupId
+    ? `${reviewData.userId}_${reviewData.meetupId}`
+    : reviewData.userId;
+  const reviewRef = doc(db, "locations", locationId, "reviews", reviewId);
+  await setDoc(reviewRef, removeUndefined({
     ...reviewData,
     createdAt: serverTimestamp(),
   }));

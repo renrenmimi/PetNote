@@ -172,7 +172,9 @@ service cloud.firestore {
       match /comments/{commentId} {
         allow read: if true;
         allow create: if isAuthenticated() && isNotBanned() && isEmailVerified() &&
-          request.resource.data.authorId == request.auth.uid;
+          request.resource.data.authorId == request.auth.uid &&
+          request.resource.data.keys().hasOnly(
+            ['authorId', 'authorName', 'authorAvatar', 'text', 'createdAt', 'replyTo']);
         allow delete: if isAuthenticated() && (
           resource.data.authorId == request.auth.uid ||
           get(/databases/$(database)/documents/posts/$(postId)).data.authorId == request.auth.uid ||
@@ -268,7 +270,8 @@ service cloud.firestore {
           get(/databases/$(database)/documents/meetups/$(meetupId)).data.organizerId == request.auth.uid ||
           isAdmin()
         );
-        allow update: if isAuthenticated() && request.auth.uid == participantId;
+        // No client-side updates — participant data is set by joinMeetup callable only.
+        allow update: if false;
       }
 
       // Private address: only organizer, confirmed participants, or admin can read.
@@ -296,19 +299,32 @@ service cloud.firestore {
         ((resource.data.addedBy == request.auth.uid && isAllowedLocationUpdate()) || isAdmin());
       allow delete: if isAdmin();
 
+      // Reviews: doc ID must be "{userId}" or "{userId}_{meetupId}" to enforce one-per-user.
       match /reviews/{reviewId} {
         allow read: if true;
         allow create: if isAuthenticated() && isNotBanned() && isEmailVerified() &&
-          request.resource.data.userId == request.auth.uid;
+          request.resource.data.userId == request.auth.uid &&
+          // Enforce deterministic ID: must start with caller's UID
+          reviewId[0:request.auth.uid.size()] == request.auth.uid &&
+          request.resource.data.keys().hasOnly(
+            ['userId', 'userName', 'userAvatar', 'meetupId', 'rating', 'comment',
+             'photos', 'tags', 'petFriendly', 'createdAt']);
         allow delete: if isAuthenticated() &&
           (resource.data.userId == request.auth.uid || isAdmin());
         allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
       }
 
+      // Checkins: doc ID must be "{userId}" to enforce one-per-user (latest overwrites).
       match /checkins/{checkinId} {
         allow read: if true;
         allow create: if isAuthenticated() && isNotBanned() &&
-          request.resource.data.userId == request.auth.uid;
+          request.resource.data.userId == request.auth.uid &&
+          checkinId == request.auth.uid &&
+          request.resource.data.keys().hasOnly(
+            ['userId', 'userName', 'userAvatar', 'photoUrl', 'caption',
+             'petId', 'petName', 'locationId', 'createdAt']);
+        // Allow overwrite (set with merge) for same-day re-checkin
+        allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
         allow delete: if isAuthenticated() &&
           (resource.data.userId == request.auth.uid || isAdmin());
       }

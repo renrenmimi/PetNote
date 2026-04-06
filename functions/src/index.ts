@@ -335,12 +335,23 @@ export const onLikeCreated = onDocumentCreated(
 );
 
 // ============================================================
-// 4. Comment created: send notifications server-side
+// 4. Comment created: verify display fields + count + notifications
 // ============================================================
 export const onCommentCreated = onDocumentCreated(
   "posts/{postId}/comments/{commentId}",
   async (event) => {
     const { postId, commentId } = event.params;
+
+    // Verify/correct display fields from actual user profile
+    const rawComment = event.data?.data();
+    if (rawComment?.authorId) {
+      const actor = await getNotificationActor(rawComment.authorId as string);
+      const commentRef = db.doc(`posts/${postId}/comments/${commentId}`);
+      await commentRef.update({
+        authorName: actor.fromUserName,
+        authorAvatar: actor.fromUserAvatar,
+      });
+    }
 
     // Increment commentCount server-side (single source of truth)
     const postRef = db.doc(`posts/${postId}`);
@@ -465,6 +476,16 @@ export const onPostDeleted = onDocumentDeleted("posts/{postId}", async (event) =
 export const onReviewCreated = onDocumentCreated(
   "locations/{locationId}/reviews/{reviewId}",
   async (event) => {
+    // Verify/correct display fields from actual user profile
+    const reviewData = event.data?.data();
+    if (reviewData?.userId) {
+      const actor = await getNotificationActor(reviewData.userId);
+      const reviewRef = db.doc(`locations/${event.params.locationId}/reviews/${event.params.reviewId}`);
+      await reviewRef.update({
+        userName: actor.fromUserName,
+        userAvatar: actor.fromUserAvatar,
+      });
+    }
     await recomputeLocationAggregation(event.params.locationId);
   }
 );
@@ -483,15 +504,25 @@ export const onCheckinCreated = onDocumentCreated(
   "locations/{locationId}/checkins/{checkinId}",
   async (event) => {
     const locationId = event.params.locationId;
-    const locationRef = db.doc(`locations/${locationId}`);
-    await db.runTransaction(async (t) => {
-      const locSnap = await t.get(locationRef);
-      const current = locSnap.data() || { totalCheckins: 0 };
-      const nextTotal = (current.totalCheckins || 0) + 1;
-      t.update(locationRef, {
-        totalCheckins: nextTotal,
-        verifiedByCheckins: nextTotal >= 3,
+
+    // Verify/correct display fields from actual user profile
+    const checkinData = event.data?.data();
+    if (checkinData?.userId) {
+      const actor = await getNotificationActor(checkinData.userId);
+      const checkinRef = db.doc(`locations/${locationId}/checkins/${event.params.checkinId}`);
+      await checkinRef.update({
+        userName: actor.fromUserName,
+        userAvatar: actor.fromUserAvatar,
       });
+    }
+
+    // Recount all checkins (since doc ID is per-user, count = unique users)
+    const checkinsSnap = await db.collection(`locations/${locationId}/checkins`).get();
+    const count = checkinsSnap.size;
+    const locationRef = db.doc(`locations/${locationId}`);
+    await locationRef.update({
+      totalCheckins: count,
+      verifiedByCheckins: count >= 3,
     });
   }
 );
