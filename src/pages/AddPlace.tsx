@@ -6,7 +6,7 @@ import { useToast } from "../contexts/ToastContext";
 import { uploadImage } from "../services/cloudinary";
 import {
   addPlace,
-  findNearbyPlace,
+  addPhotosToPlace,
   submitReview,
   type PlaceCategory,
   type PlaceFeature,
@@ -59,7 +59,6 @@ export function AddPlace() {
   const [safety, setSafety] = useState(0);
   const [cleanliness, setCleanliness] = useState(0);
   const [saving, setSaving] = useState(false);
-  const [warningPlaceId, setWarningPlaceId] = useState<string | null>(null);
   const requiresEmailVerification = !!user && !user.emailVerified;
 
   useEffect(() => {
@@ -155,21 +154,6 @@ export function AddPlace() {
     }
     setSaving(true);
     try {
-      const existing = await findNearbyPlace(lat, lng);
-      if (existing) {
-        setWarningPlaceId(existing.id);
-        showToast("This place may already exist.", "warning");
-        if (photos.length > 0 && rating === 0) {
-          showToast(
-            "To attach photos to an existing place, please add a rating first.",
-            "warning"
-          );
-          return;
-        }
-      }
-      const photoUrls = await Promise.all(
-        photos.map((file) => uploadImage(file))
-      );
       const { locationId, alreadyExisted } = await addPlace({
         name: name.trim(),
         category,
@@ -180,10 +164,21 @@ export function AddPlace() {
         city: city || "",
         state: state || "",
         features,
-        photos: photoUrls,
+        photos: [],
         addedBy: user.uid,
         addedByName: profile?.displayName || user.displayName || "PetNote User",
       });
+      if (alreadyExisted && rating === 0) {
+        showToast("This place already exists. Add a review to contribute photos.", "warning");
+        navigate(`/location/${locationId}`, { replace: true });
+        return;
+      }
+      const photoUrls = await Promise.all(
+        photos.map((file) => uploadImage(file))
+      );
+      if (!alreadyExisted && photoUrls.length > 0) {
+        await addPhotosToPlace(locationId, photoUrls);
+      }
       if (rating > 0) {
         await submitReview(locationId, {
           userId: user.uid,
@@ -442,19 +437,6 @@ export function AddPlace() {
             ))}
           </div>
         </div>
-
-        {warningPlaceId ? (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-            This place may already exist.{" "}
-            <button
-              type="button"
-              onClick={() => navigate(`/location/${warningPlaceId}`)}
-              className="font-semibold text-amber-700 underline"
-            >
-              View existing place
-            </button>
-          </div>
-        ) : null}
 
         <p className="text-center text-xs text-slate-400">
           ℹ️ Only recommend places you've personally visited with your pet. Please ensure the location is safe and accessible.
