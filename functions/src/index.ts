@@ -159,7 +159,7 @@ async function getPetFamilyRecipientIds(
   return Array.from(
     new Set(
       familySnap.docs
-        .map((docSnap) => docSnap.data().userId as string | undefined)
+        .map((docSnap) => docSnap.id)
         .filter((userId): userId is string => !!userId && userId !== excludeUserId)
     )
   );
@@ -179,6 +179,180 @@ function normalizeTags(tags: unknown): string[] {
         .filter(Boolean)
     )
   );
+}
+
+function buildLocationId(lat: number, lng: number): string {
+  const normalize = (value: number) =>
+    value
+      .toFixed(4)
+      .replace("-", "m")
+      .replace(".", "");
+  return `${normalize(lat)}_${normalize(lng)}`;
+}
+
+function stripUndefined<T extends Record<string, unknown>>(value: T): T {
+  const result = { ...value };
+  Object.keys(result).forEach((key) => {
+    if (result[key] === undefined) {
+      delete result[key];
+    }
+  });
+  return result;
+}
+
+const allowedMeetupDogSizes = new Set([
+  "any",
+  "small",
+  "medium",
+  "large",
+  "small_medium",
+  "medium_large",
+]);
+
+const allowedMeetupPetTypes = new Set([
+  "any",
+  "dog",
+  "cat",
+  "any_dog",
+  "any_cat",
+  "other",
+]);
+
+function sanitizeMeetupLocation(value: unknown): {
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+  city?: string;
+  state?: string;
+} {
+  const location =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {};
+
+  const name = typeof location.name === "string" ? location.name.trim() : "";
+  const address =
+    typeof location.address === "string" ? location.address.trim() : "";
+  const lat = typeof location.lat === "number" ? location.lat : Number.NaN;
+  const lng = typeof location.lng === "number" ? location.lng : Number.NaN;
+
+  if (!name || !address || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+    throw new HttpsError("invalid-argument", "Meetup location is invalid.");
+  }
+
+  const city =
+    typeof location.city === "string" && location.city.trim().length > 0
+      ? location.city.trim()
+      : undefined;
+  const state =
+    typeof location.state === "string" && location.state.trim().length > 0
+      ? location.state.trim()
+      : undefined;
+
+  return { name, address, lat, lng, city, state };
+}
+
+function sanitizeMeetupRequirements(value: unknown): {
+  dogSize: string;
+  petType: string;
+  customPetType?: string;
+  maxPets: number;
+  mustHavePosts: boolean;
+  mustHavePetProfile: boolean;
+  minFollowers: number;
+  additionalNotes: string;
+} {
+  const requirements =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {};
+
+  const dogSize =
+    typeof requirements.dogSize === "string" &&
+    allowedMeetupDogSizes.has(requirements.dogSize)
+      ? requirements.dogSize
+      : "any";
+  const petType =
+    typeof requirements.petType === "string" &&
+    allowedMeetupPetTypes.has(requirements.petType)
+      ? requirements.petType
+      : "any";
+  const customPetType =
+    petType === "other" &&
+    typeof requirements.customPetType === "string" &&
+    requirements.customPetType.trim().length > 0
+      ? requirements.customPetType.trim()
+      : undefined;
+
+  const maxPetsValue =
+    typeof requirements.maxPets === "number" && Number.isFinite(requirements.maxPets)
+      ? requirements.maxPets
+      : 0;
+  const minFollowersValue =
+    typeof requirements.minFollowers === "number" &&
+    Number.isFinite(requirements.minFollowers)
+      ? requirements.minFollowers
+      : 0;
+
+  return {
+    dogSize,
+    petType,
+    customPetType,
+    maxPets: Math.max(0, Math.floor(maxPetsValue)),
+    mustHavePosts: requirements.mustHavePosts === true,
+    mustHavePetProfile: requirements.mustHavePetProfile === true,
+    minFollowers: Math.max(0, Math.floor(minFollowersValue)),
+    additionalNotes:
+      typeof requirements.additionalNotes === "string"
+        ? requirements.additionalNotes.trim()
+        : "",
+  };
+}
+
+async function getOrCreatePublicMeetupLocation(params: {
+  organizerId: string;
+  organizerName: string;
+  location: {
+    name: string;
+    address: string;
+    lat: number;
+    lng: number;
+    city?: string;
+    state?: string;
+  };
+}): Promise<string> {
+  const locationId = buildLocationId(params.location.lat, params.location.lng);
+  const locationRef = db.doc(`locations/${locationId}`);
+  const locationSnap = await locationRef.get();
+  if (!locationSnap.exists) {
+    await locationRef.set({
+      name: params.location.name,
+      category: "community_park",
+      description: "",
+      address: params.location.address,
+      lat: params.location.lat,
+      lng: params.location.lng,
+      city: params.location.city || "",
+      state: params.location.state || "",
+      features: [],
+      photos: [],
+      locationPhotos: [],
+      addedBy: params.organizerId,
+      addedByName: params.organizerName,
+      averageRating: 0,
+      totalRatings: 0,
+      totalPhotos: 0,
+      totalCheckins: 0,
+      verifiedByCheckins: false,
+      tags: [],
+      source: "meetup",
+      verified: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+  return locationId;
 }
 
 async function getAccessiblePet(
@@ -802,6 +976,19 @@ export const onUserUpdated = onDocumentWritten("users/{userId}", async (event) =
   await syncCollection(db.collectionGroup("family").where("userId", "==", userId), familyFields);
 });
 
+export const onFamilyCreated = onDocumentCreated(
+  "pets/{petId}/family/{userId}",
+  async (event) => {
+    const userId = event.params.userId;
+    const actor = await getNotificationActor(userId);
+    await db.doc(`pets/${event.params.petId}/family/${userId}`).update({
+      userId,
+      userName: actor.fromUserName,
+      userAvatar: actor.fromUserAvatar || getDefaultAvatar(userId),
+    });
+  }
+);
+
 // ============================================================
 // 14. Callable: delete user document + Firebase Auth account
 //     Uses admin SDK to bypass admin-only delete rule.
@@ -967,6 +1154,9 @@ export const updatePostCallable = onCall(async (request) => {
   if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
 
   const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot edit posts.");
+  }
   const data = request.data as {
     postId?: string;
     text?: string;
@@ -1019,7 +1209,52 @@ export const updatePostCallable = onCall(async (request) => {
 });
 
 // ============================================================
-// 18. Callable: create comment with server-derived actor snapshot
+// 18. Callable: delete post with privileged cascade cleanup
+// ============================================================
+export const deletePostCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+
+  const caller = await getNotificationActor(callerUid);
+  const { postId } = request.data as { postId?: string };
+  if (!postId || typeof postId !== "string") {
+    throw new HttpsError("invalid-argument", "Missing postId.");
+  }
+
+  const postRef = db.doc(`posts/${postId}`);
+  const postSnap = await postRef.get();
+  if (!postSnap.exists) {
+    return { success: true };
+  }
+
+  const postData = postSnap.data() ?? {};
+  if (postData.authorId !== callerUid && caller.role !== "admin") {
+    throw new HttpsError("permission-denied", "Cannot delete this post.");
+  }
+
+  const [likesSnap, commentsSnap] = await Promise.all([
+    db.collection(`posts/${postId}/likes`).get(),
+    db.collection(`posts/${postId}/comments`).get(),
+  ]);
+
+  if (!likesSnap.empty) {
+    await batchChunked(likesSnap.docs, (batch, docSnap) => {
+      batch.delete(docSnap.ref);
+    });
+  }
+
+  if (!commentsSnap.empty) {
+    await batchChunked(commentsSnap.docs, (batch, docSnap) => {
+      batch.delete(docSnap.ref);
+    });
+  }
+
+  await postRef.delete();
+  return { success: true };
+});
+
+// ============================================================
+// 19. Callable: create comment with server-derived actor snapshot
 // ============================================================
 export const createCommentCallable = onCall(async (request) => {
   const callerAuth = request.auth;
@@ -1197,6 +1432,9 @@ export const submitReviewCallable = onCall(async (request) => {
     const meetupData = meetupSnap.data() ?? {};
     if (meetupData.organizerId !== callerUid && !participantSnap.exists) {
       throw new HttpsError("permission-denied", "Only meetup participants can attach meetup reviews.");
+    }
+    if (meetupData.status !== "completed" || meetupData.isRatingOpen !== true) {
+      throw new HttpsError("permission-denied", "Meetup reviews open only after the meetup is completed.");
     }
   }
 
@@ -1380,7 +1618,270 @@ export const submitFeedbackCallable = onCall(async (request) => {
 });
 
 // ============================================================
-// joinMeetup callable: validates requirements + capacity server-side
+// 24. Callable: create / update / cancel meetup server-side
+// ============================================================
+export const createMeetupCallable = onCall(async (request) => {
+  const callerAuth = request.auth;
+  const callerUid = callerAuth?.uid;
+  if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+  if (callerAuth.token.email_verified !== true) {
+    throw new HttpsError("permission-denied", "Verify your email before creating meetups.");
+  }
+
+  const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot create meetups.");
+  }
+
+  const data = request.data as {
+    title?: string;
+    description?: string;
+    coverImage?: string;
+    dateMillis?: number;
+    duration?: number;
+    location?: unknown;
+    locationVisibility?: "everyone" | "participants_only";
+    requirements?: unknown;
+  };
+
+  const title = typeof data.title === "string" ? data.title.trim() : "";
+  const description =
+    typeof data.description === "string" ? data.description.trim() : "";
+  if (!title || !description) {
+    throw new HttpsError("invalid-argument", "Meetup title and description are required.");
+  }
+
+  const dateMillis =
+    typeof data.dateMillis === "number" ? data.dateMillis : Number.NaN;
+  if (!Number.isFinite(dateMillis) || dateMillis <= Date.now()) {
+    throw new HttpsError("invalid-argument", "Meetup date must be in the future.");
+  }
+
+  const duration =
+    typeof data.duration === "number" && Number.isFinite(data.duration)
+      ? data.duration
+      : 60;
+  const locationVisibility =
+    data.locationVisibility === "everyone" ? "everyone" : "participants_only";
+  const location = sanitizeMeetupLocation(data.location);
+  const requirements = sanitizeMeetupRequirements(data.requirements);
+  const isPrivate = locationVisibility === "participants_only";
+
+  let locationId: string | undefined;
+  if (!isPrivate) {
+    locationId = await getOrCreatePublicMeetupLocation({
+      organizerId: callerUid,
+      organizerName: caller.fromUserName,
+      location,
+    });
+  }
+
+  const publicLocation = isPrivate
+    ? {
+        name: location.name,
+        address: "",
+        lat: 0,
+        lng: 0,
+        city: location.city,
+        state: location.state,
+      }
+    : location;
+
+  const meetupRef = await db.collection("meetups").add(
+    stripUndefined({
+      organizerId: callerUid,
+      organizerName: caller.fromUserName,
+      organizerAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
+      title,
+      description,
+      coverImage:
+        typeof data.coverImage === "string" && data.coverImage.trim().length > 0
+          ? data.coverImage.trim()
+          : undefined,
+      date: admin.firestore.Timestamp.fromMillis(dateMillis),
+      duration,
+      location: publicLocation,
+      locationId,
+      locationVisibility,
+      requirements,
+      status: "upcoming",
+      participantCount: 0,
+      isRatingOpen: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+  );
+
+  if (isPrivate) {
+    await db.doc(`meetups/${meetupRef.id}/private/address`).set({
+      address: location.address,
+      lat: location.lat,
+      lng: location.lng,
+      name: location.name,
+      city: location.city || "",
+      state: location.state || "",
+    });
+  }
+
+  return { id: meetupRef.id };
+});
+
+export const updateMeetupCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+
+  const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true && caller.role !== "admin") {
+    throw new HttpsError("permission-denied", "Banned users cannot edit meetups.");
+  }
+
+  const data = request.data as {
+    meetupId?: string;
+    title?: string;
+    description?: string;
+    coverImage?: string;
+    dateMillis?: number;
+    duration?: number;
+    location?: unknown;
+    locationVisibility?: "everyone" | "participants_only";
+    requirements?: unknown;
+  };
+
+  if (!data.meetupId || typeof data.meetupId !== "string") {
+    throw new HttpsError("invalid-argument", "Missing meetupId.");
+  }
+
+  const meetupRef = db.doc(`meetups/${data.meetupId}`);
+  const meetupSnap = await meetupRef.get();
+  if (!meetupSnap.exists) {
+    throw new HttpsError("not-found", "Meetup not found.");
+  }
+
+  const existing = meetupSnap.data() ?? {};
+  const organizerId =
+    typeof existing.organizerId === "string" ? existing.organizerId : "";
+  if (!organizerId) {
+    throw new HttpsError("failed-precondition", "Meetup organizer is missing.");
+  }
+  if (callerUid !== organizerId && caller.role !== "admin") {
+    throw new HttpsError("permission-denied", "Cannot edit this meetup.");
+  }
+
+  const title = typeof data.title === "string" ? data.title.trim() : "";
+  const description =
+    typeof data.description === "string" ? data.description.trim() : "";
+  if (!title || !description) {
+    throw new HttpsError("invalid-argument", "Meetup title and description are required.");
+  }
+
+  const dateMillis =
+    typeof data.dateMillis === "number" ? data.dateMillis : Number.NaN;
+  if (!Number.isFinite(dateMillis)) {
+    throw new HttpsError("invalid-argument", "Meetup date is invalid.");
+  }
+
+  const duration =
+    typeof data.duration === "number" && Number.isFinite(data.duration)
+      ? data.duration
+      : 60;
+  const locationVisibility =
+    data.locationVisibility === "everyone" ? "everyone" : "participants_only";
+  const location = sanitizeMeetupLocation(data.location);
+  const requirements = sanitizeMeetupRequirements(data.requirements);
+  const isPrivate = locationVisibility === "participants_only";
+  const organizerActor = await getNotificationActor(organizerId);
+
+  let locationId: string | undefined;
+  if (!isPrivate) {
+    locationId = await getOrCreatePublicMeetupLocation({
+      organizerId,
+      organizerName: organizerActor.fromUserName,
+      location,
+    });
+  }
+
+  const publicLocation = isPrivate
+    ? {
+        name: location.name,
+        address: "",
+        lat: 0,
+        lng: 0,
+        city: location.city,
+        state: location.state,
+      }
+    : location;
+
+  const updates = stripUndefined({
+    title,
+    description,
+    coverImage:
+      typeof data.coverImage === "string" && data.coverImage.trim().length > 0
+        ? data.coverImage.trim()
+        : undefined,
+    date: admin.firestore.Timestamp.fromMillis(dateMillis),
+    duration,
+    location: publicLocation,
+    locationVisibility,
+    requirements,
+    organizerName: organizerActor.fromUserName,
+    organizerAvatar:
+      organizerActor.fromUserAvatar || getDefaultAvatar(organizerId),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    ...(isPrivate
+      ? { locationId: admin.firestore.FieldValue.delete() }
+      : { locationId }),
+  });
+
+  await meetupRef.update(updates);
+
+  const privateRef = db.doc(`meetups/${data.meetupId}/private/address`);
+  if (isPrivate) {
+    await privateRef.set({
+      address: location.address,
+      lat: location.lat,
+      lng: location.lng,
+      name: location.name,
+      city: location.city || "",
+      state: location.state || "",
+    });
+  } else {
+    await privateRef.delete().catch(() => undefined);
+  }
+
+  return { success: true };
+});
+
+export const cancelMeetupCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+
+  const caller = await getNotificationActor(callerUid);
+  const { meetupId } = request.data as { meetupId?: string };
+  if (!meetupId || typeof meetupId !== "string") {
+    throw new HttpsError("invalid-argument", "Missing meetupId.");
+  }
+
+  const meetupRef = db.doc(`meetups/${meetupId}`);
+  const meetupSnap = await meetupRef.get();
+  if (!meetupSnap.exists) {
+    throw new HttpsError("not-found", "Meetup not found.");
+  }
+
+  const meetupData = meetupSnap.data() ?? {};
+  if (meetupData.organizerId !== callerUid && caller.role !== "admin") {
+    throw new HttpsError("permission-denied", "Cannot cancel this meetup.");
+  }
+
+  await meetupRef.update({
+    status: "cancelled",
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return { success: true };
+});
+
+// ============================================================
+// 25. joinMeetup callable: validates requirements + capacity server-side
 // ============================================================
 export const joinMeetupCallable = onCall(async (request) => {
   const callerUid = request.auth?.uid;

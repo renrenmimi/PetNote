@@ -331,55 +331,10 @@ export async function deleteComment(
 }
 
 export async function deletePost(postId: string): Promise<void> {
-  const postRef = doc(db, "posts", postId);
-  const postSnap = await getDoc(postRef);
-  if (!postSnap.exists()) return;
-  const postData = postSnap.data() as PostData;
-
-  const likesRef = collection(db, "posts", postId, "likes");
-  const commentsRef = collection(db, "posts", postId, "comments");
-  const [likesSnap, commentsSnap] = await Promise.all([
-    getDocs(likesRef),
-    getDocs(commentsRef),
-  ]);
-
-  const deleteInChunks = async (docs: typeof likesSnap.docs) => {
-    const chunkSize = 450;
-    for (let i = 0; i < docs.length; i += chunkSize) {
-      const batch = writeBatch(db);
-      docs.slice(i, i + chunkSize).forEach((docSnap) => {
-        batch.delete(docSnap.ref);
-      });
-      await batch.commit();
-    }
-  };
-
-  await deleteInChunks(likesSnap.docs);
-  await deleteInChunks(commentsSnap.docs);
-
-  // Clean up notifications referencing this post that the current user
-  // has permission to delete (sent by them via fromUserId match)
-  const notifQuery = query(
-    collection(db, "notifications"),
-    where("postId", "==", postId),
-    where("fromUserId", "==", postData.authorId)
-  );
-  const notifSnap = await getDocs(notifQuery);
-  if (!notifSnap.empty) {
-    await deleteInChunks(notifSnap.docs);
-  }
-
-  // NOTE: Reports referencing this post and bookmarks from other users
-  // cannot be cleaned up client-side due to permission restrictions.
-  // Reports: only admin or the reporter can delete.
-  // Bookmarks: only the bookmark owner can read/delete.
-  // These should be handled by Cloud Functions (onDelete trigger)
-  // or the UI should gracefully handle references to deleted posts.
-
-  // Tag decrementing is handled by the onPostWritten Cloud Function.
-  const finalBatch = writeBatch(db);
-  finalBatch.delete(postRef);
-  await finalBatch.commit();
+  await httpsCallable<{ postId: string }, { success: boolean }>(
+    functions,
+    "deletePostCallable"
+  )({ postId });
 }
 
 export async function getComments(postId: string): Promise<Comment[]> {

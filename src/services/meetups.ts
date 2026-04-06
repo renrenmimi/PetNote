@@ -1,5 +1,4 @@
 import {
-  addDoc,
   collection,
   collectionGroup,
   deleteDoc,
@@ -9,23 +8,18 @@ import {
   limit,
   orderBy,
   query,
-  serverTimestamp,
   startAfter,
   Timestamp,
-  updateDoc,
   where,
   type QueryConstraint,
   type QueryDocumentSnapshot,
-  setDoc,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
 import { calculateDistance } from "./location";
 import { getUserProfile } from "./users";
 import { getUserStats } from "./posts";
-import { getOrCreateLocation } from "./locations";
 import { getFollowingPets } from "./follow";
-import { removeUndefined } from "../utils/removeUndefined";
 
 export type MeetupStatus = "upcoming" | "ongoing" | "completed" | "cancelled";
 
@@ -91,74 +85,70 @@ export type Participant = {
 };
 
 export async function createMeetup(data: MeetupData): Promise<string> {
-  const meetupsRef = collection(db, "meetups");
-  const isPrivate = (data.locationVisibility ?? "participants_only") === "participants_only";
-
-  // For private meetups: do NOT create a public location with precise coordinates.
-  // Full address lives only in the private subcollection.
-  let locationId: string | undefined;
-  if (!isPrivate) {
-      locationId = await getOrCreateLocation({
-        name: data.location.name,
-        address: data.location.address,
-        lat: data.location.lat,
-        lng: data.location.lng,
-        city: data.location.city || "",
-        state: data.location.state || "",
-        category: "community_park",
-        addedBy: data.organizerId,
-        addedByName: data.organizerName,
-        source: "meetup",
-      });
-  }
-
-  const publicLocation: MeetupLocation = isPrivate
-    ? {
-        name: data.location.name,
-        address: "",
-        lat: 0,
-        lng: 0,
-        city: data.location.city,
-        state: data.location.state,
-      }
-    : data.location;
-
-  const payload = removeUndefined({
-    ...data,
-    location: publicLocation,
-    ...(locationId ? { locationId } : {}),
-    status: data.status ?? "upcoming",
-    participantCount: data.participantCount ?? 0,
+  const dateMillis =
+    data.date instanceof Timestamp
+      ? data.date.toMillis()
+      : new Date(data.date as unknown as Date).getTime();
+  const result = await httpsCallable<
+    {
+      title: string;
+      description: string;
+      coverImage?: string;
+      dateMillis: number;
+      duration: number;
+      location: MeetupLocation;
+      locationVisibility?: "everyone" | "participants_only";
+      requirements: MeetupRequirements;
+    },
+    { id: string }
+  >(functions, "createMeetupCallable")({
+    title: data.title,
+    description: data.description,
+    coverImage: data.coverImage,
+    dateMillis,
+    duration: data.duration,
+    location: data.location,
     locationVisibility: data.locationVisibility ?? "participants_only",
-    isRatingOpen: data.isRatingOpen ?? false,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+    requirements: data.requirements,
   });
-  const result = await addDoc(meetupsRef, payload);
-
-  if (isPrivate) {
-    await setDoc(doc(db, "meetups", result.id, "private", "address"), {
-      address: data.location.address,
-      lat: data.location.lat,
-      lng: data.location.lng,
-      name: data.location.name,
-      city: data.location.city || "",
-      state: data.location.state || "",
-    });
-  }
-
-  return result.id;
+  return result.data.id;
 }
 
 export async function updateMeetup(
   meetupId: string,
   data: Partial<MeetupData>
 ): Promise<void> {
-  const meetupRef = doc(db, "meetups", meetupId);
-  await updateDoc(
-    meetupRef,
-    removeUndefined({ ...data, updatedAt: serverTimestamp() })
-  );
+  if (!data.date || !data.location || !data.requirements) {
+    throw new Error("Meetup updates require date, location, and requirements.");
+  }
+  const dateMillis =
+    data.date instanceof Timestamp
+      ? data.date.toMillis()
+      : new Date(data.date as unknown as Date).getTime();
+  await httpsCallable<
+    {
+      meetupId: string;
+      title: string;
+      description: string;
+      coverImage?: string;
+      dateMillis: number;
+      duration: number;
+      location: MeetupLocation;
+      locationVisibility?: "everyone" | "participants_only";
+      requirements: MeetupRequirements;
+    },
+    { success: boolean }
+  >(functions, "updateMeetupCallable")({
+    meetupId,
+    title: data.title ?? "",
+    description: data.description ?? "",
+    coverImage: data.coverImage,
+    dateMillis,
+    duration: data.duration ?? 60,
+    location: data.location,
+    locationVisibility: data.locationVisibility ?? "participants_only",
+    requirements: data.requirements,
+  });
 }
 
 export async function checkAndUpdateMeetupStatus(
@@ -188,13 +178,10 @@ export async function checkAndUpdateMeetupStatus(
 }
 
 export async function cancelMeetup(meetupId: string): Promise<void> {
-  const meetupRef = doc(db, "meetups", meetupId);
-  const meetupSnap = await getDoc(meetupRef);
-  if (!meetupSnap.exists()) return;
-  await updateDoc(meetupRef, {
-    status: "cancelled",
-    updatedAt: serverTimestamp(),
-  });
+  await httpsCallable<{ meetupId: string }, { success: boolean }>(
+    functions,
+    "cancelMeetupCallable"
+  )({ meetupId });
 }
 
 export async function getMeetupById(id: string): Promise<Meetup | null> {

@@ -58,6 +58,14 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
     }
 
+    function isAllowedFamilyCreate(userId) {
+      let allowed = ['userId', 'userName', 'userAvatar', 'relationship',
+                      'customRelationship', 'role', 'joinedAt', 'invitationCode'];
+      return request.resource.data.keys().hasOnly(allowed) &&
+        request.resource.data.userId == userId &&
+        (request.resource.data.role == 'primary' || request.resource.data.role == 'member');
+    }
+
     function isAllowedMeetupCreate() {
       let allowed = ['organizerId', 'organizerName', 'organizerAvatar', 'title',
                       'description', 'coverImage', 'date', 'duration', 'location',
@@ -144,8 +152,7 @@ service cloud.firestore {
       allow read: if true;
       allow create: if false;
       allow update: if false;
-      allow delete: if isAuthenticated() &&
-        (resource.data.authorId == request.auth.uid || isAdmin());
+      allow delete: if false;
 
       match /likes/{likeId} {
         allow read: if true;
@@ -178,14 +185,21 @@ service cloud.firestore {
 
       match /family/{userId} {
         allow read: if true;
-        allow create: if isAuthenticated() && request.auth.uid == userId && (
-          get(/databases/$(database)/documents/pets/$(petId)).data.primaryOwnerId == request.auth.uid ||
-          ('invitationCode' in request.resource.data &&
-           exists(/databases/$(database)/documents/pets/$(petId)/invitations/$(request.resource.data.invitationCode)) &&
-           get(/databases/$(database)/documents/pets/$(petId)/invitations/$(request.resource.data.invitationCode)).data.used == false &&
-           get(/databases/$(database)/documents/pets/$(petId)/invitations/$(request.resource.data.invitationCode)).data.expiresAt > request.time)
-        );
-        allow update: if isAuthenticated() && request.auth.uid == userId;
+        allow create: if isAuthenticated() && request.auth.uid == userId &&
+          isAllowedFamilyCreate(userId) && (
+            (
+              get(/databases/$(database)/documents/pets/$(petId)).data.primaryOwnerId == request.auth.uid &&
+              request.resource.data.role == 'primary'
+            ) ||
+            (
+              request.resource.data.role == 'member' &&
+              ('invitationCode' in request.resource.data) &&
+              exists(/databases/$(database)/documents/pets/$(petId)/invitations/$(request.resource.data.invitationCode)) &&
+              get(/databases/$(database)/documents/pets/$(petId)/invitations/$(request.resource.data.invitationCode)).data.used == false &&
+              get(/databases/$(database)/documents/pets/$(petId)/invitations/$(request.resource.data.invitationCode)).data.expiresAt > request.time
+            )
+          );
+        allow update: if false;
         allow delete: if isAuthenticated() && (
           request.auth.uid == userId ||
           get(/databases/$(database)/documents/pets/$(petId)).data.primaryOwnerId == request.auth.uid ||
@@ -238,10 +252,8 @@ service cloud.firestore {
     // ========= meetups =========
     match /meetups/{meetupId} {
       allow read: if true;
-      allow create: if isAuthenticated() && isNotBanned() && isEmailVerified() &&
-        isAllowedMeetupCreate();
-      allow update: if isAuthenticated() &&
-        ((resource.data.organizerId == request.auth.uid && isAllowedMeetupUpdate()) || isAdmin());
+      allow create: if false;
+      allow update: if false;
       allow delete: if isAuthenticated() &&
         (resource.data.organizerId == request.auth.uid || isAdmin());
 
@@ -267,7 +279,9 @@ service cloud.firestore {
           exists(/databases/$(database)/documents/meetups/$(meetupId)/participants/$(request.auth.uid)) ||
           isAdmin()
         );
-        allow write: if isAuthenticated() &&
+        allow create: if false;
+        allow update: if false;
+        allow delete: if isAuthenticated() &&
           (get(/databases/$(database)/documents/meetups/$(meetupId)).data.organizerId == request.auth.uid || isAdmin());
       }
     }
