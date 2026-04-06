@@ -1,12 +1,13 @@
 import {
-  addDoc,
   collection,
   collectionGroup,
+  doc,
   getDocs,
   limit,
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   where,
 } from "firebase/firestore";
 import { db } from "./firebase";
@@ -51,10 +52,10 @@ export async function checkIn(
     petName?: string;
   }
 ): Promise<void> {
-  // Only create the checkin document. Location aggregation (totalCheckins,
-  // verifiedByCheckins) is maintained by the onCheckinCreated Cloud Function.
-  const checkinsRef = collection(db, "locations", locationId, "checkins");
-  await addDoc(checkinsRef, removeUndefined({
+  // Deterministic doc ID: "{userId}" enforces one checkin per user per location.
+  // Rules validate checkinId == auth.uid. setDoc overwrites previous checkin.
+  const checkinRef = doc(db, "locations", locationId, "checkins", data.userId);
+  await setDoc(checkinRef, removeUndefined({
     ...data,
     locationId,
     createdAt: serverTimestamp(),
