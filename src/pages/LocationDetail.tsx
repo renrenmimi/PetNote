@@ -7,7 +7,11 @@ import { LocationRatingModal } from "../components/LocationRatingModal";
 import { MediaCarousel } from "../components/MediaCarousel";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../contexts/ToastContext";
-import { calculateDistance } from "../services/location";
+import {
+  calculateDistance,
+  getUserLocation,
+  type UserLocation,
+} from "../services/location";
 import { getCheckins, hasUserCheckedIn, type Checkin } from "../services/checkins";
 import { getUserPets, type Pet } from "../services/pets";
 import {
@@ -122,6 +126,8 @@ export function LocationDetail() {
   const [checkedInToday, setCheckedInToday] = useState(false);
   const [checkInOpen, setCheckInOpen] = useState(false);
   const [userPets, setUserPets] = useState<Pet[]>([]);
+  const [storedViewerLocation, setStoredViewerLocation] = useState<UserLocation | null>(null);
+  const viewerLocation = user?.uid ? storedViewerLocation : null;
 
   const refreshData = async (id: string, userId?: string) => {
     setLoading(true);
@@ -179,6 +185,27 @@ export function LocationDetail() {
     };
   }, [user?.uid]);
 
+  useEffect(() => {
+    let ignore = false;
+    if (!user?.uid) return;
+    const loadLocation = async () => {
+      try {
+        const locationData = await getUserLocation(user.uid);
+        if (!ignore) {
+          setStoredViewerLocation(locationData);
+        }
+      } catch {
+        if (!ignore) {
+          setStoredViewerLocation(null);
+        }
+      }
+    };
+    void loadLocation();
+    return () => {
+      ignore = true;
+    };
+  }, [user?.uid]);
+
   const ratingStats = useMemo(() => {
     if (reviews.length === 0) {
       return { space: 0, safety: 0, cleanliness: 0 };
@@ -209,16 +236,15 @@ export function LocationDetail() {
     return Object.entries(counts).sort((a, b) => b[1] - a[1]);
   }, [reviews]);
 
-  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const distance = useMemo(() => {
-    if (!location || !profile?.location) return null;
+    if (!location || !viewerLocation) return null;
     return calculateDistance(
-      profile.location.lat,
-      profile.location.lng,
+      viewerLocation.lat,
+      viewerLocation.lng,
       location.lat,
       location.lng
     );
-  }, [location, profile?.location]);
+  }, [location, viewerLocation]);
 
   const photoItems = useMemo(() => {
     if (!location) return [];

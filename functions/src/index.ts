@@ -371,6 +371,64 @@ async function getAccessiblePet(
   return canAccess ? petData : null;
 }
 
+async function deleteCollectionPath(path: string): Promise<void> {
+  const snapshot = await db.collection(path).get();
+  if (snapshot.empty) return;
+  await batchChunked(snapshot.docs, (batch, docSnap) => {
+    batch.delete(docSnap.ref);
+  });
+}
+
+async function deleteQueryDocs(queryRef: admin.firestore.Query): Promise<void> {
+  const snapshot = await queryRef.get();
+  if (snapshot.empty) return;
+  await batchChunked(snapshot.docs, (batch, docSnap) => {
+    batch.delete(docSnap.ref);
+  });
+}
+
+async function cascadeDeletePost(postId: string): Promise<void> {
+  const postRef = db.doc(`posts/${postId}`);
+  const postSnap = await postRef.get();
+  if (!postSnap.exists) return;
+
+  const [likesSnap, commentsSnap] = await Promise.all([
+    db.collection(`posts/${postId}/likes`).get(),
+    db.collection(`posts/${postId}/comments`).get(),
+  ]);
+
+  if (!likesSnap.empty) {
+    await batchChunked(likesSnap.docs, (batch, docSnap) => {
+      batch.delete(docSnap.ref);
+    });
+  }
+
+  if (!commentsSnap.empty) {
+    await batchChunked(commentsSnap.docs, (batch, docSnap) => {
+      batch.delete(docSnap.ref);
+    });
+  }
+
+  await postRef.delete();
+}
+
+async function cascadeDeletePet(petId: string): Promise<void> {
+  await Promise.all([
+    deleteCollectionPath(`pets/${petId}/family`),
+    deleteCollectionPath(`pets/${petId}/followers`),
+    deleteCollectionPath(`pets/${petId}/invitations`),
+  ]);
+  await db.doc(`pets/${petId}`).delete();
+}
+
+async function cascadeDeleteMeetup(meetupId: string): Promise<void> {
+  await Promise.all([
+    deleteCollectionPath(`meetups/${meetupId}/participants`),
+    deleteCollectionPath(`meetups/${meetupId}/private`),
+  ]);
+  await db.doc(`meetups/${meetupId}`).delete();
+}
+
 // ============================================================
 // 1. Pet deleted: clean up cross-user followingPets + unlink posts
 // ============================================================
@@ -990,9 +1048,7 @@ export const onFamilyCreated = onDocumentCreated(
 );
 
 // ============================================================
-// 14. Callable: delete user document + Firebase Auth account
-//     Uses admin SDK to bypass admin-only delete rule.
-//     Called from client deleteAccount() after Firestore cleanup.
+// 14. Callable: full account deletion owned entirely by backend
 // ============================================================
 export const deleteUserAccount = onCall(async (request) => {
   const callerUid = request.auth?.uid;
@@ -1004,6 +1060,49 @@ export const deleteUserAccount = onCall(async (request) => {
   if (callerUid !== userId) {
     throw new HttpsError("permission-denied", "Can only delete your own account.");
   }
+
+  const userRef = db.doc(`users/${userId}`);
+  await userRef.set(
+    { deletionPending: true, updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+    { merge: true }
+  );
+
+  const [postsSnap, petsSnap, meetupsSnap] = await Promise.all([
+    db.collection("posts").where("authorId", "==", userId).get(),
+    db.collection("pets").where("ownerId", "==", userId).get(),
+    db.collection("meetups").where("organizerId", "==", userId).get(),
+  ]);
+
+  for (const docSnap of postsSnap.docs) {
+    await cascadeDeletePost(docSnap.id);
+  }
+
+  for (const docSnap of petsSnap.docs) {
+    await cascadeDeletePet(docSnap.id);
+  }
+
+  for (const docSnap of meetupsSnap.docs) {
+    await cascadeDeleteMeetup(docSnap.id);
+  }
+
+  await Promise.all([
+    deleteQueryDocs(db.collection("notifications").where("userId", "==", userId)),
+    deleteQueryDocs(db.collection("notifications").where("fromUserId", "==", userId)),
+    deleteQueryDocs(db.collectionGroup("comments").where("authorId", "==", userId)),
+    deleteQueryDocs(db.collectionGroup("likes").where("userId", "==", userId)),
+    deleteQueryDocs(db.collectionGroup("checkins").where("userId", "==", userId)),
+    deleteQueryDocs(db.collectionGroup("reviews").where("userId", "==", userId)),
+    deleteQueryDocs(db.collectionGroup("participants").where("userId", "==", userId)),
+    deleteQueryDocs(db.collectionGroup("family").where("userId", "==", userId)),
+    deleteQueryDocs(db.collection("reports").where("reporterId", "==", userId)),
+    deleteQueryDocs(db.collection("feedback").where("userId", "==", userId)),
+    deleteCollectionPath(`users/${userId}/bookmarks`),
+    deleteCollectionPath(`users/${userId}/followingPets`),
+    deleteCollectionPath(`users/${userId}/followers`),
+    deleteCollectionPath(`users/${userId}/following`),
+    deleteCollectionPath(`users/${userId}/blockedUsers`),
+    deleteCollectionPath(`users/${userId}/settings`),
+  ]);
 
   try {
     await admin.auth().deleteUser(userId);
@@ -1020,7 +1119,7 @@ export const deleteUserAccount = onCall(async (request) => {
     }
   }
 
-  await db.doc(`users/${userId}`).delete();
+  await userRef.delete();
 
   return { success: true };
 });
@@ -1077,7 +1176,226 @@ export const sendNotification = onCall(async (request) => {
 });
 
 // ============================================================
-// 16. Callable: create post with server-derived author/pet snapshots
+// 16. Callable: create invitation / redeem invitation / remove family member
+// ============================================================
+export const createInvitationCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Must be logged in.");
+  }
+
+  const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot create invitations.");
+  }
+
+  const { petId } = request.data as { petId?: string };
+  if (!petId || typeof petId !== "string") {
+    throw new HttpsError("invalid-argument", "Missing petId.");
+  }
+
+  const familySnap = await db.doc(`pets/${petId}/family/${callerUid}`).get();
+  if (!familySnap.exists) {
+    throw new HttpsError("permission-denied", "Only family members can create invitation codes.");
+  }
+
+  const inviteChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const generateCode = () =>
+    Array.from({ length: 8 }, () => inviteChars[Math.floor(Math.random() * inviteChars.length)]).join("");
+
+  let code = generateCode();
+  let attempts = 0;
+  while (attempts < 10) {
+    const duplicateSnap = await db.collectionGroup("invitations").where("code", "==", code).limit(1).get();
+    if (duplicateSnap.empty) {
+      const expiresAt = admin.firestore.Timestamp.fromMillis(
+        Date.now() + 48 * 60 * 60 * 1000
+      );
+      await db.doc(`pets/${petId}/invitations/${code}`).set({
+        code,
+        createdBy: callerUid,
+        createdByName: caller.fromUserName,
+        expiresAt,
+        used: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      return { code, expiresAt };
+    }
+    code = generateCode();
+    attempts += 1;
+  }
+
+  throw new HttpsError("resource-exhausted", "Could not generate an invitation code.");
+});
+
+export const redeemInvitationCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Must be logged in.");
+  }
+
+  const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot redeem invitations.");
+  }
+
+  const data = request.data as {
+    code?: string;
+    relationship?: string;
+    customRelationship?: string;
+  };
+  const normalizedCode =
+    typeof data.code === "string" ? data.code.replace(/[^a-zA-Z0-9]/g, "").toUpperCase() : "";
+  if (normalizedCode.length !== 8) {
+    throw new HttpsError("invalid-argument", "Invitation code must be 8 characters.");
+  }
+
+  const allowedRelationships = new Set([
+    "mom",
+    "dad",
+    "brother",
+    "sister",
+    "grandma",
+    "grandpa",
+    "auntie",
+    "uncle",
+    "best_friend",
+    "caretaker",
+    "other",
+  ]);
+  const relationship =
+    typeof data.relationship === "string" && allowedRelationships.has(data.relationship)
+      ? data.relationship
+      : null;
+  if (!relationship) {
+    throw new HttpsError("invalid-argument", "Invalid relationship.");
+  }
+
+  const invitationSnap = await db
+    .collectionGroup("invitations")
+    .where("code", "==", normalizedCode)
+    .limit(5)
+    .get();
+  if (invitationSnap.empty) {
+    throw new HttpsError("not-found", "Invalid or expired invitation code.");
+  }
+
+  const candidate = invitationSnap.docs.find((docSnap) => {
+    const invite = docSnap.data();
+    const expiresAt =
+      invite.expiresAt instanceof admin.firestore.Timestamp ? invite.expiresAt.toMillis() : 0;
+    return invite.used !== true && expiresAt > Date.now();
+  });
+  if (!candidate) {
+    throw new HttpsError("failed-precondition", "Invalid or expired invitation code.");
+  }
+
+  const petId = candidate.ref.parent.parent?.id;
+  if (!petId) {
+    throw new HttpsError("failed-precondition", "Associated pet not found.");
+  }
+
+  const petRef = db.doc(`pets/${petId}`);
+  const familyRef = db.doc(`pets/${petId}/family/${callerUid}`);
+  const invitationRef = candidate.ref;
+
+  await db.runTransaction(async (transaction) => {
+    const [petSnap, familySnap, freshInvitationSnap] = await Promise.all([
+      transaction.get(petRef),
+      transaction.get(familyRef),
+      transaction.get(invitationRef),
+    ]);
+
+    if (!petSnap.exists) {
+      throw new HttpsError("not-found", "Associated pet not found.");
+    }
+    if (familySnap.exists) {
+      throw new HttpsError("already-exists", "You are already a family member of this pet.");
+    }
+    if (!freshInvitationSnap.exists) {
+      throw new HttpsError("not-found", "Invitation no longer exists.");
+    }
+
+    const invitation = freshInvitationSnap.data() ?? {};
+    const expiresAt =
+      invitation.expiresAt instanceof admin.firestore.Timestamp
+        ? invitation.expiresAt.toMillis()
+        : 0;
+    if (invitation.used === true || expiresAt <= Date.now()) {
+      throw new HttpsError("failed-precondition", "Invitation is no longer valid.");
+    }
+
+    transaction.set(
+      familyRef,
+      stripUndefined({
+        userId: callerUid,
+        userName: caller.fromUserName,
+        userAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
+        relationship,
+        customRelationship:
+          relationship === "other" &&
+          typeof data.customRelationship === "string" &&
+          data.customRelationship.trim().length > 0
+            ? data.customRelationship.trim()
+            : undefined,
+        role: "member",
+        invitationCode: normalizedCode,
+        joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+      })
+    );
+
+    transaction.update(invitationRef, {
+      used: true,
+      usedBy: callerUid,
+      usedByName: caller.fromUserName,
+    });
+  });
+
+  const petSnap = await petRef.get();
+  const petData = petSnap.data() ?? {};
+  return {
+    success: true,
+    petId,
+    petName:
+      typeof petData.name === "string" && petData.name.trim().length > 0
+        ? petData.name
+        : "Pet",
+  };
+});
+
+export const removeFamilyMemberCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Must be logged in.");
+  }
+
+  const { petId, targetUserId } = request.data as {
+    petId?: string;
+    targetUserId?: string;
+  };
+  if (!petId || !targetUserId) {
+    throw new HttpsError("invalid-argument", "Missing petId or targetUserId.");
+  }
+
+  const petSnap = await db.doc(`pets/${petId}`).get();
+  if (!petSnap.exists) {
+    throw new HttpsError("not-found", "Pet not found.");
+  }
+  const petData = petSnap.data() ?? {};
+  const canRemove =
+    callerUid === targetUserId ||
+    petData.primaryOwnerId === callerUid ||
+    petData.ownerId === callerUid;
+  if (!canRemove) {
+    throw new HttpsError("permission-denied", "Cannot remove this family member.");
+  }
+
+  await db.doc(`pets/${petId}/family/${targetUserId}`).delete();
+  return { success: true };
+});
+
+// ============================================================
+// 17. Callable: create post with server-derived author/pet snapshots
 // ============================================================
 export const createPostCallable = onCall(async (request) => {
   const callerAuth = request.auth;
@@ -1322,7 +1640,46 @@ export const createCommentCallable = onCall(async (request) => {
 });
 
 // ============================================================
-// 19. Callable: follow / unfollow pet using one authoritative doc
+// 20. Callable: delete comment with privileged notification cleanup
+// ============================================================
+export const deleteCommentCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Must be logged in.");
+  }
+
+  const caller = await getNotificationActor(callerUid);
+  const { postId, commentId } = request.data as { postId?: string; commentId?: string };
+  if (!postId || !commentId) {
+    throw new HttpsError("invalid-argument", "Missing postId or commentId.");
+  }
+
+  const commentRef = db.doc(`posts/${postId}/comments/${commentId}`);
+  const postRef = db.doc(`posts/${postId}`);
+  const [commentSnap, postSnap] = await Promise.all([commentRef.get(), postRef.get()]);
+  if (!commentSnap.exists || !postSnap.exists) {
+    return { success: true };
+  }
+
+  const commentData = commentSnap.data() ?? {};
+  const postData = postSnap.data() ?? {};
+  const canDelete =
+    commentData.authorId === callerUid ||
+    postData.authorId === callerUid ||
+    caller.role === "admin";
+  if (!canDelete) {
+    throw new HttpsError("permission-denied", "Cannot delete this comment.");
+  }
+
+  await deleteQueryDocs(
+    db.collection("notifications").where("postId", "==", postId).where("commentId", "==", commentId)
+  );
+  await commentRef.delete();
+  return { success: true };
+});
+
+// ============================================================
+// 21. Callable: follow / unfollow pet using one authoritative doc
 // ============================================================
 export const followPetCallable = onCall(async (request) => {
   const callerUid = request.auth?.uid;

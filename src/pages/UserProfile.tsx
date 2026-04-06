@@ -57,7 +57,7 @@ export function UserProfile() {
         const [profileData, petList, followingList] = await Promise.all([
           getUserProfile(userId),
           getUserPets(userId),
-          getFollowingPets(userId),
+          user?.uid === userId ? getFollowingPets(userId) : Promise.resolve([]),
         ]);
         if (ignore) return;
         setProfile(profileData);
@@ -74,7 +74,7 @@ export function UserProfile() {
     return () => {
       ignore = true;
     };
-  }, [userId]);
+  }, [user?.uid, userId]);
 
   const joinedDate = useMemo(() => {
     if (!profile?.createdAt) return "Unknown";

@@ -1,5 +1,4 @@
 import {
-  Timestamp,
   collection,
   collectionGroup,
   doc,
@@ -7,14 +6,11 @@ import {
   getDocs,
   limit,
   query,
-  runTransaction,
-  serverTimestamp,
-  setDoc,
   where,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { httpsCallable } from "firebase/functions";
+import { db, functions } from "./firebase";
 import type { PetFamilyRelationship } from "./pets";
-import { removeUndefined } from "../utils/removeUndefined";
 
 export type Invitation = {
   code: string;
@@ -61,37 +57,16 @@ export function generateInviteCode(): string {
 
 export async function createInvitation(
   petId: string,
-  userId: string,
-  userName: string
+  _userId: string,
+  _userName: string
 ): Promise<string> {
-  const memberRef = doc(db, `pets/${petId}/family/${userId}`);
-  const memberSnap = await getDoc(memberRef);
-  if (!memberSnap.exists()) {
-    throw new Error("Only family members can create invitation codes.");
-  }
-
-  let code = generateInviteCode();
-  let attempts = 0;
-  while (attempts < 10) {
-    const inviteRef = doc(db, `pets/${petId}/invitations/${code}`);
-    const inviteSnap = await getDoc(inviteRef);
-    if (!inviteSnap.exists()) {
-      const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
-      await setDoc(inviteRef, {
-        code,
-        createdBy: userId,
-        createdByName: userName,
-        expiresAt: Timestamp.fromDate(expiresAt),
-        used: false,
-        createdAt: serverTimestamp(),
-      });
-      return code;
-    }
-    code = generateInviteCode();
-    attempts += 1;
-  }
-
-  throw new Error("Could not generate an invitation code. Please try again.");
+  void _userId;
+  void _userName;
+  const result = await httpsCallable<
+    { petId: string },
+    { code: string }
+  >(functions, "createInvitationCallable")({ petId });
+  return result.data.code;
 }
 
 export async function validateInvitationCode(code: string): Promise<{
@@ -168,87 +143,40 @@ export async function validateInvitationCode(code: string): Promise<{
 
 export async function redeemInvitation(
   code: string,
-  userId: string,
-  userName: string,
-  userAvatar: string,
+  _userId: string,
+  _userName: string,
+  _userAvatar: string,
   relationship: PetFamilyRelationship,
   customRelationship?: string
 ): Promise<UseInvitationResult> {
   const normalized = normalizeCode(code);
-  const preview = await validateInvitationCode(normalized);
-  if (!preview.valid || !preview.petId) {
-    return {
-      success: false,
-      error: preview.error || "Invalid or expired invitation code.",
-    };
-  }
-
-  const petId = preview.petId;
-  const familyRef = doc(db, `pets/${petId}/family/${userId}`);
-  const invitationRef = doc(
-    db,
-    preview.invitationRefPath || `pets/${petId}/invitations/${normalized}`
-  );
-
-  // Single transaction: validate invitation, create family member, mark used.
-  // Prevents race conditions where two users redeem the same code.
   try {
-    await runTransaction(db, async (transaction) => {
-      const [familySnap, invitationSnap] = await Promise.all([
-        transaction.get(familyRef),
-        transaction.get(invitationRef),
-      ]);
-
-      if (familySnap.exists()) {
-        throw new Error("You are already a family member of this pet.");
-      }
-
-      if (!invitationSnap.exists()) {
-        throw new Error("Invalid invitation code.");
-      }
-
-      const invData = invitationSnap.data() as Invitation;
-      if (invData.used) {
-        throw new Error("This invitation code has already been used.");
-      }
-
-      const expiresDate =
-        invData.expiresAt &&
-        typeof invData.expiresAt === "object" &&
-        "toDate" in invData.expiresAt &&
-        typeof (invData.expiresAt as { toDate: () => Date }).toDate === "function"
-          ? (invData.expiresAt as { toDate: () => Date }).toDate()
-          : null;
-      if (!expiresDate || expiresDate.getTime() < Date.now()) {
-        throw new Error("This invitation code has expired.");
-      }
-
-      transaction.set(familyRef, removeUndefined({
-        userId,
-        userName,
-        userAvatar:
-          userAvatar || `https://api.dicebear.com/7.x/thumbs/svg?seed=${userId}`,
-        relationship,
-        role: "member",
-        invitationCode: normalized,
-        ...withCustomRelationship(relationship, customRelationship),
-        joinedAt: serverTimestamp(),
-      }));
-
-      transaction.update(invitationRef, {
-        used: true,
-        usedBy: userId,
-        usedByName: userName,
-      });
+    const result = await httpsCallable<
+      { code: string; relationship: PetFamilyRelationship; customRelationship?: string },
+      { success: boolean; petId: string; petName: string }
+    >(functions, "redeemInvitationCallable")({
+      code: normalized,
+      relationship,
+      ...withCustomRelationship(relationship, customRelationship),
     });
+    return {
+      success: result.data.success,
+      petId: result.data.petId,
+      petName: result.data.petName,
+    };
   } catch (error) {
+    const message =
+      typeof error === "object" &&
+      error !== null &&
+      "message" in error &&
+      typeof (error as { message?: unknown }).message === "string"
+        ? (error as { message: string }).message
+        : "Failed to redeem invitation.";
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Failed to redeem invitation.",
+      error: message,
     };
   }
-
-  return { success: true, petId, petName: preview.petName };
 }
 
 export async function getActiveInvitations(
