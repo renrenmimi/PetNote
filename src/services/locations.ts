@@ -10,14 +10,14 @@ import {
   query,
   runTransaction,
   serverTimestamp,
-  setDoc,
   where,
   updateDoc,
   startAfter,
   type QueryConstraint,
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { httpsCallable } from "firebase/functions";
+import { db, functions } from "./firebase";
 import { calculateDistance } from "./location";
 import { removeUndefined } from "../utils/removeUndefined";
 
@@ -158,16 +158,26 @@ export async function submitReview(
   locationId: string,
   reviewData: Omit<Review, "id" | "createdAt">
 ): Promise<void> {
-  // Deterministic doc ID: "{userId}" or "{userId}_{meetupId}" enforces one-per-user.
-  // Rules validate reviewId starts with auth.uid.
-  const reviewId = reviewData.meetupId
-    ? `${reviewData.userId}_${reviewData.meetupId}`
-    : reviewData.userId;
-  const reviewRef = doc(db, "locations", locationId, "reviews", reviewId);
-  await setDoc(reviewRef, removeUndefined({
-    ...reviewData,
-    createdAt: serverTimestamp(),
-  }));
+  await httpsCallable<
+    {
+      locationId: string;
+      meetupId?: string;
+      rating: number;
+      comment: string;
+      photos: string[];
+      tags: string[];
+      petFriendly: Review["petFriendly"];
+    },
+    { id: string }
+  >(functions, "submitReviewCallable")({
+    locationId,
+    meetupId: reviewData.meetupId,
+    rating: reviewData.rating,
+    comment: reviewData.comment,
+    photos: reviewData.photos,
+    tags: reviewData.tags,
+    petFriendly: reviewData.petFriendly,
+  });
 }
 
 export async function getLocation(locationId: string): Promise<Location | null> {

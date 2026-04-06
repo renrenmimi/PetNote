@@ -12,8 +12,8 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { getFunctions, httpsCallable } from "firebase/functions";
-import { auth, db } from "./firebase";
+import { httpsCallable } from "firebase/functions";
+import { auth, db, functions } from "./firebase";
 import { deleteComment, deletePost } from "./posts";
 import { type ReportItem } from "./report";
 
@@ -36,7 +36,6 @@ async function sendWarningNotification(params: {
     throw new Error("Admin must be logged in.");
   }
 
-  const functions = getFunctions();
   await httpsCallable<
     {
       userId: string;

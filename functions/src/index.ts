@@ -165,6 +165,38 @@ async function getPetFamilyRecipientIds(
   );
 }
 
+function getDefaultAvatar(seed: string): string {
+  return `https://api.dicebear.com/7.x/thumbs/svg?seed=${seed}`;
+}
+
+function normalizeTags(tags: unknown): string[] {
+  if (!Array.isArray(tags)) return [];
+  return Array.from(
+    new Set(
+      tags
+        .filter((tag): tag is string => typeof tag === "string")
+        .map((tag) => tag.trim().toLowerCase().replace(/^#/, ""))
+        .filter(Boolean)
+    )
+  );
+}
+
+async function getAccessiblePet(
+  petId: string,
+  userId: string
+): Promise<admin.firestore.DocumentData | null> {
+  const petRef = db.doc(`pets/${petId}`);
+  const familyRef = db.doc(`pets/${petId}/family/${userId}`);
+  const [petSnap, familySnap] = await Promise.all([petRef.get(), familyRef.get()]);
+  if (!petSnap.exists) return null;
+  const petData = petSnap.data() ?? {};
+  const canAccess =
+    petData.ownerId === userId ||
+    petData.primaryOwnerId === userId ||
+    familySnap.exists;
+  return canAccess ? petData : null;
+}
+
 // ============================================================
 // 1. Pet deleted: clean up cross-user followingPets + unlink posts
 // ============================================================
@@ -197,10 +229,19 @@ export const onFollowingPetCreated = onDocumentCreated(
     const { userId, petId } = event.params;
     const userRef = db.doc(`users/${userId}`);
     const petRef = db.doc(`pets/${petId}`);
+    const followerMirrorRef = db.doc(`pets/${petId}/followers/${userId}`);
     const [userSnap, petSnap] = await Promise.all([userRef.get(), petRef.get()]);
+
+    if (!petSnap.exists) {
+      if (event.data) {
+        await event.data.ref.delete().catch(() => undefined);
+      }
+      return;
+    }
 
     const batch = db.batch();
     let hasWrites = false;
+    const actor = await getNotificationActor(userId);
 
     if (userSnap.exists) {
       batch.update(userRef, {
@@ -213,6 +254,12 @@ export const onFollowingPetCreated = onDocumentCreated(
       batch.update(petRef, {
         followerCount: admin.firestore.FieldValue.increment(1),
       });
+      batch.set(followerMirrorRef, {
+        userId,
+        userName: actor.fromUserName,
+        userAvatar: actor.fromUserAvatar || getDefaultAvatar(userId),
+        followedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
       hasWrites = true;
     }
 
@@ -220,7 +267,6 @@ export const onFollowingPetCreated = onDocumentCreated(
       await batch.commit();
     }
 
-    if (!petSnap.exists) return;
     const petData = petSnap.data() ?? {};
     const petName =
       typeof petData.name === "string" && petData.name.trim().length > 0
@@ -229,7 +275,6 @@ export const onFollowingPetCreated = onDocumentCreated(
     const recipients = await getPetFamilyRecipientIds(petId, userId);
     if (recipients.length === 0) return;
 
-    const actor = await getNotificationActor(userId);
     await Promise.all(
       recipients.map((recipientId) =>
         createNotificationIfAllowed({
@@ -251,6 +296,7 @@ export const onFollowingPetDeleted = onDocumentDeleted(
     const { userId, petId } = event.params;
     const userRef = db.doc(`users/${userId}`);
     const petRef = db.doc(`pets/${petId}`);
+    const followerMirrorRef = db.doc(`pets/${petId}/followers/${userId}`);
     const [userSnap, petSnap] = await Promise.all([userRef.get(), petRef.get()]);
 
     const batch = db.batch();
@@ -269,6 +315,9 @@ export const onFollowingPetDeleted = onDocumentDeleted(
       });
       hasWrites = true;
     }
+
+    batch.delete(followerMirrorRef);
+    hasWrites = true;
 
     if (hasWrites) {
       await batch.commit();
@@ -619,12 +668,6 @@ export const onMeetupParticipantCreated = onDocumentCreated(
     const meetupSnap = await meetupRef.get();
     if (!meetupSnap.exists) return;
 
-    // Increment participantCount server-side
-    await meetupRef.update({
-      participantCount: admin.firestore.FieldValue.increment(1),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-
     const meetupData = meetupSnap.data() as {
       organizerId?: string;
       title?: string;
@@ -775,8 +818,6 @@ export const deleteUserAccount = onCall(async (request) => {
     throw new HttpsError("permission-denied", "Can only delete your own account.");
   }
 
-  await db.doc(`users/${userId}`).delete();
-
   try {
     await admin.auth().deleteUser(userId);
   } catch (error) {
@@ -791,6 +832,8 @@ export const deleteUserAccount = onCall(async (request) => {
       throw new HttpsError("internal", "Failed to delete auth account.");
     }
   }
+
+  await db.doc(`users/${userId}`).delete();
 
   return { success: true };
 });
@@ -847,6 +890,496 @@ export const sendNotification = onCall(async (request) => {
 });
 
 // ============================================================
+// 16. Callable: create post with server-derived author/pet snapshots
+// ============================================================
+export const createPostCallable = onCall(async (request) => {
+  const callerAuth = request.auth;
+  const callerUid = callerAuth?.uid;
+  if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+  if (callerAuth.token.email_verified !== true) {
+    throw new HttpsError("permission-denied", "Verify your email before posting.");
+  }
+
+  const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot create posts.");
+  }
+
+  const data = request.data as {
+    text?: string;
+    tags?: unknown;
+    media?: Array<{ url?: string; type?: "image" | "video"; thumbUrl?: string }>;
+    petId?: string;
+  };
+
+  if (!data.petId || typeof data.petId !== "string") {
+    throw new HttpsError("invalid-argument", "Missing petId.");
+  }
+
+  const petData = await getAccessiblePet(data.petId, callerUid);
+  if (!petData) {
+    throw new HttpsError("permission-denied", "You do not have access to this pet.");
+  }
+
+  const media = Array.isArray(data.media)
+    ? data.media
+        .filter(
+          (item): item is { url: string; type: "image" | "video"; thumbUrl?: string } =>
+            !!item &&
+            typeof item.url === "string" &&
+            (item.type === "image" || item.type === "video")
+        )
+        .slice(0, 9)
+    : [];
+  const firstMedia = media[0];
+
+  const result = await db.collection("posts").add({
+    authorId: callerUid,
+    authorName: caller.fromUserName,
+    authorAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
+    text: typeof data.text === "string" ? data.text : "",
+    media,
+    mediaUrl: firstMedia?.url,
+    mediaType: firstMedia?.type,
+    petId: data.petId,
+    petName:
+      typeof petData.name === "string" && petData.name.trim().length > 0
+        ? petData.name
+        : "Pet",
+    petAvatarUrl:
+      typeof petData.avatarUrl === "string" && petData.avatarUrl.trim().length > 0
+        ? petData.avatarUrl
+        : getDefaultAvatar(data.petId),
+    tags: normalizeTags(data.tags),
+    likeCount: 0,
+    commentCount: 0,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return { id: result.id };
+});
+
+// ============================================================
+// 17. Callable: update post with server-derived pet snapshots
+// ============================================================
+export const updatePostCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+
+  const caller = await getNotificationActor(callerUid);
+  const data = request.data as {
+    postId?: string;
+    text?: string;
+    tags?: unknown;
+    petId?: string | null;
+  };
+
+  if (!data.postId || typeof data.postId !== "string") {
+    throw new HttpsError("invalid-argument", "Missing postId.");
+  }
+
+  const postRef = db.doc(`posts/${data.postId}`);
+  const postSnap = await postRef.get();
+  if (!postSnap.exists) {
+    throw new HttpsError("not-found", "Post not found.");
+  }
+
+  const postData = postSnap.data() ?? {};
+  if (postData.authorId !== callerUid && caller.role !== "admin") {
+    throw new HttpsError("permission-denied", "Cannot edit this post.");
+  }
+
+  const updates: Record<string, unknown> = {
+    text: typeof data.text === "string" ? data.text : "",
+    tags: normalizeTags(data.tags),
+  };
+
+  if (data.petId === null || data.petId === "") {
+    updates.petId = admin.firestore.FieldValue.delete();
+    updates.petName = admin.firestore.FieldValue.delete();
+    updates.petAvatarUrl = admin.firestore.FieldValue.delete();
+  } else if (typeof data.petId === "string") {
+    const petData = await getAccessiblePet(data.petId, callerUid);
+    if (!petData) {
+      throw new HttpsError("permission-denied", "You do not have access to this pet.");
+    }
+    updates.petId = data.petId;
+    updates.petName =
+      typeof petData.name === "string" && petData.name.trim().length > 0
+        ? petData.name
+        : "Pet";
+    updates.petAvatarUrl =
+      typeof petData.avatarUrl === "string" && petData.avatarUrl.trim().length > 0
+        ? petData.avatarUrl
+        : getDefaultAvatar(data.petId);
+  }
+
+  await postRef.update(updates);
+  return { success: true };
+});
+
+// ============================================================
+// 18. Callable: create comment with server-derived actor snapshot
+// ============================================================
+export const createCommentCallable = onCall(async (request) => {
+  const callerAuth = request.auth;
+  const callerUid = callerAuth?.uid;
+  if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+  if (callerAuth.token.email_verified !== true) {
+    throw new HttpsError("permission-denied", "Verify your email before commenting.");
+  }
+
+  const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot comment.");
+  }
+
+  const data = request.data as {
+    postId?: string;
+    text?: string;
+    replyToCommentId?: string;
+  };
+
+  if (!data.postId || typeof data.postId !== "string") {
+    throw new HttpsError("invalid-argument", "Missing postId.");
+  }
+
+  const postRef = db.doc(`posts/${data.postId}`);
+  const postSnap = await postRef.get();
+  if (!postSnap.exists) {
+    throw new HttpsError("not-found", "Post not found.");
+  }
+
+  let replyTo:
+    | {
+        commentId: string;
+        authorName: string;
+      }
+    | undefined;
+
+  if (data.replyToCommentId) {
+    const replyRef = db.doc(`posts/${data.postId}/comments/${data.replyToCommentId}`);
+    const replySnap = await replyRef.get();
+    if (!replySnap.exists) {
+      throw new HttpsError("not-found", "Reply target not found.");
+    }
+    const replyData = replySnap.data() ?? {};
+    replyTo = {
+      commentId: data.replyToCommentId,
+      authorName:
+        typeof replyData.authorName === "string" && replyData.authorName.trim().length > 0
+          ? replyData.authorName
+          : "PetNote User",
+    };
+  }
+
+  const commentRef = db.collection(`posts/${data.postId}/comments`).doc();
+  await commentRef.set({
+    authorId: callerUid,
+    authorName: caller.fromUserName,
+    authorAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
+    text: typeof data.text === "string" ? data.text : "",
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    ...(replyTo ? { replyTo } : {}),
+  });
+
+  return { id: commentRef.id };
+});
+
+// ============================================================
+// 19. Callable: follow / unfollow pet using one authoritative doc
+// ============================================================
+export const followPetCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+
+  const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot follow pets.");
+  }
+
+  const { petId } = request.data as { petId?: string };
+  if (!petId || typeof petId !== "string") {
+    throw new HttpsError("invalid-argument", "Missing petId.");
+  }
+
+  const petRef = db.doc(`pets/${petId}`);
+  const followingRef = db.doc(`users/${callerUid}/followingPets/${petId}`);
+
+  await db.runTransaction(async (t) => {
+    const [petSnap, followingSnap] = await Promise.all([t.get(petRef), t.get(followingRef)]);
+    if (!petSnap.exists) {
+      throw new HttpsError("not-found", "Pet not found.");
+    }
+    if (followingSnap.exists) return;
+
+    const petData = petSnap.data() ?? {};
+    t.set(followingRef, {
+      petId,
+      petName:
+        typeof petData.name === "string" && petData.name.trim().length > 0
+          ? petData.name
+          : "Pet",
+      petAvatar:
+        typeof petData.avatarUrl === "string" && petData.avatarUrl.trim().length > 0
+          ? petData.avatarUrl
+          : getDefaultAvatar(petId),
+      followedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  });
+
+  return { success: true };
+});
+
+export const unfollowPetCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+
+  const { petId } = request.data as { petId?: string };
+  if (!petId || typeof petId !== "string") {
+    throw new HttpsError("invalid-argument", "Missing petId.");
+  }
+
+  const followingRef = db.doc(`users/${callerUid}/followingPets/${petId}`);
+  const followingSnap = await followingRef.get();
+  if (followingSnap.exists) {
+    await followingRef.delete();
+  }
+  return { success: true };
+});
+
+// ============================================================
+// 20. Callable: submit review with exact deterministic ID
+// ============================================================
+export const submitReviewCallable = onCall(async (request) => {
+  const callerAuth = request.auth;
+  const callerUid = callerAuth?.uid;
+  if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+  if (callerAuth.token.email_verified !== true) {
+    throw new HttpsError("permission-denied", "Verify your email before reviewing.");
+  }
+
+  const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot review locations.");
+  }
+
+  const data = request.data as {
+    locationId?: string;
+    meetupId?: string;
+    rating?: number;
+    comment?: string;
+    photos?: string[];
+    tags?: string[];
+    petFriendly?: { space?: number; safety?: number; cleanliness?: number };
+  };
+
+  if (!data.locationId || typeof data.locationId !== "string") {
+    throw new HttpsError("invalid-argument", "Missing locationId.");
+  }
+  if (typeof data.rating !== "number" || data.rating < 1 || data.rating > 5) {
+    throw new HttpsError("invalid-argument", "Rating must be between 1 and 5.");
+  }
+
+  const locationRef = db.doc(`locations/${data.locationId}`);
+  const locationSnap = await locationRef.get();
+  if (!locationSnap.exists) {
+    throw new HttpsError("not-found", "Location not found.");
+  }
+
+  if (data.meetupId) {
+    const meetupRef = db.doc(`meetups/${data.meetupId}`);
+    const participantRef = db.doc(`meetups/${data.meetupId}/participants/${callerUid}`);
+    const [meetupSnap, participantSnap] = await Promise.all([meetupRef.get(), participantRef.get()]);
+    if (!meetupSnap.exists) {
+      throw new HttpsError("not-found", "Meetup not found.");
+    }
+    const meetupData = meetupSnap.data() ?? {};
+    if (meetupData.organizerId !== callerUid && !participantSnap.exists) {
+      throw new HttpsError("permission-denied", "Only meetup participants can attach meetup reviews.");
+    }
+  }
+
+  const reviewId = data.meetupId ? `${callerUid}_${data.meetupId}` : callerUid;
+  const reviewRef = db.doc(`locations/${data.locationId}/reviews/${reviewId}`);
+  const existingSnap = await reviewRef.get();
+  if (existingSnap.exists) {
+    throw new HttpsError("already-exists", "You have already reviewed this location.");
+  }
+
+  await reviewRef.set({
+    userId: callerUid,
+    userName: caller.fromUserName,
+    userAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
+    meetupId: data.meetupId,
+    rating: data.rating,
+    comment: typeof data.comment === "string" ? data.comment.trim() : "",
+    photos: Array.isArray(data.photos) ? data.photos.filter((p): p is string => typeof p === "string") : [],
+    tags: Array.isArray(data.tags) ? data.tags.filter((t): t is string => typeof t === "string") : [],
+    petFriendly: {
+      space: typeof data.petFriendly?.space === "number" ? data.petFriendly.space : data.rating,
+      safety: typeof data.petFriendly?.safety === "number" ? data.petFriendly.safety : data.rating,
+      cleanliness:
+        typeof data.petFriendly?.cleanliness === "number"
+          ? data.petFriendly.cleanliness
+          : data.rating,
+    },
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return { id: reviewId };
+});
+
+// ============================================================
+// 21. Callable: check in with daily deterministic ID
+// ============================================================
+export const checkInCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+
+  const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot check in.");
+  }
+
+  const data = request.data as {
+    locationId?: string;
+    photoUrl?: string;
+    caption?: string;
+    petId?: string;
+  };
+
+  if (!data.locationId || typeof data.locationId !== "string") {
+    throw new HttpsError("invalid-argument", "Missing locationId.");
+  }
+  if (!data.photoUrl || typeof data.photoUrl !== "string") {
+    throw new HttpsError("invalid-argument", "Missing photoUrl.");
+  }
+
+  const locationRef = db.doc(`locations/${data.locationId}`);
+  const locationSnap = await locationRef.get();
+  if (!locationSnap.exists) {
+    throw new HttpsError("not-found", "Location not found.");
+  }
+
+  let petName: string | undefined;
+  if (data.petId) {
+    const petData = await getAccessiblePet(data.petId, callerUid);
+    if (!petData) {
+      throw new HttpsError("permission-denied", "You do not have access to this pet.");
+    }
+    petName =
+      typeof petData.name === "string" && petData.name.trim().length > 0
+        ? petData.name
+        : undefined;
+  }
+
+  const dayKey = new Date().toISOString().slice(0, 10);
+  const checkinId = `${callerUid}_${dayKey}`;
+  const checkinRef = db.doc(`locations/${data.locationId}/checkins/${checkinId}`);
+  const existingSnap = await checkinRef.get();
+  if (existingSnap.exists) {
+    throw new HttpsError("already-exists", "You already checked in here today.");
+  }
+
+  await checkinRef.set({
+    userId: callerUid,
+    userName: caller.fromUserName,
+    userAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
+    photoUrl: data.photoUrl,
+    caption: typeof data.caption === "string" ? data.caption.trim() : "",
+    petId: data.petId,
+    petName,
+    locationId: data.locationId,
+    dayKey,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return { id: checkinId };
+});
+
+// ============================================================
+// 22. Callable: submit report with server-derived reporter identity
+// ============================================================
+export const reportContentCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+
+  const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot submit reports.");
+  }
+
+  const data = request.data as {
+    targetType?: "post" | "comment" | "user";
+    targetId?: string;
+    reason?: string;
+    description?: string;
+  };
+  if (!data.targetType || !["post", "comment", "user"].includes(data.targetType)) {
+    throw new HttpsError("invalid-argument", "Invalid targetType.");
+  }
+  if (!data.targetId || typeof data.targetId !== "string") {
+    throw new HttpsError("invalid-argument", "Missing targetId.");
+  }
+  if (!data.reason || typeof data.reason !== "string" || data.reason.trim().length === 0) {
+    throw new HttpsError("invalid-argument", "Missing report reason.");
+  }
+
+  const result = await db.collection("reports").add({
+    reporterId: callerUid,
+    reporterName: caller.fromUserName,
+    reporterAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
+    targetType: data.targetType,
+    targetId: data.targetId,
+    reason: data.reason.trim(),
+    description: typeof data.description === "string" ? data.description.trim() : "",
+    status: "pending",
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return { id: result.id };
+});
+
+// ============================================================
+// 23. Callable: submit feedback with server-derived identity
+// ============================================================
+export const submitFeedbackCallable = onCall(async (request) => {
+  const callerAuth = request.auth;
+  const callerUid = callerAuth?.uid;
+  if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+
+  const data = request.data as {
+    type?: "bug" | "feature" | "complaint" | "other";
+    subject?: string;
+    message?: string;
+  };
+  if (!data.type || !["bug", "feature", "complaint", "other"].includes(data.type)) {
+    throw new HttpsError("invalid-argument", "Invalid feedback type.");
+  }
+  if (!data.subject || typeof data.subject !== "string" || data.subject.trim().length === 0) {
+    throw new HttpsError("invalid-argument", "Missing subject.");
+  }
+  if (!data.message || typeof data.message !== "string" || data.message.trim().length === 0) {
+    throw new HttpsError("invalid-argument", "Missing feedback message.");
+  }
+
+  const caller = await getNotificationActor(callerUid);
+  const result = await db.collection("feedback").add({
+    userId: callerUid,
+    userName: caller.fromUserName,
+    userEmail: typeof callerAuth.token.email === "string" ? callerAuth.token.email : "",
+    type: data.type,
+    subject: data.subject.trim(),
+    message: data.message.trim(),
+    status: "new",
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return { id: result.id };
+});
+
+// ============================================================
 // joinMeetup callable: validates requirements + capacity server-side
 // ============================================================
 export const joinMeetupCallable = onCall(async (request) => {
@@ -859,8 +1392,8 @@ export const joinMeetupCallable = onCall(async (request) => {
     throw new HttpsError("permission-denied", "Banned users cannot join meetups.");
   }
 
-  const { meetupId, petId, petName, petAvatar, petSpecies } = request.data as {
-    meetupId: string; petId: string; petName: string; petAvatar: string; petSpecies?: string;
+  const { meetupId, petId } = request.data as {
+    meetupId: string; petId?: string;
   };
 
   const meetupRef = db.doc(`meetups/${meetupId}`);
@@ -880,6 +1413,46 @@ export const joinMeetupCallable = onCall(async (request) => {
 
     const requirements = meetup.requirements as Record<string, unknown> ?? {};
     const isOrganizer = meetup.organizerId === callerUid;
+    const maxPets = typeof requirements.maxPets === "number" ? requirements.maxPets : 0;
+    const currentCount = typeof meetup.participantCount === "number" ? meetup.participantCount : 0;
+    if (maxPets > 0 && currentCount >= maxPets) {
+      return { success: false, error: "Meetup is full." };
+    }
+
+    let participantPetId = "";
+    let participantPetName = "Organizer";
+    let participantPetAvatar = getDefaultAvatar(callerUid);
+    let participantPetSpecies: string | undefined;
+
+    if (petId) {
+      const petRef = db.doc(`pets/${petId}`);
+      const familyRef = db.doc(`pets/${petId}/family/${callerUid}`);
+      const [petSnap, familySnap] = await Promise.all([t.get(petRef), t.get(familyRef)]);
+      if (!petSnap.exists) {
+        throw new HttpsError("not-found", "Pet not found.");
+      }
+      const petData = petSnap.data() ?? {};
+      const canAccess =
+        petData.ownerId === callerUid ||
+        petData.primaryOwnerId === callerUid ||
+        familySnap.exists;
+      if (!canAccess) {
+        throw new HttpsError("permission-denied", "You do not have access to this pet.");
+      }
+      participantPetId = petId;
+      participantPetName =
+        typeof petData.name === "string" && petData.name.trim().length > 0
+          ? petData.name
+          : "Pet";
+      participantPetAvatar =
+        typeof petData.avatarUrl === "string" && petData.avatarUrl.trim().length > 0
+          ? petData.avatarUrl
+          : getDefaultAvatar(petId);
+      participantPetSpecies =
+        typeof petData.species === "string" ? petData.species : undefined;
+    } else if (!isOrganizer) {
+      return { success: false, error: "Select a pet to join this meetup." };
+    }
 
     if (!isOrganizer) {
       const reasons: string[] = [];
@@ -889,7 +1462,7 @@ export const joinMeetupCallable = onCall(async (request) => {
         if (postsSnap.empty) reasons.push("Must have posted at least once.");
       }
 
-      if (requirements.mustHavePetProfile && !petSpecies) {
+      if (requirements.mustHavePetProfile && !participantPetSpecies) {
         reasons.push("Must have a pet profile.");
       }
 
@@ -902,19 +1475,14 @@ export const joinMeetupCallable = onCall(async (request) => {
       }
 
       const petType = requirements.petType as string ?? "any";
-      if ((petType === "dog" || petType === "any_dog") && petSpecies && petSpecies !== "dog") {
+      if ((petType === "dog" || petType === "any_dog") && participantPetSpecies && participantPetSpecies !== "dog") {
         reasons.push("Dogs only.");
       }
-      if ((petType === "cat" || petType === "any_cat") && petSpecies && petSpecies !== "cat") {
+      if ((petType === "cat" || petType === "any_cat") && participantPetSpecies && participantPetSpecies !== "cat") {
         reasons.push("Cats only.");
       }
-      if (petType === "other" && petSpecies && (petSpecies === "dog" || petSpecies === "cat")) {
+      if (petType === "other" && participantPetSpecies && (participantPetSpecies === "dog" || participantPetSpecies === "cat")) {
         reasons.push("Other pets only.");
-      }
-
-      const maxPets = typeof requirements.maxPets === "number" ? requirements.maxPets : 0;
-      if (maxPets > 0 && ((meetup.participantCount as number) ?? 0) >= maxPets) {
-        return { success: false, error: "Meetup is full." };
       }
 
       if (reasons.length > 0) {
@@ -923,20 +1491,22 @@ export const joinMeetupCallable = onCall(async (request) => {
     }
 
     const actor = await getNotificationActor(callerUid);
-    const safeAvatar = (a: string) => a?.trim() || `https://api.dicebear.com/7.x/thumbs/svg?seed=${callerUid}`;
 
     t.set(participantRef, {
       meetupId,
       userId: callerUid,
       userName: actor.fromUserName,
-      userAvatar: safeAvatar(actor.fromUserAvatar),
-      petId,
-      petName,
-      petAvatar: petAvatar?.trim() || `https://api.dicebear.com/7.x/thumbs/svg?seed=${petId}`,
+      userAvatar: actor.fromUserAvatar || getDefaultAvatar(callerUid),
+      petId: participantPetId,
+      petName: participantPetName,
+      petAvatar: participantPetAvatar,
       joinedAt: admin.firestore.FieldValue.serverTimestamp(),
       status: "confirmed",
     });
-    // participantCount increment is handled by onMeetupParticipantCreated trigger
+    t.update(meetupRef, {
+      participantCount: admin.firestore.FieldValue.increment(1),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
 
     return { success: true };
   });

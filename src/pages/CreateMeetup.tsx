@@ -254,7 +254,7 @@ export function CreateMeetup() {
 
       const organizerPet = pets[0];
       await joinMeetup(meetupId, user.uid, {
-        petId: organizerPet?.id || "organizer",
+        petId: organizerPet?.id || "",
         petName: organizerPet?.name || "Organizer",
         petAvatar: organizerPet?.avatarUrl || "",
         petSpecies: organizerPet?.species,
