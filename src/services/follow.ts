@@ -3,7 +3,6 @@ import {
   doc,
   getDoc,
   getDocs,
-  increment,
   runTransaction,
   serverTimestamp,
   setDoc,
@@ -38,8 +37,6 @@ export async function followPet(userId: string, petId: string): Promise<void> {
   ]);
   if (!pet) return;
 
-  const userRef = doc(db, "users", userId);
-  const petRef = doc(db, "pets", petId);
   const followingRef = doc(db, "users", userId, "followingPets", petId);
   const followerRef = doc(db, "pets", petId, "followers", userId);
   let created = false;
@@ -62,8 +59,6 @@ export async function followPet(userId: string, petId: string): Promise<void> {
         `https://api.dicebear.com/7.x/thumbs/svg?seed=${userId}`,
       followedAt: serverTimestamp(),
     });
-    transaction.set(userRef, { followingPetsCount: increment(1) }, { merge: true });
-    transaction.set(petRef, { followerCount: increment(1) }, { merge: true });
     created = true;
   });
 
@@ -98,8 +93,6 @@ export async function followPet(userId: string, petId: string): Promise<void> {
 export async function unfollowPet(userId: string, petId: string): Promise<void> {
   if (!userId || !petId) return;
 
-  const userRef = doc(db, "users", userId);
-  const petRef = doc(db, "pets", petId);
   const followingRef = doc(db, "users", userId, "followingPets", petId);
   const followerRef = doc(db, "pets", petId, "followers", userId);
 
@@ -109,12 +102,6 @@ export async function unfollowPet(userId: string, petId: string): Promise<void> 
 
     transaction.delete(followingRef);
     transaction.delete(followerRef);
-    transaction.set(
-      userRef,
-      { followingPetsCount: increment(-1) },
-      { merge: true }
-    );
-    transaction.set(petRef, { followerCount: increment(-1) }, { merge: true });
   });
 }
 
@@ -159,4 +146,3 @@ export async function ensureUserDoc(
     { merge: true }
   );
 }
-
