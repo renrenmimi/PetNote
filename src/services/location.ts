@@ -1,4 +1,12 @@
-import { deleteField, doc, getDoc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import {
+  deleteDoc,
+  deleteField,
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 import { db } from "./firebase";
 
 export type UserLocation = {
@@ -66,29 +74,60 @@ export async function saveUserLocation(
   location: Omit<UserLocation, "updatedAt">
 ): Promise<void> {
   const userRef = doc(db, "users", userId);
-  await setDoc(
-    userRef,
-    {
-      location: {
+  const privateLocationRef = doc(db, "users", userId, "settings", "location");
+  await Promise.all([
+    setDoc(
+      privateLocationRef,
+      {
         ...location,
         updatedAt: serverTimestamp(),
       },
-    },
-    { merge: true }
-  );
+      { merge: true }
+    ),
+    setDoc(
+      userRef,
+      {
+        location: {
+          city: location.city,
+          state: location.state,
+          updatedAt: serverTimestamp(),
+        },
+      },
+      { merge: true }
+    ),
+  ]);
 }
 
 export async function getUserLocation(
   userId: string
 ): Promise<UserLocation | null> {
+  const privateLocationRef = doc(db, "users", userId, "settings", "location");
+  const privateSnapshot = await getDoc(privateLocationRef);
+  if (privateSnapshot.exists()) {
+    return privateSnapshot.data() as UserLocation;
+  }
+
   const userRef = doc(db, "users", userId);
-  const snapshot = await getDoc(userRef);
-  if (!snapshot.exists()) return null;
-  const data = snapshot.data() as { location?: UserLocation };
-  return data.location ?? null;
+  const publicSnapshot = await getDoc(userRef);
+  if (!publicSnapshot.exists()) return null;
+  const data = publicSnapshot.data() as { location?: Partial<UserLocation> };
+  const location = data.location;
+  if (
+    location &&
+    typeof location.lat === "number" &&
+    typeof location.lng === "number" &&
+    typeof location.city === "string"
+  ) {
+    return location as UserLocation;
+  }
+  return null;
 }
 
 export async function clearUserLocation(userId: string): Promise<void> {
   const userRef = doc(db, "users", userId);
-  await updateDoc(userRef, { location: deleteField() });
+  const privateLocationRef = doc(db, "users", userId, "settings", "location");
+  await Promise.all([
+    deleteDoc(privateLocationRef).catch(() => undefined),
+    updateDoc(userRef, { location: deleteField() }),
+  ]);
 }

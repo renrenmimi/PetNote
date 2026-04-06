@@ -5,7 +5,11 @@ import Avatar from "../components/Avatar";
 import { LocationRatingModal } from "../components/LocationRatingModal";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../contexts/ToastContext";
-import { calculateDistance } from "../services/location";
+import {
+  calculateDistance,
+  getUserLocation,
+  type UserLocation,
+} from "../services/location";
 import {
   checkAndUpdateMeetupStatus,
   cancelMeetup,
@@ -128,6 +132,7 @@ export function MeetupDetail() {
     eligible: boolean;
     reasons: string[];
   }>({ eligible: true, reasons: [] });
+  const [viewerLocation, setViewerLocation] = useState<UserLocation | null>(null);
 
   useEffect(() => {
     let ignore = false;
@@ -195,6 +200,30 @@ export function MeetupDetail() {
       ignore = true;
     };
   }, [user]);
+
+  useEffect(() => {
+    let ignore = false;
+    if (!user?.uid) {
+      setViewerLocation(null);
+      return;
+    }
+    const loadLocation = async () => {
+      try {
+        const locationData = await getUserLocation(user.uid);
+        if (!ignore) {
+          setViewerLocation(locationData);
+        }
+      } catch {
+        if (!ignore) {
+          setViewerLocation(null);
+        }
+      }
+    };
+    void loadLocation();
+    return () => {
+      ignore = true;
+    };
+  }, [user?.uid]);
 
   useEffect(() => {
     let ignore = false;
@@ -283,17 +312,17 @@ export function MeetupDetail() {
     .filter(Boolean)
     .join(", ");
   const distance = useMemo(() => {
-    if (!meetup || !profile?.location) return null;
+    if (!meetup || !viewerLocation) return null;
     // Use private address coordinates when available, fall back to public
     const loc = privateAddress ?? meetup.location;
     if (!loc.lat || !loc.lng) return null;
     return calculateDistance(
-      profile.location.lat,
-      profile.location.lng,
+      viewerLocation.lat,
+      viewerLocation.lng,
       loc.lat,
       loc.lng
     );
-  }, [meetup, profile?.location, privateAddress]);
+  }, [meetup, viewerLocation, privateAddress]);
 
   const handleJoin = async () => {
     if (!user || !meetup || joining) return;

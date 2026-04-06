@@ -14,7 +14,7 @@ import {
   type Meetup,
 } from "../services/meetups";
 import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
-import { calculateDistance } from "../services/location";
+import { calculateDistance, getUserLocation, type UserLocation } from "../services/location";
 import { getLocation, type Location } from "../services/locations";
 
 type FilterKey = "nearby" | "week" | "mine" | "dogs" | "cats" | "other";
@@ -73,15 +73,36 @@ const statusStyles: Record<string, string> = {
 
 export function Meetups() {
   const navigate = useNavigate();
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const [activeFilter, setActiveFilter] = useState<FilterKey>("nearby");
   const [meetups, setMeetups] = useState<Meetup[]>([]);
   const [loading, setLoading] = useState(true);
   const [locationRatings, setLocationRatings] = useState<
     Record<string, Location>
   >({});
+  const [storedUserLocation, setStoredUserLocation] = useState<UserLocation | null>(null);
+  const userLocation = user?.uid ? storedUserLocation : null;
 
-  const userLocation = profile?.location;
+  useEffect(() => {
+    let ignore = false;
+    if (!user?.uid) return;
+    const loadLocation = async () => {
+      try {
+        const locationData = await getUserLocation(user.uid);
+        if (!ignore) {
+          setStoredUserLocation(locationData);
+        }
+      } catch {
+        if (!ignore) {
+          setStoredUserLocation(null);
+        }
+      }
+    };
+    void loadLocation();
+    return () => {
+      ignore = true;
+    };
+  }, [user?.uid]);
 
   useEffect(() => {
     let ignore = false;

@@ -163,11 +163,7 @@ service cloud.firestore {
       match /comments/{commentId} {
         allow read: if true;
         allow create: if false;
-        allow delete: if isAuthenticated() && (
-          resource.data.authorId == request.auth.uid ||
-          get(/databases/$(database)/documents/posts/$(postId)).data.authorId == request.auth.uid ||
-          isAdmin()
-        );
+        allow delete: if false;
         allow update: if false;
       }
     }
@@ -187,17 +183,8 @@ service cloud.firestore {
         allow read: if true;
         allow create: if isAuthenticated() && request.auth.uid == userId &&
           isAllowedFamilyCreate(userId) && (
-            (
-              get(/databases/$(database)/documents/pets/$(petId)).data.primaryOwnerId == request.auth.uid &&
-              request.resource.data.role == 'primary'
-            ) ||
-            (
-              request.resource.data.role == 'member' &&
-              ('invitationCode' in request.resource.data) &&
-              exists(/databases/$(database)/documents/pets/$(petId)/invitations/$(request.resource.data.invitationCode)) &&
-              get(/databases/$(database)/documents/pets/$(petId)/invitations/$(request.resource.data.invitationCode)).data.used == false &&
-              get(/databases/$(database)/documents/pets/$(petId)/invitations/$(request.resource.data.invitationCode)).data.expiresAt > request.time
-            )
+            get(/databases/$(database)/documents/pets/$(petId)).data.primaryOwnerId == request.auth.uid &&
+            request.resource.data.role == 'primary'
           );
         allow update: if false;
         allow delete: if isAuthenticated() && (
@@ -209,19 +196,8 @@ service cloud.firestore {
 
       match /invitations/{code} {
         allow read: if isAuthenticated();
-        allow create: if isAuthenticated() &&
-          exists(/databases/$(database)/documents/pets/$(petId)/family/$(request.auth.uid));
-        // Redemption: any authenticated user can mark unused invitation as used,
-        // but usedBy MUST match their own UID (prevents claiming as someone else)
-        allow update: if isAuthenticated() && (
-          resource.data.createdBy == request.auth.uid ||
-          get(/databases/$(database)/documents/pets/$(petId)).data.primaryOwnerId == request.auth.uid ||
-          isAdmin() ||
-          (resource.data.used == false &&
-           request.resource.data.used == true &&
-           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedBy', 'usedByName']) &&
-           request.resource.data.usedBy == request.auth.uid)
-        );
+        allow create: if false;
+        allow update: if false;
         allow delete: if false;
       }
 

@@ -16,7 +16,6 @@ import {
   type QueryDocumentSnapshot,
   updateDoc,
   where,
-  writeBatch,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
@@ -306,28 +305,10 @@ export async function deleteComment(
   postId: string,
   commentId: string
 ): Promise<void> {
-  const commentRef = doc(db, "posts", postId, "comments", commentId);
-  let didDelete = false;
-
-  // Only delete the comment doc. Count decrement is handled by
-  // onCommentDeleted Cloud Function to avoid double-decrement.
-  const commentSnap = await getDoc(commentRef);
-  if (!commentSnap.exists()) return;
-  await deleteDoc(commentRef);
-  didDelete = true;
-
-  if (!didDelete) return;
-  const notificationsRef = collection(db, "notifications");
-  const notificationsQuery = query(
-    notificationsRef,
-    where("postId", "==", postId),
-    where("commentId", "==", commentId)
-  );
-  const snapshot = await getDocs(notificationsQuery);
-  if (snapshot.empty) return;
-  const batch = writeBatch(db);
-  snapshot.docs.forEach((docSnap) => batch.delete(docSnap.ref));
-  await batch.commit();
+  await httpsCallable<{ postId: string; commentId: string }, { success: boolean }>(
+    functions,
+    "deleteCommentCallable"
+  )({ postId, commentId });
 }
 
 export async function deletePost(postId: string): Promise<void> {

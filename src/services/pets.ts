@@ -13,7 +13,8 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { httpsCallable } from "firebase/functions";
+import { db, functions } from "./firebase";
 import type { PostData, Post } from "./posts";
 import type { PetGender, PetSpecies } from "../utils/petHelpers";
 import { getUserProfile } from "./users";
@@ -307,7 +308,10 @@ export async function removeFamilyMember(
   petId: string,
   targetUserId: string
 ): Promise<void> {
-  await deleteDoc(doc(db, `pets/${petId}/family/${targetUserId}`));
+  await httpsCallable<
+    { petId: string; targetUserId: string },
+    { success: boolean }
+  >(functions, "removeFamilyMemberCallable")({ petId, targetUserId });
 }
 
 export async function getPetById(petId: string): Promise<Pet | null> {
