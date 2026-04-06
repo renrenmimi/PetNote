@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Timestamp, doc as firestoreDoc, setDoc, deleteDoc, deleteField } from "firebase/firestore";
+import { Timestamp } from "firebase/firestore";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../contexts/ToastContext";
@@ -13,8 +13,6 @@ import {
   type Meetup,
   type MeetupRequirements,
 } from "../services/meetups";
-import { getOrCreateLocation } from "../services/locations";
-import { db } from "../services/firebase";
 import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 
 const durations = [
@@ -270,42 +268,6 @@ export function EditMeetup() {
       };
 
       const resolvedLocationName = locationName.trim() || address.trim();
-      const isPrivate = locationVisibility === "participants_only";
-
-      // For private meetups: don't create public location, don't expose address
-      let resolvedLocationId: string | undefined;
-      if (!isPrivate) {
-        resolvedLocationId = await getOrCreateLocation({
-          name: resolvedLocationName,
-          address: address.trim(),
-          lat,
-          lng,
-          city: locationCity.trim(),
-          state: locationState.trim(),
-          category: "community_park",
-          addedBy: meetup.organizerId,
-          addedByName: meetup.organizerName,
-          source: "meetup",
-        });
-      }
-
-      const publicLocation = isPrivate
-        ? {
-            name: resolvedLocationName,
-            address: "",
-            lat: 0,
-            lng: 0,
-            city: locationCity.trim() || undefined,
-            state: locationState.trim() || undefined,
-          }
-        : {
-            name: resolvedLocationName,
-            address: address.trim(),
-            lat,
-            lng,
-            city: locationCity.trim() || undefined,
-            state: locationState.trim() || undefined,
-          };
 
       await updateMeetup(meetup.id, {
         title: title.trim(),
@@ -313,27 +275,17 @@ export function EditMeetup() {
         coverImage,
         date: Timestamp.fromDate(start),
         duration,
-        location: publicLocation,
-        locationId: resolvedLocationId ?? (deleteField() as unknown as string),
-        locationVisibility,
-        requirements,
-      });
-
-      const privateRef = firestoreDoc(db, "meetups", meetup.id, "private", "address");
-      if (isPrivate) {
-        // Write full address to private subcollection
-        await setDoc(privateRef, {
+        location: {
+          name: resolvedLocationName,
           address: address.trim(),
           lat,
           lng,
-          name: resolvedLocationName,
-          city: locationCity.trim(),
-          state: locationState.trim(),
-        });
-      } else {
-        // Switching from private to public: clean up private address doc
-        try { await deleteDoc(privateRef); } catch { /* may not exist */ }
-      }
+          city: locationCity.trim() || undefined,
+          state: locationState.trim() || undefined,
+        },
+        locationVisibility,
+        requirements,
+      });
       showToast("Meetup updated", "success");
       navigate(`/meetups/${meetup.id}`, { replace: true });
     } catch (err) {
