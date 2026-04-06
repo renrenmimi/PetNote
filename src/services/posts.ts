@@ -22,10 +22,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 // Tag counting handled by onPostWritten Cloud Function
-import { createNotification } from "./notifications";
 import { getFollowingPets } from "./follow";
-import { getUserProfile } from "./users";
-import { getPetFamily } from "./pets";
 import { removeUndefined } from "../utils/removeUndefined";
 
 export type MediaItem = {
@@ -283,7 +280,6 @@ export async function likePost(postId: string, userId: string): Promise<void> {
   if (!postSnap.exists()) {
     return;
   }
-  const postData = postSnap.data() as PostData;
   let didLike = false;
 
   await runTransaction(db, async (transaction) => {
@@ -303,53 +299,6 @@ export async function likePost(postId: string, userId: string): Promise<void> {
   });
 
   if (!didLike) return;
-  if (postData.petId) {
-    const [profile, familyMembers] = await Promise.all([
-      getUserProfile(userId),
-      getPetFamily(postData.petId),
-    ]);
-    const recipientIds = Array.from(
-      new Set(
-        familyMembers
-          .map((member) => member.userId)
-          .filter((memberId) => memberId && memberId !== userId)
-      )
-    );
-    await Promise.all(
-      recipientIds.map((recipientId) =>
-        createNotification({
-          userId: recipientId,
-          type: "like",
-          fromUserId: userId,
-          fromUserName: profile?.displayName || "PetNote User",
-          fromUserAvatar:
-            profile?.avatarUrl ||
-            `https://api.dicebear.com/7.x/thumbs/svg?seed=${userId}`,
-          postId,
-          postImage: postData.mediaUrl,
-          message: `${profile?.displayName || "Someone"} liked ${
-            postData.petName || "this pet"
-          }'s post`,
-        })
-      )
-    );
-    return;
-  }
-
-  if (postData.authorId !== userId) {
-    const profile = await getUserProfile(userId);
-    await createNotification({
-      userId: postData.authorId,
-      type: "like",
-      fromUserId: userId,
-      fromUserName: profile?.displayName || "PetNote User",
-      fromUserAvatar:
-        profile?.avatarUrl || "https://i.pravatar.cc/150?img=12",
-      postId,
-      postImage: postData.mediaUrl,
-      message: "liked your post",
-    });
-  }
 }
 
 export async function unlikePost(postId: string, userId: string): Promise<void> {
@@ -372,8 +321,7 @@ export async function checkIfLiked(
 
 export async function addComment(
   postId: string,
-  comment: Comment,
-  replyToUserId?: string
+  comment: Comment
 ): Promise<string> {
   const commentsRef = collection(db, "posts", postId, "comments");
   const payload: Comment = {
@@ -388,7 +336,6 @@ export async function addComment(
   if (!postSnap.exists()) {
     return "";
   }
-  const postData = postSnap.data() as PostData;
   const result = await runTransaction(db, async (transaction) => {
     const newCommentRef = doc(commentsRef);
     transaction.set(newCommentRef, removeUndefined(payload));
@@ -397,64 +344,6 @@ export async function addComment(
     });
     return newCommentRef.id;
   });
-  if (result && postData.petId) {
-    const familyMembers = await getPetFamily(postData.petId);
-    const recipientIds = Array.from(
-      new Set(
-        familyMembers
-          .map((member) => member.userId)
-          .filter((memberId) => memberId && memberId !== comment.authorId)
-      )
-    );
-    await Promise.all(
-      recipientIds.map((recipientId) =>
-        createNotification({
-          userId: recipientId,
-          type: "comment",
-          fromUserId: comment.authorId,
-          fromUserName: comment.authorName || "PetNote User",
-          fromUserAvatar:
-            comment.authorAvatar ||
-            `https://api.dicebear.com/7.x/thumbs/svg?seed=${comment.authorId}`,
-          postId,
-          postImage: postData.mediaUrl,
-          message: `${comment.authorName || "Someone"} commented on ${
-            postData.petName || "this pet"
-          }'s post`,
-          commentId: result,
-        })
-      )
-    );
-  } else if (result && postData.authorId !== comment.authorId) {
-    if (replyToUserId !== postData.authorId) {
-      await createNotification({
-        userId: postData.authorId,
-        type: "comment",
-        fromUserId: comment.authorId,
-        fromUserName: comment.authorName || "PetNote User",
-        fromUserAvatar:
-          comment.authorAvatar || "https://i.pravatar.cc/150?img=12",
-        postId,
-        postImage: postData.mediaUrl,
-        message: "commented on your post",
-        commentId: result,
-      });
-    }
-  }
-  if (replyToUserId && replyToUserId !== comment.authorId) {
-    await createNotification({
-      userId: replyToUserId,
-      type: "reply",
-      fromUserId: comment.authorId,
-      fromUserName: comment.authorName || "PetNote User",
-      fromUserAvatar:
-        comment.authorAvatar || "https://i.pravatar.cc/150?img=12",
-      postId,
-      postImage: postData.mediaUrl,
-      message: "replied to your comment",
-      commentId: result,
-    });
-  }
   return result;
 }
 
