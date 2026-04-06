@@ -6,7 +6,6 @@ import {
   doc,
   getDoc,
   getDocs,
-  increment,
   limit,
   orderBy,
   query,
@@ -17,10 +16,9 @@ import {
   where,
   type QueryConstraint,
   type QueryDocumentSnapshot,
-  runTransaction,
   setDoc,
 } from "firebase/firestore";
-import { auth, db } from "./firebase";
+import { db } from "./firebase";
 import { calculateDistance } from "./location";
 import { getUserProfile } from "./users";
 import { getUserStats } from "./posts";
@@ -178,19 +176,15 @@ export async function checkAndUpdateMeetupStatus(
     dateValue.getTime() + (meetup.duration || 0) * 60 * 1000
   );
   if (new Date() >= endTime) {
-    if (auth.currentUser?.uid === meetup.organizerId) {
-      try {
-        await updateDoc(meetupRef, {
-          status: "completed",
-          isRatingOpen: true,
-          updatedAt: serverTimestamp(),
-        });
-        return { ...meetup, status: "completed", isRatingOpen: true };
-      } catch {
-        return meetup;
-      }
+    // Use callable CF to update status (admin SDK, any user can trigger)
+    try {
+      const { getFunctions, httpsCallable } = await import("firebase/functions");
+      const functions = getFunctions();
+      await httpsCallable(functions, "checkMeetupStatusCallable")({ meetupId });
+      return { ...meetup, status: "completed", isRatingOpen: true };
+    } catch {
+      return meetup;
     }
-    return meetup;
   }
   return meetup;
 }
@@ -376,7 +370,7 @@ export async function getParticipants(meetupId: string): Promise<Participant[]> 
 
 export async function joinMeetup(
   meetupId: string,
-  userId: string,
+  _userId: string,
   petData: {
     petId: string;
     petName: string;
@@ -384,89 +378,24 @@ export async function joinMeetup(
     petSpecies?: string;
   }
 ): Promise<void> {
-  const meetupRef = doc(db, "meetups", meetupId);
-  const participantRef = doc(
-    db,
-    "meetups",
+  // userId is unused — the CF gets it from auth.uid.
+  // Kept in signature for call-site compatibility.
+  // This prevents clients from bypassing business rules by writing directly.
+  const { getFunctions, httpsCallable } = await import("firebase/functions");
+  const functions = getFunctions();
+  const result = await httpsCallable<
+    { meetupId: string; petId: string; petName: string; petAvatar: string; petSpecies?: string },
+    { success: boolean; error?: string }
+  >(functions, "joinMeetupCallable")({
     meetupId,
-    "participants",
-    userId
-  );
-  const meetupSnap = await getDoc(meetupRef);
-  if (!meetupSnap.exists()) throw new Error("Meetup not found");
-  const meetup = meetupSnap.data() as MeetupData;
-
-  let eligibility: {
-    eligible: boolean;
-    reasons: string[];
-    userName: string;
-    userAvatar: string;
-  };
-
-  if (meetup.organizerId !== userId) {
-    eligibility = await checkRequirements(
-      userId,
-      petData.petSpecies,
-      meetup.requirements,
-      meetup
-    );
-    if (!eligibility.eligible) {
-      throw new Error(eligibility.reasons.join(" "));
-    }
-  } else {
-    const profile = await getUserProfile(userId);
-    eligibility = {
-      eligible: true,
-      reasons: [],
-      userName: profile?.displayName || "PetNote User",
-      userAvatar:
-        profile?.avatarUrl ||
-        `https://api.dicebear.com/7.x/thumbs/svg?seed=${userId}`,
-    };
-  }
-
-  const safeUserAvatar =
-    eligibility.userAvatar && eligibility.userAvatar.trim().length > 0
-      ? eligibility.userAvatar
-      : `https://api.dicebear.com/7.x/thumbs/svg?seed=${userId}`;
-  const safePetAvatar =
-    petData.petAvatar && petData.petAvatar.trim().length > 0
-      ? petData.petAvatar
-      : `https://api.dicebear.com/7.x/thumbs/svg?seed=${petData.petId}`;
-
-  await runTransaction(db, async (transaction) => {
-    const freshMeetupSnap = await transaction.get(meetupRef);
-    const participantSnap = await transaction.get(participantRef);
-    if (!freshMeetupSnap.exists()) {
-      throw new Error("Meetup not found");
-    }
-    const freshMeetup = freshMeetupSnap.data() as MeetupData;
-    if (participantSnap.exists()) return;
-    if (freshMeetup.status === "cancelled" || freshMeetup.status === "completed") {
-      throw new Error("Meetup is no longer accepting participants");
-    }
-    if (
-      freshMeetup.requirements.maxPets > 0 &&
-      (freshMeetup.participantCount ?? 0) >= freshMeetup.requirements.maxPets
-    ) {
-      throw new Error("Meetup is full");
-    }
-    transaction.set(participantRef, {
-      meetupId,
-      userId,
-      userName: eligibility.userName,
-      userAvatar: safeUserAvatar,
-      petId: petData.petId,
-      petName: petData.petName,
-      petAvatar: safePetAvatar,
-      joinedAt: serverTimestamp(),
-      status: "confirmed",
-    });
-    transaction.update(meetupRef, {
-      participantCount: increment(1),
-      updatedAt: serverTimestamp(),
-    });
+    petId: petData.petId,
+    petName: petData.petName,
+    petAvatar: petData.petAvatar,
+    petSpecies: petData.petSpecies,
   });
+  if (!result.data.success && result.data.error) {
+    throw new Error(result.data.error);
+  }
 }
 
 export async function leaveMeetup(
