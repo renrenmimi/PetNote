@@ -38,9 +38,77 @@ service cloud.firestore {
     // Prevents setting role, banned, or other sensitive fields on create.
     function isAllowedUserCreate() {
       let allowed = ['displayName', 'displayNameLower', 'avatarUrl', 'bio',
-                      'location', 'onboardingComplete', 'createdAt',
-                      'followerCount', 'followingCount', 'followingPetsCount'];
+                      'location', 'onboardingComplete', 'createdAt'];
       return request.resource.data.keys().hasOnly(allowed);
+    }
+
+    function isAllowedPostCreate() {
+      let allowed = ['authorId', 'authorName', 'authorAvatar', 'text', 'media',
+                      'mediaUrl', 'mediaType', 'petId', 'petName', 'petAvatarUrl',
+                      'createdAt', 'likeCount', 'commentCount', 'tags'];
+      return request.resource.data.keys().hasOnly(allowed) &&
+        request.resource.data.authorId == request.auth.uid &&
+        request.resource.data.likeCount == 0 &&
+        request.resource.data.commentCount == 0;
+    }
+
+    function isAllowedPostUpdate() {
+      let allowed = ['text', 'tags', 'petId', 'petName', 'petAvatarUrl'];
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
+    }
+
+    function isAllowedPetCreate() {
+      let allowed = ['ownerId', 'primaryOwnerId', 'name', 'nameLower', 'species',
+                      'breed', 'birthday', 'age', 'gender', 'bio', 'avatarUrl',
+                      'followerCount', 'createdAt'];
+      return request.resource.data.keys().hasOnly(allowed) &&
+        request.resource.data.ownerId == request.auth.uid &&
+        request.resource.data.primaryOwnerId == request.auth.uid &&
+        request.resource.data.followerCount == 0;
+    }
+
+    function isAllowedPetUpdate() {
+      let allowed = ['name', 'nameLower', 'species', 'breed', 'birthday',
+                      'age', 'gender', 'bio', 'avatarUrl'];
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
+    }
+
+    function isAllowedMeetupCreate() {
+      let allowed = ['organizerId', 'organizerName', 'organizerAvatar', 'title',
+                      'description', 'coverImage', 'date', 'duration', 'location',
+                      'locationId', 'locationVisibility', 'requirements', 'status',
+                      'participantCount', 'isRatingOpen', 'createdAt', 'updatedAt'];
+      return request.resource.data.keys().hasOnly(allowed) &&
+        request.resource.data.organizerId == request.auth.uid &&
+        request.resource.data.status == 'upcoming' &&
+        request.resource.data.participantCount == 0 &&
+        request.resource.data.isRatingOpen == false;
+    }
+
+    function isAllowedMeetupUpdate() {
+      let allowed = ['title', 'description', 'coverImage', 'date', 'duration',
+                      'location', 'locationId', 'locationVisibility', 'requirements',
+                      'status', 'updatedAt', 'isRatingOpen'];
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
+    }
+
+    function isAllowedLocationCreate() {
+      let allowed = ['name', 'category', 'description', 'address', 'lat', 'lng',
+                      'city', 'state', 'features', 'photos', 'locationPhotos',
+                      'addedBy', 'addedByName', 'averageRating', 'totalRatings',
+                      'totalPhotos', 'totalCheckins', 'verifiedByCheckins', 'tags',
+                      'source', 'verified', 'createdAt', 'updatedAt'];
+      return request.resource.data.keys().hasOnly(allowed) &&
+        request.resource.data.addedBy == request.auth.uid &&
+        request.resource.data.averageRating == 0 &&
+        request.resource.data.totalRatings == 0 &&
+        request.resource.data.totalPhotos >= 0 &&
+        request.resource.data.verified == false;
+    }
+
+    function isAllowedLocationUpdate() {
+      let allowed = ['photos', 'locationPhotos', 'totalPhotos', 'updatedAt'];
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
     }
 
     // ========= users =========
@@ -88,9 +156,10 @@ service cloud.firestore {
     match /posts/{postId} {
       allow read: if true;
       // Require email verification for content creation
-      allow create: if isAuthenticated() && isNotBanned() && isEmailVerified();
+      allow create: if isAuthenticated() && isNotBanned() && isEmailVerified() &&
+        isAllowedPostCreate();
       allow update: if isAuthenticated() &&
-        (resource.data.authorId == request.auth.uid || isAdmin());
+        ((resource.data.authorId == request.auth.uid && isAllowedPostUpdate()) || isAdmin());
       allow delete: if isAuthenticated() &&
         (resource.data.authorId == request.auth.uid || isAdmin());
 
@@ -108,7 +177,7 @@ service cloud.firestore {
           get(/databases/$(database)/documents/posts/$(postId)).data.authorId == request.auth.uid ||
           isAdmin()
         );
-        allow update: if isAuthenticated() && resource.data.authorId == request.auth.uid;
+        allow update: if false;
       }
     }
 
@@ -116,9 +185,10 @@ service cloud.firestore {
     match /pets/{petId} {
       allow read: if true;
       allow create: if isAuthenticated() && isNotBanned() &&
-        request.resource.data.ownerId == request.auth.uid;
+        isAllowedPetCreate();
       allow update: if isAuthenticated() &&
-        (resource.data.ownerId == request.auth.uid || resource.data.primaryOwnerId == request.auth.uid);
+        ((resource.data.ownerId == request.auth.uid || resource.data.primaryOwnerId == request.auth.uid) &&
+         isAllowedPetUpdate());
       allow delete: if isAuthenticated() &&
         (resource.data.ownerId == request.auth.uid || resource.data.primaryOwnerId == request.auth.uid || isAdmin());
 
@@ -180,9 +250,10 @@ service cloud.firestore {
     // ========= meetups =========
     match /meetups/{meetupId} {
       allow read: if true;
-      allow create: if isAuthenticated() && isNotBanned() && isEmailVerified();
+      allow create: if isAuthenticated() && isNotBanned() && isEmailVerified() &&
+        isAllowedMeetupCreate();
       allow update: if isAuthenticated() &&
-        (resource.data.organizerId == request.auth.uid || isAdmin());
+        ((resource.data.organizerId == request.auth.uid && isAllowedMeetupUpdate()) || isAdmin());
       allow delete: if isAuthenticated() &&
         (resource.data.organizerId == request.auth.uid || isAdmin());
 
@@ -213,12 +284,13 @@ service cloud.firestore {
     // ========= locations =========
     match /locations/{locationId} {
       allow read: if true;
-      allow create: if isAuthenticated() && isNotBanned() && isEmailVerified();
+      allow create: if isAuthenticated() && isNotBanned() && isEmailVerified() &&
+        isAllowedLocationCreate();
       // Only location creator or admin can update. Aggregation fields
       // (averageRating, totalRatings, totalCheckins, etc.) are maintained
       // exclusively by Cloud Functions using admin SDK.
       allow update: if isAuthenticated() && isNotBanned() &&
-        (resource.data.addedBy == request.auth.uid || isAdmin());
+        ((resource.data.addedBy == request.auth.uid && isAllowedLocationUpdate()) || isAdmin());
       allow delete: if isAdmin();
 
       match /reviews/{reviewId} {

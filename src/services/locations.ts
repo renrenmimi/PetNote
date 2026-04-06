@@ -57,6 +57,7 @@ export type Location = {
   category: PlaceCategory;
   description: string;
   features: PlaceFeature[];
+  locationPhotos?: string[];
   photos: string[];
   addedBy: string;
   addedByName: string;
@@ -128,6 +129,7 @@ export async function getOrCreateLocation(data: {
             category: data.category ?? "community_park",
             description: data.description ?? "",
             features: data.features ?? [],
+            locationPhotos: data.photos ?? [],
             photos: data.photos ?? [],
             addedBy: data.addedBy ?? "",
             addedByName: data.addedByName ?? "",
@@ -272,6 +274,7 @@ export async function addPlace(data: {
     }
     transaction.set(locationRef, {
       ...data,
+      locationPhotos: data.photos,
       averageRating: 0,
       totalRatings: 0,
       totalPhotos: data.photos.length,
@@ -292,6 +295,7 @@ export async function addPhotosToPlace(
 ): Promise<void> {
   const locationRef = doc(db, "locations", locationId);
   await updateDoc(locationRef, {
+    locationPhotos: arrayUnion(...photoUrls),
     photos: arrayUnion(...photoUrls),
     totalPhotos: increment(photoUrls.length || 0),
     updatedAt: serverTimestamp(),
