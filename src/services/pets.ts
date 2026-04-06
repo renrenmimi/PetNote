@@ -1,24 +1,17 @@
 import {
-  addDoc,
   collection,
   collectionGroup,
-  deleteDoc,
   doc,
   getDoc,
   getDocs,
   orderBy,
   query,
-  serverTimestamp,
-  setDoc,
   where,
-  writeBatch,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
 import type { PostData, Post } from "./posts";
 import type { PetGender, PetSpecies } from "../utils/petHelpers";
-import { getUserProfile } from "./users";
-import { removeUndefined } from "../utils/removeUndefined";
 
 export type PetFamilyRelationship =
   | "mom"
@@ -154,43 +147,46 @@ export async function createPet(
   customRelationship?: string
 ): Promise<string> {
   try {
-    const petsRef = collection(db, "pets");
-    const ownerQuery = query(petsRef, where("ownerId", "==", ownerId));
-    const snapshot = await getDocs(ownerQuery);
-    if (snapshot.size >= 5) {
-      throw new Error("Maximum 5 pets allowed");
-    }
-
-    const result = await addDoc(
-      petsRef,
-      removeUndefined({
-        ...data,
-        nameLower: data.name.toLowerCase(),
-        ownerId,
-        primaryOwnerId: ownerId,
-        followerCount: 0,
-        createdAt: serverTimestamp(),
-      })
-    );
-
-    const creatorProfile = await getUserProfile(ownerId);
     const relationshipData = sanitizeRelationship(relationship, customRelationship);
+    const birthdayValue = data.birthday;
+    const birthdayDate =
+      birthdayValue instanceof Date
+        ? birthdayValue
+        : typeof birthdayValue === "object" &&
+            birthdayValue !== null &&
+            "toDate" in birthdayValue &&
+            typeof (birthdayValue as { toDate: () => Date }).toDate === "function"
+          ? (birthdayValue as { toDate: () => Date }).toDate()
+          : null;
 
-    await setDoc(doc(db, `pets/${result.id}/family/${ownerId}`), {
-      userId: ownerId,
-      userName: creatorProfile?.displayName || "User",
-      userAvatar:
-        creatorProfile?.avatarUrl ||
-        `https://api.dicebear.com/7.x/thumbs/svg?seed=${ownerId}`,
+    const createPetCallable = httpsCallable<
+      {
+        name: string;
+        species: PetSpecies;
+        breed?: string;
+        birthdayMillis?: number;
+        gender: PetGender;
+        bio: string;
+        avatarUrl: string;
+        relationship: PetFamilyRelationship;
+        customRelationship?: string;
+      },
+      { id: string }
+    >(functions, "createPetCallable");
+
+    const result = await createPetCallable({
+      name: data.name,
+      species: data.species,
+      breed: data.breed,
+      birthdayMillis: birthdayDate?.getTime(),
+      gender: data.gender,
+      bio: data.bio,
+      avatarUrl: data.avatarUrl,
       relationship: relationshipData.relationship,
-      ...(relationshipData.customRelationship
-        ? { customRelationship: relationshipData.customRelationship }
-        : {}),
-      role: "primary",
-      joinedAt: serverTimestamp(),
+      customRelationship: relationshipData.customRelationship,
     });
 
-    return result.id;
+    return result.data.id;
   } catch (error) {
     console.error("Failed to create pet. ownerId:", ownerId, error);
     throw error;
@@ -201,44 +197,46 @@ export async function updatePet(
   petId: string,
   data: Partial<Omit<Pet, "id" | "ownerId">>
 ): Promise<void> {
-  const petRef = doc(db, "pets", petId);
-  await setDoc(
-    petRef,
-    removeUndefined({
-      ...data,
-      ...(data.name ? { nameLower: data.name.toLowerCase() } : {}),
-    }),
-    { merge: true }
-  );
-}
+  const birthdayValue = data.birthday;
+  const birthdayDate =
+    birthdayValue instanceof Date
+      ? birthdayValue
+      : typeof birthdayValue === "object" &&
+          birthdayValue !== null &&
+          "toDate" in birthdayValue &&
+          typeof (birthdayValue as { toDate: () => Date }).toDate === "function"
+        ? (birthdayValue as { toDate: () => Date }).toDate()
+        : undefined;
 
-async function deleteSubcollection(parentPath: string, subcollection: string): Promise<void> {
-  const ref = collection(db, parentPath, subcollection);
-  const snapshot = await getDocs(ref);
-  if (snapshot.empty) return;
-  const chunkSize = 450;
-  for (let i = 0; i < snapshot.docs.length; i += chunkSize) {
-    const batch = writeBatch(db);
-    snapshot.docs.slice(i, i + chunkSize).forEach((d) => batch.delete(d.ref));
-    await batch.commit();
-  }
+  await httpsCallable<
+    {
+      petId: string;
+      name?: string;
+      species?: PetSpecies;
+      breed?: string;
+      birthdayMillis?: number;
+      gender?: PetGender;
+      bio?: string;
+      avatarUrl?: string;
+    },
+    { success: boolean }
+  >(functions, "updatePetCallable")({
+    petId,
+    ...(data.name ? { name: data.name } : {}),
+    ...(data.species ? { species: data.species } : {}),
+    ...(typeof data.breed === "string" ? { breed: data.breed } : {}),
+    ...(birthdayDate ? { birthdayMillis: birthdayDate.getTime() } : {}),
+    ...(data.gender ? { gender: data.gender } : {}),
+    ...(typeof data.bio === "string" ? { bio: data.bio } : {}),
+    ...(typeof data.avatarUrl === "string" ? { avatarUrl: data.avatarUrl } : {}),
+  });
 }
 
 export async function deletePet(petId: string): Promise<void> {
-  // Delete subcollections first (Firestore doesn't auto-delete them)
-  await deleteSubcollection(`pets/${petId}`, "family");
-  await deleteSubcollection(`pets/${petId}`, "followers");
-  await deleteSubcollection(`pets/${petId}`, "invitations");
-
-  // NOTE: Cross-user cleanup (other users' followingPets mirrors and other
-  // authors' posts referencing this petId) cannot be done client-side because
-  // followingPets is owner-only and posts are author-only. These orphaned
-  // references should be cleaned up via Cloud Functions (onDelete trigger)
-  // or handled gracefully in the UI (check if pet exists before rendering).
-
-  // Delete the pet document
-  const petRef = doc(db, "pets", petId);
-  await deleteDoc(petRef);
+  await httpsCallable<{ petId: string }, { success: boolean }>(
+    functions,
+    "deletePetCallable"
+  )({ petId });
 }
 
 export async function getPetsByOwner(ownerId: string): Promise<Pet[]> {

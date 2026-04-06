@@ -12,6 +12,7 @@ import {
 } from "firebase/auth";
 import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth, db } from "../services/firebase";
+import { getUserLocation } from "../services/location";
 import {
   createUserProfile,
   generateUniqueUsername,
@@ -39,6 +40,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
+  const hasProfileLocation = Boolean(profile?.location);
+  const profileLocationKey = profile?.location
+    ? `${profile.location.city}|${profile.location.state}`
+    : "";
 
   // Single auth state listener for the entire app
   useEffect(() => {
@@ -74,6 +79,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     return () => unsubscribe();
   }, [user]);
+
+  useEffect(() => {
+    if (!user || !hasProfileLocation) {
+      return;
+    }
+    void getUserLocation(user.uid);
+  }, [user, hasProfileLocation, profileLocationKey]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     const result = await signInWithEmailAndPassword(auth, email, password);

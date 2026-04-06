@@ -31,7 +31,8 @@ service cloud.firestore {
     function isAllowedUserUpdate() {
       let allowed = ['displayName', 'displayNameLower', 'avatarUrl', 'bio',
                       'location', 'onboardingComplete', 'pinnedPostId'];
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed) &&
+        hasSafePublicLocation(request.resource.data);
     }
 
     // Safe fields allowed during user document creation.
@@ -39,69 +40,17 @@ service cloud.firestore {
     function isAllowedUserCreate() {
       let allowed = ['displayName', 'displayNameLower', 'avatarUrl', 'bio',
                       'location', 'onboardingComplete', 'createdAt'];
-      return request.resource.data.keys().hasOnly(allowed);
-    }
-
-    function isAllowedPetCreate() {
-      let allowed = ['ownerId', 'primaryOwnerId', 'name', 'nameLower', 'species',
-                      'breed', 'birthday', 'age', 'gender', 'bio', 'avatarUrl',
-                      'followerCount', 'createdAt'];
       return request.resource.data.keys().hasOnly(allowed) &&
-        request.resource.data.ownerId == request.auth.uid &&
-        request.resource.data.primaryOwnerId == request.auth.uid &&
-        request.resource.data.followerCount == 0;
+        hasSafePublicLocation(request.resource.data);
     }
 
-    function isAllowedPetUpdate() {
-      let allowed = ['name', 'nameLower', 'species', 'breed', 'birthday',
-                      'age', 'gender', 'bio', 'avatarUrl'];
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
-    }
-
-    function isAllowedFamilyCreate(userId) {
-      let allowed = ['userId', 'userName', 'userAvatar', 'relationship',
-                      'customRelationship', 'role', 'joinedAt', 'invitationCode'];
-      return request.resource.data.keys().hasOnly(allowed) &&
-        request.resource.data.userId == userId &&
-        (request.resource.data.role == 'primary' || request.resource.data.role == 'member');
-    }
-
-    function isAllowedMeetupCreate() {
-      let allowed = ['organizerId', 'organizerName', 'organizerAvatar', 'title',
-                      'description', 'coverImage', 'date', 'duration', 'location',
-                      'locationId', 'locationVisibility', 'requirements', 'status',
-                      'participantCount', 'isRatingOpen', 'createdAt', 'updatedAt'];
-      return request.resource.data.keys().hasOnly(allowed) &&
-        request.resource.data.organizerId == request.auth.uid &&
-        request.resource.data.status == 'upcoming' &&
-        request.resource.data.participantCount == 0 &&
-        request.resource.data.isRatingOpen == false;
-    }
-
-    function isAllowedMeetupUpdate() {
-      let allowed = ['title', 'description', 'coverImage', 'date', 'duration',
-                      'location', 'locationId', 'locationVisibility', 'requirements',
-                      'status', 'updatedAt', 'isRatingOpen'];
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
-    }
-
-    function isAllowedLocationCreate() {
-      let allowed = ['name', 'category', 'description', 'address', 'lat', 'lng',
-                      'city', 'state', 'features', 'photos', 'locationPhotos',
-                      'addedBy', 'addedByName', 'averageRating', 'totalRatings',
-                      'totalPhotos', 'totalCheckins', 'verifiedByCheckins', 'tags',
-                      'source', 'verified', 'createdAt', 'updatedAt'];
-      return request.resource.data.keys().hasOnly(allowed) &&
-        request.resource.data.addedBy == request.auth.uid &&
-        request.resource.data.averageRating == 0 &&
-        request.resource.data.totalRatings == 0 &&
-        request.resource.data.totalPhotos >= 0 &&
-        request.resource.data.verified == false;
-    }
-
-    function isAllowedLocationUpdate() {
-      let allowed = ['photos', 'locationPhotos', 'totalPhotos', 'updatedAt'];
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
+    function hasSafePublicLocation(userData) {
+      return !('location' in userData) || (
+        userData.location is map &&
+        userData.location.keys().hasOnly(['city', 'state', 'updatedAt']) &&
+        (!('city' in userData.location) || userData.location.city is string) &&
+        (!('state' in userData.location) || userData.location.state is string)
+      );
     }
 
     // ========= users =========
@@ -110,9 +59,8 @@ service cloud.firestore {
       // Owner can only create with safe fields — no role, banned, email
       allow create: if isOwner(userId) && isAllowedUserCreate();
       allow update: if (isOwner(userId) && isAllowedUserUpdate()) || isAdmin();
-      // Only admin can delete user documents. Account deletion flow uses
-      // admin SDK via Cloud Function, not client-side deleteDoc.
-      allow delete: if isAdmin();
+      // User deletion is handled exclusively by backend account-deletion logic.
+      allow delete: if false;
 
       match /bookmarks/{bookmarkId} {
         allow read: if isOwner(userId);
@@ -120,8 +68,8 @@ service cloud.firestore {
       }
 
       match /following/{targetId} {
-        allow read: if true;
-        allow write: if isOwner(userId) && isNotBanned();
+        allow read: if false;
+        allow write: if false;
       }
 
       match /followingPets/{petId} {
@@ -132,8 +80,8 @@ service cloud.firestore {
       }
 
       match /followers/{followerId} {
-        allow read: if true;
-        allow write: if isAuthenticated() && request.auth.uid == followerId && isNotBanned();
+        allow read: if false;
+        allow write: if false;
       }
 
       match /blockedUsers/{blockedId} {
@@ -171,27 +119,15 @@ service cloud.firestore {
     // ========= pets =========
     match /pets/{petId} {
       allow read: if true;
-      allow create: if isAuthenticated() && isNotBanned() &&
-        isAllowedPetCreate();
-      allow update: if isAuthenticated() &&
-        ((resource.data.ownerId == request.auth.uid || resource.data.primaryOwnerId == request.auth.uid) &&
-         isAllowedPetUpdate());
-      allow delete: if isAuthenticated() &&
-        (resource.data.ownerId == request.auth.uid || resource.data.primaryOwnerId == request.auth.uid || isAdmin());
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
 
       match /family/{userId} {
         allow read: if true;
-        allow create: if isAuthenticated() && request.auth.uid == userId &&
-          isAllowedFamilyCreate(userId) && (
-            get(/databases/$(database)/documents/pets/$(petId)).data.primaryOwnerId == request.auth.uid &&
-            request.resource.data.role == 'primary'
-          );
+        allow create: if false;
         allow update: if false;
-        allow delete: if isAuthenticated() && (
-          request.auth.uid == userId ||
-          get(/databases/$(database)/documents/pets/$(petId)).data.primaryOwnerId == request.auth.uid ||
-          get(/databases/$(database)/documents/pets/$(petId)).data.ownerId == request.auth.uid
-        );
+        allow delete: if false;
       }
 
       match /invitations/{code} {
@@ -204,11 +140,7 @@ service cloud.firestore {
       match /followers/{userId} {
         allow read: if true;
         allow create: if false;
-        allow delete: if isAuthenticated() && (
-          get(/databases/$(database)/documents/pets/$(petId)).data.ownerId == request.auth.uid ||
-          get(/databases/$(database)/documents/pets/$(petId)).data.primaryOwnerId == request.auth.uid ||
-          isAdmin()
-        );
+        allow delete: if false;
         allow update: if false;
       }
     }
@@ -230,8 +162,7 @@ service cloud.firestore {
       allow read: if true;
       allow create: if false;
       allow update: if false;
-      allow delete: if isAuthenticated() &&
-        (resource.data.organizerId == request.auth.uid || isAdmin());
+      allow delete: if false;
 
       match /participants/{participantId} {
         allow read: if true;
@@ -265,14 +196,9 @@ service cloud.firestore {
     // ========= locations =========
     match /locations/{locationId} {
       allow read: if true;
-      allow create: if isAuthenticated() && isNotBanned() && isEmailVerified() &&
-        isAllowedLocationCreate();
-      // Only location creator or admin can update. Aggregation fields
-      // (averageRating, totalRatings, totalCheckins, etc.) are maintained
-      // exclusively by Cloud Functions using admin SDK.
-      allow update: if isAuthenticated() && isNotBanned() &&
-        ((resource.data.addedBy == request.auth.uid && isAllowedLocationUpdate()) || isAdmin());
-      allow delete: if isAdmin();
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
 
       // Reviews: doc ID must be "{userId}" or "{userId}_{meetupId}" to enforce one-per-user.
       match /reviews/{reviewId} {

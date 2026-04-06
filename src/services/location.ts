@@ -118,7 +118,14 @@ export async function getUserLocation(
     typeof location.lng === "number" &&
     typeof location.city === "string"
   ) {
-    return location as UserLocation;
+    const exactLocation = location as UserLocation;
+    await saveUserLocation(userId, {
+      lat: exactLocation.lat,
+      lng: exactLocation.lng,
+      city: exactLocation.city,
+      state: exactLocation.state,
+    }).catch(() => undefined);
+    return exactLocation;
   }
   return null;
 }
