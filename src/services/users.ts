@@ -30,8 +30,6 @@ export type UserProfile = {
   onboardingComplete?: boolean;
   pinnedPostId?: string;
   location?: {
-    lat?: number;
-    lng?: number;
     city: string;
     state: string;
     updatedAt?: unknown;

@@ -218,6 +218,189 @@ const allowedMeetupPetTypes = new Set([
   "other",
 ]);
 
+const allowedPetSpecies = new Set([
+  "dog",
+  "cat",
+  "bird",
+  "rabbit",
+  "hamster",
+  "fish",
+  "reptile",
+  "other",
+]);
+
+const allowedPetGenders = new Set(["male", "female", "unknown"]);
+
+const allowedPetRelationships = new Set([
+  "mom",
+  "dad",
+  "brother",
+  "sister",
+  "grandma",
+  "grandpa",
+  "auntie",
+  "uncle",
+  "best_friend",
+  "caretaker",
+  "other",
+]);
+
+const allowedPlaceCategories = new Set([
+  "dog_park",
+  "hiking_trail",
+  "beach",
+  "community_park",
+  "cafe",
+  "green_space",
+  "pet_store",
+  "vet",
+  "other",
+]);
+
+const allowedPlaceFeatures = new Set([
+  "off_leash",
+  "fenced",
+  "water_access",
+  "waste_bags",
+  "parking",
+  "restrooms",
+  "seating",
+  "shade",
+  "lighting",
+  "beach_access",
+  "trails",
+  "food_nearby",
+]);
+
+function timestampFromMillis(value: unknown): admin.firestore.Timestamp | null {
+  return typeof value === "number" && Number.isFinite(value)
+    ? admin.firestore.Timestamp.fromMillis(value)
+    : null;
+}
+
+function sanitizePetRelationship(value: unknown, customValue: unknown): {
+  relationship: string;
+  customRelationship?: string;
+} {
+  const relationship =
+    typeof value === "string" && allowedPetRelationships.has(value) ? value : "other";
+  const customRelationship =
+    relationship === "other" &&
+    typeof customValue === "string" &&
+    customValue.trim().length > 0
+      ? customValue.trim().slice(0, 30)
+      : undefined;
+  return { relationship, customRelationship };
+}
+
+function sanitizePetDraft(value: unknown): {
+  name: string;
+  nameLower: string;
+  species: string;
+  breed: string;
+  birthday?: admin.firestore.Timestamp;
+  gender: string;
+  bio: string;
+  avatarUrl: string;
+} {
+  const data =
+    value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+
+  const name = typeof data.name === "string" ? data.name.trim() : "";
+  if (name.length < 2 || name.length > 20) {
+    throw new HttpsError("invalid-argument", "Pet name must be between 2 and 20 characters.");
+  }
+
+  const species =
+    typeof data.species === "string" && allowedPetSpecies.has(data.species)
+      ? data.species
+      : null;
+  if (!species) {
+    throw new HttpsError("invalid-argument", "Pet species is invalid.");
+  }
+
+  const gender =
+    typeof data.gender === "string" && allowedPetGenders.has(data.gender)
+      ? data.gender
+      : "unknown";
+  const breed = typeof data.breed === "string" ? data.breed.trim() : "";
+  const bio = typeof data.bio === "string" ? data.bio.trim().slice(0, 150) : "";
+  const avatarUrl = typeof data.avatarUrl === "string" ? data.avatarUrl.trim() : "";
+  const birthday = timestampFromMillis(data.birthdayMillis);
+
+  return stripUndefined({
+    name,
+    nameLower: name.toLowerCase(),
+    species,
+    breed,
+    birthday: birthday ?? undefined,
+    gender,
+    bio,
+    avatarUrl,
+  });
+}
+
+function sanitizePlaceDraft(value: unknown): {
+  name: string;
+  category: string;
+  description: string;
+  address: string;
+  lat: number;
+  lng: number;
+  city: string;
+  state: string;
+  features: string[];
+  photos: string[];
+  source: "user" | "meetup";
+} {
+  const data =
+    value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+
+  const name = typeof data.name === "string" ? data.name.trim() : "";
+  const address = typeof data.address === "string" ? data.address.trim() : "";
+  const lat = typeof data.lat === "number" ? data.lat : Number.NaN;
+  const lng = typeof data.lng === "number" ? data.lng : Number.NaN;
+  if (!name || !address || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+    throw new HttpsError("invalid-argument", "Place name, address, and coordinates are required.");
+  }
+
+  const category =
+    typeof data.category === "string" && allowedPlaceCategories.has(data.category)
+      ? data.category
+      : "other";
+  const description = typeof data.description === "string" ? data.description.trim() : "";
+  const city = typeof data.city === "string" ? data.city.trim() : "";
+  const state = typeof data.state === "string" ? data.state.trim() : "";
+  const features = Array.isArray(data.features)
+    ? Array.from(
+        new Set(
+          data.features.filter(
+            (feature): feature is string =>
+              typeof feature === "string" && allowedPlaceFeatures.has(feature)
+          )
+        )
+      )
+    : [];
+  const photos = Array.isArray(data.photos)
+    ? data.photos.filter((photo): photo is string => typeof photo === "string" && photo.trim().length > 0)
+    : [];
+  const source = data.source === "meetup" ? "meetup" : "user";
+
+  return {
+    name,
+    category,
+    description,
+    address,
+    lat,
+    lng,
+    city,
+    state,
+    features,
+    photos,
+    source,
+  };
+}
+
 function sanitizeMeetupLocation(value: unknown): {
   name: string;
   address: string;
@@ -1390,12 +1573,297 @@ export const removeFamilyMemberCallable = onCall(async (request) => {
     throw new HttpsError("permission-denied", "Cannot remove this family member.");
   }
 
-  await db.doc(`pets/${petId}/family/${targetUserId}`).delete();
+  const targetFamilyRef = db.doc(`pets/${petId}/family/${targetUserId}`);
+  const targetFamilySnap = await targetFamilyRef.get();
+  if (!targetFamilySnap.exists) {
+    return { success: true };
+  }
+
+  const targetFamilyData = targetFamilySnap.data() ?? {};
+  if (targetFamilyData.role === "primary") {
+    throw new HttpsError(
+      "failed-precondition",
+      "Primary family members cannot be removed from the family."
+    );
+  }
+
+  await targetFamilyRef.delete();
   return { success: true };
 });
 
 // ============================================================
-// 17. Callable: create post with server-derived author/pet snapshots
+// 17. Callable: create/update/delete pets with backend-owned family writes
+// ============================================================
+export const createPetCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+
+  const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot create pets.");
+  }
+
+  const payload = sanitizePetDraft(request.data);
+  const relationshipData = sanitizePetRelationship(
+    (request.data as { relationship?: unknown }).relationship,
+    (request.data as { customRelationship?: unknown }).customRelationship
+  );
+
+  const existingPetsSnap = await db
+    .collection("pets")
+    .where("ownerId", "==", callerUid)
+    .limit(6)
+    .get();
+  if (existingPetsSnap.size >= 5) {
+    throw new HttpsError("failed-precondition", "Maximum 5 pets allowed.");
+  }
+
+  const petRef = db.collection("pets").doc();
+  const familyRef = db.doc(`pets/${petRef.id}/family/${callerUid}`);
+  const batch = db.batch();
+  batch.set(
+    petRef,
+    stripUndefined({
+      ...payload,
+      ownerId: callerUid,
+      primaryOwnerId: callerUid,
+      followerCount: 0,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+  );
+  batch.set(
+    familyRef,
+    stripUndefined({
+      userId: callerUid,
+      userName: caller.fromUserName,
+      userAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
+      relationship: relationshipData.relationship,
+      customRelationship: relationshipData.customRelationship,
+      role: "primary",
+      joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+  );
+  await batch.commit();
+
+  return { id: petRef.id };
+});
+
+export const updatePetCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+
+  const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot update pets.");
+  }
+
+  const { petId, ...rawUpdates } = request.data as { petId?: string } & Record<string, unknown>;
+  if (!petId || typeof petId !== "string") {
+    throw new HttpsError("invalid-argument", "Missing petId.");
+  }
+
+  const petRef = db.doc(`pets/${petId}`);
+  const petSnap = await petRef.get();
+  if (!petSnap.exists) {
+    throw new HttpsError("not-found", "Pet not found.");
+  }
+  const petData = petSnap.data() ?? {};
+  const canUpdate =
+    petData.ownerId === callerUid || petData.primaryOwnerId === callerUid || caller.role === "admin";
+  if (!canUpdate) {
+    throw new HttpsError("permission-denied", "Cannot update this pet.");
+  }
+
+  const updates: Record<string, unknown> = {};
+  if ("name" in rawUpdates) {
+    const name = typeof rawUpdates.name === "string" ? rawUpdates.name.trim() : "";
+    if (name.length < 2 || name.length > 20) {
+      throw new HttpsError("invalid-argument", "Pet name must be between 2 and 20 characters.");
+    }
+    updates.name = name;
+    updates.nameLower = name.toLowerCase();
+  }
+  if ("species" in rawUpdates) {
+    if (
+      typeof rawUpdates.species !== "string" ||
+      !allowedPetSpecies.has(rawUpdates.species)
+    ) {
+      throw new HttpsError("invalid-argument", "Pet species is invalid.");
+    }
+    updates.species = rawUpdates.species;
+  }
+  if ("breed" in rawUpdates) {
+    updates.breed = typeof rawUpdates.breed === "string" ? rawUpdates.breed.trim() : "";
+  }
+  if ("gender" in rawUpdates) {
+    if (
+      typeof rawUpdates.gender !== "string" ||
+      !allowedPetGenders.has(rawUpdates.gender)
+    ) {
+      throw new HttpsError("invalid-argument", "Pet gender is invalid.");
+    }
+    updates.gender = rawUpdates.gender;
+  }
+  if ("bio" in rawUpdates) {
+    updates.bio = typeof rawUpdates.bio === "string" ? rawUpdates.bio.trim().slice(0, 150) : "";
+  }
+  if ("avatarUrl" in rawUpdates) {
+    updates.avatarUrl =
+      typeof rawUpdates.avatarUrl === "string" ? rawUpdates.avatarUrl.trim() : "";
+  }
+  if ("birthdayMillis" in rawUpdates) {
+    const birthday = timestampFromMillis(rawUpdates.birthdayMillis);
+    updates.birthday =
+      birthday ?? admin.firestore.FieldValue.delete();
+  }
+
+  if (Object.keys(updates).length === 0) {
+    throw new HttpsError("invalid-argument", "No supported pet fields provided.");
+  }
+
+  await petRef.set(stripUndefined(updates), { merge: true });
+  return { success: true };
+});
+
+export const deletePetCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+
+  const caller = await getNotificationActor(callerUid);
+  const { petId } = request.data as { petId?: string };
+  if (!petId || typeof petId !== "string") {
+    throw new HttpsError("invalid-argument", "Missing petId.");
+  }
+
+  const petRef = db.doc(`pets/${petId}`);
+  const petSnap = await petRef.get();
+  if (!petSnap.exists) {
+    return { success: true };
+  }
+  const petData = petSnap.data() ?? {};
+  const canDelete =
+    petData.ownerId === callerUid ||
+    petData.primaryOwnerId === callerUid ||
+    caller.role === "admin";
+  if (!canDelete) {
+    throw new HttpsError("permission-denied", "Cannot delete this pet.");
+  }
+
+  await cascadeDeletePet(petId);
+  return { success: true };
+});
+
+// ============================================================
+// 18. Callable: create/update locations from backend-owned write paths
+// ============================================================
+export const addPlaceCallable = onCall(async (request) => {
+  const callerAuth = request.auth;
+  const callerUid = callerAuth?.uid;
+  if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+  if (callerAuth.token.email_verified !== true) {
+    throw new HttpsError("permission-denied", "Verify your email before creating places.");
+  }
+
+  const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot create places.");
+  }
+
+  const place = sanitizePlaceDraft(request.data);
+  const locationId = buildLocationId(place.lat, place.lng);
+  const locationRef = db.doc(`locations/${locationId}`);
+  let alreadyExisted = false;
+
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(locationRef);
+    if (snapshot.exists) {
+      alreadyExisted = true;
+      return;
+    }
+
+    transaction.set(
+      locationRef,
+      {
+        name: place.name,
+        category: place.category,
+        description: place.description,
+        address: place.address,
+        lat: place.lat,
+        lng: place.lng,
+        city: place.city,
+        state: place.state,
+        features: place.features,
+        locationPhotos: place.photos,
+        photos: place.photos,
+        addedBy: callerUid,
+        addedByName: caller.fromUserName,
+        averageRating: 0,
+        totalRatings: 0,
+        totalPhotos: place.photos.length,
+        totalCheckins: 0,
+        verifiedByCheckins: false,
+        tags: [],
+        source: place.source,
+        verified: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }
+    );
+  });
+
+  return { locationId, alreadyExisted };
+});
+
+export const addLocationPhotosCallable = onCall(async (request) => {
+  const callerAuth = request.auth;
+  const callerUid = callerAuth?.uid;
+  if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+  if (callerAuth.token.email_verified !== true) {
+    throw new HttpsError("permission-denied", "Verify your email before adding place photos.");
+  }
+
+  const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot add place photos.");
+  }
+
+  const data = request.data as { locationId?: string; photoUrls?: unknown };
+  if (!data.locationId || typeof data.locationId !== "string") {
+    throw new HttpsError("invalid-argument", "Missing locationId.");
+  }
+  const photoUrls = Array.isArray(data.photoUrls)
+    ? data.photoUrls.filter(
+        (photo): photo is string => typeof photo === "string" && photo.trim().length > 0
+      )
+    : [];
+  if (photoUrls.length === 0) {
+    return { success: true };
+  }
+
+  const locationRef = db.doc(`locations/${data.locationId}`);
+  const locationSnap = await locationRef.get();
+  if (!locationSnap.exists) {
+    throw new HttpsError("not-found", "Location not found.");
+  }
+
+  const locationData = locationSnap.data() ?? {};
+  const canUpdate = locationData.addedBy === callerUid || caller.role === "admin";
+  if (!canUpdate) {
+    throw new HttpsError("permission-denied", "Cannot add photos to this location.");
+  }
+
+  await locationRef.update({
+    locationPhotos: admin.firestore.FieldValue.arrayUnion(...photoUrls),
+    photos: admin.firestore.FieldValue.arrayUnion(...photoUrls),
+    totalPhotos: admin.firestore.FieldValue.increment(photoUrls.length),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return { success: true };
+});
+
+// ============================================================
+// 19. Callable: create post with server-derived author/pet snapshots
 // ============================================================
 export const createPostCallable = onCall(async (request) => {
   const callerAuth = request.auth;

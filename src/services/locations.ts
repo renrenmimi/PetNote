@@ -1,25 +1,19 @@
 import {
-  arrayUnion,
   collection,
   doc,
   getDoc,
   getDocs,
-  increment,
   limit,
   orderBy,
   query,
-  runTransaction,
-  serverTimestamp,
-  where,
-  updateDoc,
   startAfter,
   type QueryConstraint,
   type QueryDocumentSnapshot,
+  where,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
 import { calculateDistance } from "./location";
-import { removeUndefined } from "../utils/removeUndefined";
 
 export type PlaceCategory =
   | "dog_park"
@@ -115,43 +109,35 @@ export async function getOrCreateLocation(data: {
   addedByName?: string;
   source?: "user" | "meetup";
 }): Promise<string> {
-  const locationId = buildLocationId(data.lat, data.lng);
-  const locationRef = doc(db, "locations", locationId);
-  const snapshot = await getDoc(locationRef);
-  if (!snapshot.exists()) {
-    await runTransaction(db, async (transaction) => {
-      const fresh = await transaction.get(locationRef);
-      if (!fresh.exists()) {
-        transaction.set(
-          locationRef,
-          removeUndefined({
-            ...data,
-            category: data.category ?? "community_park",
-            description: data.description ?? "",
-            features: data.features ?? [],
-            locationPhotos: data.photos ?? [],
-            photos: data.photos ?? [],
-            addedBy: data.addedBy ?? "",
-            addedByName: data.addedByName ?? "",
-            averageRating: 0,
-            totalRatings: 0,
-            totalPhotos: data.photos?.length ?? 0,
-            totalCheckins: 0,
-            verifiedByCheckins: false,
-            tags: [],
-            source: data.source ?? "meetup",
-            verified: false,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          })
-        );
-      }
-    });
-  }
-  // If location already exists, just return the ID.
-  // Don't try to merge-update — only the original creator or admin
-  // has update permission per firestore.rules.
-  return locationId;
+  const result = await httpsCallable<
+    {
+      name: string;
+      category?: PlaceCategory;
+      description?: string;
+      address: string;
+      lat: number;
+      lng: number;
+      city: string;
+      state: string;
+      features?: PlaceFeature[];
+      photos?: string[];
+      source?: "user" | "meetup";
+    },
+    { locationId: string; alreadyExisted: boolean }
+  >(functions, "addPlaceCallable")({
+    name: data.name,
+    category: data.category ?? "community_park",
+    description: data.description ?? "",
+    address: data.address,
+    lat: data.lat,
+    lng: data.lng,
+    city: data.city,
+    state: data.state,
+    features: data.features ?? [],
+    photos: data.photos ?? [],
+    source: data.source ?? "meetup",
+  });
+  return result.data.locationId;
 }
 
 export async function submitReview(
@@ -275,42 +261,48 @@ export async function addPlace(data: {
   addedBy: string;
   addedByName: string;
 }): Promise<{ locationId: string; alreadyExisted: boolean }> {
-  const locationId = buildLocationId(data.lat, data.lng);
-  const locationRef = doc(db, "locations", locationId);
-  let alreadyExisted = false;
-  await runTransaction(db, async (transaction) => {
-    const snapshot = await transaction.get(locationRef);
-    if (snapshot.exists()) {
-      alreadyExisted = true;
-      return;
-    }
-    transaction.set(locationRef, {
-      ...data,
-      locationPhotos: data.photos,
-      averageRating: 0,
-      totalRatings: 0,
-      totalPhotos: data.photos.length,
-      tags: [],
-      source: "user",
-      verified: false,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+  const result = await httpsCallable<
+    {
+      name: string;
+      category: PlaceCategory;
+      description: string;
+      address: string;
+      lat: number;
+      lng: number;
+      city: string;
+      state: string;
+      features: PlaceFeature[];
+      photos: string[];
+      source: "user";
+    },
+    { locationId: string; alreadyExisted: boolean }
+  >(functions, "addPlaceCallable")({
+    name: data.name,
+    category: data.category,
+    description: data.description,
+    address: data.address,
+    lat: data.lat,
+    lng: data.lng,
+    city: data.city,
+    state: data.state,
+    features: data.features,
+    photos: data.photos,
+    source: "user",
   });
 
-  return { locationId, alreadyExisted };
+  return result.data;
 }
 
 export async function addPhotosToPlace(
   locationId: string,
   photoUrls: string[]
 ): Promise<void> {
-  const locationRef = doc(db, "locations", locationId);
-  await updateDoc(locationRef, {
-    locationPhotos: arrayUnion(...photoUrls),
-    photos: arrayUnion(...photoUrls),
-    totalPhotos: increment(photoUrls.length || 0),
-    updatedAt: serverTimestamp(),
+  await httpsCallable<
+    { locationId: string; photoUrls: string[] },
+    { success: boolean }
+  >(functions, "addLocationPhotosCallable")({
+    locationId,
+    photoUrls,
   });
 }
 

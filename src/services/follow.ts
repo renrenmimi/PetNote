@@ -3,7 +3,6 @@ import {
   doc,
   getDoc,
   getDocs,
-  setDoc,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
@@ -68,16 +67,4 @@ export async function getPetFollowers(petId: string): Promise<PetFollower[]> {
     id: docSnap.id,
     ...(docSnap.data() as Omit<PetFollower, "id">),
   }));
-}
-
-export async function ensureUserDoc(
-  uid: string,
-  payload?: Record<string, unknown>
-): Promise<void> {
-  const userRef = doc(db, "users", uid);
-  await setDoc(
-    userRef,
-    { ...payload },
-    { merge: true }
-  );
 }

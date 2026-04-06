@@ -14,7 +14,7 @@ import {
   type Location,
   type PlaceCategory,
 } from "../services/locations";
-import { calculateDistance } from "../services/location";
+import { calculateDistance, getUserLocation } from "../services/location";
 
 const categoryEmoji: Record<PlaceCategory, string> = {
   dog_park: "🐕",
@@ -93,7 +93,7 @@ const categoryFilters: Array<{
 
 export function Places() {
   const navigate = useNavigate();
-  const { profile } = useAuth();
+  const { user } = useAuth();
   const [category, setCategory] = useState<PlaceCategory | "all">("all");
   const [sortBy, setSortBy] = useState<
     "nearby" | "top_rated" | "most_reviewed" | "newest"
@@ -108,10 +108,34 @@ export function Places() {
     null
   );
   const [searchMode, setSearchMode] = useState<"none" | "text" | "address">("none");
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(
+    null
+  );
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
-  const userLocation = profile?.location;
   const activeCenter = searchCenter ?? userLocation ?? null;
+
+  useEffect(() => {
+    let ignore = false;
+    if (!user) {
+      setUserLocation(null);
+      return;
+    }
+    const load = async () => {
+      const location = await getUserLocation(user.uid);
+      if (!ignore) {
+        setUserLocation(
+          location && typeof location.lat === "number" && typeof location.lng === "number"
+            ? { lat: location.lat, lng: location.lng }
+            : null
+        );
+      }
+    };
+    void load();
+    return () => {
+      ignore = true;
+    };
+  }, [user]);
 
   const loadPlaces = async (reset = false) => {
     if (loadingMore || (!reset && loading)) return;
