@@ -6,7 +6,6 @@ import {
   doc,
   getDoc,
   getDocs,
-  increment,
   limit,
   orderBy,
   query,
@@ -282,6 +281,7 @@ export async function likePost(postId: string, userId: string): Promise<void> {
   }
   let didLike = false;
 
+  // Count increment handled by onLikeCreated Cloud Function.
   await runTransaction(db, async (transaction) => {
     const likeSnap = await transaction.get(likeRef);
     if (likeSnap.exists()) {
@@ -291,9 +291,6 @@ export async function likePost(postId: string, userId: string): Promise<void> {
     transaction.set(likeRef, {
       userId,
       createdAt: serverTimestamp(),
-    });
-    transaction.update(postRef, {
-      likeCount: increment(1),
     });
     didLike = true;
   });
@@ -336,12 +333,10 @@ export async function addComment(
   if (!postSnap.exists()) {
     return "";
   }
+  // Count increment handled by onCommentCreated Cloud Function.
   const result = await runTransaction(db, async (transaction) => {
     const newCommentRef = doc(commentsRef);
     transaction.set(newCommentRef, removeUndefined(payload));
-    transaction.update(postRef, {
-      commentCount: increment(1),
-    });
     return newCommentRef.id;
   });
   return result;

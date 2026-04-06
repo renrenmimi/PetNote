@@ -283,8 +283,12 @@ export const onLikeCreated = onDocumentCreated(
   "posts/{postId}/likes/{likeId}",
   async (event) => {
     const { postId, likeId } = event.params;
-    const postSnap = await db.doc(`posts/${postId}`).get();
+    const postRef = db.doc(`posts/${postId}`);
+    const postSnap = await postRef.get();
     if (!postSnap.exists) return;
+
+    // Increment likeCount server-side (single source of truth)
+    await postRef.update({ likeCount: admin.firestore.FieldValue.increment(1) });
 
     const postData = postSnap.data() as {
       authorId?: string;
@@ -337,6 +341,11 @@ export const onCommentCreated = onDocumentCreated(
   "posts/{postId}/comments/{commentId}",
   async (event) => {
     const { postId, commentId } = event.params;
+
+    // Increment commentCount server-side (single source of truth)
+    const postRef = db.doc(`posts/${postId}`);
+    await postRef.update({ commentCount: admin.firestore.FieldValue.increment(1) });
+
     const commentData = event.data?.data() as {
       authorId?: string;
       replyTo?: { commentId?: string };
@@ -344,7 +353,7 @@ export const onCommentCreated = onDocumentCreated(
     const commenterId = commentData?.authorId;
     if (!commenterId) return;
 
-    const postSnap = await db.doc(`posts/${postId}`).get();
+    const postSnap = await postRef.get();
     if (!postSnap.exists) return;
     const postData = postSnap.data() as {
       authorId?: string;
@@ -575,8 +584,15 @@ export const onMeetupParticipantCreated = onDocumentCreated(
   "meetups/{meetupId}/participants/{participantId}",
   async (event) => {
     const { meetupId, participantId } = event.params;
-    const meetupSnap = await db.doc(`meetups/${meetupId}`).get();
+    const meetupRef = db.doc(`meetups/${meetupId}`);
+    const meetupSnap = await meetupRef.get();
     if (!meetupSnap.exists) return;
+
+    // Increment participantCount server-side
+    await meetupRef.update({
+      participantCount: admin.firestore.FieldValue.increment(1),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
 
     const meetupData = meetupSnap.data() as {
       organizerId?: string;
@@ -798,3 +814,135 @@ export const sendNotification = onCall(async (request) => {
   const id = await createNotificationIfAllowed(payload);
   return { id };
 });
+
+// ============================================================
+// joinMeetup callable: validates requirements + capacity server-side
+// ============================================================
+export const joinMeetupCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+
+  const callerSnap = await db.doc(`users/${callerUid}`).get();
+  const callerData = callerSnap.exists ? callerSnap.data() ?? {} : {};
+  if (callerData.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot join meetups.");
+  }
+
+  const { meetupId, petId, petName, petAvatar, petSpecies } = request.data as {
+    meetupId: string; petId: string; petName: string; petAvatar: string; petSpecies?: string;
+  };
+
+  const meetupRef = db.doc(`meetups/${meetupId}`);
+  const participantRef = db.doc(`meetups/${meetupId}/participants/${callerUid}`);
+
+  return await db.runTransaction(async (t) => {
+    const meetupSnap = await t.get(meetupRef);
+    if (!meetupSnap.exists) throw new HttpsError("not-found", "Meetup not found.");
+    const meetup = meetupSnap.data() as Record<string, unknown>;
+
+    const participantSnap = await t.get(participantRef);
+    if (participantSnap.exists) return { success: true };
+
+    if (meetup.status === "cancelled" || meetup.status === "completed") {
+      return { success: false, error: "Meetup is no longer accepting participants." };
+    }
+
+    const requirements = meetup.requirements as Record<string, unknown> ?? {};
+    const isOrganizer = meetup.organizerId === callerUid;
+
+    if (!isOrganizer) {
+      const reasons: string[] = [];
+
+      if (requirements.mustHavePosts) {
+        const postsSnap = await db.collection("posts").where("authorId", "==", callerUid).limit(1).get();
+        if (postsSnap.empty) reasons.push("Must have posted at least once.");
+      }
+
+      if (requirements.mustHavePetProfile && !petSpecies) {
+        reasons.push("Must have a pet profile.");
+      }
+
+      const minFollowers = typeof requirements.minFollowers === "number" ? requirements.minFollowers : 0;
+      if (minFollowers > 0) {
+        const followingSnap = await db.collection(`users/${callerUid}/followingPets`).get();
+        if (followingSnap.size < minFollowers) {
+          reasons.push(`Requires at least ${minFollowers} followed pets.`);
+        }
+      }
+
+      const petType = requirements.petType as string ?? "any";
+      if ((petType === "dog" || petType === "any_dog") && petSpecies && petSpecies !== "dog") {
+        reasons.push("Dogs only.");
+      }
+      if ((petType === "cat" || petType === "any_cat") && petSpecies && petSpecies !== "cat") {
+        reasons.push("Cats only.");
+      }
+      if (petType === "other" && petSpecies && (petSpecies === "dog" || petSpecies === "cat")) {
+        reasons.push("Other pets only.");
+      }
+
+      const maxPets = typeof requirements.maxPets === "number" ? requirements.maxPets : 0;
+      if (maxPets > 0 && ((meetup.participantCount as number) ?? 0) >= maxPets) {
+        return { success: false, error: "Meetup is full." };
+      }
+
+      if (reasons.length > 0) {
+        return { success: false, error: reasons.join(" ") };
+      }
+    }
+
+    const actor = await getNotificationActor(callerUid);
+    const safeAvatar = (a: string) => a?.trim() || `https://api.dicebear.com/7.x/thumbs/svg?seed=${callerUid}`;
+
+    t.set(participantRef, {
+      meetupId,
+      userId: callerUid,
+      userName: actor.fromUserName,
+      userAvatar: safeAvatar(actor.fromUserAvatar),
+      petId,
+      petName,
+      petAvatar: petAvatar?.trim() || `https://api.dicebear.com/7.x/thumbs/svg?seed=${petId}`,
+      joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+      status: "confirmed",
+    });
+    // participantCount increment is handled by onMeetupParticipantCreated trigger
+
+    return { success: true };
+  });
+});
+
+// ============================================================
+// checkMeetupStatus callable: any user can trigger status update
+// ============================================================
+export const checkMeetupStatusCallable = onCall(async (request) => {
+  if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Must be logged in.");
+
+  const { meetupId } = request.data as { meetupId: string };
+  if (!meetupId) throw new HttpsError("invalid-argument", "Missing meetupId.");
+
+  const meetupRef = db.doc(`meetups/${meetupId}`);
+  const meetupSnap = await meetupRef.get();
+  if (!meetupSnap.exists) return { updated: false };
+
+  const meetup = meetupSnap.data() as Record<string, unknown>;
+  if (meetup.status === "cancelled" || meetup.status === "completed") {
+    return { updated: false };
+  }
+
+  const dateVal = meetup.date as admin.firestore.Timestamp;
+  if (!dateVal?.toDate) return { updated: false };
+  const duration = typeof meetup.duration === "number" ? meetup.duration : 0;
+  const endTime = new Date(dateVal.toDate().getTime() + duration * 60 * 1000);
+
+  if (new Date() >= endTime) {
+    await meetupRef.update({
+      status: "completed",
+      isRatingOpen: true,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return { updated: true };
+  }
+  return { updated: false };
+});
+
+// Cancel notifications already handled by existing onMeetupUpdated (line ~620)
