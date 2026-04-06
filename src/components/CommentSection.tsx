@@ -156,8 +156,7 @@ export function CommentSection({
           authorAvatar: optimistic.authorAvatar,
           text: optimistic.text,
           replyTo: optimistic.replyTo,
-        },
-        reply?.authorId
+        }
       );
       if (createdId) {
         setComments((prev) =>

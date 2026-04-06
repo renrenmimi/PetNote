@@ -24,7 +24,6 @@ import { db } from "./firebase";
 import { calculateDistance } from "./location";
 import { getUserProfile } from "./users";
 import { getUserStats } from "./posts";
-import { createNotification } from "./notifications";
 import { getOrCreateLocation } from "./locations";
 import { getFollowingPets } from "./follow";
 import { removeUndefined } from "../utils/removeUndefined";
@@ -191,26 +190,10 @@ export async function cancelMeetup(meetupId: string): Promise<void> {
   const meetupRef = doc(db, "meetups", meetupId);
   const meetupSnap = await getDoc(meetupRef);
   if (!meetupSnap.exists()) return;
-  const meetup = { id: meetupSnap.id, ...(meetupSnap.data() as MeetupData) };
   await updateDoc(meetupRef, {
     status: "cancelled",
     updatedAt: serverTimestamp(),
   });
-  const participants = await getParticipants(meetupId);
-  await Promise.all(
-    participants
-      .filter((item) => item.userId !== meetup.organizerId)
-      .map((item) =>
-        createNotification({
-          userId: item.userId,
-          type: "meetup_cancelled",
-          fromUserId: meetup.organizerId,
-          fromUserName: meetup.organizerName,
-          fromUserAvatar: meetup.organizerAvatar,
-          message: `cancelled the meetup ${meetup.title}`,
-        })
-      )
-  );
 }
 
 export async function getMeetupById(id: string): Promise<Meetup | null> {
@@ -467,17 +450,6 @@ export async function joinMeetup(
       updatedAt: serverTimestamp(),
     });
   });
-
-  if (meetup.organizerId !== userId) {
-    await createNotification({
-      userId: meetup.organizerId,
-      type: "meetup_join",
-      fromUserId: userId,
-      fromUserName: eligibility.userName,
-      fromUserAvatar: eligibility.userAvatar,
-      message: `joined your meetup ${meetup.title}`,
-    });
-  }
 }
 
 export async function leaveMeetup(

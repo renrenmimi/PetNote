@@ -49,6 +49,114 @@ async function recomputeLocationAggregation(locationId: string): Promise<void> {
   });
 }
 
+type ServerNotificationType =
+  | "like"
+  | "comment"
+  | "pet_follow"
+  | "reply"
+  | "meetup_join"
+  | "meetup_cancelled"
+  | "warning";
+
+type ServerNotificationPayload = {
+  userId: string;
+  type: ServerNotificationType;
+  fromUserId: string;
+  fromUserName: string;
+  fromUserAvatar: string;
+  message: string;
+  postId?: string;
+  commentId?: string;
+  postImage?: string;
+  warningReason?: string;
+  warningDetails?: string;
+  read?: boolean;
+};
+
+async function getNotificationActor(userId: string): Promise<{
+  fromUserId: string;
+  fromUserName: string;
+  fromUserAvatar: string;
+  role?: string;
+  banned?: boolean;
+}> {
+  const userSnap = await db.doc(`users/${userId}`).get();
+  const data = userSnap.exists ? userSnap.data() ?? {} : {};
+  const displayName =
+    typeof data.displayName === "string" && data.displayName.trim().length > 0
+      ? data.displayName
+      : "PetNote User";
+  const avatarUrl =
+    typeof data.avatarUrl === "string" && data.avatarUrl.trim().length > 0
+      ? data.avatarUrl
+      : `https://api.dicebear.com/7.x/thumbs/svg?seed=${userId}`;
+
+  return {
+    fromUserId: userId,
+    fromUserName: displayName,
+    fromUserAvatar: avatarUrl,
+    role: typeof data.role === "string" ? data.role : undefined,
+    banned: data.banned === true,
+  };
+}
+
+async function shouldSendNotification(
+  recipientId: string,
+  type: ServerNotificationType
+): Promise<boolean> {
+  if (type === "warning" || type === "meetup_join" || type === "meetup_cancelled") {
+    return true;
+  }
+
+  const settingsSnap = await db.doc(`users/${recipientId}/settings/preferences`).get();
+  const settings = settingsSnap.exists ? settingsSnap.data() : {};
+  const likeNotifications = settings?.likeNotifications ?? true;
+  const commentNotifications = settings?.commentNotifications ?? true;
+  const followNotifications = settings?.followNotifications ?? true;
+
+  if (type === "like") return likeNotifications;
+  if (type === "comment" || type === "reply") return commentNotifications;
+  if (type === "pet_follow") return followNotifications;
+  return true;
+}
+
+async function createNotificationIfAllowed(
+  payload: ServerNotificationPayload
+): Promise<string> {
+  if (!(await shouldSendNotification(payload.userId, payload.type))) {
+    return "";
+  }
+
+  const docData: Record<string, unknown> = {
+    ...payload,
+    read: payload.read ?? false,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  Object.keys(docData).forEach((key) => {
+    if (docData[key] === undefined) {
+      delete docData[key];
+    }
+  });
+
+  const result = await db.collection("notifications").add(docData);
+  return result.id;
+}
+
+async function getPetFamilyRecipientIds(
+  petId: string,
+  excludeUserId?: string
+): Promise<string[]> {
+  const familySnap = await db.collection(`pets/${petId}/family`).get();
+  return Array.from(
+    new Set(
+      familySnap.docs
+        .map((docSnap) => docSnap.data().userId as string | undefined)
+        .filter((userId): userId is string => !!userId && userId !== excludeUserId)
+    )
+  );
+}
+
 // ============================================================
 // 1. Pet deleted: clean up cross-user followingPets + unlink posts
 // ============================================================
@@ -103,6 +211,29 @@ export const onFollowingPetCreated = onDocumentCreated(
     if (hasWrites) {
       await batch.commit();
     }
+
+    if (!petSnap.exists) return;
+    const petData = petSnap.data() ?? {};
+    const petName =
+      typeof petData.name === "string" && petData.name.trim().length > 0
+        ? petData.name
+        : "this pet";
+    const recipients = await getPetFamilyRecipientIds(petId, userId);
+    if (recipients.length === 0) return;
+
+    const actor = await getNotificationActor(userId);
+    await Promise.all(
+      recipients.map((recipientId) =>
+        createNotificationIfAllowed({
+          userId: recipientId,
+          type: "pet_follow",
+          fromUserId: actor.fromUserId,
+          fromUserName: actor.fromUserName,
+          fromUserAvatar: actor.fromUserAvatar,
+          message: `started following ${petName}`,
+        })
+      )
+    );
   }
 );
 
@@ -138,7 +269,147 @@ export const onFollowingPetDeleted = onDocumentDeleted(
 );
 
 // ============================================================
-// 3. Post deleted: clean up bookmarks, reports, notifications
+// 3. Like created: send notifications server-side
+// ============================================================
+export const onLikeCreated = onDocumentCreated(
+  "posts/{postId}/likes/{likeId}",
+  async (event) => {
+    const { postId, likeId } = event.params;
+    const postSnap = await db.doc(`posts/${postId}`).get();
+    if (!postSnap.exists) return;
+
+    const postData = postSnap.data() as {
+      authorId?: string;
+      petId?: string;
+      petName?: string;
+      mediaUrl?: string;
+    };
+    const actor = await getNotificationActor(likeId);
+
+    if (postData.petId) {
+      const recipients = await getPetFamilyRecipientIds(postData.petId, likeId);
+      if (recipients.length === 0) return;
+      const petName = postData.petName || "this pet";
+      await Promise.all(
+        recipients.map((recipientId) =>
+          createNotificationIfAllowed({
+            userId: recipientId,
+            type: "like",
+            fromUserId: actor.fromUserId,
+            fromUserName: actor.fromUserName,
+            fromUserAvatar: actor.fromUserAvatar,
+            postId,
+            postImage: postData.mediaUrl,
+            message: `${actor.fromUserName} liked ${petName}'s post`,
+          })
+        )
+      );
+      return;
+    }
+
+    if (postData.authorId && postData.authorId !== likeId) {
+      await createNotificationIfAllowed({
+        userId: postData.authorId,
+        type: "like",
+        fromUserId: actor.fromUserId,
+        fromUserName: actor.fromUserName,
+        fromUserAvatar: actor.fromUserAvatar,
+        postId,
+        postImage: postData.mediaUrl,
+        message: "liked your post",
+      });
+    }
+  }
+);
+
+// ============================================================
+// 4. Comment created: send notifications server-side
+// ============================================================
+export const onCommentCreated = onDocumentCreated(
+  "posts/{postId}/comments/{commentId}",
+  async (event) => {
+    const { postId, commentId } = event.params;
+    const commentData = event.data?.data() as {
+      authorId?: string;
+      replyTo?: { commentId?: string };
+    } | undefined;
+    const commenterId = commentData?.authorId;
+    if (!commenterId) return;
+
+    const postSnap = await db.doc(`posts/${postId}`).get();
+    if (!postSnap.exists) return;
+    const postData = postSnap.data() as {
+      authorId?: string;
+      petId?: string;
+      petName?: string;
+      mediaUrl?: string;
+    };
+    const actor = await getNotificationActor(commenterId);
+
+    let replyTargetUserId: string | null = null;
+    const replyCommentId = commentData?.replyTo?.commentId;
+    if (replyCommentId) {
+      const replyTargetSnap = await db.doc(`posts/${postId}/comments/${replyCommentId}`).get();
+      if (replyTargetSnap.exists) {
+        const replyTargetData = replyTargetSnap.data() as { authorId?: string };
+        replyTargetUserId = replyTargetData.authorId ?? null;
+      }
+    }
+
+    if (postData.petId) {
+      const recipients = await getPetFamilyRecipientIds(postData.petId, commenterId);
+      const petName = postData.petName || "this pet";
+      await Promise.all(
+        recipients.map((recipientId) =>
+          createNotificationIfAllowed({
+            userId: recipientId,
+            type: "comment",
+            fromUserId: actor.fromUserId,
+            fromUserName: actor.fromUserName,
+            fromUserAvatar: actor.fromUserAvatar,
+            postId,
+            commentId,
+            postImage: postData.mediaUrl,
+            message: `${actor.fromUserName} commented on ${petName}'s post`,
+          })
+        )
+      );
+    } else if (
+      postData.authorId &&
+      postData.authorId !== commenterId &&
+      replyTargetUserId !== postData.authorId
+    ) {
+      await createNotificationIfAllowed({
+        userId: postData.authorId,
+        type: "comment",
+        fromUserId: actor.fromUserId,
+        fromUserName: actor.fromUserName,
+        fromUserAvatar: actor.fromUserAvatar,
+        postId,
+        commentId,
+        postImage: postData.mediaUrl,
+        message: "commented on your post",
+      });
+    }
+
+    if (replyTargetUserId && replyTargetUserId !== commenterId) {
+      await createNotificationIfAllowed({
+        userId: replyTargetUserId,
+        type: "reply",
+        fromUserId: actor.fromUserId,
+        fromUserName: actor.fromUserName,
+        fromUserAvatar: actor.fromUserAvatar,
+        postId,
+        commentId,
+        postImage: postData.mediaUrl,
+        message: "replied to your comment",
+      });
+    }
+  }
+);
+
+// ============================================================
+// 5. Post deleted: clean up bookmarks, reports, notifications
 // ============================================================
 export const onPostDeleted = onDocumentDeleted("posts/{postId}", async (event) => {
   const postId = event.params.postId;
@@ -289,7 +560,80 @@ export const onCommentDeleted = onDocumentDeleted(
 );
 
 // ============================================================
-// 9. Participant deleted: decrement meetup participantCount
+// 10. Meetup participant created: notify organizer
+// ============================================================
+export const onMeetupParticipantCreated = onDocumentCreated(
+  "meetups/{meetupId}/participants/{participantId}",
+  async (event) => {
+    const { meetupId, participantId } = event.params;
+    const meetupSnap = await db.doc(`meetups/${meetupId}`).get();
+    if (!meetupSnap.exists) return;
+
+    const meetupData = meetupSnap.data() as {
+      organizerId?: string;
+      title?: string;
+    };
+    if (!meetupData.organizerId || meetupData.organizerId === participantId) {
+      return;
+    }
+
+    const actor = await getNotificationActor(participantId);
+    await createNotificationIfAllowed({
+      userId: meetupData.organizerId,
+      type: "meetup_join",
+      fromUserId: actor.fromUserId,
+      fromUserName: actor.fromUserName,
+      fromUserAvatar: actor.fromUserAvatar,
+      message: `joined your meetup ${meetupData.title || ""}`.trim(),
+    });
+  }
+);
+
+// ============================================================
+// 11. Meetup cancelled: notify participants
+// ============================================================
+export const onMeetupUpdated = onDocumentWritten(
+  "meetups/{meetupId}",
+  async (event) => {
+    const before = event.data?.before?.data() as
+      | { status?: string }
+      | undefined;
+    const after = event.data?.after?.data() as
+      | { status?: string; organizerId?: string; title?: string }
+      | undefined;
+
+    if (!before || !after) return;
+    if (before.status === "cancelled" || after.status !== "cancelled") return;
+    if (!after.organizerId) return;
+
+    const participantsSnap = await db.collection(`meetups/${event.params.meetupId}/participants`).get();
+    const recipientIds = Array.from(
+      new Set(
+        participantsSnap.docs
+          .map((docSnap) => (docSnap.data().userId as string | undefined) ?? docSnap.id)
+          .filter((userId): userId is string => !!userId && userId !== after.organizerId)
+      )
+    );
+    if (recipientIds.length === 0) return;
+
+    const actor = await getNotificationActor(after.organizerId);
+    await Promise.all(
+      recipientIds.map((recipientId) =>
+        createNotificationIfAllowed({
+          userId: recipientId,
+          type: "meetup_cancelled",
+          fromUserId: actor.fromUserId,
+          fromUserName: actor.fromUserName,
+          fromUserAvatar: actor.fromUserAvatar,
+          message: `cancelled the meetup ${after.title || ""}`.trim(),
+        })
+      )
+    );
+  }
+);
+
+// ============================================================
+// 12. Participant deleted: decrement meetup participantCount
 // ============================================================
 export const onParticipantDeleted = onDocumentDeleted(
   "meetups/{meetupId}/participants/{participantId}",
@@ -304,7 +648,7 @@ export const onParticipantDeleted = onDocumentDeleted(
 );
 
 // ============================================================
-// 10. User updated: sync displayName/avatarUrl to denormalized copies
+// 13. User updated: sync displayName/avatarUrl to denormalized copies
 // ============================================================
 export const onUserUpdated = onDocumentWritten("users/{userId}", async (event) => {
   const before = event.data?.before?.data();
@@ -360,7 +704,7 @@ export const onUserUpdated = onDocumentWritten("users/{userId}", async (event) =
 });
 
 // ============================================================
-// 11. Callable: delete user document + Firebase Auth account
+// 14. Callable: delete user document + Firebase Auth account
 //     Uses admin SDK to bypass admin-only delete rule.
 //     Called from client deleteAccount() after Firestore cleanup.
 // ============================================================
@@ -393,9 +737,7 @@ export const deleteUserAccount = onCall(async (request) => {
 });
 
 // ============================================================
-// 12. Callable: create notification with server-side settings check
-//     Reads recipient's settings with admin SDK (owner-only rule)
-//     then creates notification if preferences allow it.
+// 15. Callable: create admin warning notifications only
 // ============================================================
 export const sendNotification = onCall(async (request) => {
   if (!request.auth?.uid) {
@@ -403,84 +745,44 @@ export const sendNotification = onCall(async (request) => {
   }
 
   const callerUid = request.auth.uid;
-  const callerSnap = await db.doc(`users/${callerUid}`).get();
-  const callerData = callerSnap.exists ? callerSnap.data() : null;
-  if (callerData?.banned === true) {
+  const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot send notifications.");
+  }
+
+  if (caller.role !== "admin") {
+    throw new HttpsError("permission-denied", "Only admins can send warning notifications.");
   }
 
   const data = request.data as {
     userId: string;
     type: string;
-    fromUserId: string;
-    fromUserName: string;
-    fromUserAvatar: string;
-    postId?: string;
-    commentId?: string;
-    postImage?: string;
     message: string;
     warningReason?: string;
     warningDetails?: string;
     read?: boolean;
   };
 
-  const allowedTypes = new Set([
-    "like",
-    "comment",
-    "follow",
-    "pet_follow",
-    "reply",
-    "meetup_join",
-    "meetup_cancelled",
-    "warning",
-  ]);
-  if (!allowedTypes.has(data.type)) {
-    throw new HttpsError("invalid-argument", "Unsupported notification type.");
-  }
-
-  if (data.fromUserId !== callerUid) {
-    throw new HttpsError("permission-denied", "fromUserId must match caller.");
-  }
-
   if (!data.userId) {
     throw new HttpsError("invalid-argument", "Missing notification recipient.");
   }
 
-  const isCallerAdmin = callerData?.role === "admin";
-  if (data.type === "warning" && !isCallerAdmin) {
-    throw new HttpsError("permission-denied", "Only admins can send warning notifications.");
+  if (data.type !== "warning") {
+    throw new HttpsError("invalid-argument", "Only warning notifications are supported.");
   }
 
-  // Read recipient's settings with admin SDK
-  const settingsSnap = await db.doc(`users/${data.userId}/settings/preferences`).get();
-  const settings = settingsSnap.exists ? settingsSnap.data() : {};
-  const likeNotif = settings?.likeNotifications ?? true;
-  const commentNotif = settings?.commentNotifications ?? true;
-  const followNotif = settings?.followNotifications ?? true;
+  const payload: ServerNotificationPayload = {
+    userId: data.userId,
+    type: "warning",
+    fromUserId: callerUid,
+    fromUserName: "PetNote Team",
+    fromUserAvatar: "",
+    message: data.message,
+    warningReason: data.warningReason,
+    warningDetails: data.warningDetails,
+    read: data.read,
+  };
 
-  const mappedType = data.type === "reply" ? "comment" : data.type;
-  const shouldNotify =
-    data.type === "warning" ||
-    data.type === "meetup_join" ||
-    data.type === "meetup_cancelled" ||
-    (mappedType === "like" && likeNotif) ||
-    (mappedType === "comment" && commentNotif) ||
-    ((mappedType === "follow" || mappedType === "pet_follow") && followNotif);
-
-  if (!shouldNotify) {
-    return { id: "" };
-  }
-
-  const payload: Record<string, unknown> = { ...data };
-  delete payload.read;
-  payload.read = data.read ?? false;
-  payload.createdAt = admin.firestore.FieldValue.serverTimestamp();
-
-  // Remove undefined values
-  Object.keys(payload).forEach((key) => {
-    if (payload[key] === undefined) delete payload[key];
-  });
-
-  const result = await db.collection("notifications").add(payload);
-  return { id: result.id };
+  const id = await createNotificationIfAllowed(payload);
+  return { id };
 });

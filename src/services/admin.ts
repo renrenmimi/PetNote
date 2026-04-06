@@ -1,5 +1,4 @@
 import {
-  addDoc,
   collection,
   collectionGroup,
   doc,
@@ -13,10 +12,10 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import { auth, db } from "./firebase";
 import { deleteComment, deletePost } from "./posts";
 import { type ReportItem } from "./report";
-import { removeUndefined } from "../utils/removeUndefined";
 
 export type ResolveAction = "delete" | "ban" | "dismiss";
 export type ReportTargetUser = {
@@ -26,6 +25,37 @@ export type ReportTargetUser = {
 };
 
 const DEFAULT_WARNING_REASON = "Violated community guidelines";
+
+async function sendWarningNotification(params: {
+  userId: string;
+  message: string;
+  warningReason: string;
+  warningDetails?: string;
+}): Promise<void> {
+  if (!auth.currentUser?.uid) {
+    throw new Error("Admin must be logged in.");
+  }
+
+  const functions = getFunctions();
+  await httpsCallable<
+    {
+      userId: string;
+      type: "warning";
+      message: string;
+      warningReason: string;
+      warningDetails?: string;
+      read?: boolean;
+    },
+    { id: string }
+  >(functions, "sendNotification")({
+    userId: params.userId,
+    type: "warning",
+    message: params.message,
+    warningReason: params.warningReason,
+    warningDetails: params.warningDetails,
+    read: false,
+  });
+}
 
 export async function getPendingReports(): Promise<ReportItem[]> {
   const reportsRef = collection(db, "reports");
@@ -162,21 +192,12 @@ export async function deleteContentAndWarn(params: {
     await deleteComment(report.postId, report.targetId);
   }
 
-  await addDoc(
-    collection(db, "notifications"),
-    removeUndefined({
-      userId: targetUserId,
-      type: "warning",
-      fromUserId: auth.currentUser?.uid || "",
-      fromUserName: "PetNote Team",
-      fromUserAvatar: "",
-      message,
-      warningReason: safeReason,
-      ...(safeDetails ? { warningDetails: safeDetails } : {}),
-      read: false,
-      createdAt: serverTimestamp(),
-    })
-  );
+  await sendWarningNotification({
+    userId: targetUserId,
+    message,
+    warningReason: safeReason,
+    ...(safeDetails ? { warningDetails: safeDetails } : {}),
+  });
 
   await updateDoc(doc(db, "reports", report.id), {
     status: "resolved",
@@ -195,20 +216,11 @@ export async function blockUserByAdmin(
     bannedAt: serverTimestamp(),
   });
 
-  await addDoc(
-    collection(db, "notifications"),
-    removeUndefined({
-      userId,
-      type: "warning",
-      fromUserId: auth.currentUser?.uid || "",
-      fromUserName: "PetNote Team",
-      fromUserAvatar: "",
-      message: `Your account has been suspended: ${safeReason}`,
-      warningReason: safeReason,
-      read: false,
-      createdAt: serverTimestamp(),
-    })
-  );
+  await sendWarningNotification({
+    userId,
+    message: `Your account has been suspended: ${safeReason}`,
+    warningReason: safeReason,
+  });
 }
 
 export async function getBannedUsers() {

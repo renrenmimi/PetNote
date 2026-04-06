@@ -8,8 +8,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { createNotification } from "./notifications";
-import { getPetById, getPetFamily } from "./pets";
+import { getPetById } from "./pets";
 import { getUserProfile } from "./users";
 
 export type FollowingPet = {
@@ -63,31 +62,6 @@ export async function followPet(userId: string, petId: string): Promise<void> {
   });
 
   if (!created) return;
-
-  const familyMembers = await getPetFamily(petId);
-  const recipientIds = Array.from(
-    new Set(
-      familyMembers
-        .map((member) => member.userId)
-        .filter((memberId) => !!memberId && memberId !== userId)
-    )
-  );
-  if (recipientIds.length === 0) return;
-
-  await Promise.all(
-    recipientIds.map((recipientId) =>
-      createNotification({
-        userId: recipientId,
-        type: "pet_follow",
-        fromUserId: userId,
-        fromUserName: profile?.displayName || "PetNote User",
-        fromUserAvatar:
-          profile?.avatarUrl ||
-          `https://api.dicebear.com/7.x/thumbs/svg?seed=${userId}`,
-        message: `started following ${pet.name}`,
-      })
-    )
-  );
 }
 
 export async function unfollowPet(userId: string, petId: string): Promise<void> {

@@ -9,7 +9,6 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
-import { getFunctions, httpsCallable } from "firebase/functions";
 import { db } from "./firebase";
 
 export type NotificationType =
@@ -46,24 +45,6 @@ export type CreateNotificationInput = Omit<
   read?: boolean;
   createdAt?: unknown;
 };
-
-export async function createNotification(
-  data: CreateNotificationInput
-): Promise<string> {
-  // Notification creation is handled by a Cloud Function (sendNotification)
-  // which uses admin SDK to read recipient's settings and create the
-  // notification. This avoids exposing settings to other users.
-  try {
-    const functions = getFunctions();
-    const result = await httpsCallable<CreateNotificationInput, { id: string }>(
-      functions, "sendNotification"
-    )(data);
-    return result.data.id;
-  } catch {
-    // Silently fail — notification delivery should not block main operations
-    return "";
-  }
-}
 
 export async function getNotifications(
   userId: string

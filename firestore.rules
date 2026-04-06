@@ -169,9 +169,7 @@ service cloud.firestore {
     match /notifications/{notificationId} {
       allow read: if isAuthenticated() &&
         (resource.data.userId == request.auth.uid || resource.data.fromUserId == request.auth.uid);
-      allow create: if isAuthenticated() && isNotBanned() &&
-        request.resource.data.fromUserId == request.auth.uid &&
-        (request.resource.data.type != 'warning' || isAdmin());
+      allow create: if false;
       allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
       allow delete: if isAuthenticated() &&
         (resource.data.userId == request.auth.uid ||
