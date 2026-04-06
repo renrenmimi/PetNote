@@ -34,11 +34,6 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
     }
 
-    function isCounterUpdate() {
-      let counters = ['followingPetsCount', 'followingCount', 'followerCount'];
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(counters);
-    }
-
     // Safe fields allowed during user document creation.
     // Prevents setting role, banned, or other sensitive fields on create.
     function isAllowedUserCreate() {
@@ -53,7 +48,7 @@ service cloud.firestore {
       allow read: if true;
       // Owner can only create with safe fields — no role, banned, email
       allow create: if isOwner(userId) && isAllowedUserCreate();
-      allow update: if (isOwner(userId) && (isAllowedUserUpdate() || isCounterUpdate())) || isAdmin();
+      allow update: if (isOwner(userId) && isAllowedUserUpdate()) || isAdmin();
       // Only admin can delete user documents. Account deletion flow uses
       // admin SDK via Cloud Function, not client-side deleteDoc.
       allow delete: if isAdmin();

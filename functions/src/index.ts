@@ -60,12 +60,6 @@ export const onPetDeleted = onDocumentDeleted("pets/{petId}", async (event) => {
   if (!followingSnap.empty) {
     await batchChunked(followingSnap.docs, (batch, doc) => {
       batch.delete(doc.ref);
-      const userRef = doc.ref.parent.parent;
-      if (userRef) {
-        batch.update(userRef, {
-          followingPetsCount: admin.firestore.FieldValue.increment(-1),
-        });
-      }
     });
   }
 
@@ -79,7 +73,72 @@ export const onPetDeleted = onDocumentDeleted("pets/{petId}", async (event) => {
 });
 
 // ============================================================
-// 2. Post deleted: clean up bookmarks, reports, notifications
+// 2. followingPets created/deleted: maintain user/pet counters
+// ============================================================
+export const onFollowingPetCreated = onDocumentCreated(
+  "users/{userId}/followingPets/{petId}",
+  async (event) => {
+    const { userId, petId } = event.params;
+    const userRef = db.doc(`users/${userId}`);
+    const petRef = db.doc(`pets/${petId}`);
+    const [userSnap, petSnap] = await Promise.all([userRef.get(), petRef.get()]);
+
+    const batch = db.batch();
+    let hasWrites = false;
+
+    if (userSnap.exists) {
+      batch.update(userRef, {
+        followingPetsCount: admin.firestore.FieldValue.increment(1),
+      });
+      hasWrites = true;
+    }
+
+    if (petSnap.exists) {
+      batch.update(petRef, {
+        followerCount: admin.firestore.FieldValue.increment(1),
+      });
+      hasWrites = true;
+    }
+
+    if (hasWrites) {
+      await batch.commit();
+    }
+  }
+);
+
+export const onFollowingPetDeleted = onDocumentDeleted(
+  "users/{userId}/followingPets/{petId}",
+  async (event) => {
+    const { userId, petId } = event.params;
+    const userRef = db.doc(`users/${userId}`);
+    const petRef = db.doc(`pets/${petId}`);
+    const [userSnap, petSnap] = await Promise.all([userRef.get(), petRef.get()]);
+
+    const batch = db.batch();
+    let hasWrites = false;
+
+    if (userSnap.exists) {
+      batch.update(userRef, {
+        followingPetsCount: admin.firestore.FieldValue.increment(-1),
+      });
+      hasWrites = true;
+    }
+
+    if (petSnap.exists) {
+      batch.update(petRef, {
+        followerCount: admin.firestore.FieldValue.increment(-1),
+      });
+      hasWrites = true;
+    }
+
+    if (hasWrites) {
+      await batch.commit();
+    }
+  }
+);
+
+// ============================================================
+// 3. Post deleted: clean up bookmarks, reports, notifications
 // ============================================================
 export const onPostDeleted = onDocumentDeleted("posts/{postId}", async (event) => {
   const postId = event.params.postId;
@@ -111,7 +170,7 @@ export const onPostDeleted = onDocumentDeleted("posts/{postId}", async (event) =
 });
 
 // ============================================================
-// 3. Review created/deleted: recompute location aggregation
+// 4. Review created/deleted: recompute location aggregation
 //    Recount from all remaining reviews — no incremental math.
 // ============================================================
 export const onReviewCreated = onDocumentCreated(
@@ -129,7 +188,7 @@ export const onReviewDeleted = onDocumentDeleted(
 );
 
 // ============================================================
-// 4. Checkin created: update location totalCheckins + verified
+// 5. Checkin created: update location totalCheckins + verified
 // ============================================================
 export const onCheckinCreated = onDocumentCreated(
   "locations/{locationId}/checkins/{checkinId}",
@@ -149,7 +208,7 @@ export const onCheckinCreated = onDocumentCreated(
 );
 
 // ============================================================
-// 4b. Checkin deleted: recompute totalCheckins + verified
+// 5b. Checkin deleted: recompute totalCheckins + verified
 // ============================================================
 export const onCheckinDeleted = onDocumentDeleted(
   "locations/{locationId}/checkins/{checkinId}",
@@ -166,7 +225,7 @@ export const onCheckinDeleted = onDocumentDeleted(
 );
 
 // ============================================================
-// 5. Post written: maintain hashtag postCount server-side
+// 6. Post written: maintain hashtag postCount server-side
 // ============================================================
 export const onPostWritten = onDocumentWritten("posts/{postId}", async (event) => {
   const before = event.data?.before?.data();
@@ -200,7 +259,7 @@ export const onPostWritten = onDocumentWritten("posts/{postId}", async (event) =
 });
 
 // ============================================================
-// 6. Like deleted: decrement post likeCount
+// 7. Like deleted: decrement post likeCount
 // ============================================================
 export const onLikeDeleted = onDocumentDeleted(
   "posts/{postId}/likes/{likeId}",
@@ -215,7 +274,7 @@ export const onLikeDeleted = onDocumentDeleted(
 );
 
 // ============================================================
-// 7. Comment deleted: decrement post commentCount
+// 8. Comment deleted: decrement post commentCount
 // ============================================================
 export const onCommentDeleted = onDocumentDeleted(
   "posts/{postId}/comments/{commentId}",
@@ -230,7 +289,7 @@ export const onCommentDeleted = onDocumentDeleted(
 );
 
 // ============================================================
-// 8. Participant deleted: decrement meetup participantCount
+// 9. Participant deleted: decrement meetup participantCount
 // ============================================================
 export const onParticipantDeleted = onDocumentDeleted(
   "meetups/{meetupId}/participants/{participantId}",
@@ -245,7 +304,7 @@ export const onParticipantDeleted = onDocumentDeleted(
 );
 
 // ============================================================
-// 9. User updated: sync displayName/avatarUrl to denormalized copies
+// 10. User updated: sync displayName/avatarUrl to denormalized copies
 // ============================================================
 export const onUserUpdated = onDocumentWritten("users/{userId}", async (event) => {
   const before = event.data?.before?.data();
@@ -301,7 +360,7 @@ export const onUserUpdated = onDocumentWritten("users/{userId}", async (event) =
 });
 
 // ============================================================
-// 10. Callable: delete user document + Firebase Auth account
+// 11. Callable: delete user document + Firebase Auth account
 //     Uses admin SDK to bypass admin-only delete rule.
 //     Called from client deleteAccount() after Firestore cleanup.
 // ============================================================
@@ -334,7 +393,7 @@ export const deleteUserAccount = onCall(async (request) => {
 });
 
 // ============================================================
-// 11. Callable: create notification with server-side settings check
+// 12. Callable: create notification with server-side settings check
 //     Reads recipient's settings with admin SDK (owner-only rule)
 //     then creates notification if preferences allow it.
 // ============================================================
@@ -344,6 +403,12 @@ export const sendNotification = onCall(async (request) => {
   }
 
   const callerUid = request.auth.uid;
+  const callerSnap = await db.doc(`users/${callerUid}`).get();
+  const callerData = callerSnap.exists ? callerSnap.data() : null;
+  if (callerData?.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot send notifications.");
+  }
+
   const data = request.data as {
     userId: string;
     type: string;
@@ -381,8 +446,7 @@ export const sendNotification = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "Missing notification recipient.");
   }
 
-  const callerSnap = await db.doc(`users/${callerUid}`).get();
-  const isCallerAdmin = callerSnap.exists && callerSnap.data()?.role === "admin";
+  const isCallerAdmin = callerData?.role === "admin";
   if (data.type === "warning" && !isCallerAdmin) {
     throw new HttpsError("permission-denied", "Only admins can send warning notifications.");
   }

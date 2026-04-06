@@ -71,38 +71,48 @@ export async function searchUsers(name: string): Promise<UserProfile[]> {
 
 export async function searchPets(name: string): Promise<Pet[]> {
   if (!name) return [];
+  const needle = name.trim();
   const keyword = name.trim().toLowerCase();
   if (!keyword) return [];
   const petsRef = collection(db, "pets");
-  const lowerSnapshot = await getDocs(
-    query(
-      petsRef,
-      orderBy("nameLower"),
-      where("nameLower", ">=", keyword),
-      where("nameLower", "<=", `${keyword}\uf8ff`),
-      limit(10)
-    )
-  );
-  if (!lowerSnapshot.empty) {
-    return lowerSnapshot.docs.map((docSnap) => ({
+  const [lowerSnapshot, snapshot] = await Promise.all([
+    getDocs(
+      query(
+        petsRef,
+        orderBy("nameLower"),
+        where("nameLower", ">=", keyword),
+        where("nameLower", "<=", `${keyword}\uf8ff`),
+        limit(10)
+      )
+    ),
+    getDocs(
+      query(
+        petsRef,
+        orderBy("name"),
+        where("name", ">=", needle),
+        where("name", "<=", `${needle}\uf8ff`),
+        limit(10)
+      )
+    ),
+  ]);
+
+  const merged = new Map<string, Pet>();
+  lowerSnapshot.docs.forEach((docSnap) => {
+    merged.set(docSnap.id, {
       id: docSnap.id,
       ...(docSnap.data() as Omit<Pet, "id">),
-    }));
-  }
+    });
+  });
+  snapshot.docs.forEach((docSnap) => {
+    if (!merged.has(docSnap.id)) {
+      merged.set(docSnap.id, {
+        id: docSnap.id,
+        ...(docSnap.data() as Omit<Pet, "id">),
+      });
+    }
+  });
 
-  const snapshot = await getDocs(
-    query(
-      petsRef,
-      orderBy("name"),
-      where("name", ">=", name),
-      where("name", "<=", `${name}\uf8ff`),
-      limit(10)
-    )
-  );
-  return snapshot.docs.map((docSnap) => ({
-    id: docSnap.id,
-    ...(docSnap.data() as Omit<Pet, "id">),
-  }));
+  return Array.from(merged.values()).slice(0, 10);
 }
 
 export async function getTrendingTags(): Promise<string[]> {

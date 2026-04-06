@@ -137,6 +137,7 @@ export async function deleteAccount(userId: string): Promise<void> {
   const meetupsSnap = await getDocs(meetupsQuery);
   for (const meetupDoc of meetupsSnap.docs) {
     await deleteSubcollection(`meetups/${meetupDoc.id}`, "participants");
+    await deleteSubcollection(`meetups/${meetupDoc.id}`, "private");
     await deleteDoc(meetupDoc.ref);
   }
 
