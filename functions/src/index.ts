@@ -521,7 +521,7 @@ function sanitizeMeetupRequirements(value: unknown): {
       ? requirements.minFollowers
       : 0;
 
-  return {
+  return stripUndefined({
     dogSize,
     petType,
     customPetType,
@@ -533,7 +533,7 @@ function sanitizeMeetupRequirements(value: unknown): {
       typeof requirements.additionalNotes === "string"
         ? requirements.additionalNotes.trim()
         : "",
-  };
+  });
 }
 
 async function getOrCreatePublicMeetupLocation(params: {
