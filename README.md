@@ -34,7 +34,7 @@ A social media platform for pet lovers to share photos, discover pet-friendly pl
 - [Node.js](https://nodejs.org/) >= 18
 - [npm](https://www.npmjs.com/) (or yarn / pnpm)
 - A [Firebase](https://console.firebase.google.com/) project with **Authentication** (Email/Password + Google) and **Firestore** enabled
-- A [Cloudinary](https://cloudinary.com/) account with an unsigned upload preset named `petnote_unsigned`
+- A [Cloudinary](https://cloudinary.com/) account with signed upload presets named `petnote_image_signed` and `petnote_video_signed`
 - (Optional) A [Geoapify](https://www.geoapify.com/) API key for location features
 
 ## 🚀 Getting Started
@@ -65,11 +65,16 @@ VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
 VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
 VITE_FIREBASE_APP_ID=your_app_id
 
-# Cloudinary
-VITE_CLOUDINARY_CLOUD_NAME=your_cloud_name
-
 # Geoapify (optional — location features degrade gracefully without it)
 VITE_GEOAPIFY_KEY=your_geoapify_api_key
+```
+
+Configure Cloudinary secrets for Firebase Functions:
+
+```bash
+firebase functions:secrets:set CLOUDINARY_CLOUD_NAME
+firebase functions:secrets:set CLOUDINARY_API_KEY
+firebase functions:secrets:set CLOUDINARY_API_SECRET
 ```
 
 ### 4. Start the development server
@@ -222,7 +227,8 @@ Real-time NoSQL database powering all app data:
 
 ### Cloudinary (REST API)
 
-- Unsigned image & video uploads (`upload_preset: petnote_unsigned`)
+- Signed image & video uploads via Cloudinary REST API
+- Browser uploads request a short-lived signature from Firebase Functions first
 - Automatic video thumbnail generation
 - Endpoint: `https://api.cloudinary.com/v1_1/<cloud_name>/<resource_type>/upload`
 
