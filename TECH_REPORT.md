@@ -1,403 +1,405 @@
-# PetNote 项目技术分析报告
+# PetNote 项目技术报告
+
+## 一、项目定位
+
+PetNote 是一个以宠物为中心的社交应用。它不是单纯的“发帖 App”，而是把社交内容、宠物档案、地点发现、线下聚会、通知和管理后台放在同一个产品里。
+
+当前版本已经完成从“前端直接写 Firestore”向“后端权威写入”的迁移，核心业务写入主要由 Firebase Callable Functions 处理，聚合与同步由 Trigger Functions 处理。
 
 ---
 
-## 一、技术栈
+## 二、技术栈
 
-### 前端框架与语言
-- **React** v19.2.0 + **TypeScript** v5.9.3（严格模式）
-- **Vite** v7.2.4 作为构建工具
-- **Tailwind CSS** v4.1.18 做样式
-- **React Router** v7.13.0 做路由
-- **Lucide React** v0.563.0 做图标库
+### 前端
+
+- React 19
+- TypeScript 5.9
+- Vite 7
+- Tailwind CSS 4
+- React Router 7
+- Lucide React
 
 ### 后端与云服务
-- **Firebase** v12.8.0 — Auth（邮箱密码 + Google OAuth）+ Firestore（NoSQL 数据库）
-- **Cloudinary** — 图片/视频上传与 CDN 托管
-- **Geoapify** — 地理编码与地址自动补全
-- **DiceBear** — 默认头像生成
-- **Browser Geolocation API** — 用户定位
+
+- Firebase Authentication
+- Firestore
+- Firestore Security Rules
+- Firebase Cloud Functions
+- Cloudinary
+- Geoapify
+
+### 其他依赖
+
+- heic2any：处理 HEIC 图片
+- DiceBear：默认头像
+- Browser Geolocation API：获取当前位置
 
 ### 部署
-- **Vercel** 托管前端 SPA
 
-### 其他
-- **heic2any** — iOS HEIC 图片格式转换
-- **ESLint** + TypeScript 插件做代码规范
+- Vercel：前端部署
+- Firebase：Rules 与 Cloud Functions 部署
 
----
-
-## 二、数据结构（Firestore 集合）
-
-| 数据模型 | 核心字段 | 子集合 |
-|----------|---------|--------|
-| **User** | displayName, email, avatar, bio, location, role(admin/user), banned, followerCount | bookmarks, followingPets, followers, blockedUsers, settings |
-| **Pet** | name, species(8种), breed, birthday, gender, bio, avatar, followerCount, relationship | family, followers, invitations |
-| **Post** | text, media(image/video), petId, tags(hashtags), likeCount, commentCount | likes, comments |
-| **Comment** | text, authorId, replyTo(支持嵌套回复) | — |
-| **Location** | name, address, lat/lng, category(9类), features(12种), averageRating, totalCheckins | reviews, checkins |
-| **Meetup** | title, description, date, duration, location, requirements, status, participantCount | participants |
-| **Notification** | type(7种), fromUser, message, read | — |
-| **Report** | targetType(post/comment/user), reason, status | — |
-| **Feedback** | type(bug/feature/complaint/other), subject, message, status | — |
-| **Hashtag** | name, postCount, lastUsed | — |
-
-### 详细数据模型
-
-#### User (`UserProfile`)
-```typescript
-{
-  id: string;
-  displayName?: string;
-  displayNameLower?: string;
-  email?: string;
-  avatarUrl?: string;
-  bio?: string;
-  createdAt?: Timestamp;
-  followerCount?: number;
-  followingCount?: number;
-  followingPetsCount?: number;
-  role?: "admin" | "user";
-  banned?: boolean;
-  onboardingComplete?: boolean;
-  pinnedPostId?: string;
-  location?: {
-    lat: number;
-    lng: number;
-    city: string;
-    state: string;
-    updatedAt?: Timestamp;
-  };
-}
-```
-
-#### Pet
-```typescript
-{
-  id: string;
-  ownerId: string;
-  primaryOwnerId?: string;
-  name: string;
-  species: "dog" | "cat" | "bird" | "rabbit" | "hamster" | "fish" | "reptile" | "other";
-  breed?: string;
-  birthday?: Timestamp;
-  age?: string;
-  gender: "male" | "female" | "unknown";
-  bio: string;
-  avatarUrl: string;
-  followerCount?: number;
-  createdAt?: Timestamp;
-  relationship?: PetFamilyRelationship;
-  customRelationship?: string;
-  role?: "primary" | "member";
-}
-```
-
-#### Pet Family (`FamilyMember`)
-```typescript
-{
-  userId: string;
-  userName: string;
-  userAvatar: string;
-  relationship: "mom" | "dad" | "brother" | "sister" | "grandma" | "grandpa" | "auntie" | "uncle" | "best_friend" | "caretaker" | "other";
-  customRelationship?: string;
-  role: "primary" | "member";
-  joinedAt?: Timestamp;
-}
-```
-
-#### Post
-```typescript
-{
-  id: string;
-  authorId: string;
-  authorName: string;
-  authorAvatar: string;
-  text: string;
-  media?: { url: string; type: "image" | "video"; thumbUrl?: string }[];
-  petId?: string;
-  petName?: string;
-  petAvatarUrl?: string;
-  createdAt: Timestamp;
-  likeCount: number;
-  commentCount: number;
-  tags: string[];
-}
-```
-
-#### Comment
-```typescript
-{
-  id?: string;
-  authorId: string;
-  authorName: string;
-  authorAvatar?: string;
-  text: string;
-  createdAt?: Timestamp;
-  replyTo?: {
-    commentId: string;
-    authorName: string;
-  };
-}
-```
-
-#### Location
-```typescript
-{
-  id: string;
-  name: string;
-  address: string;
-  lat: number;
-  lng: number;
-  city: string;
-  state: string;
-  category: "dog_park" | "hiking_trail" | "beach" | "community_park" | "cafe" | "green_space" | "pet_store" | "vet" | "other";
-  description: string;
-  features: ("off_leash" | "fenced" | "water_access" | "waste_bags" | "parking" | "restrooms" | "seating" | "shade" | "lighting" | "beach_access" | "trails" | "food_nearby")[];
-  photos: string[];
-  addedBy: string;
-  addedByName: string;
-  averageRating: number;
-  totalRatings: number;
-  totalPhotos: number;
-  totalCheckins?: number;
-  verifiedByCheckins?: boolean;
-  tags: string[];
-  source: "user" | "meetup";
-  verified: boolean;
-  createdAt?: Timestamp;
-  updatedAt?: Timestamp;
-}
-```
-
-#### Meetup
-```typescript
-{
-  id: string;
-  organizerId: string;
-  organizerName: string;
-  organizerAvatar: string;
-  title: string;
-  description: string;
-  coverImage?: string;
-  date: Timestamp;
-  duration: number;
-  location: { name: string; address: string; lat: number; lng: number; city?: string; state?: string };
-  locationId?: string;
-  locationVisibility?: "everyone" | "participants_only";
-  requirements: {
-    dogSize: string;
-    petType: string;
-    maxPets: number;
-    mustHavePosts: boolean;
-    mustHavePetProfile: boolean;
-    minFollowers: number;
-    additionalNotes: string;
-  };
-  status: "upcoming" | "ongoing" | "completed" | "cancelled";
-  participantCount: number;
-  isRatingOpen?: boolean;
-  createdAt?: Timestamp;
-  updatedAt?: Timestamp;
-}
-```
-
-#### Notification (`NotificationItem`)
-```typescript
-{
-  id: string;
-  userId: string;
-  type: "like" | "comment" | "follow" | "pet_follow" | "reply" | "meetup_join" | "meetup_cancelled" | "warning";
-  fromUserId: string;
-  fromUserName: string;
-  fromUserAvatar: string;
-  postId?: string;
-  commentId?: string;
-  postImage?: string;
-  message: string;
-  warningReason?: string;
-  warningDetails?: string;
-  read: boolean;
-  createdAt: Timestamp;
-}
-```
-
-#### Report (`ReportItem`)
-```typescript
-{
-  id: string;
-  reporterId: string;
-  reporterName: string;
-  reporterAvatar?: string;
-  targetType: "post" | "comment" | "user";
-  targetId: string;
-  reason: string;
-  description?: string;
-  status: "pending" | "reviewed" | "resolved";
-  createdAt?: Timestamp;
-  postId?: string;
-}
-```
-
-#### Feedback
-```typescript
-{
-  id: string;
-  userId: string;
-  userName: string;
-  userEmail: string;
-  type: "bug" | "feature" | "complaint" | "other";
-  subject: string;
-  message: string;
-  status: "new" | "read" | "resolved";
-  createdAt?: Timestamp;
-}
-```
+Cloud Functions 当前运行在 Node 22 环境上。
 
 ---
 
-## 三、功能模块
+## 三、当前功能概览
 
-### 1. 认证系统
-- 邮箱密码注册/登录、Google OAuth、邮箱验证、密码重置
-- 自动生成随机用户名、新用户引导流程（Onboarding）
-- 账户删除（级联清理所有关联数据）
+### 1. 账户系统
 
-### 2. 社交动态 Feed
-- 帖子 CRUD，支持图片/视频轮播
-- 点赞、评论（支持嵌套回复）、收藏、分享
-- Hashtag 标签系统
-- "全部" / "关注" 两种 Feed 模式
-- 游标分页无限滚动、置顶帖子
+- 邮箱密码注册、登录、忘记密码
+- Google 登录
+- 邮箱验证
+- 新用户用户名生成和 onboarding
+- 个人资料编辑
+- 删除账户
 
-### 3. 宠物档案
-- 每用户最多 5 只宠物，8 种物种支持
-- 宠物家庭系统（邀请码机制，48 小时过期，11 种关系类型）
-- 宠物关注/粉丝系统、生日庆祝提醒
+### 2. 社交内容
 
-### 4. 宠物友好地点
-- 9 种地点分类（狗公园、徒步、海滩、咖啡馆、宠物店、兽医等）
-- 12 种设施特征标签
-- 评分系统（含宠物友好度：空间/安全/清洁三维度）
-- 签到系统（带照片验证，3 次签到自动认证地点）
-- Geoapify 地址搜索与反向地理编码
+- 文字、图片、视频帖子
+- 点赞
+- 评论与回复
+- 收藏
+- 话题标签
+- 全局 Feed
+- 关注宠物 Feed
 
-### 5. 线下聚会 Meetups
-- 创建聚会：设定地点、时间、时长、参与要求
-- 参与要求：宠物体型、类型、最大数量、最低粉丝数等
-- RSVP 管理、状态追踪（upcoming → ongoing → completed）
-- 聚会评分系统
+### 3. 宠物系统
 
-### 6. 搜索与发现
-- 搜索用户、宠物、帖子、Hashtag
-- 热门趋势帖子（7 天窗口）、热门标签
-- 推荐宠物、热门地点、即将到来的聚会
+- 创建、编辑、删除宠物
+- 宠物头像、物种、性别、生日、简介
+- 宠物家庭
+- 邀请码加入家庭
+- 关注宠物与粉丝统计
+- 宠物主页与宠物相关帖子
 
-### 7. 通知系统
-- 7 种通知类型：点赞、评论、关注、宠物关注、回复、聚会加入、聚会取消、管理员警告
-- 可配置通知偏好、已读/未读管理
+### 4. 地点系统
 
-### 8. 管理后台
-- 举报审核（帖子/评论/用户）
-- 用户封禁、发送警告
-- 内容审核与删除
-- 用户反馈管理
+- 创建地点
+- 地点评价
+- 地点图片
+- 签到
+- 地点详情页
+- 附近地点与搜索
 
-### 9. 其他
-- 深色模式（系统检测 + 手动切换）
-- 用户屏蔽系统
-- 图片压缩上传、HEIC 格式支持
-- 骨架屏加载、懒加载图片
-- PWA 支持
+### 5. Meetup 系统
+
+- 创建、编辑、取消 Meetup
+- 加入与退出 Meetup
+- 参与资格校验
+- 私密地址与公开地址分离
+- 活动结束后评价
+
+### 6. 通知与后台
+
+- 实时通知
+- 服务端通知生成
+- 举报与反馈
+- 管理员警告
+- 管理后台审核与封禁
 
 ---
 
-## 四、架构概览
+## 四、当前架构模型
 
-### 目录结构
-```
+### 1. Firestore Rules 的职责
+
+当前 Rules 主要负责两类事情：
+
+- 控制谁能读哪些路径
+- 只放行极少量简单的 owner-only 写入
+
+复杂业务约束已经不再依赖 Rules 表达。
+
+### 2. Callable Functions 的职责
+
+当前大部分核心业务写入走 Callable Functions，例如：
+
+- 创建 / 更新 / 删除帖子
+- 创建 / 删除评论
+- 关注 / 取消关注宠物
+- 提交评价
+- 提交签到
+- 创建 / 编辑 / 取消 / 加入 Meetup
+- 创建 / 兑换邀请码
+- 创建 / 更新 / 删除宠物
+- 创建地点 / 增加地点图片
+- 举报 / 反馈
+- 删除账户
+- 生成 Cloudinary signed upload 签名
+
+这套模式的核心价值是：
+
+- 服务端从 `auth.uid` 推导身份
+- 服务端做参数校验
+- 服务端做事务和资格校验
+- 客户端不再直接写关键业务文档
+
+### 3. Trigger Functions 的职责
+
+Trigger Functions 现在主要负责：
+
+- 聚合计数维护
+- 用户名称 / 头像反规范化同步
+- 通知 fan-out
+- 删除后清理关联数据
+- 地点评分 / 标签 / 照片重算
+
+---
+
+## 五、当前数据模型
+
+下面写的是“当前实现里最重要的字段”，不是把每个文档所有字段逐个抄出来。
+
+### 1. User
+
+公开 `users/{userId}` 文档当前主要承载：
+
+- `displayName`
+- `displayNameLower`
+- `avatarUrl`
+- `bio`
+- `createdAt`
+- `role`
+- `banned`
+- `followerCount`
+- `followingCount`
+- `followingPetsCount`
+- `onboardingComplete`
+- `pinnedPostId`
+- `location.city`
+- `location.state`
+
+当前**不会再把精确 `lat/lng` 放在公开用户文档里**。  
+精确位置已经迁到 owner-only 路径：
+
+- `users/{userId}/settings/location`
+
+### 2. Pet
+
+`pets/{petId}` 当前主要包含：
+
+- `ownerId`
+- `primaryOwnerId`
+- `name`
+- `nameLower`
+- `species`
+- `breed`
+- `birthday`
+- `gender`
+- `bio`
+- `avatarUrl`
+- `followerCount`
+- `createdAt`
+
+子集合：
+
+- `family/{userId}`
+- `followers/{userId}`
+- `invitations/{inviteCode}`
+
+### 3. Post
+
+`posts/{postId}` 当前主要包含：
+
+- `authorId`
+- `authorName`
+- `authorAvatar`
+- `text`
+- `media`
+- `petId`
+- `petName`
+- `petAvatarUrl`
+- `tags`
+- `likeCount`
+- `commentCount`
+- `createdAt`
+
+子集合：
+
+- `likes/{userId}`
+- `comments/{commentId}`
+
+### 4. Location
+
+`locations/{locationId}` 当前主要包含：
+
+- `name`
+- `category`
+- `description`
+- `address`
+- `lat`
+- `lng`
+- `city`
+- `state`
+- `features`
+- `photos`
+- `locationPhotos`
+- `averageRating`
+- `totalRatings`
+- `totalPhotos`
+- `totalCheckins`
+- `verifiedByCheckins`
+- `tags`
+- `addedBy`
+- `addedByName`
+- `source`
+
+子集合：
+
+- `reviews/{reviewId}`
+- `checkins/{checkinId}`
+
+### 5. Meetup
+
+`meetups/{meetupId}` 当前主要包含：
+
+- `organizerId`
+- `organizerName`
+- `organizerAvatar`
+- `title`
+- `description`
+- `coverImage`
+- `date`
+- `duration`
+- `location`
+- `locationId`
+- `locationVisibility`
+- `requirements`
+- `status`
+- `participantCount`
+- `isRatingOpen`
+- `createdAt`
+- `updatedAt`
+
+私密地址已拆到：
+
+- `meetups/{meetupId}/private/address`
+
+子集合：
+
+- `participants/{userId}`
+
+### 6. Notification
+
+`notifications/{notificationId}` 当前常见类型：
+
+- `like`
+- `comment`
+- `pet_follow`
+- `reply`
+- `meetup_join`
+- `meetup_cancelled`
+- `warning`
+
+通知文档由服务端生成，客户端不再直接创建。
+
+---
+
+## 六、当前安全模型
+
+当前项目遵循 callable-first 模型，重点规则如下：
+
+### 1. 客户端不再维护聚合字段
+
+例如：
+
+- `likeCount`
+- `commentCount`
+- `participantCount`
+- `averageRating`
+- `totalRatings`
+- `totalCheckins`
+- `hashtags.postCount`
+
+这些字段由 Cloud Functions 维护。
+
+### 2. 客户端不再决定公共身份快照
+
+关键业务写入里的身份信息，现在尽量由后端从：
+
+- `auth.uid`
+- 当前 profile
+
+派生，而不是信任前端自填。
+
+### 3. 复杂业务约束尽量转到后端
+
+例如：
+
+- Meetup 加入资格
+- Meetup 容量
+- 邀请码兑换
+- 签到
+- 评价
+- 删除账户
+
+这些不再只靠前端和 Rules。
+
+### 4. Cloudinary 已切换到 signed upload
+
+上传流程现在是：
+
+1. 前端调用 Firebase callable 拿签名
+2. 后端校验登录和封禁状态
+3. 浏览器带签名直传 Cloudinary
+
+当前使用的 signed presets：
+
+- `petnote_image_signed`
+- `petnote_video_signed`
+
+---
+
+## 七、当前目录结构
+
+```text
 src/
-├── components/    # 45+ 可复用 UI 组件
-├── contexts/      # ThemeContext, ToastContext（全局状态）
-├── hooks/         # 12 个自定义 Hook（auth, posts, likes, notifications 等）
-├── pages/         # 28 个路由页面
-├── services/      # 21 个服务模块（Firebase + API 封装）
-├── utils/         # 工具函数（图片压缩、时间格式化、密码校验等）
-└── types/         # TypeScript 类型声明
+  components/   UI 组件
+  contexts/     Auth / Theme / Toast 等上下文
+  hooks/        自定义 hooks
+  pages/        路由页面
+  services/     Firebase 与第三方服务封装
+  types/        类型声明
+  utils/        工具函数
+
+functions/
+  src/          Cloud Functions 源码
+
+firestore.rules
+README.md
+TECH_REPORT.md
+SECURITY_MODEL.md
+QA_TESTING.md
 ```
-
-### 状态管理
-无 Redux/Zustand，采用 React Context + Custom Hooks + Firestore 实时监听的轻量方案。
-
-### 数据流模式
-- Firestore 实时监听（auth/profile/notifications）
-- 游标分页（cursor-based pagination）
-- 批量状态查询（batch like/bookmark status）
-- Firestore 事务操作（关注/点赞/RSVP）
-
-### 路由守卫
-- `RequireAuth` 组件保护需登录页面
-- `RequireAdmin` 保护管理后台
-
-### Firestore 数据库结构
-```
-firestore/
-├── users/{userId}
-│   ├── bookmarks/{postId}
-│   ├── followingPets/{petId}
-│   ├── followers/{userId}
-│   ├── blockedUsers/{userId}
-│   └── settings/preferences
-├── posts/{postId}
-│   ├── likes/{userId}
-│   └── comments/{commentId}
-├── pets/{petId}
-│   ├── family/{userId}
-│   ├── followers/{userId}
-│   └── invitations/{code}
-├── notifications/{notificationId}
-├── meetups/{meetupId}
-│   └── participants/{userId}
-├── locations/{locationId}
-│   ├── reviews/{reviewId}
-│   └── checkins/{checkinId}
-├── hashtags/{tagName}
-├── reports/{reportId}
-└── feedback/{feedbackId}
-```
-
-### 路由架构（React Router v7）
-- **认证页面**: `/login`, `/signup`, `/forgot-password`
-- **主要页面**: `/`(Feed), `/search`, `/places`, `/meetups`
-- **详情页面**: `/post/:postId`, `/pet/:petId`, `/profile/:userId`, `/meetups/:meetupId`, `/location/:locationId`
-- **用户页面**: `/profile`, `/edit-profile`, `/settings`, `/notifications`, `/contact`, `/blocked-users`
-- **创建页面**: `/create`, `/add-pet`, `/add-place`, `/create-meetup`
-- **编辑页面**: `/edit-pet/:petId`, `/edit-post/:postId`, `/edit-meetup/:meetupId`
-- **管理后台**: `/admin`（RequireAdmin 守卫）
-- **法律页面**: `/terms`, `/privacy`
-
-### 性能优化
-- 游标分页无限滚动
-- 批量状态检查减少 Firestore 读取
-- 用户资料缓存（useUserCache）
-- 懒加载图片（LazyImage）
-- 上传前客户端图片压缩
-- Firestore 实时监听（高效）
-- 乐观 UI 更新（点赞/评论）
-
-### 外部服务集成
-
-| 服务 | 用途 | 集成方式 |
-|------|------|---------|
-| **Firebase Auth** | 用户认证 | SDK v12.8.0 |
-| **Firestore** | NoSQL 数据库 | SDK v12.8.0 |
-| **Cloudinary** | 图片/视频上传 | REST API |
-| **Geoapify** | 地理编码与地址补全 | REST API |
-| **DiceBear** | 头像生成 | REST API |
-| **Browser Geolocation** | 用户定位 | Web API |
 
 ---
 
-## 总结
+## 八、当前部署方式
 
-PetNote 是一个功能完整的**宠物社交平台**，涵盖社交动态、宠物档案管理、宠物友好地点发现、线下聚会组织、搜索发现、通知系统和管理后台。技术上采用 React + TypeScript + Firebase 的全栈方案，Cloudinary 处理媒体，Vercel 部署。
+### 前端
+
+- 由 Vercel 部署
+- GitHub push 后可自动部署
+
+### Firebase
+
+- `firestore.rules` 通过 Firebase CLI 部署
+- Cloud Functions 通过 Firebase CLI 部署
+- Cloudinary 相关密钥通过 Firebase Functions Secrets 管理
+
+---
+
+## 九、当前状态总结
+
+当前 PetNote 已经不再是“前端直接写库、靠 Rules 硬拦”的早期形态，而是一个：
+
+- 关键写路径后端化
+- 计数聚合后端化
+- 私密位置与私密 Meetup 地址分离
+- 通知服务端生成
+- Cloudinary 改为 signed upload
+
+的完整版本。
+
+从工程角度看，当前版本已经达到可上线状态；后续更适合做的是性能优化、依赖升级和文档持续维护，而不是继续补同一类权限漏洞。
