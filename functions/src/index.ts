@@ -454,6 +454,31 @@ function sanitizeMeetupLocation(value: unknown): {
   return { name, address, lat, lng, city, state };
 }
 
+function toStoredMeetupLocation(location: {
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+  city?: string;
+  state?: string;
+}): {
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+  city: string;
+  state: string;
+} {
+  return {
+    name: location.name,
+    address: location.address,
+    lat: location.lat,
+    lng: location.lng,
+    city: location.city || "",
+    state: location.state || "",
+  };
+}
+
 function sanitizeMeetupRequirements(value: unknown): {
   dogSize: string;
   petType: string;
@@ -2573,15 +2598,15 @@ export const createMeetupCallable = onCall(async (request) => {
   }
 
   const publicLocation = isPrivate
-    ? {
+    ? toStoredMeetupLocation({
         name: location.name,
         address: "",
         lat: 0,
         lng: 0,
         city: location.city,
         state: location.state,
-      }
-    : location;
+      })
+    : toStoredMeetupLocation(location);
 
   const meetupRef = await db.collection("meetups").add(
     stripUndefined({
@@ -2697,15 +2722,15 @@ export const updateMeetupCallable = onCall(async (request) => {
   }
 
   const publicLocation = isPrivate
-    ? {
+    ? toStoredMeetupLocation({
         name: location.name,
         address: "",
         lat: 0,
         lng: 0,
         city: location.city,
         state: location.state,
-      }
-    : location;
+      })
+    : toStoredMeetupLocation(location);
 
   const updates = stripUndefined({
     title,
