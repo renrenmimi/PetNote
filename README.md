@@ -1,75 +1,155 @@
-# 🐾 PetNote
+# PetNote
 
-A social media platform for pet lovers to share photos, discover pet-friendly places, organize meetups, and connect with other pet owners. Built with React, TypeScript, and Firebase.
+PetNote is a pet-centered social app built with React, TypeScript, Firebase, and Cloudinary. Users can share posts, manage pet profiles, discover pet-friendly places, organize meetups, follow pets, and receive real-time notifications.
 
-## ✨ Features
+## What the app does
 
-- **Social Feed** — Share pet photos & videos with captions, hashtags, likes, comments, and bookmarks
-- **Pet Profiles** — Create dedicated profiles for your pets with breed, age, and personality info
-- **Pet-Friendly Places** — Discover and rate dog parks, hiking trails, cafés, vet clinics, and more
-- **Meetups** — Organize and join local pet meetups with RSVP, location, and scheduling
-- **User Profiles** — Follow other users, view pet spotlights, and browse user posts
-- **Search & Explore** — Search for users, posts, hashtags, and places
-- **Notifications** — Real-time notifications for likes, comments, follows, and meetup updates
-- **Dark Mode** — System-aware theme with manual light / dark / system toggle
-- **Admin Panel** — Moderation dashboard for managing users, posts, and reports
-- **PWA Support** — Installable as a Progressive Web App on mobile devices
+- Social feed with text, image, and video posts
+- Comments, replies, likes, bookmarks, and hashtag-based discovery
+- Pet profiles with birthdays, bios, pet family members, and invitation-based family access
+- Pet follow system and following feed
+- Pet-friendly places with ratings, tags, photos, and check-ins
+- Meetups with eligibility rules, participant management, and private-address support
+- Real-time notifications for likes, comments, replies, pet follows, meetup joins, meetup cancellations, and admin warnings
+- Admin tools for reports, moderation, warnings, and bans
+- Account settings, blocked users, password reset, and account deletion
 
-## 🛠 Tech Stack
+## Current architecture
 
-| Layer              | Technology                                                                         |
-| ------------------ | ---------------------------------------------------------------------------------- |
-| **Framework**      | [React 19](https://react.dev/) + [TypeScript 5.9](https://www.typescriptlang.org/) |
-| **Build Tool**     | [Vite 7](https://vite.dev/)                                                        |
-| **Styling**        | [Tailwind CSS 4](https://tailwindcss.com/)                                         |
-| **Routing**        | [React Router 7](https://reactrouter.com/)                                         |
-| **Icons**          | [Lucide React](https://lucide.dev/)                                                |
-| **Backend / Auth** | [Firebase](https://firebase.google.com/) (Authentication, Firestore)               |
-| **Media Storage**  | [Cloudinary](https://cloudinary.com/) (image & video uploads)                      |
-| **Geocoding**      | [Geoapify](https://www.geoapify.com/) (reverse geocoding & address autocomplete)   |
-| **Deployment**     | [Vercel](https://vercel.com/)                                                      |
+PetNote uses a callable-first backend model for business writes.
 
-## 📦 Prerequisites
+- Firestore Rules
+  - Mostly control read access
+  - Allow only a very small set of simple owner-only writes
+- Callable Functions
+  - Handle business writes that need identity checks, validation, or transactions
+  - Examples: create post, create comment, create pet, join meetup, submit review, check in, delete account
+- Trigger Functions
+  - Maintain counters and denormalized snapshots
+  - Fan out notifications
+  - Clean up related data after deletes
 
-- [Node.js](https://nodejs.org/) >= 18
-- [npm](https://www.npmjs.com/) (or yarn / pnpm)
-- A [Firebase](https://console.firebase.google.com/) project with **Authentication** (Email/Password + Google) and **Firestore** enabled
-- A [Cloudinary](https://cloudinary.com/) account with signed upload presets named `petnote_image_signed` and `petnote_video_signed`
-- (Optional) A [Geoapify](https://www.geoapify.com/) API key for location features
+This means the client no longer directly writes most sensitive business data.
 
-## 🚀 Getting Started
+## Tech stack
 
-### 1. Clone the repository
+| Layer | Technology |
+| --- | --- |
+| Frontend | React 19 + TypeScript 5.9 |
+| Build tool | Vite 7 |
+| Styling | Tailwind CSS 4 |
+| Routing | React Router 7 |
+| Backend | Firebase Auth + Firestore + Cloud Functions |
+| Security | Firestore Rules + callable-first writes |
+| Media | Cloudinary signed uploads |
+| Geocoding | Geoapify |
+| Images | heic2any for HEIC conversion, DiceBear for default avatars |
+| Deployment | Vercel for frontend, Firebase for rules and functions |
 
-```bash
-git clone https://github.com/renrenmimi/PetNote.git
-cd PetNote
-```
+## Core product areas
 
-### 2. Install dependencies
+### Accounts and identity
+
+- Email/password sign-up and login
+- Google sign-in
+- Email verification
+- Password reset
+- Random username generation for new accounts
+- AuthProvider-based global auth/profile state
+
+### Posts and feed
+
+- Create posts with text plus image/video media
+- Attach a post to a pet profile
+- Like posts
+- Comment and reply
+- Bookmark posts
+- Global feed and following feed
+- Post editing and deletion
+
+### Pets
+
+- Create, edit, and delete pets
+- Species, breed, birthday, gender, bio, and avatar
+- Invitation-based pet family membership
+- Primary and member family roles
+- Pet followers and follower counts
+
+### Places
+
+- Create a place
+- Add place photos
+- Submit reviews with rating, tags, and photos
+- Check in with media
+- Browse place details and recent check-ins
+- Private user location is used for nearby ranking without exposing exact coordinates publicly
+
+### Meetups
+
+- Create, edit, cancel, and join meetups
+- Private or public meetup address handling
+- Capacity and eligibility checks
+- Post-meetup review flow
+- Status changes such as upcoming, completed, and cancelled
+
+### Notifications and moderation
+
+- Real-time notifications
+- Server-generated notification fan-out
+- Admin warning notifications
+- Report submission
+- Feedback submission
+- Admin moderation dashboard
+
+## Cloudinary upload model
+
+PetNote now uses signed uploads.
+
+- Frontend uploads do not use an unsigned preset anymore
+- The browser first requests a short-lived upload signature from Firebase Functions
+- The browser then uploads directly to Cloudinary with that signature
+- Separate signed presets are used for images and videos:
+  - `petnote_image_signed`
+  - `petnote_video_signed`
+
+## Local setup
+
+### Prerequisites
+
+- Node.js 22 recommended
+- npm
+- A Firebase project with Auth, Firestore, and Cloud Functions enabled
+- A Cloudinary account with these signed upload presets:
+  - `petnote_image_signed`
+  - `petnote_video_signed`
+- Optional Geoapify API key
+
+### Install dependencies
 
 ```bash
 npm install
+npm --prefix functions install
 ```
 
-### 3. Configure environment variables
+### Frontend environment variables
 
-Create a `.env` (or `.env.local`) file in the project root:
+Create `.env.local` in the project root:
 
 ```env
-# Firebase
 VITE_FIREBASE_API_KEY=your_firebase_api_key
 VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
 VITE_FIREBASE_PROJECT_ID=your_project_id
 VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
 VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
 VITE_FIREBASE_APP_ID=your_app_id
-
-# Geoapify (optional — location features degrade gracefully without it)
 VITE_GEOAPIFY_KEY=your_geoapify_api_key
 ```
 
-Configure Cloudinary secrets for Firebase Functions:
+Cloudinary upload no longer needs any `VITE_CLOUDINARY_*` frontend variable because uploads now use Firebase-signed parameters.
+
+### Firebase Functions secrets
+
+Set Cloudinary secrets for signed upload generation:
 
 ```bash
 firebase functions:secrets:set CLOUDINARY_CLOUD_NAME
@@ -77,188 +157,106 @@ firebase functions:secrets:set CLOUDINARY_API_KEY
 firebase functions:secrets:set CLOUDINARY_API_SECRET
 ```
 
-### 4. Start the development server
+### Start the frontend
 
 ```bash
 npm run dev
 ```
 
-The app will be available at `http://localhost:5173`.
+## Build and deployment
 
-## 🏗 Production Build & Deployment
-
-### Build for production
+### Verify locally
 
 ```bash
 npm run build
+npm run lint
+npm --prefix functions run build
 ```
 
-This runs TypeScript type-checking (`tsc -b`) followed by the Vite production build. The output goes to the `dist/` directory.
-
-### Preview the production build locally
+### Deploy Firebase rules and functions
 
 ```bash
-npm run preview
+firebase deploy --only firestore:rules,functions
 ```
 
-### Deploy to Vercel
+### Deploy frontend
 
-The project includes a `vercel.json` configured with SPA rewrites. To deploy:
+The repo is configured for Vercel. You can either:
 
-1. Install the [Vercel CLI](https://vercel.com/docs/cli):
-   ```bash
-   npm i -g vercel
-   ```
-2. Add the environment variables listed above in **Vercel → Project Settings → Environment Variables**.
-3. Deploy:
-   ```bash
-   vercel --prod
-   ```
-
-Or connect the GitHub repo (`renrenmimi/PetNote`) to Vercel for automatic deployments on every push.
-
-## 🔒 Firestore Security Rules
-
-Security rules live in the project root at `firestore.rules`.
-
-### Deploy rules (Console)
-
-1. Open Firebase Console → Firestore → Rules
-2. Copy the contents of `firestore.rules`
-3. Click Publish
-
-### Deploy rules (Firebase CLI)
-
-1. Install the CLI:
-   ```bash
-   npm install -g firebase-tools
-   ```
-2. Log in:
-   ```bash
-   firebase login
-   ```
-3. Initialize Firestore (first time only):
-   ```bash
-   firebase init firestore
-   ```
-4. Deploy rules:
-   ```bash
-   firebase deploy --only firestore:rules
-   ```
-
-## 🧱 Firebase Storage Rules
-
-The app currently uploads media to Cloudinary, so Firebase Storage is not used. A `storage.rules` file is included with a deny-by-default policy. If you later enable Firebase Storage, update `storage.rules` and deploy with:
+- use GitHub-connected automatic deployments, or
+- deploy manually with:
 
 ```bash
-firebase deploy --only storage:rules
+vercel --prod
 ```
 
-## 🗂 Project Structure
+## Firestore layout
 
+This is the high-level structure the app uses today:
+
+```text
+users/{userId}
+  bookmarks/{postId}
+  blockedUsers/{blockedUserId}
+  followingPets/{petId}
+  settings/preferences
+  settings/location
+
+posts/{postId}
+  likes/{userId}
+  comments/{commentId}
+
+pets/{petId}
+  family/{userId}
+  followers/{userId}
+  invitations/{invitationCode}
+
+meetups/{meetupId}
+  participants/{userId}
+  private/address
+
+locations/{locationId}
+  reviews/{reviewId}
+  checkins/{checkinId}
+
+notifications/{notificationId}
+hashtags/{tagName}
+reports/{reportId}
+feedback/{feedbackId}
 ```
+
+## Project structure
+
+```text
 src/
-├── assets/             # Static assets (images, etc.)
-├── components/         # Reusable UI components
-│   ├── AddressAutocomplete.tsx   # Geoapify address search
-│   ├── BottomNav.tsx             # Mobile bottom navigation
-│   ├── CommentSection.tsx        # Post comments
-│   ├── MediaCarousel.tsx         # Image/video carousel
-│   ├── Navbar.tsx                # Top navigation bar
-│   ├── OnboardingFlow.tsx        # New-user onboarding
-│   ├── PostCard.tsx              # Feed post card
-│   ├── ShareMenu.tsx             # Share / copy-link menu
-│   └── ...
-├── contexts/           # React Contexts
-│   ├── ThemeContext.tsx           # Dark mode provider
-│   └── ToastContext.tsx          # Toast notification provider
-├── hooks/              # Custom React hooks
-│   ├── useAuth.ts                # Authentication state & methods
-│   ├── useBookmark.ts            # Bookmark management
-│   ├── useFollow.ts              # Follow / unfollow logic
-│   ├── useLike.ts                # Like / unlike logic
-│   ├── useNotifications.ts       # Real-time notifications
-│   └── usePosts.ts               # Feed pagination & post CRUD
-├── pages/              # Route-level page components
-│   ├── Feed.tsx                  # Home feed
-│   ├── Create.tsx                # Create a new post
-│   ├── Places.tsx                # Pet-friendly places directory
-│   ├── Meetups.tsx               # Meetups listing
-│   ├── Profile.tsx               # Current user profile
-│   ├── Search.tsx                # Search users, posts, hashtags
-│   ├── AdminPanel.tsx            # Admin moderation dashboard
-│   └── ...
-├── services/           # Firebase & third-party API integrations
-│   ├── firebase.ts               # Firebase app init (Auth + Firestore)
-│   ├── cloudinary.ts             # Cloudinary media uploads
-│   ├── location.ts               # Geoapify geocoding & user location
-│   ├── locations.ts              # Places CRUD & ratings
-│   ├── meetups.ts                # Meetups CRUD & RSVP
-│   ├── posts.ts                  # Posts CRUD, likes, comments
-│   ├── users.ts                  # User profiles
-│   ├── follow.ts                 # Follow relationships
-│   ├── notifications.ts          # Notification creation & queries
-│   └── ...
-├── types/              # TypeScript type declarations
-├── utils/              # Utility helpers
-│   ├── imageCompressor.ts        # Client-side image compression
-│   ├── passwordValidator.ts      # Password strength rules
-│   ├── petHelpers.ts             # Pet breed / species helpers
-│   ├── timeAgo.ts                # Relative time formatting
-│   └── randomName.ts             # Random username generator
-├── App.tsx             # Root component & route definitions
-├── main.tsx            # Entry point (renders App with providers)
-└── index.css           # Global / Tailwind styles
+  components/   reusable UI building blocks
+  contexts/     auth, theme, and toast providers
+  hooks/        feed, notifications, auth, and UI hooks
+  pages/        route-level pages
+  services/     Firebase and third-party integrations
+  types/        local type declarations
+  utils/        formatting, upload, image, and validation helpers
+functions/
+  src/          Cloud Functions source
+firestore.rules Firestore security rules
+SECURITY_MODEL.md current security model and ownership boundaries
+TECH_REPORT.md technical overview of the current implementation
+QA_TESTING.md manual QA checklist
 ```
 
-## 🔌 APIs & External Services
+## Notes for maintainers
 
-### Firebase Authentication
+- Public `users` documents should not contain exact location coordinates
+- Cloudinary uploads should remain signed
+- Most business writes should stay in callable functions, not in the client
+- Trigger functions are responsible for counters, notification fan-out, and cleanup
 
-- Email / Password sign-up & sign-in
-- Google OAuth sign-in
-- Email verification & password reset
+## Admin setup
 
-### Firebase Firestore
+To grant admin access, update the user document in Firestore:
 
-Real-time NoSQL database powering all app data:
+- collection: `users`
+- field: `role`
+- value: `"admin"`
 
-- **Collections:** `users`, `posts`, `pets`, `meetups`, `locations`, `notifications`, `reports`, `feedback`, `hashtags`
-
-### Cloudinary (REST API)
-
-- Signed image & video uploads via Cloudinary REST API
-- Browser uploads request a short-lived signature from Firebase Functions first
-- Automatic video thumbnail generation
-- Endpoint: `https://api.cloudinary.com/v1_1/<cloud_name>/<resource_type>/upload`
-
-### Geoapify
-
-- **Reverse Geocoding** — convert coordinates to city/state (`/v1/geocode/reverse`)
-- **Address Autocomplete** — search suggestions filtered to US & Canada (`/v1/geocode/autocomplete`)
-
-### Browser Geolocation API
-
-- Used to get the user's current coordinates for nearby places & meetups
-
-## ⚙️ Admin Setup
-
-To grant admin access, update a user document in Firestore:
-
-1. Open **Firebase Console → Firestore → `users/{uid}`**
-2. Add field `role` with value `"admin"`
-
-Admin users can access the moderation dashboard at `/admin`.
-
-## 📜 Available Scripts
-
-| Command           | Description                          |
-| ----------------- | ------------------------------------ |
-| `npm run dev`     | Start Vite dev server with HMR       |
-| `npm run build`   | Type-check & build for production    |
-| `npm run preview` | Preview the production build locally |
-| `npm run lint`    | Run ESLint across the project        |
-
-## 📄 License
-
-This project is for personal / educational use.
+Admin users can access `/admin`.

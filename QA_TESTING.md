@@ -13,7 +13,7 @@
 ### Testing Strategy
 
 - **Manual functional testing** after every feature implementation and bug fix
-- **Cross-platform testing** on desktop browser (Chrome DevTools) and mobile (iPhone Safari PWA)
+- **Cross-platform testing** on desktop browser (Chrome DevTools) and mobile browser (iPhone Safari)
 - **Multi-account testing** using separate browser sessions to verify user interactions (follow, invite, notifications)
 - **Console monitoring** — actively checking browser DevTools Console for errors after every change
 - **Network monitoring** — using DevTools Network tab (Img filter) to verify API calls, image optimization, and response sizes
@@ -72,7 +72,7 @@ A comprehensive test checklist was created and executed covering all major flows
 - Invitation code generation (8-char, 48hr expiry) and copy/share
 - Settings → Edit username → verify uniqueness check → verify update propagates to pet Family section
 - Saved posts tab verification
-- Profile displays @email (not @username)
+- Profile displays `@displayName` instead of exposing user email
 
 **Round 4: Multi-Account Interaction (Steps 33–40)**
 
@@ -381,7 +381,7 @@ Optimized: /image/upload/q_auto,f_auto,w_800/v123/abc.jpg → 98 KB
 
 2. **Firestore Rules Coverage Gaps** — Pet-centric refactor introduced new collection paths (`pets/{petId}/family`, `pets/{petId}/invitations`, `users/{uid}/followingPets`) that weren't covered by existing rules. Required comprehensive rules update covering all subcollections and collectionGroup queries.
 
-3. **Unsigned Upload Preset** — Cloudinary uses unsigned upload preset (no server-side signature). Acceptable for current stage; noted for future migration to signed uploads when backend is available.
+3. **Signed Upload Migration** — Cloudinary upload flow was moved from unsigned preset upload to Firebase-generated signed upload parameters. This removes the old risk where knowing a preset name was enough to attempt uploads.
 
 ---
 
@@ -393,7 +393,7 @@ Optimized: /image/upload/q_auto,f_auto,w_800/v123/abc.jpg → 98 KB
 | Chrome DevTools Network (Img filter)  | Cloudinary image optimization verification, API call monitoring             |
 | Chrome DevTools Network (XHR filter)  | Firestore request count for performance analysis                            |
 | Multiple browser sessions / Incognito | Multi-account testing for social features                                   |
-| iPhone Safari                         | Mobile PWA testing, fixed positioning, HEIC upload, touch interactions      |
+| iPhone Safari                         | Mobile browser testing, fixed positioning, HEIC upload, touch interactions  |
 | Firebase Console — Firestore          | Data verification, manual field editing (admin role), collection management |
 | Firebase Console — Authentication     | User management, provider verification, password reset testing              |
 | Firebase Console — Rules              | Security rule deployment and testing                                        |
@@ -477,9 +477,9 @@ Optimized: /image/upload/q_auto,f_auto,w_800/v123/abc.jpg → 98 KB
 - [x] Environment variables configured in Vercel dashboard
 - [x] Vercel Authentication disabled for public access
 - [x] Production domain assigned
-- [x] Mobile PWA functional
+- [x] Mobile Safari browser flows functional
 - [x] All required Firestore indexes created
-- [x] Cloudinary upload preset configured
+- [x] Cloudinary signed upload presets and Firebase Functions secrets configured
 - [x] Firestore security rules deployed
 - [x] Terms of Service and Privacy Policy pages live
 - [x] Admin role configured in Firestore
