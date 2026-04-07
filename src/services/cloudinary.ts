@@ -1,17 +1,42 @@
-const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
-const uploadPreset = "petnote_unsigned";
+import { httpsCallable } from "firebase/functions";
+import { functions } from "./firebase";
 
-export async function uploadImage(file: File): Promise<string> {
-  if (!cloudName) {
-    throw new Error("Missing VITE_CLOUDINARY_CLOUD_NAME");
-  }
+type CloudinaryResourceType = "image" | "video";
+
+type SignedUploadSignatureRequest = {
+  resourceType: CloudinaryResourceType;
+};
+
+type SignedUploadSignatureResponse = {
+  cloudName: string;
+  apiKey: string;
+  timestamp: number;
+  signature: string;
+  uploadPreset: string;
+  folder: string;
+};
+
+async function uploadToCloudinary(
+  file: File,
+  resourceType: CloudinaryResourceType
+): Promise<string> {
+  const getCloudinaryUploadSignature = httpsCallable<
+    SignedUploadSignatureRequest,
+    SignedUploadSignatureResponse
+  >(functions, "getCloudinaryUploadSignature");
+
+  const { data } = await getCloudinaryUploadSignature({ resourceType });
 
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("upload_preset", uploadPreset);
+  formData.append("api_key", data.apiKey);
+  formData.append("timestamp", String(data.timestamp));
+  formData.append("signature", data.signature);
+  formData.append("upload_preset", data.uploadPreset);
+  formData.append("folder", data.folder);
 
   const response = await fetch(
-    `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+    `https://api.cloudinary.com/v1_1/${data.cloudName}/${resourceType}/upload`,
     {
       method: "POST",
       body: formData,
@@ -23,53 +48,32 @@ export async function uploadImage(file: File): Promise<string> {
     throw new Error(message || "Cloudinary upload failed");
   }
 
-  const data = (await response.json()) as { secure_url?: string };
-  if (!data.secure_url) {
+  const payload = (await response.json()) as { secure_url?: string };
+  if (!payload.secure_url) {
     throw new Error("Cloudinary response missing secure_url");
   }
 
-  return data.secure_url;
+  return payload.secure_url;
+}
+
+export async function uploadImage(file: File): Promise<string> {
+  return uploadToCloudinary(file, "image");
 }
 
 export async function uploadMedia(
   file: File
 ): Promise<{ url: string; type: "image" | "video"; thumbUrl?: string }> {
-  if (!cloudName) {
-    throw new Error("Missing VITE_CLOUDINARY_CLOUD_NAME");
-  }
-
   const isVideo = file.type.startsWith("video/");
-  const resourceType = isVideo ? "video" : "image";
-
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("upload_preset", uploadPreset);
-
-  const response = await fetch(
-    `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`,
-    {
-      method: "POST",
-      body: formData,
-    }
-  );
-
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || "Cloudinary upload failed");
-  }
-
-  const data = (await response.json()) as { secure_url?: string };
-  if (!data.secure_url) {
-    throw new Error("Cloudinary response missing secure_url");
-  }
+  const resourceType: CloudinaryResourceType = isVideo ? "video" : "image";
+  const secureUrl = await uploadToCloudinary(file, resourceType);
 
   if (!isVideo) {
-    return { url: data.secure_url, type: "image" };
+    return { url: secureUrl, type: "image" };
   }
 
-  const thumbUrl = data.secure_url
+  const thumbUrl = secureUrl
     .replace("/video/upload/", "/video/upload/so_0,w_400,h_400,c_fill/")
     .replace(/\.\w+$/, ".jpg");
 
-  return { url: data.secure_url, type: "video", thumbUrl };
+  return { url: secureUrl, type: "video", thumbUrl };
 }
