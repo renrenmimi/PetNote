@@ -13,29 +13,19 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      let userDoc = /databases/$(database)/documents/users/$(request.auth.uid);
       let adminDoc = /databases/$(database)/documents/users/$(request.auth.uid)/admin/state;
-      return isAuthenticated() && (
-        (exists(adminDoc) &&
-          'role' in get(adminDoc).data &&
-          get(adminDoc).data.role == 'admin') ||
-        ((!exists(adminDoc) || !('role' in get(adminDoc).data)) &&
-          exists(userDoc) &&
-          get(userDoc).data.role == 'admin')
-      );
+      return isAuthenticated() &&
+        exists(adminDoc) &&
+        'role' in get(adminDoc).data &&
+        get(adminDoc).data.role == 'admin';
     }
 
     function isNotBanned() {
-      let userDoc = /databases/$(database)/documents/users/$(request.auth.uid);
       let adminDoc = /databases/$(database)/documents/users/$(request.auth.uid)/admin/state;
       return isAuthenticated() && (
-        (exists(adminDoc) &&
-          'banned' in get(adminDoc).data &&
-          get(adminDoc).data.banned != true) ||
-        ((!exists(adminDoc) || !('banned' in get(adminDoc).data)) &&
-          (!exists(userDoc) ||
-            !('banned' in get(userDoc).data) ||
-            get(userDoc).data.banned != true))
+        !exists(adminDoc) ||
+        !('banned' in get(adminDoc).data) ||
+        get(adminDoc).data.banned != true
       );
     }
 

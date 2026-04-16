@@ -3,6 +3,7 @@
   "description": "PetNote Cloud Functions",
   "scripts": {
     "build": "tsc",
+    "migrate:admin-state": "node scripts/migrate-admin-state.js",
     "serve": "npm run build && firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions"
   },

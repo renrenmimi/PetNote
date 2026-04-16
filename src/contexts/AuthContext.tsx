@@ -199,10 +199,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await firebaseSignOut(auth);
   }, []);
 
-  const isAdmin =
-    adminState?.role === "admin" ||
-    (adminState?.role == null && profile?.role === "admin");
-  const isBanned = adminState?.banned ?? (profile?.banned === true);
+  const isAdmin = adminState?.role === "admin";
+  const isBanned = adminState?.banned === true;
 
   const value = useMemo(
     () => ({
