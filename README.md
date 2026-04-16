@@ -139,13 +139,21 @@ Create `.env.local` in the project root:
 VITE_FIREBASE_API_KEY=your_firebase_api_key
 VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
 VITE_FIREBASE_PROJECT_ID=your_project_id
-VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+VITE_FIREBASE_STORAGE_BUCKET=your_project.firebasestorage.app
 VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
 VITE_FIREBASE_APP_ID=your_app_id
 VITE_GEOAPIFY_KEY=your_geoapify_api_key
 ```
 
 Cloudinary upload no longer needs any `VITE_CLOUDINARY_*` frontend variable because uploads now use Firebase-signed parameters.
+
+Restrict the Geoapify key by HTTP referrer before production rollout.
+
+- Production: your production Vercel or custom domain
+- Preview: your Vercel preview domain pattern
+- Local development: `http://localhost:5173/*`
+
+The app currently serves root-relative Open Graph image URLs from `public/og-image.png`, so social cards resolve correctly on production, preview, and local builds without a hardcoded deployment host.
 
 ### Firebase Functions secrets
 
