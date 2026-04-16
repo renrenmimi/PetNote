@@ -134,16 +134,8 @@ async function getNotificationActor(userId: string): Promise<{
     fromUserId: userId,
     fromUserName: displayName,
     fromUserAvatar: avatarUrl,
-    role:
-      typeof adminData.role === "string"
-        ? adminData.role
-        : typeof data.role === "string"
-        ? data.role
-        : undefined,
-    banned:
-      typeof adminData.banned === "boolean"
-        ? adminData.banned
-        : data.banned === true,
+    role: typeof adminData.role === "string" ? adminData.role : undefined,
+    banned: adminData.banned === true,
   };
 }
 

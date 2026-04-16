@@ -25,8 +25,6 @@ export type UserProfile = {
   followerCount?: number;
   followingCount?: number;
   followingPetsCount?: number;
-  role?: "admin" | "user";
-  banned?: boolean;
   onboardingComplete?: boolean;
   pinnedPostId?: string;
   location?: {
