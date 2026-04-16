@@ -75,11 +75,15 @@ export async function markAllAsRead(userId: string): Promise<void> {
     where("read", "==", false)
   );
   const snapshot = await getDocs(notificationsQuery);
-  const batch = writeBatch(db);
-  snapshot.docs.forEach((docSnap) => {
-    batch.update(docSnap.ref, { read: true });
-  });
-  await batch.commit();
+  const chunkSize = 400;
+
+  for (let index = 0; index < snapshot.docs.length; index += chunkSize) {
+    const batch = writeBatch(db);
+    snapshot.docs.slice(index, index + chunkSize).forEach((docSnap) => {
+      batch.update(docSnap.ref, { read: true });
+    });
+    await batch.commit();
+  }
 }
 
 export async function getUnreadCount(userId: string): Promise<number> {

@@ -1,40 +1,126 @@
 import "./App.css";
-import { useEffect, useState } from "react";
+import {
+  Suspense,
+  lazy,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import { BottomNav } from "./components/BottomNav";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { RequireAuth } from "./components/RequireAuth";
 import { RequireAdmin } from "./components/RequireAdmin";
 import { SuspendedBanner } from "./components/SuspendedBanner";
 import PageTransition from "./components/PageTransition";
 import { SplashScreen } from "./components/SplashScreen";
-import { AddPet } from "./pages/AddPet";
-import { AdminPanel } from "./pages/AdminPanel";
-import { BlockedUsers } from "./pages/BlockedUsers";
-import { Create } from "./pages/Create";
-import { EditPost } from "./pages/EditPost";
-import { EditProfile } from "./pages/EditProfile";
 import { Feed } from "./pages/Feed";
-import { ForgotPassword } from "./pages/ForgotPassword";
-import { LocationDetail } from "./pages/LocationDetail";
 import { Login } from "./pages/Login";
-import { Places } from "./pages/Places";
-import { AddPlace } from "./pages/AddPlace";
-import { Meetups } from "./pages/Meetups";
-import { Notifications } from "./pages/Notifications";
-import { PetProfile } from "./pages/PetProfile";
-import { MeetupDetail } from "./pages/MeetupDetail";
-import { PostDetail } from "./pages/PostDetail";
-import { Profile } from "./pages/Profile";
-import { Search } from "./pages/Search";
-import { Settings } from "./pages/Settings";
 import { SignUp } from "./pages/SignUp";
-import { UserProfile } from "./pages/UserProfile";
-import { CreateMeetup } from "./pages/CreateMeetup";
-import { EditMeetup } from "./pages/EditMeetup";
-import { ContactUs } from "./pages/ContactUs";
-import { TermsOfService } from "./pages/TermsOfService";
-import { PrivacyPolicy } from "./pages/PrivacyPolicy";
 import { NotFound } from "./pages/NotFound";
+
+const AddPet = lazy(() =>
+  import("./pages/AddPet").then((module) => ({ default: module.AddPet }))
+);
+const AdminPanel = lazy(() =>
+  import("./pages/AdminPanel").then((module) => ({
+    default: module.AdminPanel,
+  }))
+);
+const BlockedUsers = lazy(() =>
+  import("./pages/BlockedUsers").then((module) => ({
+    default: module.BlockedUsers,
+  }))
+);
+const Create = lazy(() =>
+  import("./pages/Create").then((module) => ({ default: module.Create }))
+);
+const EditPost = lazy(() =>
+  import("./pages/EditPost").then((module) => ({ default: module.EditPost }))
+);
+const EditProfile = lazy(() =>
+  import("./pages/EditProfile").then((module) => ({
+    default: module.EditProfile,
+  }))
+);
+const ForgotPassword = lazy(() =>
+  import("./pages/ForgotPassword").then((module) => ({
+    default: module.ForgotPassword,
+  }))
+);
+const LocationDetail = lazy(() =>
+  import("./pages/LocationDetail").then((module) => ({
+    default: module.LocationDetail,
+  }))
+);
+const Places = lazy(() =>
+  import("./pages/Places").then((module) => ({ default: module.Places }))
+);
+const AddPlace = lazy(() =>
+  import("./pages/AddPlace").then((module) => ({ default: module.AddPlace }))
+);
+const Meetups = lazy(() =>
+  import("./pages/Meetups").then((module) => ({ default: module.Meetups }))
+);
+const Notifications = lazy(() =>
+  import("./pages/Notifications").then((module) => ({
+    default: module.Notifications,
+  }))
+);
+const PetProfile = lazy(() =>
+  import("./pages/PetProfile").then((module) => ({
+    default: module.PetProfile,
+  }))
+);
+const MeetupDetail = lazy(() =>
+  import("./pages/MeetupDetail").then((module) => ({
+    default: module.MeetupDetail,
+  }))
+);
+const PostDetail = lazy(() =>
+  import("./pages/PostDetail").then((module) => ({
+    default: module.PostDetail,
+  }))
+);
+const Profile = lazy(() =>
+  import("./pages/Profile").then((module) => ({ default: module.Profile }))
+);
+const Search = lazy(() =>
+  import("./pages/Search").then((module) => ({ default: module.Search }))
+);
+const Settings = lazy(() =>
+  import("./pages/Settings").then((module) => ({ default: module.Settings }))
+);
+const UserProfile = lazy(() =>
+  import("./pages/UserProfile").then((module) => ({
+    default: module.UserProfile,
+  }))
+);
+const CreateMeetup = lazy(() =>
+  import("./pages/CreateMeetup").then((module) => ({
+    default: module.CreateMeetup,
+  }))
+);
+const EditMeetup = lazy(() =>
+  import("./pages/EditMeetup").then((module) => ({
+    default: module.EditMeetup,
+  }))
+);
+const ContactUs = lazy(() =>
+  import("./pages/ContactUs").then((module) => ({
+    default: module.ContactUs,
+  }))
+);
+const TermsOfService = lazy(() =>
+  import("./pages/TermsOfService").then((module) => ({
+    default: module.TermsOfService,
+  }))
+);
+const PrivacyPolicy = lazy(() =>
+  import("./pages/PrivacyPolicy").then((module) => ({
+    default: module.PrivacyPolicy,
+  }))
+);
 
 type AppContentProps = {
   splashVisible: boolean;
@@ -44,8 +130,12 @@ type AppContentProps = {
 function AppContent({ splashVisible, splashFading }: AppContentProps) {
   const location = useLocation();
 
-  const wrap = (element: React.ReactNode) => (
-    <PageTransition>{element}</PageTransition>
+  const wrap = (element: ReactNode) => (
+    <ErrorBoundary>
+      <Suspense fallback={<SplashScreen visible={true} />}>
+        <PageTransition>{element}</PageTransition>
+      </Suspense>
+    </ErrorBoundary>
   );
 
   const showBottomNav =
@@ -236,9 +326,11 @@ function App() {
   }, []);
 
   return (
-    <BrowserRouter>
-      <AppContent splashVisible={splashVisible} splashFading={splashFading} />
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AppContent splashVisible={splashVisible} splashFading={splashFading} />
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }
 

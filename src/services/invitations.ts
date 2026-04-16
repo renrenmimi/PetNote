@@ -1,26 +1,15 @@
-import {
-  collection,
-  collectionGroup,
-  doc,
-  getDoc,
-  getDocs,
-  limit,
-  query,
-  where,
-} from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
-import { db, functions } from "./firebase";
+import { functions } from "./firebase";
 import type { PetFamilyRelationship } from "./pets";
 
 export type Invitation = {
   code: string;
   createdBy: string;
   createdByName: string;
-  expiresAt: unknown;
+  expiresAtMillis: number;
   used: boolean;
   usedBy?: string;
   usedByName?: string;
-  createdAt?: unknown;
   petId?: string;
 };
 
@@ -30,8 +19,6 @@ type UseInvitationResult = {
   petName?: string;
   error?: string;
 };
-
-const INVITE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 const normalizeCode = (code: string): string =>
   code.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
@@ -47,33 +34,24 @@ const withCustomRelationship = (
   return normalized ? { customRelationship: normalized } : {};
 };
 
-export function generateInviteCode(): string {
-  let code = "";
-  for (let index = 0; index < 8; index += 1) {
-    code += INVITE_CHARS[Math.floor(Math.random() * INVITE_CHARS.length)];
-  }
-  return code;
-}
-
 export async function createInvitation(
   petId: string,
   _userId: string,
   _userName: string
-): Promise<string> {
+): Promise<Invitation> {
   void _userId;
   void _userName;
   const result = await httpsCallable<
     { petId: string },
-    { code: string }
+    Invitation
   >(functions, "createInvitationCallable")({ petId });
-  return result.data.code;
+  return result.data;
 }
 
 export async function validateInvitationCode(code: string): Promise<{
   valid: boolean;
   petId?: string;
   petName?: string;
-  invitationRefPath?: string;
   error?: string;
 }> {
   try {
@@ -81,57 +59,11 @@ export async function validateInvitationCode(code: string): Promise<{
     if (normalized.length !== 8) {
       return { valid: false, error: "Invitation code must be 8 characters." };
     }
-
-    // Keep this query on a single field to avoid requiring a composite index.
-    const invitationQuery = query(
-      collectionGroup(db, "invitations"),
-      where("code", "==", normalized),
-      limit(5)
-    );
-    const invitationSnapshot = await getDocs(invitationQuery);
-    if (invitationSnapshot.empty) {
-      return { valid: false, error: "Invalid or expired invitation code." };
-    }
-
-    const candidate = invitationSnapshot.docs
-      .map((docSnap) => ({
-        docSnap,
-        data: docSnap.data() as Invitation,
-      }))
-      .find((item) => {
-        if (item.data.used) return false;
-        const expiresDate =
-          item.data.expiresAt &&
-          typeof item.data.expiresAt === "object" &&
-          "toDate" in item.data.expiresAt &&
-          typeof (item.data.expiresAt as { toDate: () => Date }).toDate ===
-            "function"
-            ? (item.data.expiresAt as { toDate: () => Date }).toDate()
-            : null;
-        if (!expiresDate) return false;
-        return expiresDate.getTime() >= Date.now();
-      });
-
-    if (!candidate) {
-      return { valid: false, error: "Invalid or expired invitation code." };
-    }
-
-    const petId = candidate.docSnap.ref.parent.parent?.id;
-    if (!petId) {
-      return { valid: false, error: "Could not find the associated pet." };
-    }
-
-    const petSnap = await getDoc(doc(db, "pets", petId));
-    if (!petSnap.exists()) {
-      return { valid: false, error: "Could not find the associated pet." };
-    }
-
-    return {
-      valid: true,
-      petId,
-      petName: (petSnap.data() as { name?: string }).name || "Pet",
-      invitationRefPath: candidate.docSnap.ref.path,
-    };
+    const result = await httpsCallable<
+      { code: string },
+      { valid: boolean; petId?: string; petName?: string; error?: string }
+    >(functions, "validateInvitationCallable")({ code: normalized });
+    return result.data;
   } catch (error) {
     console.error("Error validating invitation code:", error);
     return {
@@ -139,6 +71,16 @@ export async function validateInvitationCode(code: string): Promise<{
       error: "Failed to validate code. Please try again.",
     };
   }
+}
+
+export async function getActiveInvitation(
+  petId: string
+): Promise<Invitation | null> {
+  const result = await httpsCallable<
+    { petId: string },
+    { invitation: Invitation | null }
+  >(functions, "getActiveInvitationCallable")({ petId });
+  return result.data.invitation;
 }
 
 export async function redeemInvitation(
@@ -177,50 +119,4 @@ export async function redeemInvitation(
       error: message,
     };
   }
-}
-
-export async function getActiveInvitations(
-  petId: string
-): Promise<Invitation[]> {
-  const invitationsRef = collection(db, `pets/${petId}/invitations`);
-  const snapshot = await getDocs(invitationsRef);
-  return snapshot.docs
-    .map((docSnap) => ({
-      ...(docSnap.data() as Invitation),
-      code: docSnap.id,
-      petId,
-    }))
-    .filter((invitation) => {
-      if (invitation.used) {
-        return false;
-      }
-      if (
-        invitation.expiresAt &&
-        typeof invitation.expiresAt === "object" &&
-        "toDate" in invitation.expiresAt &&
-        typeof (invitation.expiresAt as { toDate: () => Date }).toDate ===
-          "function"
-      ) {
-        const expiresAt = (invitation.expiresAt as { toDate: () => Date }).toDate();
-        return expiresAt.getTime() > Date.now();
-      }
-      return false;
-    })
-    .sort((left, right) => {
-      const leftDate =
-        left.createdAt &&
-        typeof left.createdAt === "object" &&
-        "toDate" in left.createdAt &&
-        typeof (left.createdAt as { toDate: () => Date }).toDate === "function"
-          ? (left.createdAt as { toDate: () => Date }).toDate().getTime()
-          : 0;
-      const rightDate =
-        right.createdAt &&
-        typeof right.createdAt === "object" &&
-        "toDate" in right.createdAt &&
-        typeof (right.createdAt as { toDate: () => Date }).toDate === "function"
-          ? (right.createdAt as { toDate: () => Date }).toDate().getTime()
-          : 0;
-      return rightDate - leftDate;
-    });
 }

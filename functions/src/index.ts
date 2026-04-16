@@ -1,5 +1,5 @@
 import * as admin from "firebase-admin";
-import { createHash } from "node:crypto";
+import { createHash, randomInt } from "node:crypto";
 import { setGlobalOptions } from "firebase-functions/v2";
 import { onDocumentDeleted, onDocumentCreated, onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
@@ -85,6 +85,15 @@ type ServerNotificationPayload = {
   warningReason?: string;
   warningDetails?: string;
   read?: boolean;
+};
+
+type ActiveInvitation = {
+  code: string;
+  createdBy: string;
+  createdByName: string;
+  expiresAtMillis: number;
+  used: boolean;
+  petId: string;
 };
 
 function signCloudinaryParams(params: Record<string, string>, apiSecret: string): string {
@@ -181,6 +190,95 @@ async function getPetFamilyRecipientIds(
         .filter((userId): userId is string => !!userId && userId !== excludeUserId)
     )
   );
+}
+
+function normalizeInvitationCode(code: unknown): string {
+  return typeof code === "string"
+    ? code.replace(/[^a-zA-Z0-9]/g, "").toUpperCase()
+    : "";
+}
+
+function getInvitationExpiresAtMillis(
+  invitation: admin.firestore.DocumentData | undefined
+): number {
+  return invitation?.expiresAt instanceof admin.firestore.Timestamp
+    ? invitation.expiresAt.toMillis()
+    : 0;
+}
+
+function mapActiveInvitation(
+  docSnap: admin.firestore.QueryDocumentSnapshot,
+  petId: string
+): ActiveInvitation {
+  const invitation = docSnap.data();
+  return {
+    code: docSnap.id,
+    createdBy:
+      typeof invitation.createdBy === "string" ? invitation.createdBy : "",
+    createdByName:
+      typeof invitation.createdByName === "string"
+        ? invitation.createdByName
+        : "PetNote User",
+    expiresAtMillis: getInvitationExpiresAtMillis(invitation),
+    used: invitation.used === true,
+    petId,
+  };
+}
+
+function pickLatestActiveInvitation(
+  docs: admin.firestore.QueryDocumentSnapshot[]
+): admin.firestore.QueryDocumentSnapshot | null {
+  let latest: admin.firestore.QueryDocumentSnapshot | null = null;
+  let latestExpiresAtMillis = 0;
+  for (const docSnap of docs) {
+    const invitation = docSnap.data();
+    const expiresAtMillis = getInvitationExpiresAtMillis(invitation);
+    if (invitation.used === true || expiresAtMillis <= Date.now()) {
+      continue;
+    }
+    if (!latest || expiresAtMillis > latestExpiresAtMillis) {
+      latest = docSnap;
+      latestExpiresAtMillis = expiresAtMillis;
+    }
+  }
+  return latest;
+}
+
+async function getLatestActiveInvitationForPet(
+  petId: string
+): Promise<ActiveInvitation | null> {
+  const invitationsSnap = await db.collection(`pets/${petId}/invitations`).get();
+  const latest = pickLatestActiveInvitation(invitationsSnap.docs);
+  return latest ? mapActiveInvitation(latest, petId) : null;
+}
+
+async function getLatestActiveInvitationByCode(
+  code: string
+): Promise<{ invitation: ActiveInvitation; ref: admin.firestore.DocumentReference } | null> {
+  const invitationsSnap = await db
+    .collectionGroup("invitations")
+    .where("code", "==", code)
+    .limit(5)
+    .get();
+  const latest = pickLatestActiveInvitation(invitationsSnap.docs);
+  if (!latest) {
+    return null;
+  }
+  const petId = latest.ref.parent.parent?.id;
+  if (!petId) {
+    return null;
+  }
+  return {
+    invitation: mapActiveInvitation(latest, petId),
+    ref: latest.ref,
+  };
+}
+
+async function assertPetFamilyMember(petId: string, userId: string): Promise<void> {
+  const familySnap = await db.doc(`pets/${petId}/family/${userId}`).get();
+  if (!familySnap.exists) {
+    throw new HttpsError("permission-denied", "Only family members can access invitations.");
+  }
 }
 
 function getDefaultAvatar(seed: string): string {
@@ -1473,14 +1571,16 @@ export const createInvitationCallable = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "Missing petId.");
   }
 
-  const familySnap = await db.doc(`pets/${petId}/family/${callerUid}`).get();
-  if (!familySnap.exists) {
-    throw new HttpsError("permission-denied", "Only family members can create invitation codes.");
+  await assertPetFamilyMember(petId, callerUid);
+
+  const activeInvitation = await getLatestActiveInvitationForPet(petId);
+  if (activeInvitation) {
+    return activeInvitation;
   }
 
   const inviteChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const generateCode = () =>
-    Array.from({ length: 8 }, () => inviteChars[Math.floor(Math.random() * inviteChars.length)]).join("");
+    Array.from({ length: 8 }, () => inviteChars[randomInt(inviteChars.length)]).join("");
 
   let code = generateCode();
   let attempts = 0;
@@ -1498,13 +1598,70 @@ export const createInvitationCallable = onCall(async (request) => {
         used: false,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
-      return { code, expiresAt };
+      return {
+        code,
+        createdBy: callerUid,
+        createdByName: caller.fromUserName,
+        expiresAtMillis: expiresAt.toMillis(),
+        used: false,
+        petId,
+      };
     }
     code = generateCode();
     attempts += 1;
   }
 
   throw new HttpsError("resource-exhausted", "Could not generate an invitation code.");
+});
+
+export const getActiveInvitationCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Must be logged in.");
+  }
+
+  const { petId } = request.data as { petId?: string };
+  if (!petId || typeof petId !== "string") {
+    throw new HttpsError("invalid-argument", "Missing petId.");
+  }
+
+  await assertPetFamilyMember(petId, callerUid);
+  const invitation = await getLatestActiveInvitationForPet(petId);
+  return { invitation };
+});
+
+export const validateInvitationCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Must be logged in.");
+  }
+
+  const normalizedCode = normalizeInvitationCode(
+    (request.data as { code?: unknown } | undefined)?.code
+  );
+  if (normalizedCode.length !== 8) {
+    throw new HttpsError("invalid-argument", "Invitation code must be 8 characters.");
+  }
+
+  const invitationMatch = await getLatestActiveInvitationByCode(normalizedCode);
+  if (!invitationMatch) {
+    return { valid: false, error: "Invalid or expired invitation code." };
+  }
+
+  const petSnap = await db.doc(`pets/${invitationMatch.invitation.petId}`).get();
+  if (!petSnap.exists) {
+    return { valid: false, error: "Pet not found." };
+  }
+
+  const petData = petSnap.data() ?? {};
+  return {
+    valid: true,
+    petId: invitationMatch.invitation.petId,
+    petName:
+      typeof petData.name === "string" && petData.name.trim().length > 0
+        ? petData.name
+        : "Pet",
+  };
 });
 
 export const redeemInvitationCallable = onCall(async (request) => {
@@ -1523,8 +1680,7 @@ export const redeemInvitationCallable = onCall(async (request) => {
     relationship?: string;
     customRelationship?: string;
   };
-  const normalizedCode =
-    typeof data.code === "string" ? data.code.replace(/[^a-zA-Z0-9]/g, "").toUpperCase() : "";
+  const normalizedCode = normalizeInvitationCode(data.code);
   if (normalizedCode.length !== 8) {
     throw new HttpsError("invalid-argument", "Invitation code must be 8 characters.");
   }
@@ -1550,33 +1706,15 @@ export const redeemInvitationCallable = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "Invalid relationship.");
   }
 
-  const invitationSnap = await db
-    .collectionGroup("invitations")
-    .where("code", "==", normalizedCode)
-    .limit(5)
-    .get();
-  if (invitationSnap.empty) {
+  const invitationMatch = await getLatestActiveInvitationByCode(normalizedCode);
+  if (!invitationMatch) {
     throw new HttpsError("not-found", "Invalid or expired invitation code.");
   }
-
-  const candidate = invitationSnap.docs.find((docSnap) => {
-    const invite = docSnap.data();
-    const expiresAt =
-      invite.expiresAt instanceof admin.firestore.Timestamp ? invite.expiresAt.toMillis() : 0;
-    return invite.used !== true && expiresAt > Date.now();
-  });
-  if (!candidate) {
-    throw new HttpsError("failed-precondition", "Invalid or expired invitation code.");
-  }
-
-  const petId = candidate.ref.parent.parent?.id;
-  if (!petId) {
-    throw new HttpsError("failed-precondition", "Associated pet not found.");
-  }
+  const petId = invitationMatch.invitation.petId;
 
   const petRef = db.doc(`pets/${petId}`);
   const familyRef = db.doc(`pets/${petId}/family/${callerUid}`);
-  const invitationRef = candidate.ref;
+  const invitationRef = invitationMatch.ref;
 
   await db.runTransaction(async (transaction) => {
     const [petSnap, familySnap, freshInvitationSnap] = await Promise.all([
