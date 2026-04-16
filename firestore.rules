@@ -131,7 +131,7 @@ service cloud.firestore {
       }
 
       match /invitations/{code} {
-        allow read: if isAuthenticated();
+        allow read: if false;
         allow create: if false;
         allow update: if false;
         allow delete: if false;
@@ -150,7 +150,10 @@ service cloud.firestore {
       allow read: if isAuthenticated() &&
         (resource.data.userId == request.auth.uid || resource.data.fromUserId == request.auth.uid);
       allow create: if false;
-      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() &&
+        resource.data.userId == request.auth.uid &&
+        request.resource.data.read is bool &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
       allow delete: if isAuthenticated() &&
         (resource.data.userId == request.auth.uid ||
          resource.data.fromUserId == request.auth.uid ||
@@ -278,8 +281,5 @@ service cloud.firestore {
       allow read: if true;
     }
 
-    match /{path=**}/invitations/{code} {
-      allow read: if isAuthenticated();
-    }
   }
 }

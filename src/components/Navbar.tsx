@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import { useNotifications } from "../hooks/useNotifications";
+import { useHasUnreadNotifications } from "../hooks/useHasUnreadNotifications";
 import PawIcon from "./PawIcon";
 import Avatar from "./Avatar";
 
 export function Navbar() {
   const { user } = useAuth();
-  const { unreadCount } = useNotifications(user?.uid ?? null);
+  const { hasUnread } = useHasUnreadNotifications(user?.uid ?? null);
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -50,7 +50,7 @@ export function Navbar() {
             aria-label="Notifications"
           >
             🔔
-            {unreadCount > 0 ? (
+            {hasUnread ? (
               <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-500" />
             ) : null}
           </Link>

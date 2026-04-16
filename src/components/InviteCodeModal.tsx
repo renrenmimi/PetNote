@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { createInvitation, getActiveInvitations, type Invitation } from "../services/invitations";
+import { createInvitation, getActiveInvitation, type Invitation } from "../services/invitations";
 import { useToast } from "../contexts/ToastContext";
 
 type InviteCodeModalProps = {
@@ -17,21 +17,12 @@ const formatCode = (code: string): string => {
   return `${normalized.slice(0, 4)} ${normalized.slice(4, 8)}`;
 };
 
-const getExpiresInLabel = (expiresAt: unknown): string => {
-  if (
-    typeof expiresAt === "object" &&
-    expiresAt !== null &&
-    "toDate" in expiresAt &&
-    typeof (expiresAt as { toDate: () => Date }).toDate === "function"
-  ) {
-    const expiry = (expiresAt as { toDate: () => Date }).toDate().getTime();
-    const diffMs = Math.max(0, expiry - Date.now());
-    const totalMinutes = Math.floor(diffMs / 60000);
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-    return `Expires in ${hours}h ${minutes}m`;
-  }
-  return "Expires in 48h";
+const getExpiresInLabel = (expiresAtMillis: number): string => {
+  const diffMs = Math.max(0, expiresAtMillis - Date.now());
+  const totalMinutes = Math.floor(diffMs / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `Expires in ${hours}h ${minutes}m`;
 };
 
 export function InviteCodeModal({
@@ -59,9 +50,9 @@ export function InviteCodeModal({
     const load = async () => {
       setLoading(true);
       try {
-        const invites = await getActiveInvitations(petId);
+        const invitation = await getActiveInvitation(petId);
         if (!ignore) {
-          setActiveInvitation(invites[0] || null);
+          setActiveInvitation(invitation);
         }
       } catch {
         if (!ignore) {
@@ -84,14 +75,8 @@ export function InviteCodeModal({
     if (generating) return;
     setGenerating(true);
     try {
-      const code = await createInvitation(petId, userId, userName);
-      setActiveInvitation({
-        code,
-        createdBy: userId,
-        createdByName: userName,
-        expiresAt: { toDate: () => new Date(Date.now() + 48 * 60 * 60 * 1000) },
-        used: false,
-      });
+      const invitation = await createInvitation(petId, userId, userName);
+      setActiveInvitation(invitation);
       showToast("Invitation code generated.", "success");
     } catch (error) {
       const message =
@@ -168,7 +153,7 @@ export function InviteCodeModal({
                 {formattedCode}
               </p>
               <p className="mt-2 text-xs text-slate-500 dark:text-slate-300">
-                {getExpiresInLabel(activeInvitation.expiresAt)}
+                {getExpiresInLabel(activeInvitation.expiresAtMillis)}
               </p>
             </>
           ) : (

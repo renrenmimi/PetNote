@@ -11,8 +11,16 @@ import { timeAgo } from "../utils/timeAgo";
 export function Notifications() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { notifications, unreadCount, loading, markAsRead, markAllAsRead } =
-    useNotifications(user?.uid ?? null);
+  const {
+    notifications,
+    unreadCount,
+    loading,
+    hasMore,
+    loadingMore,
+    loadMore,
+    markAsRead,
+    markAllAsRead,
+  } = useNotifications(user?.uid ?? null);
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20 dark:bg-slate-900">
@@ -134,6 +142,19 @@ export function Notifications() {
           <p className="text-center text-xs text-slate-400 dark:text-slate-500">
             {unreadCount} unread
           </p>
+        ) : null}
+
+        {hasMore ? (
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={() => void loadMore()}
+              disabled={loadingMore}
+              className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-purple-300 hover:text-purple-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-300"
+            >
+              {loadingMore ? "Loading..." : "Load more"}
+            </button>
+          </div>
         ) : null}
       </main>
 
