@@ -14,6 +14,10 @@ import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/fires
 import { auth, db } from "../services/firebase";
 import { getUserLocation } from "../services/location";
 import {
+  subscribeAdminState,
+  type AdminState,
+} from "../services/adminState";
+import {
   createUserProfile,
   generateUniqueUsername,
   isUsernameTaken,
@@ -25,6 +29,8 @@ type AuthContextValue = {
   loading: boolean;
   profile: UserProfile | null;
   profileLoading: boolean;
+  adminLoading: boolean;
+  isAdmin: boolean;
   isBanned: boolean;
   signIn: (email: string, password: string) => Promise<User>;
   signUp: (email: string, password: string) => Promise<User>;
@@ -40,6 +46,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
+  const [adminState, setAdminState] = useState<AdminState | null>(null);
+  const [adminLoading, setAdminLoading] = useState(true);
   const hasProfileLocation = Boolean(profile?.location);
   const profileLocationKey = profile?.location
     ? `${profile.location.city}|${profile.location.state}`
@@ -76,6 +84,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ...(snapshot.data() as Omit<UserProfile, "id">),
       });
       setProfileLoading(false);
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAdminState(null);
+      setAdminLoading(false);
+      return;
+    }
+
+    setAdminLoading(true);
+    const unsubscribe = subscribeAdminState(user.uid, (nextAdminState) => {
+      setAdminState(nextAdminState);
+      setAdminLoading(false);
     });
     return () => unsubscribe();
   }, [user]);
@@ -175,19 +199,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await firebaseSignOut(auth);
   }, []);
 
+  const isAdmin =
+    adminState?.role === "admin" ||
+    (adminState?.role == null && profile?.role === "admin");
+  const isBanned = adminState?.banned ?? (profile?.banned === true);
+
   const value = useMemo(
     () => ({
       user,
       loading,
       profile,
       profileLoading,
-      isBanned: !!profile?.banned,
+      adminLoading,
+      isAdmin,
+      isBanned,
       signIn,
       signUp,
       signInWithGoogle,
       signOut,
     }),
-    [user, loading, profile, profileLoading, signIn, signUp, signInWithGoogle, signOut]
+    [
+      user,
+      loading,
+      profile,
+      profileLoading,
+      adminLoading,
+      isAdmin,
+      isBanned,
+      signIn,
+      signUp,
+      signInWithGoogle,
+      signOut,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

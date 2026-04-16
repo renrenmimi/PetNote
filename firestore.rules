@@ -13,15 +13,30 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isAuthenticated() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      let userDoc = /databases/$(database)/documents/users/$(request.auth.uid);
+      let adminDoc = /databases/$(database)/documents/users/$(request.auth.uid)/admin/state;
+      return isAuthenticated() && (
+        (exists(adminDoc) &&
+          'role' in get(adminDoc).data &&
+          get(adminDoc).data.role == 'admin') ||
+        ((!exists(adminDoc) || !('role' in get(adminDoc).data)) &&
+          exists(userDoc) &&
+          get(userDoc).data.role == 'admin')
+      );
     }
 
     function isNotBanned() {
       let userDoc = /databases/$(database)/documents/users/$(request.auth.uid);
-      return !exists(userDoc) ||
-        !('banned' in get(userDoc).data) ||
-        get(userDoc).data.banned != true;
+      let adminDoc = /databases/$(database)/documents/users/$(request.auth.uid)/admin/state;
+      return isAuthenticated() && (
+        (exists(adminDoc) &&
+          'banned' in get(adminDoc).data &&
+          get(adminDoc).data.banned != true) ||
+        ((!exists(adminDoc) || !('banned' in get(adminDoc).data)) &&
+          (!exists(userDoc) ||
+            !('banned' in get(userDoc).data) ||
+            get(userDoc).data.banned != true))
+      );
     }
 
     function isEmailVerified() {
@@ -42,6 +57,11 @@ service cloud.firestore {
                       'location', 'onboardingComplete', 'createdAt'];
       return request.resource.data.keys().hasOnly(allowed) &&
         hasSafePublicLocation(request.resource.data);
+    }
+
+    function isAllowedAdminStateWrite() {
+      let allowed = ['role', 'banned', 'bannedReason', 'bannedAt'];
+      return request.resource.data.keys().hasOnly(allowed);
     }
 
     function hasSafePublicLocation(userData) {
@@ -92,6 +112,13 @@ service cloud.firestore {
       match /settings/{settingId} {
         allow read: if isOwner(userId);
         allow write: if isOwner(userId);
+      }
+
+      match /admin/state {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isAdmin() && isAllowedAdminStateWrite();
+        allow update: if isAdmin() && isAllowedAdminStateWrite();
+        allow delete: if false;
       }
     }
 

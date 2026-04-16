@@ -1,6 +1,7 @@
 import {
   collection,
   collectionGroup,
+  deleteField,
   doc,
   documentId,
   getDoc,
@@ -13,6 +14,7 @@ import {
   where,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
+import { setAdminState } from "./adminState";
 import { auth, db, functions } from "./firebase";
 import { deleteComment, deletePost } from "./posts";
 import { type ReportItem } from "./report";
@@ -209,11 +211,18 @@ export async function blockUserByAdmin(
   reason?: string
 ): Promise<void> {
   const safeReason = reason?.trim() || DEFAULT_WARNING_REASON;
-  await updateDoc(doc(db, "users", userId), {
-    banned: true,
-    bannedReason: safeReason,
-    bannedAt: serverTimestamp(),
-  });
+  await Promise.all([
+    updateDoc(doc(db, "users", userId), {
+      banned: true,
+      bannedReason: safeReason,
+      bannedAt: serverTimestamp(),
+    }),
+    setAdminState(userId, {
+      banned: true,
+      bannedReason: safeReason,
+      bannedAt: serverTimestamp(),
+    }),
+  ]);
 
   await sendWarningNotification({
     userId,
@@ -223,16 +232,72 @@ export async function blockUserByAdmin(
 }
 
 export async function getBannedUsers() {
-  const usersRef = collection(db, "users");
-  const usersQuery = query(usersRef, where("banned", "==", true));
-  const snapshot = await getDocs(usersQuery);
-  return snapshot.docs.map((docSnap) => ({
-    id: docSnap.id,
-    ...(docSnap.data() as Record<string, unknown>),
-  }));
+  const [legacySnapshot, adminStateSnapshot] = await Promise.all([
+    getDocs(query(collection(db, "users"), where("banned", "==", true))),
+    getDocs(
+      query(
+        collectionGroup(db, "admin"),
+        where(documentId(), "==", "state"),
+        where("banned", "==", true)
+      )
+    ),
+  ]);
+
+  const adminStateEntries = (
+    await Promise.all(
+      adminStateSnapshot.docs.map(async (docSnap) => {
+        const userId = docSnap.ref.parent.parent?.id;
+        if (!userId) {
+          return null;
+        }
+        const userSnap = await getDoc(doc(db, "users", userId));
+        const userData = userSnap.exists()
+          ? (userSnap.data() as Record<string, unknown>)
+          : {};
+        return {
+          id: userId,
+          ...userData,
+          ...(docSnap.data() as Record<string, unknown>),
+        };
+      })
+    )
+  ).filter((entry): entry is { id: string } & Record<string, unknown> => !!entry);
+
+  const adminStateIds = new Set(adminStateEntries.map((entry) => entry.id));
+  const legacyEntries = (
+    await Promise.all(
+      legacySnapshot.docs.map(async (docSnap) => {
+        if (adminStateIds.has(docSnap.id)) {
+          return null;
+        }
+
+        const adminStateDoc = await getDoc(doc(db, "users", docSnap.id, "admin", "state"));
+        if (adminStateDoc.exists() && adminStateDoc.data().banned !== true) {
+          return null;
+        }
+
+        return {
+          id: docSnap.id,
+          ...(docSnap.data() as Record<string, unknown>),
+        };
+      })
+    )
+  ).filter((entry): entry is { id: string } & Record<string, unknown> => !!entry);
+
+  return [...adminStateEntries, ...legacyEntries];
 }
 
 export async function unbanUser(userId: string): Promise<void> {
-  const userRef = doc(db, "users", userId);
-  await updateDoc(userRef, { banned: false });
+  await Promise.all([
+    updateDoc(doc(db, "users", userId), {
+      banned: false,
+      bannedReason: deleteField(),
+      bannedAt: deleteField(),
+    }),
+    setAdminState(userId, {
+      banned: false,
+      bannedReason: deleteField(),
+      bannedAt: deleteField(),
+    }),
+  ]);
 }
