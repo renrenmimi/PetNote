@@ -115,8 +115,12 @@ async function getNotificationActor(userId: string): Promise<{
   role?: string;
   banned?: boolean;
 }> {
-  const userSnap = await db.doc(`users/${userId}`).get();
+  const [userSnap, adminSnap] = await Promise.all([
+    db.doc(`users/${userId}`).get(),
+    db.doc(`users/${userId}/admin/state`).get(),
+  ]);
   const data = userSnap.exists ? userSnap.data() ?? {} : {};
+  const adminData = adminSnap.exists ? adminSnap.data() ?? {} : {};
   const displayName =
     typeof data.displayName === "string" && data.displayName.trim().length > 0
       ? data.displayName
@@ -130,8 +134,16 @@ async function getNotificationActor(userId: string): Promise<{
     fromUserId: userId,
     fromUserName: displayName,
     fromUserAvatar: avatarUrl,
-    role: typeof data.role === "string" ? data.role : undefined,
-    banned: data.banned === true,
+    role:
+      typeof adminData.role === "string"
+        ? adminData.role
+        : typeof data.role === "string"
+        ? data.role
+        : undefined,
+    banned:
+      typeof adminData.banned === "boolean"
+        ? adminData.banned
+        : data.banned === true,
   };
 }
 
@@ -2946,9 +2958,8 @@ export const joinMeetupCallable = onCall(async (request) => {
   const callerUid = request.auth?.uid;
   if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
 
-  const callerSnap = await db.doc(`users/${callerUid}`).get();
-  const callerData = callerSnap.exists ? callerSnap.data() ?? {} : {};
-  if (callerData.banned === true) {
+  const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot join meetups.");
   }
 
