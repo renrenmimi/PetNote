@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useHasUnreadNotifications } from "../hooks/useHasUnreadNotifications";
+import { useLanguage } from "../hooks/useLanguage";
 import PawIcon from "./PawIcon";
 import Avatar from "./Avatar";
 
 export function Navbar() {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const { hasUnread } = useHasUnreadNotifications(user?.uid ?? null);
   const [scrolled, setScrolled] = useState(false);
 
@@ -40,14 +42,14 @@ export function Navbar() {
           <Link
             to="/search"
             className="text-xl text-slate-500 transition-all duration-200 hover:scale-105 hover:text-purple-500 dark:text-slate-300"
-            aria-label="Search"
+            aria-label={t("nav.search")}
           >
             🔍
           </Link>
           <Link
             to="/notifications"
             className="relative text-xl text-slate-500 transition-all duration-200 hover:scale-105 hover:text-purple-500 dark:text-slate-300"
-            aria-label="Notifications"
+            aria-label={t("nav.notifications")}
           >
             🔔
             {hasUnread ? (
@@ -59,13 +61,13 @@ export function Navbar() {
               to="/login"
               className="rounded-full border border-purple-200 px-3 py-1.5 text-sm font-semibold text-purple-600 transition-all duration-200 hover:scale-105 hover:border-purple-300 hover:bg-purple-50"
             >
-              Login
+              {t("nav.login")}
             </Link>
           ) : (
-            <Link to="/profile" aria-label="Profile">
+            <Link to="/profile" aria-label={t("nav.profile")}>
               <Avatar
                 src={user.photoURL || undefined}
-                alt={user.displayName || "User"}
+                alt={user.displayName || t("common.user")}
                 userId={user.uid}
                 size={36}
                 className="h-9 w-9"

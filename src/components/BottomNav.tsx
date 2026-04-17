@@ -1,5 +1,6 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import { useLanguage } from "../hooks/useLanguage";
 
 type NavItem = {
   label: string;
@@ -10,6 +11,7 @@ type NavItem = {
 
 export function BottomNav() {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -22,16 +24,16 @@ export function BottomNav() {
   };
 
   const items: NavItem[] = [
-    { label: "Home", icon: "🏠", path: "/" },
-    { label: "Places", icon: "📍", path: "/places" },
+    { label: t("nav.home"), icon: "🏠", path: "/" },
+    { label: t("nav.places"), icon: "📍", path: "/places" },
     {
-      label: "Create",
+      label: t("nav.create"),
       icon: "+",
       action: () => requireAuth("/create"),
     },
-    { label: "Meetups", icon: "🤝", path: "/meetups" },
+    { label: t("nav.meetups"), icon: "🤝", path: "/meetups" },
     {
-      label: "Profile",
+      label: t("nav.profile"),
       icon: "👤",
       path: "/profile",
       action: () => requireAuth("/profile"),
@@ -65,7 +67,7 @@ export function BottomNav() {
                   isActive ? "text-purple-600" : "text-slate-500 dark:text-slate-400"
                 }`}
               >
-                {item.label === "Create" ? (
+                {item.label === t("nav.create") ? (
                   <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-xl font-semibold text-white shadow-[0_12px_25px_-15px_rgba(168,85,247,0.8)] transition-all duration-200 hover:scale-105">
                     {item.icon}
                   </span>

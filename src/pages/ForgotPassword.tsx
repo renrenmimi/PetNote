@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchSignInMethodsForEmail, sendPasswordResetEmail } from "firebase/auth";
+import { LanguageSelector } from "../components/LanguageSelector";
+import { useLanguage } from "../hooks/useLanguage";
 import PawIcon from "../components/PawIcon";
 import { auth } from "../services/firebase";
 
@@ -46,6 +48,7 @@ function GoogleIcon() {
 }
 
 export function ForgotPassword() {
+  const { t } = useLanguage();
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
@@ -73,26 +76,22 @@ export function ForgotPassword() {
         if (!hasPassword && hasGoogle) {
           setGoogleOnly(true);
           setStatus("error");
-          setMessage(
-            "This email is linked to Google Sign-In. Please sign in with Google instead."
-          );
+          setMessage(t("forgot.googleOnly"));
           return;
         }
         if (!hasPassword) {
           setStatus("error");
-          setMessage("No account found with this email");
+          setMessage(t("forgot.noAccount"));
           return;
         }
       }
 
       await sendPasswordResetEmail(auth, email.trim());
       setStatus("success");
-      setMessage("Reset link sent! Check your email.");
+      setMessage(t("forgot.resetSent"));
     } catch {
       setStatus("error");
-      setMessage(
-        "If an account exists with this email, we've sent a reset link. If you signed up with Google, please use Google Sign-In instead."
-      );
+      setMessage(t("forgot.fallback"));
     } finally {
       setLoading(false);
     }
@@ -101,31 +100,34 @@ export function ForgotPassword() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 px-4">
       <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl dark:bg-slate-900">
+        <div className="mb-6 flex justify-end">
+          <LanguageSelector compact />
+        </div>
         <div className="mb-6 text-center">
           <div className="flex justify-center">
             <PawIcon size={48} />
           </div>
           <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
-            PetNote
+            {t("common.appName")}
           </h1>
           <h2 className="mt-4 text-lg font-semibold text-slate-900 dark:text-white">
-            Reset Password
+            {t("forgot.title")}
           </h2>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
-            Enter your email and we&apos;ll send you a reset link.
+            {t("forgot.subtitle")}
           </p>
         </div>
 
         <form className="space-y-4" onSubmit={handleSubmit}>
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
-              Email
+              {t("auth.email")}
             </span>
             <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
               <MailIcon />
               <input
                 type="email"
-                placeholder="you@example.com"
+                placeholder={t("auth.emailPlaceholder")}
                 autoComplete="email"
                 className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
                 value={email}
@@ -140,7 +142,7 @@ export function ForgotPassword() {
             disabled={loading || !email.trim()}
             className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            {loading ? "Sending..." : "Send Reset Link"}
+            {loading ? t("forgot.sending") : t("forgot.sendReset")}
           </button>
         </form>
 
@@ -160,13 +162,13 @@ export function ForgotPassword() {
           <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/10 dark:text-blue-200">
             <div className="flex items-center gap-2">
               <GoogleIcon />
-              <span>This account uses Google Sign-In.</span>
+              <span>{t("forgot.googleAccount")}</span>
             </div>
             <Link
               to="/login"
               className="mt-2 inline-block rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-blue-600 shadow-sm transition hover:bg-blue-100 dark:bg-slate-900 dark:text-blue-200"
             >
-              Sign in with Google
+              {t("forgot.googleCta")}
             </Link>
           </div>
         ) : null}
@@ -176,7 +178,7 @@ export function ForgotPassword() {
             to="/login"
             className="font-semibold text-purple-600 hover:text-purple-500"
           >
-            Back to Login
+            {t("forgot.backToLogin")}
           </Link>
         </p>
       </div>

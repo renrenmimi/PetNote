@@ -22,6 +22,7 @@ import {
   type Pet,
 } from "../services/pets";
 import { getUserProfile } from "../services/users";
+import { useLanguage } from "../hooks/useLanguage";
 import { getVideoThumbnail } from "../utils/cloudinaryUrl";
 import { getSpeciesMeta } from "../utils/petHelpers";
 import { timeAgo } from "../utils/timeAgo";
@@ -30,6 +31,7 @@ const genderSymbolClass = "text-base font-bold";
 
 export function Profile() {
   const navigate = useNavigate();
+  const { locale, t } = useLanguage();
   const { user, profile: authProfile } = useAuth();
   const { isAdmin } = useAdmin();
 
@@ -175,27 +177,27 @@ export function Profile() {
 
   const joinedDate = useMemo(() => {
     const created = user?.metadata?.creationTime;
-    if (!created) return "Unknown";
-    return new Date(created).toLocaleDateString(undefined, {
+    if (!created) return t("common.notSet");
+    return new Date(created).toLocaleDateString(locale, {
       year: "numeric",
       month: "short",
       day: "numeric",
     });
-  }, [user]);
+  }, [locale, t, user]);
 
   if (!user) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-white dark:bg-slate-900">
         <div className="text-center">
           <p className="text-sm text-slate-500 dark:text-slate-300">
-            Please log in to view profile.
+            {t("profile.loginRequired")}
           </p>
           <button
             type="button"
             onClick={() => navigate("/login")}
             className="mt-4 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white"
           >
-            Go to Login
+            {t("profile.goToLogin")}
           </button>
         </div>
       </main>
@@ -207,13 +209,13 @@ export function Profile() {
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-3">
           <h1 className="text-base font-semibold text-slate-900 dark:text-white">
-            Profile
+            {t("profile.title")}
           </h1>
           <button
             type="button"
             onClick={() => navigate("/settings")}
             className="text-xl text-slate-500 transition-colors hover:text-slate-700 dark:text-slate-300 dark:hover:text-white"
-            aria-label="Settings"
+            aria-label={t("nav.settings")}
           >
             ⚙️
           </button>
@@ -230,7 +232,7 @@ export function Profile() {
                 <div className="rounded-full bg-white p-[2px] dark:bg-slate-900">
                   <Avatar
                     src={profileAvatar || user.photoURL || undefined}
-                    alt={profileName || user.displayName || "User"}
+                    alt={profileName || user.displayName || t("common.user")}
                     userId={user.uid}
                     size={96}
                     className="h-24 w-24"
@@ -238,10 +240,10 @@ export function Profile() {
                 </div>
               </div>
               <h2 className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">
-                {profileName || user.displayName || "PetNote User"}
+                {profileName || user.displayName || t("common.petnoteUser")}
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                @{profileName || user.displayName || "unknown"}
+                @{profileName || user.displayName || t("profile.usernameFallback")}
               </p>
               {profileBio ? (
                 <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
@@ -260,7 +262,9 @@ export function Profile() {
                 <p className="text-lg font-semibold text-slate-900 dark:text-white">
                   {pets.length}
                 </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Pets</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {t("profile.petsCountLabel")}
+                </p>
               </div>
               <button
                 type="button"
@@ -279,7 +283,9 @@ export function Profile() {
                 <p className="text-lg font-semibold text-slate-900 dark:text-white">
                   {authProfile?.followingPetsCount ?? followingPets.length}
                 </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Following</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {t("profile.followingLabel")}
+                </p>
               </button>
             </div>
 
@@ -289,7 +295,7 @@ export function Profile() {
                 onClick={() => navigate("/edit-profile")}
                 className="rounded-full border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-700 transition-all duration-200 hover:scale-105 hover:border-purple-300 hover:text-purple-600 dark:border-slate-700 dark:text-slate-200"
               >
-                Edit Profile
+                {t("profile.editProfile")}
               </button>
             </div>
 
@@ -300,7 +306,7 @@ export function Profile() {
                   onClick={() => navigate("/admin")}
                   className="rounded-full border border-red-200 px-4 py-2 text-xs font-semibold text-red-500 transition-all duration-200 hover:border-red-300 hover:bg-red-50 dark:border-red-500/40 dark:hover:bg-red-500/10"
                 >
-                  Admin Panel
+                  {t("profile.adminPanel")}
                 </button>
               </div>
             ) : null}
@@ -319,7 +325,7 @@ export function Profile() {
                     : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
                 }`}
               >
-                My Pets
+                {t("profile.tabPets")}
               </button>
               <button
                 type="button"
@@ -330,7 +336,7 @@ export function Profile() {
                     : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
                 }`}
               >
-                Saved
+                {t("profile.tabSaved")}
               </button>
               <button
                 type="button"
@@ -341,7 +347,7 @@ export function Profile() {
                     : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
                 }`}
               >
-                Check-ins
+                {t("profile.tabCheckins")}
               </button>
             </div>
 
@@ -349,9 +355,9 @@ export function Profile() {
               pets.length === 0 ? (
                 <EmptyState
                   icon="🐾"
-                  title="No pets added"
-                  description="Add your furry friend!"
-                  actionText="Add Pet"
+                  title={t("profile.emptyPetsTitle")}
+                  description={t("profile.emptyPetsDescription")}
+                  actionText={t("profile.addPet")}
                   onAction={() => navigate("/add-pet")}
                 />
               ) : (
@@ -391,7 +397,10 @@ export function Profile() {
                             </p>
                           ) : null}
                           <p className="text-xs text-slate-400 dark:text-slate-500">
-                            {postCount} posts · {pet.followerCount || 0} followers
+                            {t("profile.postsFollowers", {
+                              posts: postCount,
+                              followers: pet.followerCount || 0,
+                            })}
                           </p>
                         </div>
                         <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-500 dark:bg-slate-700 dark:text-slate-300">
@@ -407,7 +416,7 @@ export function Profile() {
                       onClick={() => navigate("/add-pet")}
                       className="w-full rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-purple-600 transition-all duration-200 hover:border-purple-300 hover:bg-purple-50 dark:border-slate-700 dark:hover:bg-purple-500/10"
                     >
-                      + Add Pet
+                      + {t("profile.addPet")}
                     </button>
                   ) : null}
                 </div>
@@ -427,8 +436,8 @@ export function Profile() {
               ) : savedPosts.length === 0 ? (
                 <EmptyState
                   icon="🔖"
-                  title="No saved posts"
-                  description="Bookmark posts you love to find them later"
+                  title={t("profile.emptySavedTitle")}
+                  description={t("profile.emptySavedDescription")}
                 />
               ) : (
                 <div className="grid grid-cols-3 gap-2">
@@ -492,14 +501,15 @@ export function Profile() {
               ) : checkins.length === 0 ? (
                 <EmptyState
                   icon="📍"
-                  title="No check-ins yet"
-                  description="Visit a pet-friendly place and check in"
+                  title={t("profile.emptyCheckinsTitle")}
+                  description={t("profile.emptyCheckinsDescription")}
                 />
               ) : (
                 <div className="space-y-3">
                   {checkins.map((checkin) => {
                     const location = checkinLocations[checkin.locationId];
-                    const locationName = location?.name || "Unknown location";
+                    const locationName =
+                      location?.name || t("profile.unknownLocation");
                     const locationPhoto = location?.photos?.[0];
                     return (
                       <button
@@ -531,7 +541,7 @@ export function Profile() {
                         <div className="h-14 w-14 overflow-hidden rounded-xl">
                           <LazyImage
                             src={checkin.photoUrl}
-                            alt="Check-in"
+                            alt={t("profile.checkInImageAlt")}
                             className="h-full w-full"
                             cloudinarySize="small"
                           />
@@ -548,7 +558,7 @@ export function Profile() {
         {!loading ? (
           <div className="pt-4">
             <p className="text-xs text-slate-400 dark:text-slate-500">
-              Joined {joinedDate}
+              {t("profile.joinedOn", { date: joinedDate })}
             </p>
           </div>
         ) : null}
@@ -559,7 +569,7 @@ export function Profile() {
           <div className="w-full max-w-md rounded-3xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)] dark:bg-slate-800">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-                Following Pets
+                {t("profile.followingPetsTitle")}
               </h3>
               <button
                 type="button"
@@ -568,17 +578,17 @@ export function Profile() {
                 }}
                 className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-300"
               >
-                Close
+                {t("common.close")}
               </button>
             </div>
             <div className="mt-4 space-y-3">
               {followingPetsLoading ? (
                 <p className="text-center text-sm text-slate-500 dark:text-slate-300">
-                  Loading...
+                  {t("common.loading")}
                 </p>
               ) : followingPets.length === 0 ? (
                 <p className="text-center text-sm text-slate-500 dark:text-slate-300">
-                  No followed pets yet
+                  {t("profile.noFollowingPets")}
                 </p>
               ) : (
                 followingPets.map((pet) => (
@@ -593,13 +603,13 @@ export function Profile() {
                     >
                       <Avatar
                         src={pet.petAvatar || undefined}
-                        alt={pet.petName || "Pet"}
+                        alt={pet.petName || t("common.pet")}
                         userId={pet.petId}
                         size={40}
                         className="h-10 w-10"
                       />
                       <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                        {pet.petName || "Pet"}
+                        {pet.petName || t("common.pet")}
                       </p>
                     </button>
                     <button
@@ -612,7 +622,7 @@ export function Profile() {
                       }}
                       className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-500 transition-all duration-200 hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:text-slate-300"
                     >
-                      Unfollow
+                      {t("profile.unfollow")}
                     </button>
                   </div>
                 ))
