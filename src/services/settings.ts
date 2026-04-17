@@ -4,18 +4,25 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
+import {
+  DEFAULT_LANGUAGE,
+  isAppLanguage,
+  type AppLanguage,
+} from "../i18n/config";
 import { db, functions } from "./firebase";
 
 export type UserSettings = {
   likeNotifications: boolean;
   commentNotifications: boolean;
   followNotifications: boolean;
+  language: AppLanguage;
 };
 
-const defaultSettings: UserSettings = {
+export const defaultUserSettings: UserSettings = {
   likeNotifications: true,
   commentNotifications: true,
   followNotifications: true,
+  language: DEFAULT_LANGUAGE,
 };
 
 const settingsRef = (userId: string) =>
@@ -24,11 +31,13 @@ const settingsRef = (userId: string) =>
 export async function getSettings(userId: string): Promise<UserSettings> {
   const snapshot = await getDoc(settingsRef(userId));
   if (!snapshot.exists()) {
-    return defaultSettings;
+    return defaultUserSettings;
   }
+  const data = snapshot.data() as Partial<UserSettings>;
   return {
-    ...defaultSettings,
-    ...(snapshot.data() as Partial<UserSettings>),
+    ...defaultUserSettings,
+    ...data,
+    language: isAppLanguage(data.language) ? data.language : DEFAULT_LANGUAGE,
   };
 }
 

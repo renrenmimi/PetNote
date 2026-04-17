@@ -9,6 +9,7 @@ import {
   where,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
+import { getDocumentLanguage, isChineseLanguage } from "../i18n/config";
 import { db, functions } from "./firebase";
 import type { PostData, Post } from "./posts";
 import { getUserProfile } from "./users";
@@ -91,17 +92,33 @@ const relationshipLabelMap: Record<PetFamilyRelationship, string> = {
   other: "Other",
 };
 
+const relationshipLabelMapZh: Record<PetFamilyRelationship, string> = {
+  mom: "妈妈",
+  dad: "爸爸",
+  brother: "哥哥",
+  sister: "姐姐",
+  grandma: "奶奶",
+  grandpa: "爷爷",
+  auntie: "阿姨",
+  uncle: "叔叔",
+  best_friend: "好朋友",
+  caretaker: "照护者",
+  other: "其他",
+};
+
 export const getRelationshipLabel = (
   relationship?: PetFamilyRelationship,
   customRelationship?: string
 ): string => {
+  const isZh = isChineseLanguage(getDocumentLanguage());
   if (!relationship) {
-    return "Family";
+    return isZh ? "家人" : "Family";
   }
   if (relationship === "other" && customRelationship?.trim()) {
     return customRelationship.trim();
   }
-  return relationshipLabelMap[relationship] || "Family";
+  const labelMap = isZh ? relationshipLabelMapZh : relationshipLabelMap;
+  return labelMap[relationship] || (isZh ? "家人" : "Family");
 };
 
 const toDate = (value: unknown): Date | null => {

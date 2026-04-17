@@ -17,10 +17,12 @@ import { batchCheckLikes } from "../hooks/useBatchLikeStatus";
 import { batchCheckBookmarks } from "../hooks/useBatchBookmarkStatus";
 import { getFollowingPets } from "../services/follow";
 import { useToast } from "../contexts/ToastContext";
+import { useLanguage } from "../hooks/useLanguage";
 import { type Post } from "../services/posts";
 
 export function Feed() {
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const { user, profile, profileLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<"all" | "following">("all");
   const { posts, loading, loadingMore, hasMore, loadMore, refresh, error } =
@@ -129,10 +131,10 @@ export function Feed() {
   }, [filteredPosts, user]);
 
   const pullLabel = refreshing
-    ? "Refreshing..."
+    ? t("feed.refreshing")
     : pullDistance > 60
-    ? "Release to refresh"
-    : "Pull to refresh";
+    ? t("feed.releaseToRefresh")
+    : t("feed.pullToRefresh");
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20 dark:bg-slate-900">
@@ -175,7 +177,7 @@ export function Feed() {
                   : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
               }`}
             >
-              For You
+              {t("feed.tabForYou")}
             </button>
             {user ? (
               <button
@@ -187,7 +189,7 @@ export function Feed() {
                     : "text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-200"
                 }`}
               >
-                Following
+                {t("feed.tabFollowing")}
               </button>
             ) : null}
             <span
@@ -218,9 +220,9 @@ export function Feed() {
           activeTab === "following" && user && followingCount === 0 ? (
             <EmptyState
               icon="👥"
-              title="No posts from followed pets"
-              description="Follow some pets to see their posts here"
-              actionText="Discover Pets"
+              title={t("feed.emptyFollowingTitle")}
+              description={t("feed.emptyFollowingDescription")}
+              actionText={t("feed.discoverPets")}
               onAction={() => navigate("/search")}
             />
           ) : (
@@ -229,10 +231,10 @@ export function Feed() {
                 <PawIcon size={36} />
               </div>
               <p className="mt-4 text-base font-semibold text-slate-900 dark:text-white">
-                Welcome to PetNote! 🐾
+                {t("feed.welcomeTitle")}
               </p>
               <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                Start by sharing your first pet moment.
+                {t("feed.welcomeDescription")}
               </p>
               <div className="mt-4 flex flex-col gap-2">
                 <button
@@ -240,14 +242,14 @@ export function Feed() {
                   onClick={() => navigate("/create")}
                   className="w-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white"
                 >
-                  Create Post
+                  {t("feed.createPost")}
                 </button>
                 <button
                   type="button"
                   onClick={() => navigate("/search")}
                   className="text-xs font-semibold text-purple-600"
                 >
-                  Or explore what others are sharing
+                  {t("feed.exploreOthers")}
                 </button>
               </div>
             </div>
@@ -272,7 +274,7 @@ export function Feed() {
             <span className="h-6 w-6 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
           ) : !hasMore && filteredPosts.length > 0 ? (
             <p className="text-xs text-slate-400 dark:text-slate-500">
-              You&apos;ve seen all posts 🐾
+              {t("feed.endOfFeed")}
             </p>
           ) : null}
         </div>

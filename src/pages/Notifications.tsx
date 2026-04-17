@@ -4,6 +4,7 @@ import { EmptyState } from "../components/EmptyState";
 import Avatar from "../components/Avatar";
 import PawIcon from "../components/PawIcon";
 import { useAuth } from "../hooks/useAuth";
+import { useLanguage } from "../hooks/useLanguage";
 import { useNotifications } from "../hooks/useNotifications";
 import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 import { timeAgo } from "../utils/timeAgo";
@@ -11,6 +12,7 @@ import { timeAgo } from "../utils/timeAgo";
 export function Notifications() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { t } = useLanguage();
   const {
     notifications,
     unreadCount,
@@ -29,28 +31,28 @@ export function Notifications() {
       <main className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
         <div className="flex items-center justify-between">
           <h1 className="text-base font-semibold text-slate-900 dark:text-white">
-            Notifications
+            {t("notifications.title")}
           </h1>
           <button
             type="button"
             onClick={markAllAsRead}
             className="text-xs font-semibold text-purple-600 transition-all duration-200 hover:scale-105"
           >
-            Mark all as read
+            {t("notifications.markAllRead")}
           </button>
         </div>
 
         {loading ? (
           <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-500">
-            Loading notifications...
+            {t("notifications.loading")}
           </div>
         ) : null}
 
         {!loading && notifications.length === 0 ? (
           <EmptyState
             icon="🔔"
-            title="No notifications"
-            description="When someone likes or comments, you'll see it here"
+            title={t("notifications.emptyTitle")}
+            description={t("notifications.emptyDescription")}
           />
         ) : null}
 
@@ -75,13 +77,13 @@ export function Notifications() {
                   <div className="flex-1">
                     <p className="text-sm text-slate-700 dark:text-slate-200">
                       <span className="font-semibold text-slate-900 dark:text-white">
-                        ⚠️ PetNote Team
+                        ⚠️ {t("notifications.petnoteTeam")}
                       </span>{" "}
                       {item.message}
                     </p>
                     {item.warningDetails ? (
                       <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                        Details: {item.warningDetails}
+                        {t("notifications.details")}: {item.warningDetails}
                       </p>
                     ) : null}
                     <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
@@ -129,7 +131,7 @@ export function Notifications() {
                 {item.postImage ? (
                   <img
                     src={optimizeCloudinaryUrl(item.postImage, "thumbnail")}
-                    alt="post"
+                    alt={t("notifications.postImageAlt")}
                     className="h-12 w-12 rounded-xl object-cover"
                   />
                 ) : null}
@@ -140,7 +142,7 @@ export function Notifications() {
 
         {unreadCount > 0 ? (
           <p className="text-center text-xs text-slate-400 dark:text-slate-500">
-            {unreadCount} unread
+            {t("notifications.unreadCount", { count: unreadCount })}
           </p>
         ) : null}
 
@@ -152,7 +154,9 @@ export function Notifications() {
               disabled={loadingMore}
               className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-purple-300 hover:text-purple-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-300"
             >
-              {loadingMore ? "Loading..." : "Load more"}
+              {loadingMore
+                ? t("notifications.loadingMore")
+                : t("notifications.loadMore")}
             </button>
           </div>
         ) : null}

@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { fetchSignInMethodsForEmail } from "firebase/auth";
+import { LanguageSelector } from "../components/LanguageSelector";
 import { useAuth } from "../hooks/useAuth";
+import { useLanguage } from "../hooks/useLanguage";
 import PawIcon from "../components/PawIcon";
 import { useToast } from "../contexts/ToastContext";
 import { auth } from "../services/firebase";
@@ -68,6 +70,7 @@ function GoogleIcon() {
 export function Login() {
   const navigate = useNavigate();
   const { signIn, signInWithGoogle } = useAuth();
+  const { t } = useLanguage();
   const { showToast } = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -86,7 +89,7 @@ export function Login() {
       navigate("/", { replace: true });
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Login failed. Please try again.";
+        err instanceof Error ? err.message : t("login.loginFailed");
       showToast(message, "error");
       setGoogleHint(null);
       const code =
@@ -100,9 +103,7 @@ export function Login() {
         try {
           const methods = await fetchSignInMethodsForEmail(auth, email.trim());
           if (methods.includes("google.com") && !methods.includes("password")) {
-            setGoogleHint(
-              "This account uses Google Sign-In. Try signing in with Google."
-            );
+            setGoogleHint(t("login.googleHint"));
           }
         } catch {
           // ignore
@@ -120,7 +121,7 @@ export function Login() {
       navigate("/", { replace: true });
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Google sign-in failed.";
+        err instanceof Error ? err.message : t("login.googleFailed");
       showToast(message, "error");
     } finally {
       setGoogleLoading(false);
@@ -130,28 +131,31 @@ export function Login() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 px-4">
       <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl dark:bg-slate-900">
+        <div className="mb-6 flex justify-end">
+          <LanguageSelector compact />
+        </div>
         <div className="mb-8 text-center">
           <div className="flex justify-center">
             <PawIcon size={48} />
           </div>
           <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
-            PetNote
+            {t("common.appName")}
           </h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
-            Share your pet's everyday moments
+            {t("login.tagline")}
           </p>
         </div>
 
         <form className="space-y-4" onSubmit={handleSubmit}>
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
-              Email
+              {t("auth.email")}
             </span>
             <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
               <MailIcon />
               <input
                 type="email"
-                placeholder="you@example.com"
+                placeholder={t("auth.emailPlaceholder")}
                 autoComplete="email"
                 className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
                 value={email}
@@ -163,13 +167,13 @@ export function Login() {
 
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
-              Password
+              {t("auth.password")}
             </span>
             <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
               <LockIcon />
               <input
                 type={showPassword ? "text" : "password"}
-                placeholder="Enter your password"
+                placeholder={t("login.passwordPlaceholder")}
                 autoComplete="current-password"
                 className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
                 value={password}
@@ -181,7 +185,7 @@ export function Login() {
                 onClick={() => setShowPassword((prev) => !prev)}
                 className="text-xs text-slate-400 transition-all duration-200 hover:text-purple-500 dark:text-slate-500"
               >
-                {showPassword ? "Hide" : "Show"}
+                {showPassword ? t("auth.hide") : t("auth.show")}
               </button>
             </div>
             <div className="mt-2 text-right">
@@ -189,7 +193,7 @@ export function Login() {
                 to="/forgot-password"
                 className="text-xs text-slate-400 transition-all duration-200 hover:text-purple-500 dark:text-slate-500"
               >
-                Forgot password?
+                {t("login.forgotPassword")}
               </Link>
             </div>
           </label>
@@ -199,7 +203,7 @@ export function Login() {
             disabled={isDisabled}
             className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            {loading ? "Signing in..." : "Sign In"}
+            {loading ? t("login.signingIn") : t("login.signIn")}
           </button>
         </form>
 
@@ -214,7 +218,7 @@ export function Login() {
 
         <div className="my-6 flex items-center gap-3 text-xs text-slate-400 dark:text-slate-500">
           <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
-          Or
+          {t("common.or")}
           <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
         </div>
 
@@ -225,25 +229,25 @@ export function Login() {
           className="flex w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-all duration-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
         >
           <GoogleIcon />
-          {googleLoading ? "Connecting..." : "Continue with Google"}
+          {googleLoading ? t("login.connecting") : t("login.continueWithGoogle")}
         </button>
 
         <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-300">
-          Don't have an account?
+          {t("login.noAccount")}
           <Link
             to="/signup"
             className="ml-1 font-semibold text-purple-600 hover:text-purple-500"
           >
-            Sign up
+            {t("login.signUpCta")}
           </Link>
         </p>
         <p className="mt-3 text-center text-xs text-slate-400 dark:text-slate-500">
           <Link to="/terms" className="hover:text-slate-600 dark:hover:text-slate-300">
-            Terms of Service
+            {t("settings.terms")}
           </Link>{" "}
           ·{" "}
           <Link to="/privacy" className="hover:text-slate-600 dark:hover:text-slate-300">
-            Privacy Policy
+            {t("settings.privacy")}
           </Link>
         </p>
       </div>

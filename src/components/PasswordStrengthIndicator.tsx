@@ -1,21 +1,41 @@
 import { validatePassword } from "../utils/passwordValidator";
+import { useLanguage } from "../hooks/useLanguage";
 
 type PasswordStrengthIndicatorProps = {
   password: string;
 };
 
 const rules = [
-  "At least 8 characters",
-  "Maximum 64 characters",
-  "At least one uppercase letter (A-Z)",
-  "At least one lowercase letter (a-z)",
-  "At least one number (0-9)",
-  "At least one special character (!@#$%...)",
+  {
+    error: "At least 8 characters",
+    key: "password.rule.minLength" as const,
+  },
+  {
+    error: "Maximum 64 characters",
+    key: "password.rule.maxLength" as const,
+  },
+  {
+    error: "At least one uppercase letter (A-Z)",
+    key: "password.rule.uppercase" as const,
+  },
+  {
+    error: "At least one lowercase letter (a-z)",
+    key: "password.rule.lowercase" as const,
+  },
+  {
+    error: "At least one number (0-9)",
+    key: "password.rule.number" as const,
+  },
+  {
+    error: "At least one special character (!@#$%...)",
+    key: "password.rule.special" as const,
+  },
 ];
 
 export function PasswordStrengthIndicator({
   password,
 }: PasswordStrengthIndicatorProps) {
+  const { t } = useLanguage();
   if (!password) return null;
   const result = validatePassword(password);
 
@@ -43,17 +63,17 @@ export function PasswordStrengthIndicator({
       </div>
       <div className="space-y-1 text-xs">
         {rules.map((rule) => {
-          const satisfied = !result.errors.includes(rule);
+          const satisfied = !result.errors.includes(rule.error);
           return (
             <div
-              key={rule}
+              key={rule.error}
               className={`flex items-center gap-2 ${
                 satisfied ? "text-emerald-500" : "text-red-500"
               }`}
             >
               <span>{satisfied ? "✅" : "❌"}</span>
               <span className="text-slate-600 dark:text-slate-300">
-                {rule}
+                {t(rule.key)}
               </span>
             </div>
           );

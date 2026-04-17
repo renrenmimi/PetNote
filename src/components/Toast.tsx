@@ -1,3 +1,5 @@
+import { useLanguage } from "../hooks/useLanguage";
+
 export type ToastType = "success" | "error" | "warning" | "info";
 
 export type ToastItem = {
@@ -26,6 +28,8 @@ type ToastProps = {
 };
 
 export function Toast({ toast, onDismiss }: ToastProps) {
+  const { t } = useLanguage();
+
   return (
     <div
       className={`flex w-full max-w-xs items-center gap-3 rounded-xl px-4 py-2 text-xs font-semibold shadow-lg transition-all duration-300 ${toneClasses[toast.type]}`}
@@ -36,7 +40,7 @@ export function Toast({ toast, onDismiss }: ToastProps) {
         type="button"
         onClick={() => onDismiss(toast.id)}
         className="text-sm opacity-80 transition hover:opacity-100"
-        aria-label="Close toast"
+        aria-label={t("common.close")}
       >
         ✕
       </button>
