@@ -11,6 +11,7 @@ import {
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
 import type { PostData, Post } from "./posts";
+import { getUserProfile } from "./users";
 import type { PetGender, PetSpecies } from "../utils/petHelpers";
 
 export type PetFamilyRelationship =
@@ -290,7 +291,25 @@ export async function getPetFamily(petId: string): Promise<FamilyMember[]> {
   const familyRef = collection(db, `pets/${petId}/family`);
   const familyQuery = query(familyRef, orderBy("joinedAt", "asc"));
   const snapshot = await getDocs(familyQuery);
-  return snapshot.docs.map((docSnap) => docSnap.data() as FamilyMember);
+  const members = snapshot.docs.map((docSnap) => ({
+    userId: docSnap.id,
+    ...(docSnap.data() as Omit<FamilyMember, "userId">),
+  }));
+
+  return Promise.all(
+    members.map(async (member) => {
+      const profile = await getUserProfile(member.userId);
+      return {
+        ...member,
+        userName:
+          profile?.displayName?.trim() || member.userName || "PetNote User",
+        userAvatar:
+          profile?.avatarUrl?.trim() ||
+          member.userAvatar ||
+          `https://api.dicebear.com/7.x/thumbs/svg?seed=${member.userId}`,
+      };
+    })
+  );
 }
 
 export async function isFamilyMember(
