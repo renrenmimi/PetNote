@@ -14,7 +14,7 @@ export function PasswordVisibilityButton({
   hideLabel,
 }: PasswordVisibilityButtonProps) {
   const label = visible ? hideLabel : showLabel;
-  const Icon = visible ? EyeOff : Eye;
+  const Icon = visible ? Eye : EyeOff;
 
   return (
     <button
