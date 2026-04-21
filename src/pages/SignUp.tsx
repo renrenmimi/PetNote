@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { AuthNotice } from "../components/AuthNotice";
 import { LanguageSelector } from "../components/LanguageSelector";
 import { useAuth } from "../hooks/useAuth";
 import { useLanguage } from "../hooks/useLanguage";
 import PawIcon from "../components/PawIcon";
 import { PasswordStrengthIndicator } from "../components/PasswordStrengthIndicator";
 import { validatePassword } from "../utils/passwordValidator";
-import { useToast } from "../contexts/ToastContext";
 
 function MailIcon() {
   return (
@@ -67,18 +67,30 @@ function GoogleIcon() {
   );
 }
 
+type SignUpNotice = {
+  title: string;
+  message: string;
+  actionLabel?: string;
+  action?: () => void;
+};
+
 export function SignUp() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { signUp, signInWithGoogle } = useAuth();
   const { t } = useLanguage();
-  const { showToast } = useToast();
-  const [email, setEmail] = useState("");
+  const initialEmail =
+    typeof (location.state as { email?: unknown } | null)?.email === "string"
+      ? String((location.state as { email: string }).email)
+      : "";
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [notice, setNotice] = useState<SignUpNotice | null>(null);
 
   const validation = useMemo(() => validatePassword(password), [password]);
   const passwordsMatch = password === confirmPassword;
@@ -95,13 +107,34 @@ export function SignUp() {
     if (!canSubmit) return;
 
     setLoading(true);
+    setNotice(null);
+    const normalizedEmail = email.trim();
     try {
-      await signUp(email.trim(), password);
+      await signUp(normalizedEmail, password);
       navigate("/", { replace: true });
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : t("signup.signUpFailed");
-      showToast(message, "error");
+      const code =
+        err && typeof err === "object" && "code" in err
+          ? String((err as { code?: string }).code)
+          : "";
+      if (code.includes("email-already-in-use")) {
+        setNotice({
+          title: t("signup.emailExistsTitle"),
+          message: t("signup.emailExistsMessage"),
+          actionLabel: t("signup.emailExistsAction"),
+          action: () => navigate("/login", { state: { email: normalizedEmail } }),
+        });
+      } else if (code.includes("invalid-email")) {
+        setNotice({
+          title: t("signup.invalidEmailTitle"),
+          message: t("signup.invalidEmailMessage"),
+        });
+      } else {
+        setNotice({
+          title: t("auth.genericErrorTitle"),
+          message: err instanceof Error ? err.message : t("signup.signUpFailed"),
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -109,20 +142,22 @@ export function SignUp() {
 
   const handleGoogle = async () => {
     setGoogleLoading(true);
+    setNotice(null);
     try {
       await signInWithGoogle();
       navigate("/", { replace: true });
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : t("signup.googleFailed");
-      showToast(message, "error");
+      setNotice({
+        title: t("auth.genericErrorTitle"),
+        message: err instanceof Error ? err.message : t("signup.googleFailed"),
+      });
     } finally {
       setGoogleLoading(false);
     }
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 px-4">
+    <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-sky-500 via-teal-400 to-emerald-400 px-4">
       <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl dark:bg-slate-900">
         <div className="mb-6 flex justify-end">
           <LanguageSelector compact />
@@ -134,10 +169,29 @@ export function SignUp() {
           <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
             {t("common.appName")}
           </h1>
+          <p className="mx-auto mt-3 inline-flex rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200">
+            {t("signup.badge")}
+          </p>
+          <h2 className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">
+            {t("signup.heading")}
+          </h2>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
             {t("signup.tagline")}
           </p>
         </div>
+
+        {notice ? (
+          <div className="mb-4">
+            <AuthNotice
+              title={notice.title}
+              message={notice.message}
+              actionLabel={notice.actionLabel}
+              onAction={notice.action}
+              onDismiss={() => setNotice(null)}
+              closeLabel={t("auth.noticeClose")}
+            />
+          </div>
+        ) : null}
 
         <form className="space-y-4" onSubmit={handleSubmit}>
           <label className="block">

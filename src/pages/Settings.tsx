@@ -109,7 +109,7 @@ function SettingRow({
 export function Settings() {
   const navigate = useNavigate();
   const { user, profile, signOut } = useAuth();
-  const { language, t } = useLanguage();
+  const { t } = useLanguage();
   const { isDark, setMode } = useTheme();
   const { showToast } = useToast();
   const [settings, setSettings] = useState<UserSettings>(defaultUserSettings);
@@ -125,18 +125,12 @@ export function Settings() {
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
   const [locationSheetOpen, setLocationSheetOpen] = useState(false);
-  const [languageSheetOpen, setLanguageSheetOpen] = useState(false);
 
   const locationLabel = useMemo(() => {
     if (!profile?.location) return t("common.notSet");
     const { city, state } = profile.location;
     return state ? `${city}, ${state}` : city;
   }, [profile?.location, t]);
-
-  const languageLabel = useMemo(
-    () => (language === "zh" ? t("language.chinese") : t("language.english")),
-    [language, t]
-  );
 
   const passwordValidation = useMemo(
     () => validatePassword(newPassword),
@@ -187,7 +181,6 @@ export function Settings() {
 
   const handleLanguageChange = (nextLanguage: "en" | "zh") => {
     setSettings((prev) => ({ ...prev, language: nextLanguage }));
-    setLanguageSheetOpen(false);
   };
 
   const handlePasswordSave = async () => {
@@ -435,14 +428,16 @@ export function Settings() {
             />
             <SettingRow
               label={t("language.label")}
-              onClick={() => setLanguageSheetOpen(true)}
               rightElement={
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
-                    {languageLabel}
-                  </span>
-                  <span className="text-gray-400">›</span>
-                </div>
+                <LanguageSelector
+                  compact
+                  onChanged={handleLanguageChange}
+                  onError={(error) => {
+                    const message =
+                      error instanceof Error ? error.message : t("settings.saveFailed");
+                    showToast(message, "error");
+                  }}
+                />
               }
               border={false}
             />
@@ -546,38 +541,6 @@ export function Settings() {
           </p>
         </section>
       </main>
-
-      {languageSheetOpen ? (
-        <div className="fixed inset-0 z-40">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setLanguageSheetOpen(false)}
-            aria-label={t("common.close")}
-          />
-          <div className="absolute bottom-0 left-0 right-0 rounded-t-3xl bg-white px-4 pb-6 pt-4 dark:bg-slate-900">
-            <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-300 dark:bg-slate-700" />
-            <h3 className="text-left text-base font-semibold text-slate-900 dark:text-white">
-              {t("language.choose")}
-            </h3>
-            <p className="mt-1 text-left text-sm text-slate-500 dark:text-slate-400">
-              {t("language.description")}
-            </p>
-            <div className="mt-4">
-              <LanguageSelector
-                onChanged={(nextLanguage) => {
-                  void handleLanguageChange(nextLanguage);
-                }}
-                onError={(error) => {
-                  const message =
-                    error instanceof Error ? error.message : t("settings.saveFailed");
-                  showToast(message, "error");
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {locationSheetOpen ? (
         <div className="fixed inset-0 z-40">
