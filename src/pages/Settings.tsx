@@ -23,6 +23,7 @@ import {
   type UserSettings,
 } from "../services/settings";
 import { LanguageSelector } from "../components/LanguageSelector";
+import { PasswordVisibilityButton } from "../components/PasswordVisibilityButton";
 import { useLanguage } from "../hooks/useLanguage";
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
@@ -118,6 +119,9 @@ export function Settings() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteInput, setDeleteInput] = useState("");
@@ -209,6 +213,9 @@ export function Settings() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
+      setShowCurrentPassword(false);
+      setShowNewPassword(false);
+      setShowConfirmPassword(false);
       setExpandedPassword(false);
     } catch (error) {
       const message =
@@ -361,31 +368,55 @@ export function Settings() {
             />
             {expandedPassword ? (
               <div className="space-y-3 border-b border-gray-100 px-4 pb-4 dark:border-gray-800">
-                <input
-                  type="password"
-                  placeholder={t("settings.currentPassword")}
-                  value={currentPassword}
-                  onChange={(event) => setCurrentPassword(event.target.value)}
-                  maxLength={64}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-                <input
-                  type="password"
-                  placeholder={t("settings.newPassword")}
-                  value={newPassword}
-                  onChange={(event) => setNewPassword(event.target.value)}
-                  maxLength={64}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
+                <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
+                  <input
+                    type={showCurrentPassword ? "text" : "password"}
+                    placeholder={t("settings.currentPassword")}
+                    value={currentPassword}
+                    onChange={(event) => setCurrentPassword(event.target.value)}
+                    maxLength={64}
+                    className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
+                  />
+                  <PasswordVisibilityButton
+                    visible={showCurrentPassword}
+                    onToggle={() => setShowCurrentPassword((prev) => !prev)}
+                    showLabel={t("auth.show")}
+                    hideLabel={t("auth.hide")}
+                  />
+                </div>
+                <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
+                  <input
+                    type={showNewPassword ? "text" : "password"}
+                    placeholder={t("settings.newPassword")}
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                    maxLength={64}
+                    className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
+                  />
+                  <PasswordVisibilityButton
+                    visible={showNewPassword}
+                    onToggle={() => setShowNewPassword((prev) => !prev)}
+                    showLabel={t("auth.show")}
+                    hideLabel={t("auth.hide")}
+                  />
+                </div>
                 <PasswordStrengthIndicator password={newPassword} />
-                <input
-                  type="password"
-                  placeholder={t("settings.confirmNewPassword")}
-                  value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
-                  maxLength={64}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
+                <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
+                  <input
+                    type={showConfirmPassword ? "text" : "password"}
+                    placeholder={t("settings.confirmNewPassword")}
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    maxLength={64}
+                    className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
+                  />
+                  <PasswordVisibilityButton
+                    visible={showConfirmPassword}
+                    onToggle={() => setShowConfirmPassword((prev) => !prev)}
+                    showLabel={t("auth.show")}
+                    hideLabel={t("auth.hide")}
+                  />
+                </div>
                 <button
                   type="button"
                   onClick={handlePasswordSave}
