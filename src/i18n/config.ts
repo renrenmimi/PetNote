@@ -34,13 +34,6 @@ export function getPreferredLanguage(): AppLanguage {
     return stored;
   }
 
-  if (typeof navigator !== "undefined") {
-    const preferred = navigator.languages?.[0] ?? navigator.language;
-    if (preferred.toLowerCase().startsWith("zh")) {
-      return "zh";
-    }
-  }
-
   return DEFAULT_LANGUAGE;
 }
 
