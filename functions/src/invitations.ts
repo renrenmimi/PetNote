@@ -13,6 +13,10 @@ type ActiveInvitation = {
   petId: string;
 };
 
+function invitationLookupRef(code: string): admin.firestore.DocumentReference {
+  return db.doc(`invitationCodes/${code}`);
+}
+
 function normalizeInvitationCode(code: unknown): string {
   return typeof code === "string"
     ? code.replace(/[^a-zA-Z0-9]/g, "").toUpperCase()
@@ -28,10 +32,10 @@ function getInvitationExpiresAtMillis(
 }
 
 function mapActiveInvitation(
-  docSnap: admin.firestore.QueryDocumentSnapshot,
+  docSnap: admin.firestore.DocumentSnapshot,
   petId: string
 ): ActiveInvitation {
-  const invitation = docSnap.data();
+  const invitation = docSnap.data() ?? {};
   return {
     code: docSnap.id,
     createdBy:
@@ -44,6 +48,15 @@ function mapActiveInvitation(
     used: invitation.used === true,
     petId,
   };
+}
+
+function isActiveInvitationData(
+  invitation: admin.firestore.DocumentData | undefined
+): boolean {
+  return (
+    invitation?.used !== true &&
+    getInvitationExpiresAtMillis(invitation) > Date.now()
+  );
 }
 
 function pickLatestActiveInvitation(
@@ -73,9 +86,47 @@ async function getLatestActiveInvitationForPet(
   return latest ? mapActiveInvitation(latest, petId) : null;
 }
 
+async function ensureInvitationLookup(
+  invitation: ActiveInvitation
+): Promise<void> {
+  if (!invitation.code || !invitation.petId) {
+    return;
+  }
+  await invitationLookupRef(invitation.code).set(
+    {
+      code: invitation.code,
+      petId: invitation.petId,
+      invitationPath: `pets/${invitation.petId}/invitations/${invitation.code}`,
+      createdBy: invitation.createdBy,
+      createdByName: invitation.createdByName,
+      expiresAt: admin.firestore.Timestamp.fromMillis(invitation.expiresAtMillis),
+      used: invitation.used,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
 async function getLatestActiveInvitationByCode(
   code: string
 ): Promise<{ invitation: ActiveInvitation; ref: admin.firestore.DocumentReference } | null> {
+  const lookupSnap = await invitationLookupRef(code).get();
+  if (lookupSnap.exists) {
+    const lookup = lookupSnap.data() ?? {};
+    const petId = typeof lookup.petId === "string" ? lookup.petId : "";
+    if (petId) {
+      const invitationRef = db.doc(`pets/${petId}/invitations/${code}`);
+      const invitationSnap = await invitationRef.get();
+      if (invitationSnap.exists && isActiveInvitationData(invitationSnap.data())) {
+        return {
+          invitation: mapActiveInvitation(invitationSnap, petId),
+          ref: invitationRef,
+        };
+      }
+    }
+    return null;
+  }
+
   const invitationsSnap = await db
     .collectionGroup("invitations")
     .where("code", "==", code)
@@ -89,8 +140,10 @@ async function getLatestActiveInvitationByCode(
   if (!petId) {
     return null;
   }
+  const invitation = mapActiveInvitation(latest, petId);
+  await ensureInvitationLookup(invitation);
   return {
-    invitation: mapActiveInvitation(latest, petId),
+    invitation,
     ref: latest.ref,
   };
 }
@@ -122,6 +175,7 @@ export const createInvitationCallable = onCall(async (request) => {
 
   const activeInvitation = await getLatestActiveInvitationForPet(petId);
   if (activeInvitation) {
+    await ensureInvitationLookup(activeInvitation);
     return activeInvitation;
   }
 
@@ -132,12 +186,17 @@ export const createInvitationCallable = onCall(async (request) => {
   let code = generateCode();
   let attempts = 0;
   while (attempts < 10) {
-    const duplicateSnap = await db.collectionGroup("invitations").where("code", "==", code).limit(1).get();
-    if (duplicateSnap.empty) {
+    const [duplicateLookupSnap, duplicateSnap] = await Promise.all([
+      invitationLookupRef(code).get(),
+      db.collectionGroup("invitations").where("code", "==", code).limit(1).get(),
+    ]);
+    if (!duplicateLookupSnap.exists && duplicateSnap.empty) {
       const expiresAt = admin.firestore.Timestamp.fromMillis(
         Date.now() + 48 * 60 * 60 * 1000
       );
-      await db.doc(`pets/${petId}/invitations/${code}`).set({
+      const invitationRef = db.doc(`pets/${petId}/invitations/${code}`);
+      const batch = db.batch();
+      batch.set(invitationRef, {
         code,
         createdBy: callerUid,
         createdByName: caller.fromUserName,
@@ -145,6 +204,17 @@ export const createInvitationCallable = onCall(async (request) => {
         used: false,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
+      batch.create(invitationLookupRef(code), {
+        code,
+        petId,
+        invitationPath: invitationRef.path,
+        createdBy: callerUid,
+        createdByName: caller.fromUserName,
+        expiresAt,
+        used: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      await batch.commit();
       return {
         code,
         createdBy: callerUid,
@@ -174,6 +244,9 @@ export const getActiveInvitationCallable = onCall(async (request) => {
 
   await assertPetFamilyMember(petId, callerUid);
   const invitation = await getLatestActiveInvitationForPet(petId);
+  if (invitation) {
+    await ensureInvitationLookup(invitation);
+  }
   return { invitation };
 });
 
@@ -262,6 +335,7 @@ export const redeemInvitationCallable = onCall(async (request) => {
   const petRef = db.doc(`pets/${petId}`);
   const familyRef = db.doc(`pets/${petId}/family/${callerUid}`);
   const invitationRef = invitationMatch.ref;
+  const lookupRef = invitationLookupRef(normalizedCode);
 
   await db.runTransaction(async (transaction) => {
     const [petSnap, familySnap, freshInvitationSnap] = await Promise.all([
@@ -313,6 +387,19 @@ export const redeemInvitationCallable = onCall(async (request) => {
       usedBy: callerUid,
       usedByName: caller.fromUserName,
     });
+    transaction.set(
+      lookupRef,
+      {
+        code: normalizedCode,
+        petId,
+        invitationPath: invitationRef.path,
+        used: true,
+        usedBy: callerUid,
+        usedByName: caller.fromUserName,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
   });
 
   const petSnap = await petRef.get();

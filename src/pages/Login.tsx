@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { fetchSignInMethodsForEmail } from "firebase/auth";
+import { AuthNotice } from "../components/AuthNotice";
 import { LanguageSelector } from "../components/LanguageSelector";
 import { useAuth } from "../hooks/useAuth";
 import { useLanguage } from "../hooks/useLanguage";
 import PawIcon from "../components/PawIcon";
-import { useToast } from "../contexts/ToastContext";
 import { auth } from "../services/firebase";
 
 function MailIcon() {
@@ -67,47 +67,91 @@ function GoogleIcon() {
   );
 }
 
+type LoginNotice = {
+  title: string;
+  message: string;
+  actionLabel?: string;
+  action?: () => void;
+  tone?: "error" | "info" | "success";
+};
+
 export function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { signIn, signInWithGoogle } = useAuth();
   const { t } = useLanguage();
-  const { showToast } = useToast();
-  const [email, setEmail] = useState("");
+  const initialEmail =
+    typeof (location.state as { email?: unknown } | null)?.email === "string"
+      ? String((location.state as { email: string }).email)
+      : "";
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [googleHint, setGoogleHint] = useState<string | null>(null);
+  const [notice, setNotice] = useState<LoginNotice | null>(null);
   const isDisabled = loading || password.length < 8 || !email.trim();
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoading(true);
+    setNotice(null);
+    const normalizedEmail = email.trim();
 
     try {
-      await signIn(email.trim(), password);
+      await signIn(normalizedEmail, password);
       navigate("/", { replace: true });
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : t("login.loginFailed");
-      showToast(message, "error");
-      setGoogleHint(null);
       const code =
         err && typeof err === "object" && "code" in err
           ? String((err as { code?: string }).code)
           : "";
-      if (
+
+      if (code.includes("invalid-email")) {
+        setNotice({
+          title: t("signup.invalidEmailTitle"),
+          message: t("signup.invalidEmailMessage"),
+        });
+      } else if (
+        code.includes("user-not-found") ||
         code.includes("wrong-password") ||
         code.includes("invalid-credential")
       ) {
         try {
-          const methods = await fetchSignInMethodsForEmail(auth, email.trim());
+          const methods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
+          if (methods.length === 0) {
+            setNotice({
+              title: t("login.noAccountTitle"),
+              message: t("login.noAccountMessage"),
+              actionLabel: t("login.noAccountAction"),
+              action: () => navigate("/signup", { state: { email: normalizedEmail } }),
+            });
+            return;
+          }
           if (methods.includes("google.com") && !methods.includes("password")) {
-            setGoogleHint(t("login.googleHint"));
+            setNotice({
+              title: t("login.googleOnlyTitle"),
+              message: t("login.googleHint"),
+              actionLabel: t("login.googleOnlyAction"),
+              action: () => void handleGoogle(),
+              tone: "info",
+            });
+            return;
           }
         } catch {
           // ignore
         }
+        setNotice({
+          title: t("login.invalidTitle"),
+          message: t("login.invalidMessage"),
+          actionLabel: t("login.noAccountAction"),
+          action: () => navigate("/signup", { state: { email: normalizedEmail } }),
+        });
+      } else {
+        setNotice({
+          title: t("auth.genericErrorTitle"),
+          message: err instanceof Error ? err.message : t("login.loginFailed"),
+        });
       }
     } finally {
       setLoading(false);
@@ -116,13 +160,15 @@ export function Login() {
 
   const handleGoogle = async () => {
     setGoogleLoading(true);
+    setNotice(null);
     try {
       await signInWithGoogle();
       navigate("/", { replace: true });
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : t("login.googleFailed");
-      showToast(message, "error");
+      setNotice({
+        title: t("auth.genericErrorTitle"),
+        message: err instanceof Error ? err.message : t("login.googleFailed"),
+      });
     } finally {
       setGoogleLoading(false);
     }
@@ -141,10 +187,30 @@ export function Login() {
           <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
             {t("common.appName")}
           </h1>
+          <p className="mx-auto mt-3 inline-flex rounded-full bg-purple-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-purple-600 dark:bg-purple-500/10 dark:text-purple-200">
+            {t("login.badge")}
+          </p>
+          <h2 className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">
+            {t("login.heading")}
+          </h2>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
             {t("login.tagline")}
           </p>
         </div>
+
+        {notice ? (
+          <div className="mb-4">
+            <AuthNotice
+              title={notice.title}
+              message={notice.message}
+              actionLabel={notice.actionLabel}
+              onAction={notice.action}
+              onDismiss={() => setNotice(null)}
+              closeLabel={t("auth.noticeClose")}
+              tone={notice.tone}
+            />
+          </div>
+        ) : null}
 
         <form className="space-y-4" onSubmit={handleSubmit}>
           <label className="block">
@@ -206,15 +272,6 @@ export function Login() {
             {loading ? t("login.signingIn") : t("login.signIn")}
           </button>
         </form>
-
-        {googleHint ? (
-          <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/10 dark:text-blue-200">
-            <div className="flex items-center gap-2">
-              <GoogleIcon />
-              <span>{googleHint}</span>
-            </div>
-          </div>
-        ) : null}
 
         <div className="my-6 flex items-center gap-3 text-xs text-slate-400 dark:text-slate-500">
           <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />

@@ -162,6 +162,13 @@ service cloud.firestore {
       }
     }
 
+    match /invitationCodes/{code} {
+      allow read: if false;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+
     // ========= notifications =========
     match /notifications/{notificationId} {
       allow read: if isAuthenticated() &&

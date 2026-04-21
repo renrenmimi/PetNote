@@ -557,8 +557,13 @@ export function AddPet() {
               disabled={inviteCode.length !== 8 || validatingInvite}
               className="w-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {validatingInvite ? "Validating..." : "Join Family"}
+              {validatingInvite ? "Confirming code..." : "Join Family"}
             </button>
+            {validatingInvite ? (
+              <p className="text-center text-[11px] text-slate-400 dark:text-slate-500">
+                This can take a moment for a brand-new invite.
+              </p>
+            ) : null}
 
             {pendingInvite ? (
               <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900">

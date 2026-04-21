@@ -618,8 +618,13 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
                   disabled={validatingInvite}
                   className="w-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-5 py-2 text-xs font-semibold text-white transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {validatingInvite ? "Validating..." : "Validate Code"}
+                  {validatingInvite ? "Confirming code..." : "Validate Code"}
                 </button>
+                {validatingInvite ? (
+                  <p className="text-center text-[11px] text-slate-400 dark:text-slate-500">
+                    This can take a moment for a brand-new invite.
+                  </p>
+                ) : null}
 
                 {pendingInvite ? (
                   <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-left dark:border-slate-700 dark:bg-slate-800">
