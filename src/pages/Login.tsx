@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { fetchSignInMethodsForEmail } from "firebase/auth";
 import { AuthNotice } from "../components/AuthNotice";
 import { LanguageSelector } from "../components/LanguageSelector";
+import { PasswordVisibilityButton } from "../components/PasswordVisibilityButton";
 import { useAuth } from "../hooks/useAuth";
 import { useLanguage } from "../hooks/useLanguage";
 import PawIcon from "../components/PawIcon";
@@ -246,13 +247,12 @@ export function Login() {
                 onChange={(event) => setPassword(event.target.value)}
                 required
               />
-              <button
-                type="button"
-                onClick={() => setShowPassword((prev) => !prev)}
-                className="text-xs text-slate-400 transition-all duration-200 hover:text-purple-500 dark:text-slate-500"
-              >
-                {showPassword ? t("auth.hide") : t("auth.show")}
-              </button>
+              <PasswordVisibilityButton
+                visible={showPassword}
+                onToggle={() => setShowPassword((prev) => !prev)}
+                showLabel={t("auth.show")}
+                hideLabel={t("auth.hide")}
+              />
             </div>
             <div className="mt-2 text-right">
               <Link
