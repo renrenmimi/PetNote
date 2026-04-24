@@ -209,6 +209,26 @@ export const onReviewDeleted = onDocumentDeleted(
   }
 );
 
+async function adjustLocationCheckinCount(
+  locationId: string,
+  delta: 1 | -1
+): Promise<void> {
+  const locationRef = db.doc(`locations/${locationId}`);
+  await db.runTransaction(async (t) => {
+    const snap = await t.get(locationRef);
+    if (!snap.exists) return;
+    const prev =
+      typeof snap.data()?.totalCheckins === "number"
+        ? (snap.data() as { totalCheckins: number }).totalCheckins
+        : 0;
+    const next = Math.max(0, prev + delta);
+    t.update(locationRef, {
+      totalCheckins: next,
+      verifiedByCheckins: next >= 3,
+    });
+  });
+}
+
 export const onCheckinCreated = onDocumentCreated(
   "locations/{locationId}/checkins/{checkinId}",
   async (event) => {
@@ -224,27 +244,16 @@ export const onCheckinCreated = onDocumentCreated(
       });
     }
 
-    const checkinsSnap = await db.collection(`locations/${locationId}/checkins`).get();
-    const count = checkinsSnap.size;
-    const locationRef = db.doc(`locations/${locationId}`);
-    await locationRef.update({
-      totalCheckins: count,
-      verifiedByCheckins: count >= 3,
-    });
+    // Transaction-based +1 instead of counting every check-in on the
+    // location. Keeps verifiedByCheckins consistent with the stored total.
+    await adjustLocationCheckinCount(locationId, 1);
   }
 );
 
 export const onCheckinDeleted = onDocumentDeleted(
   "locations/{locationId}/checkins/{checkinId}",
   async (event) => {
-    const locationId = event.params.locationId;
-    const locationRef = db.doc(`locations/${locationId}`);
-    const checkinsSnap = await db.collection(`locations/${locationId}/checkins`).get();
-    const count = checkinsSnap.size;
-    await locationRef.update({
-      totalCheckins: count,
-      verifiedByCheckins: count >= 3,
-    });
+    await adjustLocationCheckinCount(event.params.locationId, -1);
   }
 );
 
