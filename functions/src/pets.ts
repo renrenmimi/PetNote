@@ -130,41 +130,42 @@ export const createPetCallable = onCall(async (request) => {
     (request.data as { customRelationship?: unknown }).customRelationship
   );
 
-  const existingPetsSnap = await db
-    .collection("pets")
-    .where("ownerId", "==", callerUid)
-    .limit(6)
-    .get();
-  if (existingPetsSnap.size >= 5) {
-    throw new HttpsError("failed-precondition", "Maximum 5 pets allowed.");
-  }
-
   const petRef = db.collection("pets").doc();
   const familyRef = db.doc(`pets/${petRef.id}/family/${callerUid}`);
-  const batch = db.batch();
-  batch.set(
-    petRef,
-    stripUndefined({
-      ...payload,
-      ownerId: callerUid,
-      primaryOwnerId: callerUid,
-      followerCount: 0,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    })
-  );
-  batch.set(
-    familyRef,
-    stripUndefined({
-      userId: callerUid,
-      userName: caller.fromUserName,
-      userAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
-      relationship: relationshipData.relationship,
-      customRelationship: relationshipData.customRelationship,
-      role: "primary",
-      joinedAt: admin.firestore.FieldValue.serverTimestamp(),
-    })
-  );
-  await batch.commit();
+
+  // Count + create inside one transaction so two concurrent creations can't
+  // both read "4 pets" and then each write a 5th, silently exceeding the cap.
+  await db.runTransaction(async (t) => {
+    const existingPetsSnap = await t.get(
+      db.collection("pets").where("ownerId", "==", callerUid).limit(6)
+    );
+    if (existingPetsSnap.size >= 5) {
+      throw new HttpsError("failed-precondition", "Maximum 5 pets allowed.");
+    }
+
+    t.set(
+      petRef,
+      stripUndefined({
+        ...payload,
+        ownerId: callerUid,
+        primaryOwnerId: callerUid,
+        followerCount: 0,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      })
+    );
+    t.set(
+      familyRef,
+      stripUndefined({
+        userId: callerUid,
+        userName: caller.fromUserName,
+        userAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
+        relationship: relationshipData.relationship,
+        customRelationship: relationshipData.customRelationship,
+        role: "primary",
+        joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+      })
+    );
+  });
 
   return { id: petRef.id };
 });
