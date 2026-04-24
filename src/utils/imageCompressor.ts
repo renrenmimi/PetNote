@@ -3,6 +3,21 @@ export interface CompressOptions {
   maxHeight?: number;
   quality?: number;
   maxSizeMB?: number;
+  /**
+   * Hard guardrail: files this large are rejected before we try to decode
+   * them to a canvas. Decoding a 100 MB+ image on mobile browsers can
+   * crash the tab.
+   */
+  maxInputSizeMB?: number;
+}
+
+const DEFAULT_MAX_INPUT_MB = 50;
+export const IMAGE_TOO_LARGE_CODE = "IMAGE_TOO_LARGE";
+
+export function createImageTooLargeError(maxMB: number): Error {
+  const err = new Error(`Image exceeds ${maxMB}MB upload limit.`);
+  (err as Error & { code?: string }).code = IMAGE_TOO_LARGE_CODE;
+  return err;
 }
 
 const loadImage = (file: File) =>
@@ -48,9 +63,18 @@ export async function compressImage(
     maxHeight = 1920,
     quality = 0.8,
     maxSizeMB = 2,
+    maxInputSizeMB = DEFAULT_MAX_INPUT_MB,
   } = options;
 
   const maxBytes = maxSizeMB * 1024 * 1024;
+  const maxInputBytes = maxInputSizeMB * 1024 * 1024;
+
+  // Reject absurdly large files before decoding. A 100 MB image decoded
+  // to a Canvas can OOM mobile browsers long before Cloudinary would
+  // notice the size.
+  if (file.size > maxInputBytes) {
+    throw createImageTooLargeError(maxInputSizeMB);
+  }
 
   if (file.type === "image/gif") return file;
   if (file.size <= maxBytes) return file;
