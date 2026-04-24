@@ -197,7 +197,12 @@ export async function getFollowingPosts(
   }
 
   // Firestore "in" queries support max 30 values; split into chunks and merge.
-  // Each chunk uses the same timestamp cursor for consistent pagination.
+  // Use a value-based cursor (createdAt < lastSeenCreatedAt) because a
+  // DocumentSnapshot cursor is scoped to the specific query that produced it
+  // and will return wrong results when reused across different "in" chunks.
+  const cursorTimestamp =
+    (lastDoc?.data() as PostData | undefined)?.createdAt ?? null;
+
   const chunkSize = 30;
   const postsRef = collection(db, "posts");
   const allDocs: QueryDocumentSnapshot[] = [];
@@ -208,12 +213,12 @@ export async function getFollowingPosts(
     const chunk = petIds.slice(i, i + chunkSize);
     const constraints: QueryConstraint[] = [
       where("petId", "in", chunk),
+      ...(cursorTimestamp
+        ? [where("createdAt", "<", cursorTimestamp)]
+        : []),
       orderBy("createdAt", "desc"),
       limit(perChunkLimit),
     ];
-    if (lastDoc) {
-      constraints.push(startAfter(lastDoc));
-    }
     const snapshot = await getDocs(query(postsRef, ...constraints));
     allDocs.push(...(snapshot.docs as QueryDocumentSnapshot[]));
   }
