@@ -485,22 +485,31 @@ export const joinMeetupCallable = onCall(async (request) => {
 
     if (!isOrganizer) {
       const reasons: string[] = [];
+      const minFollowers =
+        typeof requirements.minFollowers === "number" ? requirements.minFollowers : 0;
 
-      if (requirements.mustHavePosts) {
-        const postsSnap = await db.collection("posts").where("authorId", "==", callerUid).limit(1).get();
-        if (postsSnap.empty) reasons.push("Must have posted at least once.");
+      // Requirement reads must run through the transaction so the snapshot
+      // is locked against concurrent writes (new posts, unfollows, etc.).
+      // Run them in parallel but all before any write.
+      const [postsSnap, followingSnap] = await Promise.all([
+        requirements.mustHavePosts
+          ? t.get(db.collection("posts").where("authorId", "==", callerUid).limit(1))
+          : Promise.resolve(null),
+        minFollowers > 0
+          ? t.get(db.collection(`users/${callerUid}/followingPets`))
+          : Promise.resolve(null),
+      ]);
+
+      if (requirements.mustHavePosts && postsSnap && postsSnap.empty) {
+        reasons.push("Must have posted at least once.");
       }
 
       if (requirements.mustHavePetProfile && !participantPetSpecies) {
         reasons.push("Must have a pet profile.");
       }
 
-      const minFollowers = typeof requirements.minFollowers === "number" ? requirements.minFollowers : 0;
-      if (minFollowers > 0) {
-        const followingSnap = await db.collection(`users/${callerUid}/followingPets`).get();
-        if (followingSnap.size < minFollowers) {
-          reasons.push(`Requires at least ${minFollowers} followed pets.`);
-        }
+      if (minFollowers > 0 && followingSnap && followingSnap.size < minFollowers) {
+        reasons.push(`Requires at least ${minFollowers} followed pets.`);
       }
 
       const petType = requirements.petType as string ?? "any";
