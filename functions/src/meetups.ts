@@ -1,8 +1,9 @@
 import { onDocumentDeleted } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import { admin, db } from "./platform";
 import { getNotificationActor } from "./notifications";
-import { getDefaultAvatar, stripUndefined } from "./shared";
+import { batchChunked, getDefaultAvatar, stripUndefined } from "./shared";
 import { getOrCreatePublicMeetupLocation } from "./places";
 
 const allowedMeetupDogSizes = new Set([
@@ -547,6 +548,36 @@ export const joinMeetupCallable = onCall(async (request) => {
     });
 
     return { success: true };
+  });
+});
+
+// Flip expired meetups to "completed" even when no user visits the detail
+// page. Previously the status only advanced when a client called
+// checkMeetupStatusCallable, so quiet meetups stayed "upcoming" forever
+// and review submission stayed blocked.
+export const autoCompleteMeetups = onSchedule("every 15 minutes", async () => {
+  const now = Date.now();
+  const snapshot = await db
+    .collection("meetups")
+    .where("status", "in", ["upcoming", "ongoing"])
+    .get();
+
+  const expired = snapshot.docs.filter((docSnap) => {
+    const data = docSnap.data();
+    if (!(data.date instanceof admin.firestore.Timestamp)) return false;
+    const duration = typeof data.duration === "number" ? data.duration : 0;
+    const endMillis = data.date.toMillis() + duration * 60 * 1000;
+    return now >= endMillis;
+  });
+
+  if (expired.length === 0) return;
+
+  await batchChunked(expired, (batch, docSnap) => {
+    batch.update(docSnap.ref, {
+      status: "completed",
+      isRatingOpen: true,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
   });
 });
 
