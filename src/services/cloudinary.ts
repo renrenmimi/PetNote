@@ -14,7 +14,12 @@ type SignedUploadSignatureResponse = {
   signature: string;
   uploadPreset: string;
   folder: string;
+  maxFileSize: number;
 };
+
+function formatMegabytes(bytes: number): string {
+  return `${Math.round(bytes / (1024 * 1024))}MB`;
+}
 
 async function uploadToCloudinary(
   file: File,
@@ -27,6 +32,12 @@ async function uploadToCloudinary(
 
   const { data } = await getCloudinaryUploadSignature({ resourceType });
 
+  if (data.maxFileSize && file.size > data.maxFileSize) {
+    throw new Error(
+      `${resourceType === "video" ? "Video" : "Image"} exceeds ${formatMegabytes(data.maxFileSize)} limit.`
+    );
+  }
+
   const formData = new FormData();
   formData.append("file", file);
   formData.append("api_key", data.apiKey);
@@ -34,6 +45,9 @@ async function uploadToCloudinary(
   formData.append("signature", data.signature);
   formData.append("upload_preset", data.uploadPreset);
   formData.append("folder", data.folder);
+  if (data.maxFileSize) {
+    formData.append("max_file_size", String(data.maxFileSize));
+  }
 
   const response = await fetch(
     `https://api.cloudinary.com/v1_1/${data.cloudName}/${resourceType}/upload`,
