@@ -83,10 +83,15 @@ export const onPetDeleted = onDocumentDeleted("pets/{petId}", async (event) => {
 export const onPostDeleted = onDocumentDeleted("posts/{postId}", async (event) => {
   const postId = event.params.postId;
 
-  const bookmarksSnap = await db.collectionGroup("bookmarks").get();
-  const matchingBookmarks = bookmarksSnap.docs.filter((d) => d.id === postId);
-  if (matchingBookmarks.length > 0) {
-    await batchChunked(matchingBookmarks as admin.firestore.QueryDocumentSnapshot[], (batch, doc) => {
+  // Bookmarks store { postId } as a field (doc id also equals postId). Use a
+  // filtered collection group query so we only touch the bookmarks for this
+  // post instead of scanning every user's bookmarks.
+  const bookmarksSnap = await db
+    .collectionGroup("bookmarks")
+    .where("postId", "==", postId)
+    .get();
+  if (!bookmarksSnap.empty) {
+    await batchChunked(bookmarksSnap.docs, (batch, doc) => {
       batch.delete(doc.ref);
     });
   }
