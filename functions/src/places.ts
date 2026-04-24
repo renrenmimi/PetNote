@@ -369,30 +369,41 @@ export const submitReviewCallable = onCall(async (request) => {
 
   const reviewId = data.meetupId ? `${callerUid}_${data.meetupId}` : callerUid;
   const reviewRef = db.doc(`locations/${data.locationId}/reviews/${reviewId}`);
-  const existingSnap = await reviewRef.get();
-  if (existingSnap.exists) {
-    throw new HttpsError("already-exists", "You have already reviewed this location.");
-  }
 
-  await reviewRef.set({
-    userId: callerUid,
-    userName: caller.fromUserName,
-    userAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
-    meetupId: data.meetupId,
-    rating: data.rating,
-    comment: typeof data.comment === "string" ? data.comment.trim() : "",
-    photos: Array.isArray(data.photos) ? data.photos.filter((p): p is string => typeof p === "string") : [],
-    tags: Array.isArray(data.tags) ? data.tags.filter((t): t is string => typeof t === "string") : [],
-    petFriendly: {
-      space: typeof data.petFriendly?.space === "number" ? data.petFriendly.space : data.rating,
-      safety: typeof data.petFriendly?.safety === "number" ? data.petFriendly.safety : data.rating,
-      cleanliness:
-        typeof data.petFriendly?.cleanliness === "number"
-          ? data.petFriendly.cleanliness
-          : data.rating,
-    },
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
+  // Use .create() so concurrent submissions can't both pass a stale
+  // existence check and overwrite each other; Firestore rejects the
+  // second call with ALREADY_EXISTS.
+  try {
+    await reviewRef.create({
+      userId: callerUid,
+      userName: caller.fromUserName,
+      userAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
+      meetupId: data.meetupId,
+      rating: data.rating,
+      comment: typeof data.comment === "string" ? data.comment.trim() : "",
+      photos: Array.isArray(data.photos) ? data.photos.filter((p): p is string => typeof p === "string") : [],
+      tags: Array.isArray(data.tags) ? data.tags.filter((t): t is string => typeof t === "string") : [],
+      petFriendly: {
+        space: typeof data.petFriendly?.space === "number" ? data.petFriendly.space : data.rating,
+        safety: typeof data.petFriendly?.safety === "number" ? data.petFriendly.safety : data.rating,
+        cleanliness:
+          typeof data.petFriendly?.cleanliness === "number"
+            ? data.petFriendly.cleanliness
+            : data.rating,
+      },
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: number | string }).code === 6
+    ) {
+      throw new HttpsError("already-exists", "You have already reviewed this location.");
+    }
+    throw error;
+  }
 
   return { id: reviewId };
 });
@@ -441,23 +452,34 @@ export const checkInCallable = onCall(async (request) => {
   const dayKey = new Date().toISOString().slice(0, 10);
   const checkinId = `${callerUid}_${dayKey}`;
   const checkinRef = db.doc(`locations/${data.locationId}/checkins/${checkinId}`);
-  const existingSnap = await checkinRef.get();
-  if (existingSnap.exists) {
-    throw new HttpsError("already-exists", "You already checked in here today.");
-  }
 
-  await checkinRef.set({
-    userId: callerUid,
-    userName: caller.fromUserName,
-    userAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
-    photoUrl: data.photoUrl,
-    caption: typeof data.caption === "string" ? data.caption.trim() : "",
-    petId: data.petId,
-    petName,
-    locationId: data.locationId,
-    dayKey,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
+  // Use .create() for atomic "once per user per day" semantics. Two
+  // rapid-fire submissions can't both pass an existence check and then
+  // overwrite each other.
+  try {
+    await checkinRef.create({
+      userId: callerUid,
+      userName: caller.fromUserName,
+      userAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
+      photoUrl: data.photoUrl,
+      caption: typeof data.caption === "string" ? data.caption.trim() : "",
+      petId: data.petId,
+      petName,
+      locationId: data.locationId,
+      dayKey,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: number | string }).code === 6
+    ) {
+      throw new HttpsError("already-exists", "You already checked in here today.");
+    }
+    throw error;
+  }
 
   return { id: checkinId };
 });
