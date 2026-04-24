@@ -484,10 +484,9 @@ export const sendNotification = onCall(async (request) => {
     message: string;
     warningReason?: string;
     warningDetails?: string;
-    read?: boolean;
   };
 
-  if (!data.userId) {
+  if (!data.userId || typeof data.userId !== "string") {
     throw new HttpsError("invalid-argument", "Missing notification recipient.");
   }
 
@@ -495,16 +494,25 @@ export const sendNotification = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "Only warning notifications are supported.");
   }
 
+  if (typeof data.message !== "string" || data.message.trim().length === 0) {
+    throw new HttpsError("invalid-argument", "Missing notification message.");
+  }
+
+  // The client must not control the `read` flag — otherwise an admin (or
+  // anyone replaying the call) could push warnings already marked read and
+  // silence the recipient.
   const payload: ServerNotificationPayload = {
     userId: data.userId,
     type: "warning",
     fromUserId: callerUid,
     fromUserName: "PetNote Team",
-    fromUserAvatar: "",
-    message: data.message,
-    warningReason: data.warningReason,
-    warningDetails: data.warningDetails,
-    read: data.read,
+    fromUserAvatar: getDefaultAvatar("petnote-team"),
+    message: data.message.trim(),
+    warningReason:
+      typeof data.warningReason === "string" ? data.warningReason.trim() : undefined,
+    warningDetails:
+      typeof data.warningDetails === "string" ? data.warningDetails.trim() : undefined,
+    read: false,
   };
 
   const id = await createNotificationIfAllowed(payload);
