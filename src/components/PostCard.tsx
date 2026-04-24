@@ -22,6 +22,7 @@ type PostCardProps = {
   onDeleted?: (postId: string) => void;
   initialLiked?: boolean;
   initialBookmarked?: boolean;
+  initialFollowingPet?: boolean;
 };
 
 export function PostCard({
@@ -31,6 +32,7 @@ export function PostCard({
   onDeleted,
   initialLiked,
   initialBookmarked,
+  initialFollowingPet,
 }: PostCardProps) {
   const { user, isBanned, profile } = useAuth();
   const navigate = useNavigate();
@@ -73,7 +75,12 @@ export function PostCard({
     isFollowing: isFollowingPet,
     toggleFollow: toggleFollowPet,
     loading: followPetLoading,
-  } = useFollowPet(post.petId ?? "");
+  } = useFollowPet(post.petId ?? "", {
+    initialFollowing: initialFollowingPet,
+    // Feed cards don't render the follower count, and fetching the pet
+    // once per card was an N+1 on scroll.
+    fetchFollowerCount: false,
+  });
 
   const timeLabel = useMemo(() => timeAgo(post.createdAt), [post.createdAt]);
   const authorName = post.authorName || "PetNote User";

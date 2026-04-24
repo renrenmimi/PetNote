@@ -14,15 +14,20 @@ type UseFollowResult = {
   loading: boolean;
 };
 
-export function useFollowPet(petId: string): UseFollowResult {
+export function useFollowPet(
+  petId: string,
+  options: { initialFollowing?: boolean; fetchFollowerCount?: boolean } = {}
+): UseFollowResult {
   const { user } = useAuth();
-  const [isFollowing, setIsFollowing] = useState(false);
+  const { initialFollowing, fetchFollowerCount = true } = options;
+  const [isFollowing, setIsFollowing] = useState(initialFollowing ?? false);
   const [followerCount, setFollowerCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const userId = user?.uid ?? null;
 
   useEffect(() => {
     let ignore = false;
-    if (!petId) {
+    if (!petId || !fetchFollowerCount) {
       setFollowerCount(0);
       return;
     }
@@ -38,18 +43,28 @@ export function useFollowPet(petId: string): UseFollowResult {
     return () => {
       ignore = true;
     };
-  }, [petId]);
+  }, [petId, fetchFollowerCount]);
+
+  useEffect(() => {
+    if (initialFollowing !== undefined) {
+      setIsFollowing(initialFollowing);
+    }
+  }, [initialFollowing]);
 
   useEffect(() => {
     let ignore = false;
-    if (!user || !petId) {
+    if (!userId || !petId) {
       setIsFollowing(false);
+      return;
+    }
+    // When a batched initial state is supplied, skip the per-card lookup.
+    if (initialFollowing !== undefined) {
       return;
     }
 
     const load = async () => {
       try {
-        const result = await checkIfFollowingPet(user.uid, petId);
+        const result = await checkIfFollowingPet(userId, petId);
         if (!ignore) setIsFollowing(result);
       } catch {
         if (!ignore) setIsFollowing(false);
@@ -60,25 +75,25 @@ export function useFollowPet(petId: string): UseFollowResult {
     return () => {
       ignore = true;
     };
-  }, [petId, user]);
+  }, [petId, userId, initialFollowing]);
 
   const toggleFollow = useCallback(async () => {
-    if (!user || !petId || loading) return;
+    if (!userId || !petId || loading) return;
     setLoading(true);
     try {
       if (isFollowing) {
-        await unfollowPet(user.uid, petId);
+        await unfollowPet(userId, petId);
         setIsFollowing(false);
         setFollowerCount((prev) => Math.max(0, prev - 1));
       } else {
-        await followPet(user.uid, petId);
+        await followPet(userId, petId);
         setIsFollowing(true);
         setFollowerCount((prev) => prev + 1);
       }
     } finally {
       setLoading(false);
     }
-  }, [isFollowing, loading, petId, user]);
+  }, [isFollowing, loading, petId, userId]);
 
   return { isFollowing, followerCount, toggleFollow, loading };
 }
