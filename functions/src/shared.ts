@@ -13,39 +13,52 @@ export async function batchChunked(
   }
 }
 
-// Helper: recompute location aggregation from all remaining reviews
-export async function recomputeLocationAggregation(locationId: string): Promise<void> {
+export type ReviewAggregationDelta = {
+  ratingSum: number;
+  count: number;
+  tagsToAdd?: string[];
+  photosToAdd?: string[];
+};
+
+// Apply a per-review delta to location aggregation counters in a single
+// transaction. Avoids re-reading every review on the location on every
+// write, which previously scaled O(totalReviews) per create/delete.
+export async function applyReviewAggregationDelta(
+  locationId: string,
+  delta: ReviewAggregationDelta
+): Promise<void> {
   const locationRef = db.doc(`locations/${locationId}`);
-  const locationSnap = await locationRef.get();
-  const locationData = locationSnap.exists ? locationSnap.data() ?? {} : {};
-  const reviewsSnap = await db.collection(`locations/${locationId}/reviews`).get();
+  await db.runTransaction(async (t) => {
+    const snap = await t.get(locationRef);
+    if (!snap.exists) return;
+    const data = snap.data() ?? {};
 
-  let totalRatings = 0;
-  let sumRatings = 0;
-  const allTags = new Set<string>();
-  const basePhotos = Array.isArray(locationData.locationPhotos)
-    ? (locationData.locationPhotos as string[])
-    : Array.isArray(locationData.photos)
-    ? (locationData.photos as string[])
-    : [];
-  const allPhotos = new Set<string>(basePhotos);
+    const prevCount = typeof data.totalRatings === "number" ? data.totalRatings : 0;
+    const prevAverage =
+      typeof data.averageRating === "number" ? data.averageRating : 0;
+    // sumRating may not exist on legacy docs; reconstruct from average×count.
+    const prevSum =
+      typeof data.sumRating === "number"
+        ? data.sumRating
+        : prevAverage * prevCount;
 
-  reviewsSnap.docs.forEach((d) => {
-    const data = d.data();
-    totalRatings++;
-    sumRatings += data.rating || 0;
-    (data.tags || []).forEach((t: string) => allTags.add(t));
-    (data.photos || []).forEach((p: string) => allPhotos.add(p));
-  });
+    const newCount = Math.max(0, prevCount + delta.count);
+    const newSum = Math.max(0, prevSum + delta.ratingSum);
+    const averageRating = newCount === 0 ? 0 : Number((newSum / newCount).toFixed(2));
 
-  const averageRating = totalRatings === 0 ? 0 : sumRatings / totalRatings;
-  await locationRef.update({
-    averageRating: Number(averageRating.toFixed(2)),
-    totalRatings,
-    tags: Array.from(allTags),
-    locationPhotos: basePhotos,
-    photos: Array.from(allPhotos),
-    totalPhotos: allPhotos.size,
+    const update: Record<string, unknown> = {
+      sumRating: newSum,
+      totalRatings: newCount,
+      averageRating,
+    };
+    if (delta.tagsToAdd && delta.tagsToAdd.length > 0) {
+      update.tags = admin.firestore.FieldValue.arrayUnion(...delta.tagsToAdd);
+    }
+    if (delta.photosToAdd && delta.photosToAdd.length > 0) {
+      update.photos = admin.firestore.FieldValue.arrayUnion(...delta.photosToAdd);
+    }
+
+    t.update(locationRef, update);
   });
 }
 
