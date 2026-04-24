@@ -20,6 +20,12 @@ function signCloudinaryParams(params: Record<string, string>, apiSecret: string)
     .digest("hex");
 }
 
+// Enforced on the signature itself so a leaked signature can't be reused to
+// upload a bigger file than we allow. Matches the limits surfaced to the
+// client so size checks stay in sync.
+const CLOUDINARY_MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
+const CLOUDINARY_MAX_VIDEO_BYTES = 80 * 1024 * 1024; // 80 MB
+
 export const getCloudinaryUploadSignature = onCall(
   {
     secrets: [CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET],
@@ -49,10 +55,13 @@ export const getCloudinaryUploadSignature = onCall(
     }
 
     const uploadPreset = resourceType === "video" ? "petnote_video_signed" : "petnote_image_signed";
+    const maxFileSize =
+      resourceType === "video" ? CLOUDINARY_MAX_VIDEO_BYTES : CLOUDINARY_MAX_IMAGE_BYTES;
     const timestamp = Math.floor(Date.now() / 1000);
     const signature = signCloudinaryParams(
       {
         folder: CLOUDINARY_FOLDER,
+        max_file_size: String(maxFileSize),
         timestamp: String(timestamp),
         upload_preset: uploadPreset,
       },
@@ -66,6 +75,7 @@ export const getCloudinaryUploadSignature = onCall(
       signature,
       uploadPreset,
       folder: CLOUDINARY_FOLDER,
+      maxFileSize,
     };
   }
 );
