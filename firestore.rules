@@ -34,8 +34,10 @@ service cloud.firestore {
     }
 
     function isAllowedUserUpdate() {
+      // pinnedPostId is written exclusively by setPinnedPostCallable (admin
+      // SDK bypasses rules) so the client cannot pin arbitrary posts.
       let allowed = ['displayName', 'displayNameLower', 'avatarUrl', 'bio',
-                      'location', 'onboardingComplete', 'pinnedPostId'];
+                      'location', 'onboardingComplete'];
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed) &&
         hasSafePublicLocation(request.resource.data);
     }
@@ -121,7 +123,10 @@ service cloud.firestore {
 
       match /likes/{likeId} {
         allow read: if true;
-        allow create: if isAuthenticated() && request.auth.uid == likeId && isNotBanned();
+        allow create: if isAuthenticated() &&
+          request.auth.uid == likeId &&
+          isNotBanned() &&
+          exists(/databases/$(database)/documents/posts/$(postId));
         allow delete: if isAuthenticated() && request.auth.uid == likeId;
       }
 

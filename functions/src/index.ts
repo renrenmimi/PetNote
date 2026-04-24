@@ -42,6 +42,7 @@ export {
   deleteCommentCallable,
   deletePostCallable,
   onPostWritten,
+  setPinnedPostCallable,
   updatePostCallable,
 } from "./posts";
 export {
