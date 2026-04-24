@@ -8,6 +8,7 @@ export {
 } from "./invitations";
 export { getCloudinaryUploadSignature } from "./media";
 export {
+  autoCompleteMeetups,
   cancelMeetupCallable,
   checkMeetupStatusCallable,
   createMeetupCallable,
