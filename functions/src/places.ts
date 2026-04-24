@@ -3,7 +3,7 @@ import { onDocumentCreated, onDocumentDeleted } from "firebase-functions/v2/fire
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
 import { getNotificationActor } from "./notifications";
-import { getDefaultAvatar, recomputeLocationAggregation } from "./shared";
+import { applyReviewAggregationDelta, getDefaultAvatar } from "./shared";
 import { getAccessiblePet } from "./pets";
 
 const allowedPlaceCategories = new Set([
@@ -164,7 +164,7 @@ export async function getOrCreatePublicMeetupLocation(params: {
 export const onReviewCreated = onDocumentCreated(
   "locations/{locationId}/reviews/{reviewId}",
   async (event) => {
-    const reviewData = event.data?.data();
+    const reviewData = event.data?.data() ?? {};
     if (reviewData?.userId) {
       const actor = await getNotificationActor(reviewData.userId);
       const reviewRef = db.doc(`locations/${event.params.locationId}/reviews/${event.params.reviewId}`);
@@ -173,14 +173,39 @@ export const onReviewCreated = onDocumentCreated(
         userAvatar: actor.fromUserAvatar,
       });
     }
-    await recomputeLocationAggregation(event.params.locationId);
+    const rating = typeof reviewData.rating === "number" ? reviewData.rating : 0;
+    const tagsToAdd = Array.isArray(reviewData.tags)
+      ? (reviewData.tags as unknown[]).filter(
+          (tag): tag is string => typeof tag === "string" && tag.length > 0
+        )
+      : [];
+    const photosToAdd = Array.isArray(reviewData.photos)
+      ? (reviewData.photos as unknown[]).filter(
+          (photo): photo is string => typeof photo === "string" && photo.length > 0
+        )
+      : [];
+    await applyReviewAggregationDelta(event.params.locationId, {
+      ratingSum: rating,
+      count: 1,
+      tagsToAdd,
+      photosToAdd,
+    });
   }
 );
 
 export const onReviewDeleted = onDocumentDeleted(
   "locations/{locationId}/reviews/{reviewId}",
   async (event) => {
-    await recomputeLocationAggregation(event.params.locationId);
+    const reviewData = event.data?.data() ?? {};
+    const rating = typeof reviewData.rating === "number" ? reviewData.rating : 0;
+    // Intentionally does not remove tags/photos: they may still be
+    // referenced by other remaining reviews, and arrayRemove without that
+    // knowledge would lose real data. Stale entries get cleaned up on a
+    // periodic full recompute if ever needed.
+    await applyReviewAggregationDelta(event.params.locationId, {
+      ratingSum: -rating,
+      count: -1,
+    });
   }
 );
 
