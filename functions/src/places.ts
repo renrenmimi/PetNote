@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { onDocumentCreated, onDocumentDeleted } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
@@ -32,13 +33,22 @@ const allowedPlaceFeatures = new Set([
   "food_nearby",
 ]);
 
-function buildLocationId(lat: number, lng: number): string {
+function buildLocationId(lat: number, lng: number, name: string): string {
+  // 5 decimals ~= 1.1m precision (vs. the previous 4 decimals / ~11m which
+  // collapsed neighbouring distinct places into the same doc).
   const normalize = (value: number) =>
     value
-      .toFixed(4)
+      .toFixed(5)
       .replace("-", "m")
       .replace(".", "");
-  return `${normalize(lat)}_${normalize(lng)}`;
+  const normalizedName = name.trim().toLowerCase();
+  // Short name hash keeps truly-same places deduplicated while preventing
+  // collisions between different venues that happen to share coordinates
+  // (multi-tenant buildings, strip malls, same park with different entries).
+  const nameHash = normalizedName
+    ? createHash("sha1").update(normalizedName).digest("hex").slice(0, 6)
+    : "noname";
+  return `${normalize(lat)}_${normalize(lng)}_${nameHash}`;
 }
 
 function sanitizePlaceDraft(value: unknown): {
@@ -114,7 +124,11 @@ export async function getOrCreatePublicMeetupLocation(params: {
     state?: string;
   };
 }): Promise<string> {
-  const locationId = buildLocationId(params.location.lat, params.location.lng);
+  const locationId = buildLocationId(
+    params.location.lat,
+    params.location.lng,
+    params.location.name
+  );
   const locationRef = db.doc(`locations/${locationId}`);
   const locationSnap = await locationRef.get();
   if (!locationSnap.exists) {
@@ -223,7 +237,7 @@ export const addPlaceCallable = onCall(async (request) => {
   }
 
   const place = sanitizePlaceDraft(request.data);
-  const locationId = buildLocationId(place.lat, place.lng);
+  const locationId = buildLocationId(place.lat, place.lng, place.name);
   const locationRef = db.doc(`locations/${locationId}`);
   let alreadyExisted = false;
 
