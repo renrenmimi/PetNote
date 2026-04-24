@@ -15,6 +15,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useBlockedUsers } from "../hooks/useBlockedUsers";
 import { batchCheckLikes } from "../hooks/useBatchLikeStatus";
 import { batchCheckBookmarks } from "../hooks/useBatchBookmarkStatus";
+import { batchCheckFollowingPets } from "../hooks/useBatchFollowingPets";
 import { getFollowingPets } from "../services/follow";
 import { useToast } from "../contexts/ToastContext";
 import { useLanguage } from "../hooks/useLanguage";
@@ -40,6 +41,7 @@ export function Feed() {
   const { showToast } = useToast();
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
   const [bookmarkedPosts, setBookmarkedPosts] = useState<Set<string>>(new Set());
+  const [followedPetIds, setFollowedPetIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setLocalPosts(posts);
@@ -111,17 +113,27 @@ export function Feed() {
     if (!user || filteredPosts.length === 0) {
       setLikedPosts(new Set());
       setBookmarkedPosts(new Set());
+      setFollowedPetIds(new Set());
       return;
     }
     const ids = filteredPosts.map((post) => post.id);
+    const petIds = Array.from(
+      new Set(
+        filteredPosts
+          .map((post) => post.petId)
+          .filter((petId): petId is string => !!petId)
+      )
+    );
     const loadStatus = async () => {
-      const [likedSet, bookmarkedSet] = await Promise.all([
+      const [likedSet, bookmarkedSet, followedSet] = await Promise.all([
         batchCheckLikes(user.uid, ids),
         batchCheckBookmarks(user.uid, ids),
+        batchCheckFollowingPets(user.uid, petIds),
       ]);
       if (!ignore) {
         setLikedPosts(likedSet);
         setBookmarkedPosts(bookmarkedSet);
+        setFollowedPetIds(followedSet);
       }
     };
     void loadStatus();
@@ -263,6 +275,9 @@ export function Feed() {
             index={index}
             initialLiked={likedPosts.has(post.id)}
             initialBookmarked={bookmarkedPosts.has(post.id)}
+            initialFollowingPet={
+              post.petId ? followedPetIds.has(post.petId) : undefined
+            }
             onDeleted={(postId) =>
               setLocalPosts((prev) => prev.filter((item) => item.id !== postId))
             }
