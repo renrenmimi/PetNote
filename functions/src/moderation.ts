@@ -28,19 +28,41 @@ export const reportContentCallable = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "Missing report reason.");
   }
 
-  const result = await db.collection("reports").add({
-    reporterId: callerUid,
-    reporterName: caller.fromUserName,
-    reporterAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
-    targetType: data.targetType,
-    targetId: data.targetId,
-    reason: data.reason.trim(),
-    description: typeof data.description === "string" ? data.description.trim() : "",
-    status: "pending",
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
+  // Deterministic id == one report per (reporter, targetType, target). Any
+  // replay or button-mash is silently deduped by Firestore rejecting the
+  // second .create() with ALREADY_EXISTS. This also gives admins a stable
+  // identifier per reporter/target pair.
+  const reportId = `${callerUid}_${data.targetType}_${data.targetId}`;
+  const reportRef = db.doc(`reports/${reportId}`);
 
-  return { id: result.id };
+  try {
+    await reportRef.create({
+      reporterId: callerUid,
+      reporterName: caller.fromUserName,
+      reporterAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
+      targetType: data.targetType,
+      targetId: data.targetId,
+      reason: data.reason.trim(),
+      description: typeof data.description === "string" ? data.description.trim() : "",
+      status: "pending",
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: number | string }).code === 6
+    ) {
+      throw new HttpsError(
+        "already-exists",
+        "You have already reported this content."
+      );
+    }
+    throw error;
+  }
+
+  return { id: reportId };
 });
 
 export const submitFeedbackCallable = onCall(async (request) => {
