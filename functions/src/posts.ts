@@ -175,6 +175,44 @@ export const updatePostCallable = onCall(async (request) => {
   return { success: true };
 });
 
+export const setPinnedPostCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+
+  const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot pin posts.");
+  }
+
+  const { postId } = request.data as { postId?: string | null };
+  const userRef = db.doc(`users/${callerUid}`);
+
+  // postId === null or missing means "unpin"
+  if (postId === null || postId === undefined || postId === "") {
+    await userRef.set(
+      { pinnedPostId: admin.firestore.FieldValue.delete() },
+      { merge: true }
+    );
+    return { success: true };
+  }
+
+  if (typeof postId !== "string") {
+    throw new HttpsError("invalid-argument", "Invalid postId.");
+  }
+
+  const postSnap = await db.doc(`posts/${postId}`).get();
+  if (!postSnap.exists) {
+    throw new HttpsError("not-found", "Post not found.");
+  }
+  const postData = postSnap.data() ?? {};
+  if (postData.authorId !== callerUid) {
+    throw new HttpsError("permission-denied", "You can only pin your own posts.");
+  }
+
+  await userRef.set({ pinnedPostId: postId }, { merge: true });
+  return { success: true };
+});
+
 export const deletePostCallable = onCall(async (request) => {
   const callerUid = request.auth?.uid;
   if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");

@@ -1,7 +1,6 @@
 import {
   collection,
   deleteDoc,
-  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -14,7 +13,6 @@ import {
   startAfter,
   type QueryConstraint,
   type QueryDocumentSnapshot,
-  updateDoc,
   where,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
@@ -359,12 +357,16 @@ export async function getUserStats(userId: string): Promise<{
   return { postCount: posts.length, totalLikes };
 }
 
-export async function pinPost(userId: string, postId: string): Promise<void> {
-  const userRef = doc(db, "users", userId);
-  await updateDoc(userRef, { pinnedPostId: postId });
+export async function pinPost(_userId: string, postId: string): Promise<void> {
+  await httpsCallable<{ postId: string }, { success: boolean }>(
+    functions,
+    "setPinnedPostCallable"
+  )({ postId });
 }
 
-export async function unpinPost(userId: string): Promise<void> {
-  const userRef = doc(db, "users", userId);
-  await updateDoc(userRef, { pinnedPostId: deleteField() });
+export async function unpinPost(_userId: string): Promise<void> {
+  await httpsCallable<{ postId: null }, { success: boolean }>(
+    functions,
+    "setPinnedPostCallable"
+  )({ postId: null });
 }
