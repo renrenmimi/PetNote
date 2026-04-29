@@ -39,13 +39,16 @@ const userProfileCache = new Map<
   string,
   { profile: UserProfile | null; expiresAt: number }
 >();
+const userProfileRequestCache = new Map<string, Promise<UserProfile | null>>();
 
 export function clearUserProfileCache(userId?: string): void {
   if (userId) {
     userProfileCache.delete(userId);
+    userProfileRequestCache.delete(userId);
     return;
   }
   userProfileCache.clear();
+  userProfileRequestCache.clear();
 }
 
 export async function getUserProfile(
@@ -56,24 +59,34 @@ export async function getUserProfile(
     return cached.profile;
   }
 
-  const userRef = doc(db, "users", userId);
-  const snapshot = await getDoc(userRef);
-  if (!snapshot.exists()) {
+  const pending = userProfileRequestCache.get(userId);
+  if (pending) return pending;
+
+  const request = (async () => {
+    const userRef = doc(db, "users", userId);
+    const snapshot = await getDoc(userRef);
+    if (!snapshot.exists()) {
+      userProfileCache.set(userId, {
+        profile: null,
+        expiresAt: Date.now() + USER_PROFILE_CACHE_MS,
+      });
+      return null;
+    }
+    const profile = {
+      id: snapshot.id,
+      ...(snapshot.data() as Omit<UserProfile, "id">),
+    };
     userProfileCache.set(userId, {
-      profile: null,
+      profile,
       expiresAt: Date.now() + USER_PROFILE_CACHE_MS,
     });
-    return null;
-  }
-  const profile = {
-    id: snapshot.id,
-    ...(snapshot.data() as Omit<UserProfile, "id">),
-  };
-  userProfileCache.set(userId, {
-    profile,
-    expiresAt: Date.now() + USER_PROFILE_CACHE_MS,
+    return profile;
+  })().finally(() => {
+    userProfileRequestCache.delete(userId);
   });
-  return profile;
+
+  userProfileRequestCache.set(userId, request);
+  return request;
 }
 
 export async function updateUserProfile(

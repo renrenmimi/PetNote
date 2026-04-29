@@ -2,6 +2,7 @@ import {
   collection,
   collectionGroup,
   doc,
+  documentId,
   getDoc,
   getDocs,
   orderBy,
@@ -107,14 +108,18 @@ const relationshipLabelMapZh: Record<PetFamilyRelationship, string> = {
 };
 
 const PET_CACHE_MS = 60_000;
+const DOCUMENT_ID_BATCH_SIZE = 10;
 const petCache = new Map<string, { pet: Pet | null; expiresAt: number }>();
+const petRequestCache = new Map<string, Promise<Pet | null>>();
 
 function clearPetCache(petId?: string): void {
   if (petId) {
     petCache.delete(petId);
+    petRequestCache.delete(petId);
     return;
   }
   petCache.clear();
+  petRequestCache.clear();
 }
 
 export const getRelationshipLabel = (
@@ -367,18 +372,65 @@ export async function getPetById(petId: string): Promise<Pet | null> {
     return cached.pet;
   }
 
-  const petRef = doc(db, "pets", petId);
-  const snapshot = await getDoc(petRef);
-  if (!snapshot.exists()) {
-    petCache.set(petId, { pet: null, expiresAt: Date.now() + PET_CACHE_MS });
-    return null;
+  const pending = petRequestCache.get(petId);
+  if (pending) return pending;
+
+  const request = (async () => {
+    const petRef = doc(db, "pets", petId);
+    const snapshot = await getDoc(petRef);
+    if (!snapshot.exists()) {
+      petCache.set(petId, { pet: null, expiresAt: Date.now() + PET_CACHE_MS });
+      return null;
+    }
+    const pet = {
+      id: snapshot.id,
+      ...(snapshot.data() as Omit<Pet, "id">),
+    };
+    petCache.set(petId, { pet, expiresAt: Date.now() + PET_CACHE_MS });
+    return pet;
+  })().finally(() => {
+    petRequestCache.delete(petId);
+  });
+
+  petRequestCache.set(petId, request);
+  return request;
+}
+
+export async function batchCheckPetBirthdays(
+  petIds: string[]
+): Promise<Set<string>> {
+  const birthdayPetIds = new Set<string>();
+  const unique = Array.from(new Set(petIds.filter(Boolean)));
+  if (unique.length === 0) return birthdayPetIds;
+
+  const petsRef = collection(db, "pets");
+  for (let i = 0; i < unique.length; i += DOCUMENT_ID_BATCH_SIZE) {
+    const chunk = unique.slice(i, i + DOCUMENT_ID_BATCH_SIZE);
+    if (chunk.length === 0) continue;
+
+    try {
+      const snapshot = await getDocs(
+        query(petsRef, where(documentId(), "in", chunk))
+      );
+      snapshot.docs.forEach((docSnap) => {
+        const pet = {
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<Pet, "id">),
+        };
+        petCache.set(docSnap.id, {
+          pet,
+          expiresAt: Date.now() + PET_CACHE_MS,
+        });
+        if (isBirthdayToday(pet.birthday)) {
+          birthdayPetIds.add(docSnap.id);
+        }
+      });
+    } catch {
+      // ignore chunk failures so feed cards can still render
+    }
   }
-  const pet = {
-    id: snapshot.id,
-    ...(snapshot.data() as Omit<Pet, "id">),
-  };
-  petCache.set(petId, { pet, expiresAt: Date.now() + PET_CACHE_MS });
-  return pet;
+
+  return birthdayPetIds;
 }
 
 export async function getPostsByPet(petId: string): Promise<Post[]> {

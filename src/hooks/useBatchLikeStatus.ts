@@ -8,9 +8,10 @@ export async function batchCheckLikes(
   if (!userId || postIds.length === 0) return new Set();
 
   const likedPostIds = new Set<string>();
+  const unique = Array.from(new Set(postIds.filter(Boolean)));
   const batches: string[][] = [];
-  for (let i = 0; i < postIds.length; i += 30) {
-    batches.push(postIds.slice(i, i + 30));
+  for (let i = 0; i < unique.length; i += 30) {
+    batches.push(unique.slice(i, i + 30));
   }
 
   for (const batch of batches) {
