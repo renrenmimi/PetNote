@@ -27,7 +27,7 @@ export async function getCurrentLocation(): Promise<{ lat: number; lng: number }
     navigator.geolocation.getCurrentPosition(
       (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
       (err) => reject(err),
-      { enableHighAccuracy: false, timeout: 10000 }
+      { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
     );
   });
 }

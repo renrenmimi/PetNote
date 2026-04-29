@@ -18,35 +18,81 @@ function normalizeTags(tags: unknown): string[] {
   );
 }
 
+function getPostPetId(data: admin.firestore.DocumentData | undefined): string | null {
+  return typeof data?.petId === "string" && data.petId.trim().length > 0
+    ? data.petId
+    : null;
+}
+
+async function applyPetPostCountDelta(
+  petId: string,
+  delta: number
+): Promise<void> {
+  if (!petId || delta === 0) return;
+  const petRef = db.doc(`pets/${petId}`);
+  try {
+    await db.runTransaction(async (transaction) => {
+      const petSnap = await transaction.get(petRef);
+      if (!petSnap.exists) return;
+      const current = petSnap.data()?.postCount;
+      const currentCount = typeof current === "number" ? current : 0;
+      transaction.update(petRef, {
+        postCount: Math.max(0, currentCount + delta),
+      });
+    });
+  } catch (error) {
+    console.error("Failed to update pet post count", { petId, delta, error });
+  }
+}
+
 export const onPostWritten = onDocumentWritten("posts/{postId}", async (event) => {
   const before = event.data?.before?.data();
   const after = event.data?.after?.data();
 
-  const oldTags: string[] = before?.tags || [];
-  const newTags: string[] = after?.tags || [];
+  const oldTags = normalizeTags(before?.tags);
+  const newTags = normalizeTags(after?.tags);
 
   const added = newTags.filter((t) => !oldTags.includes(t));
   const removed = oldTags.filter((t) => !newTags.includes(t));
 
-  if (added.length === 0 && removed.length === 0) return;
+  const tasks: Array<Promise<unknown>> = [];
 
-  const batch = db.batch();
-  for (const tag of added) {
-    const tagRef = db.doc(`hashtags/${tag}`);
-    batch.set(tagRef, {
-      name: tag,
-      postCount: admin.firestore.FieldValue.increment(1),
-      lastUsed: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
+  if (added.length > 0 || removed.length > 0) {
+    const batch = db.batch();
+    for (const tag of added) {
+      const tagRef = db.doc(`hashtags/${tag}`);
+      batch.set(tagRef, {
+        name: tag,
+        postCount: admin.firestore.FieldValue.increment(1),
+        lastUsed: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+    for (const tag of removed) {
+      const tagRef = db.doc(`hashtags/${tag}`);
+      batch.set(tagRef, {
+        postCount: admin.firestore.FieldValue.increment(-1),
+        lastUsed: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+    tasks.push(batch.commit());
   }
-  for (const tag of removed) {
-    const tagRef = db.doc(`hashtags/${tag}`);
-    batch.set(tagRef, {
-      postCount: admin.firestore.FieldValue.increment(-1),
-      lastUsed: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
+
+  const petDeltas = new Map<string, number>();
+  const previousPetId = getPostPetId(before);
+  const nextPetId = getPostPetId(after);
+  if (previousPetId) {
+    petDeltas.set(previousPetId, (petDeltas.get(previousPetId) ?? 0) - 1);
   }
-  await batch.commit();
+  if (nextPetId) {
+    petDeltas.set(nextPetId, (petDeltas.get(nextPetId) ?? 0) + 1);
+  }
+  petDeltas.forEach((delta, petId) => {
+    if (delta !== 0) {
+      tasks.push(applyPetPostCountDelta(petId, delta));
+    }
+  });
+
+  await Promise.all(tasks);
 });
 
 export const createPostCallable = onCall(async (request) => {

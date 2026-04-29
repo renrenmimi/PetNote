@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { QueryDocumentSnapshot } from "firebase/firestore";
 import { getFollowingPosts, getPosts, type Post } from "../services/posts";
 
@@ -41,8 +41,22 @@ export function usePosts(mode: FeedMode = "all", userId?: string | null): UsePos
     all: createState(),
     following: createState(),
   });
+  const mountedRef = useRef(true);
+  const requestIdRef = useRef<Record<FeedMode, number>>({
+    all: 0,
+    following: 0,
+  });
 
   const activeFeed = useMemo(() => feeds[mode], [feeds, mode]);
+
+  useEffect(() => {
+    const requestIds = requestIdRef.current;
+    return () => {
+      mountedRef.current = false;
+      requestIds.all += 1;
+      requestIds.following += 1;
+    };
+  }, []);
 
   const fetchPosts = useCallback(
     async (targetMode: FeedMode, lastDoc?: QueryDocumentSnapshot | null) => {
@@ -59,6 +73,8 @@ export function usePosts(mode: FeedMode = "all", userId?: string | null): UsePos
 
   const loadPosts = useCallback(
     async (targetMode: FeedMode, reset = false) => {
+      const requestId = requestIdRef.current[targetMode] + 1;
+      requestIdRef.current[targetMode] = requestId;
       setFeeds((prev) => ({
         ...prev,
         [targetMode]: {
@@ -76,6 +92,12 @@ export function usePosts(mode: FeedMode = "all", userId?: string | null): UsePos
 
       try {
         const { posts, lastDoc, hasMore } = await fetchPosts(targetMode, null);
+        if (
+          !mountedRef.current ||
+          requestIdRef.current[targetMode] !== requestId
+        ) {
+          return;
+        }
         setFeeds((prev) => ({
           ...prev,
           [targetMode]: {
@@ -87,6 +109,12 @@ export function usePosts(mode: FeedMode = "all", userId?: string | null): UsePos
           },
         }));
       } catch (err) {
+        if (
+          !mountedRef.current ||
+          requestIdRef.current[targetMode] !== requestId
+        ) {
+          return;
+        }
         const message =
           err instanceof Error ? err.message : "Failed to load posts";
         setFeeds((prev) => ({
@@ -142,10 +170,14 @@ export function usePosts(mode: FeedMode = "all", userId?: string | null): UsePos
       return;
     }
 
+    const targetMode = mode;
+    const requestId = requestIdRef.current[targetMode] + 1;
+    requestIdRef.current[targetMode] = requestId;
+
     setFeeds((prev) => ({
       ...prev,
-      [mode]: {
-        ...prev[mode],
+      [targetMode]: {
+        ...prev[targetMode],
         loadingMore: true,
         error: null,
       },
@@ -153,26 +185,38 @@ export function usePosts(mode: FeedMode = "all", userId?: string | null): UsePos
 
     try {
       const { posts, lastDoc, hasMore } = await fetchPosts(
-        mode,
+        targetMode,
         activeFeed.lastDoc
       );
+      if (
+        !mountedRef.current ||
+        requestIdRef.current[targetMode] !== requestId
+      ) {
+        return;
+      }
       setFeeds((prev) => ({
         ...prev,
-        [mode]: {
-          ...prev[mode],
-          posts: [...prev[mode].posts, ...posts],
+        [targetMode]: {
+          ...prev[targetMode],
+          posts: [...prev[targetMode].posts, ...posts],
           lastDoc,
           hasMore,
           loadingMore: false,
         },
       }));
     } catch (err) {
+      if (
+        !mountedRef.current ||
+        requestIdRef.current[targetMode] !== requestId
+      ) {
+        return;
+      }
       const message =
         err instanceof Error ? err.message : "Failed to load more posts";
       setFeeds((prev) => ({
         ...prev,
-        [mode]: {
-          ...prev[mode],
+        [targetMode]: {
+          ...prev[targetMode],
           error: message,
           loadingMore: false,
         },

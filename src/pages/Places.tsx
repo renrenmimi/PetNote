@@ -112,8 +112,17 @@ export function Places() {
     null
   );
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const mountedRef = useRef(true);
+  const requestIdRef = useRef(0);
 
   const activeCenter = searchCenter ?? userLocation ?? null;
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      requestIdRef.current += 1;
+    };
+  }, []);
 
   useEffect(() => {
     let ignore = false;
@@ -139,21 +148,35 @@ export function Places() {
 
   const loadPlaces = async (reset = false) => {
     if (loadingMore || (!reset && loading)) return;
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
     setLoadingMore(!reset);
     setLoading(reset);
-    const result = await getPlaces({
-      category: category === "all" ? undefined : category,
-      sortBy,
-      userLat: activeCenter?.lat,
-      userLng: activeCenter?.lng,
-      limit: 10,
-      lastDoc: reset ? undefined : (lastDoc ?? undefined),
-    });
-    setPlaces((prev) => (reset ? result.places : [...prev, ...result.places]));
-    setLastDoc(result.lastDoc);
-    setHasMore(result.hasMore);
-    setLoading(false);
-    setLoadingMore(false);
+    try {
+      const result = await getPlaces({
+        category: category === "all" ? undefined : category,
+        sortBy,
+        userLat: activeCenter?.lat,
+        userLng: activeCenter?.lng,
+        limit: 10,
+        lastDoc: reset ? undefined : (lastDoc ?? undefined),
+      });
+      if (!mountedRef.current || requestIdRef.current !== requestId) return;
+      setPlaces((prev) => (reset ? result.places : [...prev, ...result.places]));
+      setLastDoc(result.lastDoc);
+      setHasMore(result.hasMore);
+    } catch {
+      if (!mountedRef.current || requestIdRef.current !== requestId) return;
+      if (reset) {
+        setPlaces([]);
+      }
+      setHasMore(false);
+    } finally {
+      if (mountedRef.current && requestIdRef.current === requestId) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    }
   };
 
   useEffect(() => {
@@ -201,7 +224,7 @@ export function Places() {
   const placeRows = useMemo(() => {
     return places.map((place) => {
       const distance =
-        activeCenter?.lat && activeCenter?.lng
+        activeCenter
           ? calculateDistance(activeCenter.lat, activeCenter.lng, place.lat, place.lng)
           : null;
       return { place, distance };

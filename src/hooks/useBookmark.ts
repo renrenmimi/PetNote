@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   bookmarkPost,
   checkIfBookmarked,
@@ -18,6 +18,13 @@ export function useBookmark(
 ): UseBookmarkResult {
   const [isBookmarked, setIsBookmarked] = useState(initialBookmarked ?? false);
   const [loading, setLoading] = useState(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (initialBookmarked !== undefined) {
@@ -59,13 +66,17 @@ export function useBookmark(
     try {
       if (isBookmarked) {
         await unbookmarkPost(userId, postId);
+        if (!mountedRef.current) return;
         setIsBookmarked(false);
       } else {
         await bookmarkPost(userId, postId);
+        if (!mountedRef.current) return;
         setIsBookmarked(true);
       }
     } finally {
-      setLoading(false);
+      if (mountedRef.current) {
+        setLoading(false);
+      }
     }
   }, [isBookmarked, loading, postId, userId]);
 

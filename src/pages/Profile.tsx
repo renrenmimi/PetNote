@@ -16,7 +16,6 @@ import {
 import { getLocation, type Location } from "../services/locations";
 import { type Post } from "../services/posts";
 import {
-  getPostsByPet,
   getRelationshipLabel,
   getUserPets,
   type Pet,
@@ -42,7 +41,6 @@ export function Profile() {
   const [profileLocation, setProfileLocation] = useState<string | null>(null);
 
   const [pets, setPets] = useState<Pet[]>([]);
-  const [petPostCounts, setPetPostCounts] = useState<Record<string, number>>({});
 
   const [savedPosts, setSavedPosts] = useState<Post[]>([]);
   const [savedLoading, setSavedLoading] = useState(false);
@@ -78,18 +76,6 @@ export function Profile() {
         setProfileAvatar(profile?.avatarUrl || null);
         setProfileBio(profile?.bio || null);
         setPets(petList);
-
-        const postCountPairs = await Promise.all(
-          petList.map(async (pet) => {
-            const posts = await getPostsByPet(pet.id);
-            return [pet.id, posts.length] as const;
-          })
-        );
-        const counts: Record<string, number> = {};
-        postCountPairs.forEach(([petId, count]) => {
-          counts[petId] = count;
-        });
-        setPetPostCounts(counts);
 
         if (profile?.location?.city) {
           const { city, state } = profile.location;
@@ -364,7 +350,7 @@ export function Profile() {
                 <div className="space-y-3">
                   {pets.map((pet) => {
                     const species = getSpeciesMeta(pet.species);
-                    const postCount = petPostCounts[pet.id] || 0;
+                    const postCount = pet.postCount ?? 0;
                     return (
                       <button
                         key={pet.id}

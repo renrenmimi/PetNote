@@ -20,6 +20,33 @@ export function createImageTooLargeError(maxMB: number): Error {
   return err;
 }
 
+export function isHeicImage(file: File): boolean {
+  return (
+    file.type === "image/heic" ||
+    file.type === "image/heif" ||
+    /\.heic$/i.test(file.name) ||
+    /\.heif$/i.test(file.name)
+  );
+}
+
+export async function convertHeicToJpeg(
+  file: File,
+  quality = 0.85
+): Promise<File> {
+  const heic2any = (await import("heic2any")).default;
+  const blob = await heic2any({
+    blob: file,
+    toType: "image/jpeg",
+    quality,
+  });
+  const outputBlob = Array.isArray(blob) ? blob[0] : blob;
+  return new File(
+    [outputBlob as Blob],
+    file.name.replace(/\.hei[cf]$/i, ".jpg"),
+    { type: "image/jpeg", lastModified: file.lastModified }
+  );
+}
+
 const loadImage = (file: File) =>
   new Promise<HTMLImageElement>((resolve, reject) => {
     const url = URL.createObjectURL(file);

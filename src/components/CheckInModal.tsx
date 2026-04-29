@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { uploadMedia } from "../services/cloudinary";
 import { checkIn } from "../services/checkins";
 import { useToast } from "../contexts/ToastContext";
@@ -35,21 +35,35 @@ export function CheckInModal({
 }: CheckInModalProps) {
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
+  const mountedRef = useRef(true);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [caption, setCaption] = useState("");
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const revokePreviewUrl = useCallback(() => {
+    if (!previewUrlRef.current) return;
+    URL.revokeObjectURL(previewUrlRef.current);
+    previewUrlRef.current = null;
+  }, []);
+
   useEffect(() => {
-    if (!open) {
-      setFile(null);
-      setCaption("");
-      setSelectedPetId(null);
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(null);
-    }
-  }, [open, previewUrl]);
+    if (open) return;
+    setFile(null);
+    setCaption("");
+    setSelectedPetId(null);
+    revokePreviewUrl();
+    setPreviewUrl(null);
+  }, [open, revokePreviewUrl]);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      revokePreviewUrl();
+    };
+  }, [revokePreviewUrl]);
 
   if (!open) return null;
 
@@ -67,9 +81,11 @@ export function CheckInModal({
       showToast("Please select an image", "warning");
       return;
     }
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    const objectUrl = URL.createObjectURL(selected);
+    revokePreviewUrl();
+    previewUrlRef.current = objectUrl;
     setFile(selected);
-    setPreviewUrl(URL.createObjectURL(selected));
+    setPreviewUrl(objectUrl);
   };
 
   const handleSubmit = async () => {
@@ -93,7 +109,9 @@ export function CheckInModal({
     } catch {
       showToast("Check-in failed. Try again.", "error");
     } finally {
-      setSubmitting(false);
+      if (mountedRef.current) {
+        setSubmitting(false);
+      }
     }
   };
 

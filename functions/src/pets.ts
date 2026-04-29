@@ -150,6 +150,7 @@ export const createPetCallable = onCall(async (request) => {
         ownerId: callerUid,
         primaryOwnerId: callerUid,
         followerCount: 0,
+        postCount: 0,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       })
     );

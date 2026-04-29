@@ -6,7 +6,11 @@ import { uploadMedia } from "../services/cloudinary";
 import { createPost, type MediaItem } from "../services/posts";
 import { getUserPets, type Pet } from "../services/pets";
 import { getUserProfile, type UserProfile } from "../services/users";
-import { compressImage } from "../utils/imageCompressor";
+import {
+  compressImage,
+  convertHeicToJpeg,
+  isHeicImage,
+} from "../utils/imageCompressor";
 import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 import { getSpeciesMeta } from "../utils/petHelpers";
 import { useToast } from "../contexts/ToastContext";
@@ -202,12 +206,7 @@ export function Create() {
       }
       seenIds.add(rawId);
 
-      const isHeic =
-        rawFile.type === "image/heic" ||
-        rawFile.type === "image/heif" ||
-        /\.heic$/i.test(rawFile.name) ||
-        /\.heif$/i.test(rawFile.name);
-
+      const isHeic = isHeicImage(rawFile);
       const isImage = rawFile.type.startsWith("image/") || isHeic;
       const isVideo = rawFile.type.startsWith("video/");
 
@@ -223,20 +222,7 @@ export function Create() {
       if (isHeic) {
         try {
           setConverting(true);
-          const heic2any = (await import("heic2any")).default;
-          const blob = await heic2any({
-            blob: rawFile,
-            toType: "image/jpeg",
-            quality: 0.85,
-          });
-          const outputBlob = Array.isArray(blob) ? blob[0] : blob;
-          file = new File(
-            [outputBlob as Blob],
-            rawFile.name
-              .replace(/\.heic$/i, ".jpg")
-              .replace(/\.heif$/i, ".jpg"),
-            { type: "image/jpeg", lastModified: rawFile.lastModified }
-          );
+          file = await convertHeicToJpeg(rawFile);
         } catch {
           showToast("Failed to convert image.", "error");
           continue;

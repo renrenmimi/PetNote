@@ -21,6 +21,19 @@ function formatMegabytes(bytes: number): string {
   return `${Math.round(bytes / (1024 * 1024))}MB`;
 }
 
+async function prepareImageForUpload(file: File): Promise<File> {
+  const { compressImage, convertHeicToJpeg, isHeicImage } = await import(
+    "../utils/imageCompressor"
+  );
+  const imageFile = isHeicImage(file) ? await convertHeicToJpeg(file) : file;
+  return compressImage(imageFile, {
+    maxWidth: 1920,
+    maxHeight: 1920,
+    quality: 0.8,
+    maxSizeMB: 2,
+  });
+}
+
 async function uploadToCloudinary(
   file: File,
   resourceType: CloudinaryResourceType
@@ -71,7 +84,7 @@ async function uploadToCloudinary(
 }
 
 export async function uploadImage(file: File): Promise<string> {
-  return uploadToCloudinary(file, "image");
+  return uploadToCloudinary(await prepareImageForUpload(file), "image");
 }
 
 export async function uploadMedia(
@@ -79,7 +92,8 @@ export async function uploadMedia(
 ): Promise<{ url: string; type: "image" | "video"; thumbUrl?: string }> {
   const isVideo = file.type.startsWith("video/");
   const resourceType: CloudinaryResourceType = isVideo ? "video" : "image";
-  const secureUrl = await uploadToCloudinary(file, resourceType);
+  const uploadFile = isVideo ? file : await prepareImageForUpload(file);
+  const secureUrl = await uploadToCloudinary(uploadFile, resourceType);
 
   if (!isVideo) {
     return { url: secureUrl, type: "image" };

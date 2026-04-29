@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createInvitation, getActiveInvitation, type Invitation } from "../services/invitations";
 import { useToast } from "../contexts/ToastContext";
 
@@ -36,12 +36,28 @@ export function InviteCodeModal({
   const [activeInvitation, setActiveInvitation] = useState<Invitation | null>(null);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const mountedRef = useRef(true);
+  const openRef = useRef(isOpen);
   const { showToast } = useToast();
 
   const formattedCode = useMemo(
     () => (activeInvitation?.code ? formatCode(activeInvitation.code) : ""),
     [activeInvitation?.code]
   );
+
+  useEffect(() => {
+    openRef.current = isOpen;
+    if (!isOpen) {
+      setLoading(false);
+      setGenerating(false);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let ignore = false;
@@ -76,14 +92,18 @@ export function InviteCodeModal({
     setGenerating(true);
     try {
       const invitation = await createInvitation(petId, userId, userName);
+      if (!mountedRef.current || !openRef.current) return;
       setActiveInvitation(invitation);
       showToast("Invitation code generated.", "success");
     } catch (error) {
+      if (!mountedRef.current || !openRef.current) return;
       const message =
         error instanceof Error ? error.message : "Could not generate invitation code.";
       showToast(message, "error");
     } finally {
-      setGenerating(false);
+      if (mountedRef.current && openRef.current) {
+        setGenerating(false);
+      }
     }
   };
 

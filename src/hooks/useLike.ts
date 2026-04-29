@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { checkIfLiked, likePost, unlikePost } from "../services/posts";
 
 type UseLikeResult = {
@@ -17,6 +17,13 @@ export function useLike(
   const [isLiked, setIsLiked] = useState(initialLiked ?? false);
   const [likeCount, setLikeCount] = useState(initialCount);
   const [loading, setLoading] = useState(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     setLikeCount(initialCount);
@@ -62,15 +69,19 @@ export function useLike(
     try {
       if (isLiked) {
         await unlikePost(postId, userId);
+        if (!mountedRef.current) return;
         setIsLiked(false);
         setLikeCount((prev) => Math.max(0, prev - 1));
       } else {
         await likePost(postId, userId);
+        if (!mountedRef.current) return;
         setIsLiked(true);
         setLikeCount((prev) => prev + 1);
       }
     } finally {
-      setLoading(false);
+      if (mountedRef.current) {
+        setLoading(false);
+      }
     }
   }, [isLiked, loading, postId, userId]);
 

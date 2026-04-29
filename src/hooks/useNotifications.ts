@@ -41,6 +41,13 @@ export function useNotifications(
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const lastDocRef = useRef<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!userId) {
@@ -126,6 +133,7 @@ export function useNotifications(
         limit(PAGE_SIZE)
       );
       const snapshot = await getDocs(notificationsQuery);
+      if (!mountedRef.current) return;
       const more = snapshot.docs.map((docSnap) => ({
         id: docSnap.id,
         ...(docSnap.data() as Omit<NotificationItem, "id">),
@@ -140,7 +148,9 @@ export function useNotifications(
       setHasMore(snapshot.docs.length === PAGE_SIZE);
       lastDocRef.current = snapshot.docs[snapshot.docs.length - 1] ?? lastDocRef.current;
     } finally {
-      setLoadingMore(false);
+      if (mountedRef.current) {
+        setLoadingMore(false);
+      }
     }
   }, [hasMore, loadingMore, userId]);
 
@@ -166,6 +176,9 @@ export function useNotifications(
       try {
         await markOne(id);
       } catch (error) {
+        if (!mountedRef.current) {
+          throw error;
+        }
         if (shouldDecrement) {
           setNotifications((prev) =>
             prev.map((item) =>
@@ -195,8 +208,10 @@ export function useNotifications(
     try {
       await markAll(userId);
     } catch (error) {
-      setNotifications(previousNotifications);
-      setUnreadCount(previousUnreadCount);
+      if (mountedRef.current) {
+        setNotifications(previousNotifications);
+        setUnreadCount(previousUnreadCount);
+      }
       throw error;
     }
   }, [userId]);

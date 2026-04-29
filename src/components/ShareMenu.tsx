@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "../contexts/ToastContext";
 import type { Post } from "../services/posts";
 import { generateShareCard } from "./ShareCard";
@@ -15,6 +15,7 @@ type ShareMenuProps = {
 export function ShareMenu({ open, onClose, postId, shareUrl, text, post }: ShareMenuProps) {
   const [canShare, setCanShare] = useState(false);
   const [sharingImage, setSharingImage] = useState(false);
+  const mountedRef = useRef(true);
   const { showToast } = useToast();
 
   const postUrl = useMemo(() => {
@@ -26,6 +27,12 @@ export function ShareMenu({ open, onClose, postId, shareUrl, text, post }: Share
 
   useEffect(() => {
     setCanShare(typeof navigator !== "undefined" && !!navigator.share);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   if (!open) return null;
@@ -63,19 +70,24 @@ export function ShareMenu({ open, onClose, postId, shareUrl, text, post }: Share
         });
       } else {
         const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = "petnote-share.png";
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(url);
+        try {
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = "petnote-share.png";
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+        } finally {
+          URL.revokeObjectURL(url);
+        }
         showToast("Share card downloaded", "success");
       }
     } catch {
       showToast("Failed to generate share card", "error");
     } finally {
-      setSharingImage(false);
+      if (mountedRef.current) {
+        setSharingImage(false);
+      }
     }
   };
 
