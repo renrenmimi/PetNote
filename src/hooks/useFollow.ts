@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "./useAuth";
 import {
   checkIfFollowingPet,
@@ -23,7 +23,14 @@ export function useFollowPet(
   const [isFollowing, setIsFollowing] = useState(initialFollowing ?? false);
   const [followerCount, setFollowerCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const mountedRef = useRef(true);
   const userId = user?.uid ?? null;
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let ignore = false;
@@ -83,15 +90,19 @@ export function useFollowPet(
     try {
       if (isFollowing) {
         await unfollowPet(userId, petId);
+        if (!mountedRef.current) return;
         setIsFollowing(false);
         setFollowerCount((prev) => Math.max(0, prev - 1));
       } else {
         await followPet(userId, petId);
+        if (!mountedRef.current) return;
         setIsFollowing(true);
         setFollowerCount((prev) => prev + 1);
       }
     } finally {
-      setLoading(false);
+      if (mountedRef.current) {
+        setLoading(false);
+      }
     }
   }, [isFollowing, loading, petId, userId]);
 

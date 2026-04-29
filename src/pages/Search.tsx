@@ -23,7 +23,7 @@ import {
 } from "../services/explore";
 import { type Post } from "../services/posts";
 import { type UserProfile } from "../services/users";
-import { getUserPets, type Pet } from "../services/pets";
+import { getUserPetCounts, type Pet } from "../services/pets";
 import { type Location } from "../services/locations";
 import { type Meetup } from "../services/meetups";
 import { useFollowPet } from "../hooks/useFollow";
@@ -321,17 +321,8 @@ export function Search() {
       return;
     }
     const loadCounts = async () => {
-      const pairs = await Promise.all(
-        peopleResults.map(async (person) => {
-          const pets = await getUserPets(person.id);
-          return [person.id, pets.length] as const;
-        })
-      );
+      const map = await getUserPetCounts(peopleResults.map((person) => person.id));
       if (ignore) return;
-      const map: Record<string, number> = {};
-      pairs.forEach(([id, count]) => {
-        map[id] = count;
-      });
       setPeoplePetCounts(map);
     };
     void loadCounts();

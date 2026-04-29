@@ -45,6 +45,7 @@ export type Pet = {
   bio: string;
   avatarUrl: string;
   followerCount?: number;
+  postCount?: number;
   createdAt?: unknown;
   relationship?: PetFamilyRelationship;
   customRelationship?: string;
@@ -320,6 +321,32 @@ export async function getUserPets(userId: string): Promise<Pet[]> {
     }
   }
   return filtered;
+}
+
+export async function getUserPetCounts(userIds: string[]): Promise<Record<string, number>> {
+  const uniqueIds = Array.from(new Set(userIds.filter(Boolean)));
+  const counts: Record<string, number> = {};
+  uniqueIds.forEach((id) => {
+    counts[id] = 0;
+  });
+  if (uniqueIds.length === 0) return counts;
+
+  for (let i = 0; i < uniqueIds.length; i += DOCUMENT_ID_BATCH_SIZE) {
+    const chunk = uniqueIds.slice(i, i + DOCUMENT_ID_BATCH_SIZE);
+    const familyQuery = query(
+      collectionGroup(db, "family"),
+      where("userId", "in", chunk)
+    );
+    const snapshot = await getDocs(familyQuery);
+    snapshot.docs.forEach((docSnap) => {
+      const userId = docSnap.data().userId;
+      if (typeof userId === "string" && userId in counts) {
+        counts[userId] += 1;
+      }
+    });
+  }
+
+  return counts;
 }
 
 export async function getPetFamily(petId: string): Promise<FamilyMember[]> {

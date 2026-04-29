@@ -470,8 +470,23 @@ export const deleteUserAccount = onCall({ timeoutSeconds: 540 }, async (request)
     throw new HttpsError("internal", "Failed to delete auth account; please retry.");
   }
 
-  await userRef.delete().catch((error) => {
-    console.error("deleteUserAccount: final user doc delete failed", error);
+  await db.runTransaction(async (transaction) => {
+    const userSnap = await transaction.get(userRef);
+    const displayNameLower =
+      typeof userSnap.data()?.displayNameLower === "string"
+        ? (userSnap.data() as { displayNameLower: string }).displayNameLower
+        : "";
+
+    if (displayNameLower) {
+      const reservationRef = usernameRef(displayNameLower);
+      const reservationSnap = await transaction.get(reservationRef);
+      if (reservationSnap.exists && reservationSnap.data()?.userId === userId) {
+        transaction.delete(reservationRef);
+      }
+    }
+    transaction.delete(userRef);
+  }).catch((error) => {
+    console.error("deleteUserAccount: final user cleanup failed", error);
     throw new HttpsError("internal", "Failed to finalize account deletion; please retry.");
   });
 

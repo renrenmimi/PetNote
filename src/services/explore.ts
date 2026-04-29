@@ -70,34 +70,52 @@ export async function getSuggestedPets(
     .slice(0, limitCount);
 
   return rankedPets.map((pet) => {
-    const storedPostCount = (pet as Pet & { postCount?: unknown }).postCount;
     return {
       ...pet,
-      postCount: typeof storedPostCount === "number" ? storedPostCount : 0,
+      postCount: pet.postCount ?? 0,
     };
   });
 }
 
 export async function getPopularPets(limitCount = 8): Promise<Array<Pet & { postCount: number }>> {
+  const petsRef = collection(db, "pets");
+  const storedCountSnapshot = await getDocs(
+    query(petsRef, orderBy("postCount", "desc"), limit(limitCount))
+  );
+  const rankedByStoredCount = storedCountSnapshot.docs
+    .map((docSnap) => ({
+      id: docSnap.id,
+      ...(docSnap.data() as Omit<Pet, "id">),
+    }))
+    .map((pet) => ({
+      ...pet,
+      postCount: pet.postCount ?? 0,
+    }))
+    .filter((pet) => pet.postCount > 0);
+
+  if (rankedByStoredCount.length >= limitCount) {
+    return rankedByStoredCount.slice(0, limitCount);
+  }
+
+  const existingIds = new Set(rankedByStoredCount.map((pet) => pet.id));
   const postsRef = collection(db, "posts");
   const snapshot = await getDocs(query(postsRef, orderBy("createdAt", "desc"), limit(120)));
   const counts = new Map<string, number>();
   snapshot.docs.forEach((docSnap) => {
     const data = docSnap.data() as Post;
-    if (data.petId) {
+    if (data.petId && !existingIds.has(data.petId)) {
       counts.set(data.petId, (counts.get(data.petId) || 0) + 1);
     }
   });
 
   const sorted = Array.from(counts.entries())
     .sort((a, b) => b[1] - a[1])
-    .slice(0, limitCount);
+    .slice(0, limitCount - rankedByStoredCount.length);
 
   const petIds = sorted.map(([petId]) => petId);
-  if (petIds.length === 0) return [];
+  if (petIds.length === 0) return rankedByStoredCount;
 
   // Batch fetch all pet documents instead of N+1 individual queries
-  const petsRef = collection(db, "pets");
   const petMap = new Map<string, Pet>();
   const chunkSize = 10;
   for (let i = 0; i < petIds.length; i += chunkSize) {
@@ -108,12 +126,13 @@ export async function getPopularPets(limitCount = 8): Promise<Array<Pet & { post
     });
   }
 
-  return sorted
+  const fallbackPets = sorted
     .filter(([petId]) => petMap.has(petId))
     .map(([petId, postCount]) => ({
       ...petMap.get(petId)!,
       postCount,
     }));
+  return [...rankedByStoredCount, ...fallbackPets].slice(0, limitCount);
 }
 
 export async function getTopRatedPlaces(limitCount = 5): Promise<Location[]> {

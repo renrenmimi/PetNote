@@ -13,6 +13,7 @@ import { validatePassword } from "../utils/passwordValidator";
 import {
   clearUserLocation,
   getCityFromCoords,
+  getCurrentLocation,
   saveUserLocation,
 } from "../services/location";
 import {
@@ -252,42 +253,7 @@ export function Settings() {
       if (!navigator.geolocation) {
         throw new Error(t("settings.geolocationUnsupported"));
       }
-      const position = await new Promise<GeolocationPosition>(
-        (resolve, reject) => {
-          let settled = false;
-          let timeoutId = 0;
-          const cleanup = (watchId: number) => {
-            navigator.geolocation.clearWatch(watchId);
-            window.clearTimeout(timeoutId);
-          };
-          const watchId = navigator.geolocation.watchPosition(
-            (pos) => {
-              if (settled) return;
-              settled = true;
-              cleanup(watchId);
-              resolve(pos);
-            },
-            (err) => {
-              if (settled) return;
-              settled = true;
-              cleanup(watchId);
-              reject(err);
-            },
-            {
-              enableHighAccuracy: false,
-              timeout: 15000,
-              maximumAge: 60000,
-            }
-          );
-          timeoutId = window.setTimeout(() => {
-            if (settled) return;
-            settled = true;
-            cleanup(watchId);
-            reject(new Error("timeout"));
-          }, 15000);
-        }
-      );
-      const { latitude, longitude } = position.coords;
+      const { lat: latitude, lng: longitude } = await getCurrentLocation();
       const { city, state } = await getCityFromCoords(latitude, longitude);
       await saveUserLocation(user.uid, {
         lat: latitude,

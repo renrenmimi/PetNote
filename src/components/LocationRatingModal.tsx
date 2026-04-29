@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "../contexts/ToastContext";
 import { submitReview } from "../services/locations";
 import { useAuth } from "../hooks/useAuth";
@@ -51,6 +51,7 @@ export function LocationRatingModal({
   const [submitting, setSubmitting] = useState(false);
   const [photos, setPhotos] = useState<File[]>([]);
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
+  const mountedRef = useRef(true);
 
   const remaining = useMemo(() => 300 - comment.length, [comment]);
 
@@ -73,6 +74,12 @@ export function LocationRatingModal({
       setPhotos([]);
     }
   }, [open]);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   if (!open) return null;
 
@@ -120,7 +127,9 @@ export function LocationRatingModal({
     } catch {
       showToast("Failed to submit review.", "error");
     } finally {
-      setSubmitting(false);
+      if (mountedRef.current) {
+        setSubmitting(false);
+      }
     }
   };
 

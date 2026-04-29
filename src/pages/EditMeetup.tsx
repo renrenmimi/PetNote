@@ -6,6 +6,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../contexts/ToastContext";
 import { uploadImage } from "../services/cloudinary";
 import { reverseGeocode } from "../services/geoapify";
+import { getCurrentLocation } from "../services/location";
 import {
   getMeetupById,
   getMeetupPrivateAddress,
@@ -140,45 +141,7 @@ export function EditMeetup() {
     setLocationError("");
     try {
       showToast("PetNote needs your location to set meetup coordinates.", "info");
-      if (!navigator.geolocation) {
-        throw new Error("Geolocation is not supported.");
-      }
-      const position = await new Promise<GeolocationPosition>(
-        (resolve, reject) => {
-          let settled = false;
-          let timeoutId = 0;
-          const cleanup = (watchId: number) => {
-            navigator.geolocation.clearWatch(watchId);
-            window.clearTimeout(timeoutId);
-          };
-          const watchId = navigator.geolocation.watchPosition(
-            (pos) => {
-              if (settled) return;
-              settled = true;
-              cleanup(watchId);
-              resolve(pos);
-            },
-            (err) => {
-              if (settled) return;
-              settled = true;
-              cleanup(watchId);
-              reject(err);
-            },
-            {
-              enableHighAccuracy: false,
-              timeout: 15000,
-              maximumAge: 60000,
-            }
-          );
-          timeoutId = window.setTimeout(() => {
-            if (settled) return;
-            settled = true;
-            cleanup(watchId);
-            reject(new Error("timeout"));
-          }, 15000);
-        }
-      );
-      const { latitude, longitude } = position.coords;
+      const { lat: latitude, lng: longitude } = await getCurrentLocation();
       setLat(latitude);
       setLng(longitude);
       const location = await reverseGeocode(latitude, longitude);
