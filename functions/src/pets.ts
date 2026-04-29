@@ -2,7 +2,12 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
 import { cascadeDeletePet } from "./cleanup";
 import { getNotificationActor } from "./notifications";
-import { getDefaultAvatar, stripUndefined } from "./shared";
+import {
+  getDefaultAvatar,
+  optionalTrimmedString,
+  stripUndefined,
+  VALIDATION_LIMITS,
+} from "./shared";
 
 const allowedPetSpecies = new Set([
   "dog",
@@ -47,7 +52,11 @@ function sanitizePetRelationship(value: unknown, customValue: unknown): {
     relationship === "other" &&
     typeof customValue === "string" &&
     customValue.trim().length > 0
-      ? customValue.trim().slice(0, 30)
+      ? optionalTrimmedString(
+          customValue,
+          VALIDATION_LIMITS.petCustomRelationship,
+          "Custom relationship"
+        )
       : undefined;
   return { relationship, customRelationship };
 }
@@ -66,7 +75,7 @@ function sanitizePetDraft(value: unknown): {
     value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 
   const name = typeof data.name === "string" ? data.name.trim() : "";
-  if (name.length < 2 || name.length > 20) {
+  if (name.length < 2 || name.length > VALIDATION_LIMITS.petName) {
     throw new HttpsError("invalid-argument", "Pet name must be between 2 and 20 characters.");
   }
 
@@ -82,9 +91,17 @@ function sanitizePetDraft(value: unknown): {
     typeof data.gender === "string" && allowedPetGenders.has(data.gender)
       ? data.gender
       : "unknown";
-  const breed = typeof data.breed === "string" ? data.breed.trim() : "";
-  const bio = typeof data.bio === "string" ? data.bio.trim().slice(0, 150) : "";
-  const avatarUrl = typeof data.avatarUrl === "string" ? data.avatarUrl.trim() : "";
+  const breed = optionalTrimmedString(
+    data.breed,
+    VALIDATION_LIMITS.petBreed,
+    "Pet breed"
+  );
+  const bio = optionalTrimmedString(data.bio, VALIDATION_LIMITS.bio, "Pet bio");
+  const avatarUrl = optionalTrimmedString(
+    data.avatarUrl,
+    VALIDATION_LIMITS.url,
+    "Pet avatar URL"
+  );
   const birthday = timestampFromMillis(data.birthdayMillis);
 
   return stripUndefined({
@@ -200,7 +217,7 @@ export const updatePetCallable = onCall(async (request) => {
   const updates: Record<string, unknown> = {};
   if ("name" in rawUpdates) {
     const name = typeof rawUpdates.name === "string" ? rawUpdates.name.trim() : "";
-    if (name.length < 2 || name.length > 20) {
+    if (name.length < 2 || name.length > VALIDATION_LIMITS.petName) {
       throw new HttpsError("invalid-argument", "Pet name must be between 2 and 20 characters.");
     }
     updates.name = name;
@@ -216,7 +233,11 @@ export const updatePetCallable = onCall(async (request) => {
     updates.species = rawUpdates.species;
   }
   if ("breed" in rawUpdates) {
-    updates.breed = typeof rawUpdates.breed === "string" ? rawUpdates.breed.trim() : "";
+    updates.breed = optionalTrimmedString(
+      rawUpdates.breed,
+      VALIDATION_LIMITS.petBreed,
+      "Pet breed"
+    );
   }
   if ("gender" in rawUpdates) {
     if (
@@ -228,11 +249,18 @@ export const updatePetCallable = onCall(async (request) => {
     updates.gender = rawUpdates.gender;
   }
   if ("bio" in rawUpdates) {
-    updates.bio = typeof rawUpdates.bio === "string" ? rawUpdates.bio.trim().slice(0, 150) : "";
+    updates.bio = optionalTrimmedString(
+      rawUpdates.bio,
+      VALIDATION_LIMITS.bio,
+      "Pet bio"
+    );
   }
   if ("avatarUrl" in rawUpdates) {
-    updates.avatarUrl =
-      typeof rawUpdates.avatarUrl === "string" ? rawUpdates.avatarUrl.trim() : "";
+    updates.avatarUrl = optionalTrimmedString(
+      rawUpdates.avatarUrl,
+      VALIDATION_LIMITS.url,
+      "Pet avatar URL"
+    );
   }
   if ("birthdayMillis" in rawUpdates) {
     const birthday = timestampFromMillis(rawUpdates.birthdayMillis);

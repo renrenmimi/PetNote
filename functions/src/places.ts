@@ -3,7 +3,14 @@ import { onDocumentCreated, onDocumentDeleted } from "firebase-functions/v2/fire
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
 import { getNotificationActor } from "./notifications";
-import { applyReviewAggregationDelta, getDefaultAvatar } from "./shared";
+import {
+  applyReviewAggregationDelta,
+  getDefaultAvatar,
+  optionalTrimmedString,
+  requiredTrimmedString,
+  validateCoordinateRange,
+  VALIDATION_LIMITS,
+} from "./shared";
 import { getAccessiblePet } from "./pets";
 
 const allowedPlaceCategories = new Set([
@@ -67,11 +74,19 @@ function sanitizePlaceDraft(value: unknown): {
   const data =
     value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 
-  const name = typeof data.name === "string" ? data.name.trim() : "";
-  const address = typeof data.address === "string" ? data.address.trim() : "";
+  const name = requiredTrimmedString(
+    data.name,
+    VALIDATION_LIMITS.placeName,
+    "Place name"
+  );
+  const address = requiredTrimmedString(
+    data.address,
+    VALIDATION_LIMITS.address,
+    "Address"
+  );
   const lat = typeof data.lat === "number" ? data.lat : Number.NaN;
   const lng = typeof data.lng === "number" ? data.lng : Number.NaN;
-  if (!name || !address || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+  if (!validateCoordinateRange(lat, lng)) {
     throw new HttpsError("invalid-argument", "Place name, address, and coordinates are required.");
   }
 
@@ -79,9 +94,13 @@ function sanitizePlaceDraft(value: unknown): {
     typeof data.category === "string" && allowedPlaceCategories.has(data.category)
       ? data.category
       : "other";
-  const description = typeof data.description === "string" ? data.description.trim() : "";
-  const city = typeof data.city === "string" ? data.city.trim() : "";
-  const state = typeof data.state === "string" ? data.state.trim() : "";
+  const description = optionalTrimmedString(
+    data.description,
+    VALIDATION_LIMITS.placeDescription,
+    "Place description"
+  );
+  const city = optionalTrimmedString(data.city, VALIDATION_LIMITS.city, "City");
+  const state = optionalTrimmedString(data.state, VALIDATION_LIMITS.state, "State");
   const features = Array.isArray(data.features)
     ? Array.from(
         new Set(
@@ -93,7 +112,10 @@ function sanitizePlaceDraft(value: unknown): {
       )
     : [];
   const photos = Array.isArray(data.photos)
-    ? data.photos.filter((photo): photo is string => typeof photo === "string" && photo.trim().length > 0)
+    ? data.photos
+        .filter((photo): photo is string => typeof photo === "string" && photo.trim().length > 0)
+        .slice(0, 5)
+        .map((photo) => optionalTrimmedString(photo, VALIDATION_LIMITS.url, "Photo URL"))
     : [];
   const source = data.source === "meetup" ? "meetup" : "user";
 
@@ -333,9 +355,10 @@ export const addLocationPhotosCallable = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "Missing locationId.");
   }
   const photoUrls = Array.isArray(data.photoUrls)
-    ? data.photoUrls.filter(
-        (photo): photo is string => typeof photo === "string" && photo.trim().length > 0
-      )
+    ? data.photoUrls
+        .filter((photo): photo is string => typeof photo === "string" && photo.trim().length > 0)
+        .slice(0, 5)
+        .map((photo) => optionalTrimmedString(photo, VALIDATION_LIMITS.url, "Photo URL"))
     : [];
   if (photoUrls.length === 0) {
     return { success: true };
@@ -428,9 +451,23 @@ export const submitReviewCallable = onCall(async (request) => {
       userAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
       meetupId: data.meetupId,
       rating: data.rating,
-      comment: typeof data.comment === "string" ? data.comment.trim() : "",
-      photos: Array.isArray(data.photos) ? data.photos.filter((p): p is string => typeof p === "string") : [],
-      tags: Array.isArray(data.tags) ? data.tags.filter((t): t is string => typeof t === "string") : [],
+      comment: optionalTrimmedString(
+        data.comment,
+        VALIDATION_LIMITS.reviewComment,
+        "Review comment"
+      ),
+      photos: Array.isArray(data.photos)
+        ? data.photos
+            .filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+            .slice(0, 3)
+            .map((photo) => optionalTrimmedString(photo, VALIDATION_LIMITS.url, "Photo URL"))
+        : [],
+      tags: Array.isArray(data.tags)
+        ? data.tags
+            .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+            .slice(0, 12)
+            .map((tag) => optionalTrimmedString(tag, VALIDATION_LIMITS.tag, "Review tag"))
+        : [],
       petFriendly: {
         space: typeof data.petFriendly?.space === "number" ? data.petFriendly.space : data.rating,
         safety: typeof data.petFriendly?.safety === "number" ? data.petFriendly.safety : data.rating,
@@ -478,6 +515,11 @@ export const checkInCallable = onCall(async (request) => {
   if (!data.photoUrl || typeof data.photoUrl !== "string") {
     throw new HttpsError("invalid-argument", "Missing photoUrl.");
   }
+  const photoUrl = requiredTrimmedString(
+    data.photoUrl,
+    VALIDATION_LIMITS.url,
+    "Photo URL"
+  );
 
   const locationRef = db.doc(`locations/${data.locationId}`);
   const locationSnap = await locationRef.get();
@@ -509,8 +551,12 @@ export const checkInCallable = onCall(async (request) => {
       userId: callerUid,
       userName: caller.fromUserName,
       userAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
-      photoUrl: data.photoUrl,
-      caption: typeof data.caption === "string" ? data.caption.trim() : "",
+      photoUrl,
+      caption: optionalTrimmedString(
+        data.caption,
+        VALIDATION_LIMITS.checkInCaption,
+        "Check-in caption"
+      ),
       petId: data.petId,
       petName,
       locationId: data.locationId,

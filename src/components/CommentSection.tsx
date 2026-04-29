@@ -180,6 +180,8 @@ export function CommentSection({
       }
       showToast("Comment posted", "success");
     } catch (err) {
+      setComments((prev) => prev.filter((item) => item.id !== optimisticId));
+      onCommentDeleted?.();
       const message =
         err instanceof Error ? err.message : "Failed to post comment";
       showToast(message, "error");

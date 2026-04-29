@@ -10,10 +10,7 @@ import {
   deleteQueryDocs,
 } from "./cleanup";
 import { getNotificationActor } from "./notifications";
-import { batchChunked, getDefaultAvatar, stripUndefined } from "./shared";
-
-const MAX_DISPLAY_NAME = 30;
-const MAX_BIO = 150;
+import { batchChunked, getDefaultAvatar, stripUndefined, VALIDATION_LIMITS } from "./shared";
 
 function requestData(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -26,7 +23,7 @@ function normalizeDisplayName(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   if (!trimmed) return undefined;
-  if (trimmed.length < 2 || trimmed.length > MAX_DISPLAY_NAME) {
+  if (trimmed.length < 2 || trimmed.length > VALIDATION_LIMITS.displayName) {
     throw new HttpsError("invalid-argument", "Display name must be 2-30 characters.");
   }
   return trimmed;
@@ -37,7 +34,11 @@ function normalizeBio(value: unknown): string | undefined {
   if (typeof value !== "string") {
     throw new HttpsError("invalid-argument", "Bio must be a string.");
   }
-  return value.trim().slice(0, MAX_BIO);
+  const trimmed = value.trim();
+  if (trimmed.length > VALIDATION_LIMITS.bio) {
+    throw new HttpsError("invalid-argument", "Bio must be 150 characters or fewer.");
+  }
+  return trimmed;
 }
 
 function normalizeAvatarUrl(value: unknown): string | undefined {
@@ -47,7 +48,7 @@ function normalizeAvatarUrl(value: unknown): string | undefined {
   }
   const trimmed = value.trim();
   if (!trimmed) return undefined;
-  if (trimmed.length > 2048) {
+  if (trimmed.length > VALIDATION_LIMITS.url) {
     throw new HttpsError("invalid-argument", "Avatar URL is too long.");
   }
   return trimmed;
@@ -93,7 +94,7 @@ function defaultDisplayName(userId: string): string {
 
 function withNumericSuffix(base: string): string {
   const suffix = String(randomInt(1000, 10000));
-  return `${base.slice(0, MAX_DISPLAY_NAME - suffix.length)}${suffix}`;
+  return `${base.slice(0, VALIDATION_LIMITS.displayName - suffix.length)}${suffix}`;
 }
 
 export const onUserUpdated = onDocumentWritten("users/{userId}", async (event) => {
