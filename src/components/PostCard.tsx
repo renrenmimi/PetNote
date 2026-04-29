@@ -47,6 +47,9 @@ export function PostCard({
   const { showToast } = useToast();
   const cardRef = useRef<HTMLDivElement | null>(null);
   const longPressTimerRef = useRef<number | null>(null);
+  const likeAnimationTimerRef = useRef<number | null>(null);
+  const heartTimerRef = useRef<number | null>(null);
+  const bookmarkAnimationTimerRef = useRef<number | null>(null);
   const longPressTriggered = useRef(false);
   const [animating, setAnimating] = useState(false);
   const [localLiked, setLocalLiked] = useState(false);
@@ -169,6 +172,23 @@ export function PostCard({
     }
   }, [quickMenuOpen]);
 
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) {
+        window.clearTimeout(longPressTimerRef.current);
+      }
+      if (likeAnimationTimerRef.current) {
+        window.clearTimeout(likeAnimationTimerRef.current);
+      }
+      if (heartTimerRef.current) {
+        window.clearTimeout(heartTimerRef.current);
+      }
+      if (bookmarkAnimationTimerRef.current) {
+        window.clearTimeout(bookmarkAnimationTimerRef.current);
+      }
+    };
+  }, []);
+
   const handleLike = async () => {
     if (!user) {
       showToast("Please login to like posts", "warning");
@@ -181,7 +201,13 @@ export function PostCard({
     }
 
     setAnimating(true);
-    setTimeout(() => setAnimating(false), 200);
+    if (likeAnimationTimerRef.current) {
+      window.clearTimeout(likeAnimationTimerRef.current);
+    }
+    likeAnimationTimerRef.current = window.setTimeout(() => {
+      setAnimating(false);
+      likeAnimationTimerRef.current = null;
+    }, 200);
 
     if (useMock) {
       const nextLiked = !localLiked;
@@ -207,7 +233,13 @@ export function PostCard({
   const handleDoubleLike = async () => {
     if (quickMenuOpen || longPressTriggered.current) return;
     setShowHeart(true);
-    setTimeout(() => setShowHeart(false), 700);
+    if (heartTimerRef.current) {
+      window.clearTimeout(heartTimerRef.current);
+    }
+    heartTimerRef.current = window.setTimeout(() => {
+      setShowHeart(false);
+      heartTimerRef.current = null;
+    }, 700);
     if (!likedState) {
       await handleLike();
     }
@@ -282,7 +314,13 @@ export function PostCard({
       return;
     }
     setBookmarkAnimating(true);
-    setTimeout(() => setBookmarkAnimating(false), 200);
+    if (bookmarkAnimationTimerRef.current) {
+      window.clearTimeout(bookmarkAnimationTimerRef.current);
+    }
+    bookmarkAnimationTimerRef.current = window.setTimeout(() => {
+      setBookmarkAnimating(false);
+      bookmarkAnimationTimerRef.current = null;
+    }, 200);
     try {
       const nextBookmarked = !isBookmarked;
       await toggleBookmark();

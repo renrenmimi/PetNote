@@ -35,6 +35,8 @@ export function CommentSection({
   const { showToast } = useToast();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const inputWrapperRef = useRef<HTMLDivElement | null>(null);
+  const deleteTimerRef = useRef<number | null>(null);
+  const focusTimerRef = useRef<number | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(false);
   const [text, setText] = useState("");
@@ -93,6 +95,17 @@ export function CommentSection({
       viewport.removeEventListener("scroll", handleResize);
     };
   }, [stickyInput]);
+
+  useEffect(() => {
+    return () => {
+      if (deleteTimerRef.current) {
+        window.clearTimeout(deleteTimerRef.current);
+      }
+      if (focusTimerRef.current) {
+        window.clearTimeout(focusTimerRef.current);
+      }
+    };
+  }, []);
 
   const visibleComments = useMemo(() => {
     if (!Number.isFinite(maxVisible)) {
@@ -178,10 +191,14 @@ export function CommentSection({
     if (commentToDelete.id.startsWith("local-")) return;
     const targetId = commentToDelete.id;
     setRemovingId(targetId);
-    setTimeout(() => {
+    if (deleteTimerRef.current) {
+      window.clearTimeout(deleteTimerRef.current);
+    }
+    deleteTimerRef.current = window.setTimeout(() => {
       setComments((prev) => prev.filter((item) => item.id !== targetId));
       onCommentDeleted?.();
       setRemovingId(null);
+      deleteTimerRef.current = null;
     }, 200);
     setCommentToDelete(null);
 
@@ -253,7 +270,13 @@ export function CommentSection({
                           authorName: comment.authorName,
                           authorId: comment.authorId,
                         });
-                        setTimeout(() => inputRef.current?.focus(), 0);
+                        if (focusTimerRef.current) {
+                          window.clearTimeout(focusTimerRef.current);
+                        }
+                        focusTimerRef.current = window.setTimeout(() => {
+                          inputRef.current?.focus();
+                          focusTimerRef.current = null;
+                        }, 0);
                       }}
                       className="font-semibold transition-all duration-200 hover:text-purple-500"
                     >

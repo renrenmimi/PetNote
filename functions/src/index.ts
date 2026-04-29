@@ -56,6 +56,7 @@ export {
 } from "./pets";
 export { reportContentCallable, submitFeedbackCallable } from "./moderation";
 export {
+  checkDisplayNameAvailabilityCallable,
   deleteUserAccount,
   ensureUserProfileCallable,
   onFamilyCreated,

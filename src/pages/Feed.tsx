@@ -62,10 +62,6 @@ export function Feed() {
   }, [error, showToast]);
 
   useEffect(() => {
-    void refresh();
-  }, [activeTab, refresh]);
-
-  useEffect(() => {
     if (!user) {
       setActiveTab("all");
       setOnboardingDismissed(false);

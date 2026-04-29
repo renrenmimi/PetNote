@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Timestamp } from "firebase/firestore";
 import { useAuth } from "../hooks/useAuth";
@@ -93,6 +93,7 @@ export function AddPet() {
   const { petId } = useParams();
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const avatarObjectUrlRef = useRef<string | null>(null);
   const [mode, setMode] = useState<"new" | "existing">("new");
   const [name, setName] = useState("");
   const [species, setSpecies] = useState<PetSpecies | "">("");
@@ -135,6 +136,16 @@ export function AddPet() {
       : "text-slate-400 dark:text-slate-500";
   const speciesMeta = getSpeciesMeta(species as PetSpecies);
 
+  const revokeAvatarObjectUrl = useCallback(() => {
+    if (!avatarObjectUrlRef.current) return;
+    URL.revokeObjectURL(avatarObjectUrlRef.current);
+    avatarObjectUrlRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    return () => revokeAvatarObjectUrl();
+  }, [revokeAvatarObjectUrl]);
+
   useEffect(() => {
     let ignore = false;
     if (!petId) return;
@@ -151,6 +162,8 @@ export function AddPet() {
       setBreed(pet.breed || "");
       setGender(pet.gender);
       setBio(pet.bio || "");
+      setAvatarFile(null);
+      revokeAvatarObjectUrl();
       setAvatarUrl(pet.avatarUrl || "");
       if (pet.birthday) {
         const date =
@@ -175,7 +188,7 @@ export function AddPet() {
     return () => {
       ignore = true;
     };
-  }, [petId]);
+  }, [petId, revokeAvatarObjectUrl]);
 
   if (!user) {
     return null;
@@ -183,8 +196,11 @@ export function AddPet() {
 
   const handleAvatarChange = (file: File | null) => {
     if (!file) return;
+    const objectUrl = URL.createObjectURL(file);
+    revokeAvatarObjectUrl();
+    avatarObjectUrlRef.current = objectUrl;
     setAvatarFile(file);
-    setAvatarUrl(URL.createObjectURL(file));
+    setAvatarUrl(objectUrl);
   };
 
   const handleSave = async () => {

@@ -183,13 +183,19 @@ export function Places() {
 
   useEffect(() => {
     if (!searchQuery.trim() || searchCenter) return;
+    let ignore = false;
     const handle = window.setTimeout(async () => {
       const results = await searchPlaces(searchQuery);
-      setPlaces(results);
-      setSearchMode("text");
-      setHasMore(false);
+      if (!ignore) {
+        setPlaces(results);
+        setSearchMode("text");
+        setHasMore(false);
+      }
     }, 300);
-    return () => window.clearTimeout(handle);
+    return () => {
+      ignore = true;
+      window.clearTimeout(handle);
+    };
   }, [searchQuery, searchCenter]);
 
   const placeRows = useMemo(() => {
