@@ -23,15 +23,21 @@ export async function getTrendingPosts(limitCount = 6): Promise<Post[]> {
   const postsQuery = query(
     postsRef,
     where("createdAt", ">=", since),
-    orderBy("likeCount", "desc"),
     orderBy("createdAt", "desc"),
-    limit(limitCount)
+    limit(Math.max(limitCount * 10, 50))
   );
   const snapshot = await getDocs(postsQuery);
-  return snapshot.docs.map((docSnap) => ({
-    id: docSnap.id,
-    ...(docSnap.data() as Omit<Post, "id">),
-  }));
+  return snapshot.docs
+    .map((docSnap) => ({
+      id: docSnap.id,
+      ...(docSnap.data() as Omit<Post, "id">),
+    }))
+    .sort((a, b) => {
+      const likeDelta = (b.likeCount ?? 0) - (a.likeCount ?? 0);
+      if (likeDelta !== 0) return likeDelta;
+      return (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0);
+    })
+    .slice(0, limitCount);
 }
 
 export async function getSuggestedUsers(

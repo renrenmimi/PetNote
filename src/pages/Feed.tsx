@@ -107,28 +107,38 @@ export function Feed() {
     () => localPosts.filter((post) => !blockedUserIds.includes(post.authorId)),
     [blockedUserIds, localPosts]
   );
+  const filteredPostIdsKey = useMemo(
+    () => filteredPosts.map((post) => post.id).join("\n"),
+    [filteredPosts]
+  );
+  const filteredPetIdsKey = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          filteredPosts
+            .map((post) => post.petId)
+            .filter((petId): petId is string => !!petId)
+        )
+      ).join("\n"),
+    [filteredPosts]
+  );
+  const statusUserId = user?.uid ?? null;
 
   useEffect(() => {
     let ignore = false;
-    if (!user || filteredPosts.length === 0) {
+    if (!statusUserId || !filteredPostIdsKey) {
       setLikedPosts(new Set());
       setBookmarkedPosts(new Set());
       setFollowedPetIds(new Set());
       return;
     }
-    const ids = filteredPosts.map((post) => post.id);
-    const petIds = Array.from(
-      new Set(
-        filteredPosts
-          .map((post) => post.petId)
-          .filter((petId): petId is string => !!petId)
-      )
-    );
+    const ids = filteredPostIdsKey.split("\n");
+    const petIds = filteredPetIdsKey ? filteredPetIdsKey.split("\n") : [];
     const loadStatus = async () => {
       const [likedSet, bookmarkedSet, followedSet] = await Promise.all([
-        batchCheckLikes(user.uid, ids),
-        batchCheckBookmarks(user.uid, ids),
-        batchCheckFollowingPets(user.uid, petIds),
+        batchCheckLikes(statusUserId, ids),
+        batchCheckBookmarks(statusUserId, ids),
+        batchCheckFollowingPets(statusUserId, petIds),
       ]);
       if (!ignore) {
         setLikedPosts(likedSet);
@@ -140,7 +150,7 @@ export function Feed() {
     return () => {
       ignore = true;
     };
-  }, [filteredPosts, user]);
+  }, [filteredPetIdsKey, filteredPostIdsKey, statusUserId]);
 
   const pullLabel = refreshing
     ? t("feed.refreshing")

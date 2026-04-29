@@ -7,10 +7,10 @@ import {
   query,
   setDoc,
   where,
-  serverTimestamp,
   limit,
 } from "firebase/firestore";
-import { auth, db } from "./firebase";
+import { httpsCallable } from "firebase/functions";
+import { auth, db, functions } from "./firebase";
 import { generateRandomUsername } from "../utils/randomName";
 import { removeUndefined } from "../utils/removeUndefined";
 
@@ -34,30 +34,63 @@ export type UserProfile = {
   };
 };
 
+const USER_PROFILE_CACHE_MS = 60_000;
+const userProfileCache = new Map<
+  string,
+  { profile: UserProfile | null; expiresAt: number }
+>();
+
+export function clearUserProfileCache(userId?: string): void {
+  if (userId) {
+    userProfileCache.delete(userId);
+    return;
+  }
+  userProfileCache.clear();
+}
+
 export async function getUserProfile(
   userId: string
 ): Promise<UserProfile | null> {
+  const cached = userProfileCache.get(userId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.profile;
+  }
+
   const userRef = doc(db, "users", userId);
   const snapshot = await getDoc(userRef);
   if (!snapshot.exists()) {
+    userProfileCache.set(userId, {
+      profile: null,
+      expiresAt: Date.now() + USER_PROFILE_CACHE_MS,
+    });
     return null;
   }
-  return {
+  const profile = {
     id: snapshot.id,
     ...(snapshot.data() as Omit<UserProfile, "id">),
   };
+  userProfileCache.set(userId, {
+    profile,
+    expiresAt: Date.now() + USER_PROFILE_CACHE_MS,
+  });
+  return profile;
 }
 
 export async function updateUserProfile(
   userId: string,
   data: Partial<UserProfile>
 ): Promise<void> {
-  const userRef = doc(db, "users", userId);
-  const payload = {
-    ...data,
-    ...(data.displayName ? { displayNameLower: data.displayName.toLowerCase() } : {}),
-  };
-  await setDoc(userRef, removeUndefined(payload), { merge: true });
+  await httpsCallable<
+    { displayName?: string; avatarUrl?: string; bio?: string },
+    { success: boolean }
+  >(functions, "updateUserProfileCallable")(
+    removeUndefined({
+      displayName: data.displayName,
+      avatarUrl: data.avatarUrl,
+      bio: data.bio,
+    })
+  );
+  clearUserProfileCache(userId);
 
   if (auth.currentUser && auth.currentUser.uid === userId) {
     await updateProfile(auth.currentUser, {
@@ -75,20 +108,36 @@ export async function createUserProfile(
   userId: string,
   data: Omit<UserProfile, "id">
 ): Promise<void> {
-  const userRef = doc(db, "users", userId);
-  const payload = {
-    ...data,
-    ...(data.displayName
-      ? { displayNameLower: data.displayName.toLowerCase() }
-      : {}),
-    createdAt: data.createdAt ?? serverTimestamp(),
-  };
+  const payload = removeUndefined({
+    displayName: data.displayName,
+    avatarUrl: data.avatarUrl,
+    bio: data.bio,
+    onboardingComplete: data.onboardingComplete,
+  });
   try {
-    await setDoc(userRef, removeUndefined(payload), { merge: true });
+    await httpsCallable<
+      {
+        displayName?: string;
+        avatarUrl?: string;
+        bio?: string;
+        onboardingComplete?: boolean;
+      },
+      { displayName: string; avatarUrl: string }
+    >(functions, "ensureUserProfileCallable")(payload);
+    clearUserProfileCache(userId);
   } catch (error) {
     console.error("Failed to create user profile:", error);
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    await setDoc(userRef, removeUndefined(payload), { merge: true });
+    await httpsCallable<
+      {
+        displayName?: string;
+        avatarUrl?: string;
+        bio?: string;
+        onboardingComplete?: boolean;
+      },
+      { displayName: string; avatarUrl: string }
+    >(functions, "ensureUserProfileCallable")(payload);
+    clearUserProfileCache(userId);
   }
 }
 

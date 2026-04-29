@@ -4,6 +4,7 @@ import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../contexts/ToastContext";
 import { uploadImage } from "../services/cloudinary";
+import { reverseGeocode } from "../services/geoapify";
 import {
   addPlace,
   addPhotosToPlace,
@@ -116,20 +117,14 @@ export function AddPlace() {
       const { latitude, longitude } = position.coords;
       setLat(latitude);
       setLng(longitude);
-      const apiKey = import.meta.env.VITE_GEOAPIFY_KEY as string | undefined;
-      if (!apiKey) throw new Error("Geoapify key missing");
-      const res = await fetch(
-        `https://api.geoapify.com/v1/geocode/reverse?lat=${latitude}&lon=${longitude}&apiKey=${apiKey}`
-      );
-      const data = await res.json();
-      const props = data?.features?.[0]?.properties || {};
-      const formatted = props.formatted || "";
-      const placeCity = props.city || props.county || "";
-      const placeState = props.state || "";
+      const location = await reverseGeocode(latitude, longitude);
+      const formatted = location.fullAddress || "";
+      const placeCity = location.city || "";
+      const placeState = location.state || "";
       setAddress(formatted);
       setCity(placeCity);
       setState(placeState);
-      if (!name) setName(props.name || props.street || formatted);
+      if (!name) setName(location.name || formatted);
     } catch {
       showToast("Unable to fetch location. Please enter address manually.", "error");
     }

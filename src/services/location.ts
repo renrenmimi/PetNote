@@ -8,6 +8,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { reverseGeocode } from "./geoapify";
 
 export type UserLocation = {
   lat: number;
@@ -35,18 +36,10 @@ export async function getCityFromCoords(
   lat: number,
   lng: number
 ): Promise<{ city: string; state: string }> {
-  const apiKey = import.meta.env.VITE_GEOAPIFY_KEY as string | undefined;
-  if (!apiKey) {
-    return { city: "Unknown", state: "" };
-  }
-  const res = await fetch(
-    `https://api.geoapify.com/v1/geocode/reverse?lat=${lat}&lon=${lng}&apiKey=${apiKey}`
-  );
-  const data = await res.json();
-  const props = data?.features?.[0]?.properties || {};
+  const location = await reverseGeocode(lat, lng);
   return {
-    city: props.city || props.county || "Unknown",
-    state: props.state || "",
+    city: location.city || "Unknown",
+    state: location.state || "",
   };
 }
 

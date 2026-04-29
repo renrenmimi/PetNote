@@ -557,9 +557,13 @@ export const joinMeetupCallable = onCall(async (request) => {
 // and review submission stayed blocked.
 export const autoCompleteMeetups = onSchedule("every 15 minutes", async () => {
   const now = Date.now();
+  const nowTimestamp = admin.firestore.Timestamp.fromMillis(now);
   const snapshot = await db
     .collection("meetups")
     .where("status", "in", ["upcoming", "ongoing"])
+    .where("date", "<=", nowTimestamp)
+    .orderBy("date", "asc")
+    .limit(200)
     .get();
 
   const expired = snapshot.docs.filter((docSnap) => {

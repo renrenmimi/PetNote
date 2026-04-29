@@ -1,13 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-
-type AddressLocation = {
-  lat: number;
-  lng: number;
-  city: string;
-  state: string;
-  fullAddress: string;
-  name: string;
-};
+import {
+  searchAddresses,
+  type AddressLocation,
+} from "../services/geoapify";
 
 type AddressAutocompleteProps = {
   value: string;
@@ -27,7 +22,6 @@ export function AddressAutocomplete({
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
-  const apiKey = import.meta.env.VITE_GEOAPIFY_KEY as string | undefined;
 
   useEffect(() => {
     if (!open) return;
@@ -47,36 +41,10 @@ export function AddressAutocomplete({
       setConfirmed(false);
       return;
     }
-    if (!apiKey) {
-      setResults([]);
-      return;
-    }
     setLoading(true);
     const handle = window.setTimeout(async () => {
       try {
-        const res = await fetch(
-          `https://api.geoapify.com/v1/geocode/autocomplete?text=${encodeURIComponent(
-            value
-          )}&filter=countrycode:us,ca&limit=5&lang=en&apiKey=${apiKey}`
-        );
-        const data = await res.json();
-        if (!data?.features) {
-          setResults([]);
-          return;
-        }
-        const features = Array.isArray(data.features) ? data.features : [];
-        const mapped = features.map((item: Record<string, Record<string, unknown>>) => {
-          const props = item?.properties || {};
-          return {
-            name: props.name || props.street || props.formatted || "",
-            fullAddress: props.formatted || "",
-            lat: props.lat ?? 0,
-            lng: props.lon ?? 0,
-            city: props.city || props.county || "",
-            state: props.state || "",
-          } as AddressResult;
-        });
-        setResults(mapped);
+        setResults(await searchAddresses(value));
       } catch {
         setResults([]);
       } finally {
@@ -85,7 +53,7 @@ export function AddressAutocomplete({
     }, 300);
 
     return () => window.clearTimeout(handle);
-  }, [value, apiKey]);
+  }, [value]);
 
   const handleSelect = (result: AddressResult) => {
     onChange(result.fullAddress, result);

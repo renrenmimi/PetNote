@@ -5,6 +5,7 @@ import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../contexts/ToastContext";
 import { uploadImage } from "../services/cloudinary";
+import { reverseGeocode } from "../services/geoapify";
 import { getPetsByOwner, type Pet } from "../services/pets";
 import {
   createMeetup,
@@ -133,21 +134,11 @@ export function CreateMeetup() {
       const { latitude, longitude } = position.coords;
       setLat(latitude);
       setLng(longitude);
-      const apiKey = import.meta.env.VITE_GEOAPIFY_KEY as string | undefined;
-      if (!apiKey) {
-        setLocationError("Geoapify key is missing. Unable to set address.");
-        setLocationStatus("error");
-        return;
-      }
-      const res = await fetch(
-        `https://api.geoapify.com/v1/geocode/reverse?lat=${latitude}&lon=${longitude}&apiKey=${apiKey}`
-      );
-      const data = await res.json();
-      const props = data?.features?.[0]?.properties || {};
-      const formatted = props.formatted || "";
-      const city = props.city || props.county || "";
-      const state = props.state || "";
-      setLocationName(props.name || props.street || formatted || `${city} Meetup`);
+      const location = await reverseGeocode(latitude, longitude);
+      const formatted = location.fullAddress || "";
+      const city = location.city || "";
+      const state = location.state || "";
+      setLocationName(location.name || formatted || `${city} Meetup`);
       setAddress(formatted || `${city}${state ? `, ${state}` : ""}`);
       setLocationCity(city);
       setLocationState(state);

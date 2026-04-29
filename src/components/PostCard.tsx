@@ -272,10 +272,10 @@ export function PostCard({
     setPinning(true);
     try {
       if (isPinned) {
-        await unpinPost(user.uid);
+        await unpinPost();
         showToast("Post unpinned", "info");
       } else {
-        await pinPost(user.uid, post.id);
+        await pinPost(post.id);
         showToast("Post pinned to profile", "success");
       }
       setMenuOpen(false);
