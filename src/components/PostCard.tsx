@@ -23,6 +23,10 @@ type PostCardProps = {
   initialLiked?: boolean;
   initialBookmarked?: boolean;
   initialFollowingPet?: boolean;
+  initialBirthday?: boolean;
+  onLikeChanged?: (postId: string, liked: boolean) => void;
+  onBookmarkChanged?: (postId: string, bookmarked: boolean) => void;
+  onPetFollowChanged?: (petId: string, following: boolean) => void;
 };
 
 export function PostCard({
@@ -33,6 +37,10 @@ export function PostCard({
   initialLiked,
   initialBookmarked,
   initialFollowingPet,
+  initialBirthday,
+  onLikeChanged,
+  onBookmarkChanged,
+  onPetFollowChanged,
 }: PostCardProps) {
   const { user, isBanned, profile } = useAuth();
   const navigate = useNavigate();
@@ -57,7 +65,7 @@ export function PostCard({
   const [blockConfirmOpen, setBlockConfirmOpen] = useState(false);
   const [blocking, setBlocking] = useState(false);
   const [pinning, setPinning] = useState(false);
-  const [isBirthday, setIsBirthday] = useState(false);
+  const [isBirthday, setIsBirthday] = useState(initialBirthday ?? false);
 
   const { isLiked, likeCount, toggleLike } = useLike(
     post.id,
@@ -113,7 +121,18 @@ export function PostCard({
 
 
   useEffect(() => {
+    if (initialBirthday !== undefined) {
+      setIsBirthday(initialBirthday);
+    }
+  }, [initialBirthday]);
+
+  useEffect(() => {
     let ignore = false;
+    if (initialBirthday !== undefined) {
+      return () => {
+        ignore = true;
+      };
+    }
     if (!post.petId) {
       setIsBirthday(false);
       return;
@@ -128,7 +147,7 @@ export function PostCard({
     return () => {
       ignore = true;
     };
-  }, [post.petId]);
+  }, [post.petId, initialBirthday]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -165,17 +184,21 @@ export function PostCard({
     setTimeout(() => setAnimating(false), 200);
 
     if (useMock) {
+      const nextLiked = !localLiked;
       setLocalLiked((prev) => {
         setLocalLikeCount((count) =>
           prev ? Math.max(0, count - 1) : count + 1
         );
         return !prev;
       });
+      onLikeChanged?.(post.id, nextLiked);
       return;
     }
 
     try {
+      const nextLiked = !likedState;
       await toggleLike();
+      onLikeChanged?.(post.id, nextLiked);
     } catch {
       // noop for now
     }
@@ -261,7 +284,20 @@ export function PostCard({
     setBookmarkAnimating(true);
     setTimeout(() => setBookmarkAnimating(false), 200);
     try {
+      const nextBookmarked = !isBookmarked;
       await toggleBookmark();
+      onBookmarkChanged?.(post.id, nextBookmarked);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleFollowPet = async () => {
+    if (!post.petId) return;
+    const nextFollowing = !isFollowingPet;
+    try {
+      await toggleFollowPet();
+      onPetFollowChanged?.(post.petId, nextFollowing);
     } catch {
       // ignore
     }
@@ -420,7 +456,7 @@ export function PostCard({
             {user && post.authorId !== user.uid && post.petId ? (
               <button
                 type="button"
-                onClick={toggleFollowPet}
+                onClick={handleFollowPet}
                 disabled={followPetLoading}
                 className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-all duration-200 ${
                   isFollowingPet

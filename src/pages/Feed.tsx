@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Navbar } from "../components/Navbar";
 import { OnboardingFlow } from "../components/OnboardingFlow";
@@ -17,6 +17,7 @@ import { batchCheckLikes } from "../hooks/useBatchLikeStatus";
 import { batchCheckBookmarks } from "../hooks/useBatchBookmarkStatus";
 import { batchCheckFollowingPets } from "../hooks/useBatchFollowingPets";
 import { getFollowingPets } from "../services/follow";
+import { batchCheckPetBirthdays } from "../services/pets";
 import { useToast } from "../contexts/ToastContext";
 import { useLanguage } from "../hooks/useLanguage";
 import { type Post } from "../services/posts";
@@ -42,6 +43,12 @@ export function Feed() {
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
   const [bookmarkedPosts, setBookmarkedPosts] = useState<Set<string>>(new Set());
   const [followedPetIds, setFollowedPetIds] = useState<Set<string>>(new Set());
+  const [birthdayPetIds, setBirthdayPetIds] = useState<Set<string>>(new Set());
+  const checkedLikePostIdsRef = useRef<Set<string>>(new Set());
+  const checkedBookmarkPostIdsRef = useRef<Set<string>>(new Set());
+  const checkedFollowPetIdsRef = useRef<Set<string>>(new Set());
+  const checkedBirthdayPetIdsRef = useRef<Set<string>>(new Set());
+  const statusUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     setLocalPosts(posts);
@@ -125,25 +132,83 @@ export function Feed() {
   const statusUserId = user?.uid ?? null;
 
   useEffect(() => {
+    if (statusUserIdRef.current === statusUserId) return;
+    statusUserIdRef.current = statusUserId;
+    checkedLikePostIdsRef.current.clear();
+    checkedBookmarkPostIdsRef.current.clear();
+    checkedFollowPetIdsRef.current.clear();
+    setLikedPosts(new Set());
+    setBookmarkedPosts(new Set());
+    setFollowedPetIds(new Set());
+  }, [statusUserId]);
+
+  useEffect(() => {
     let ignore = false;
     if (!statusUserId || !filteredPostIdsKey) {
       setLikedPosts(new Set());
       setBookmarkedPosts(new Set());
       setFollowedPetIds(new Set());
+      checkedLikePostIdsRef.current.clear();
+      checkedBookmarkPostIdsRef.current.clear();
+      checkedFollowPetIdsRef.current.clear();
       return;
     }
     const ids = filteredPostIdsKey.split("\n");
     const petIds = filteredPetIdsKey ? filteredPetIdsKey.split("\n") : [];
+    const uncheckedLikeIds = ids.filter(
+      (id) => !checkedLikePostIdsRef.current.has(id)
+    );
+    const uncheckedBookmarkIds = ids.filter(
+      (id) => !checkedBookmarkPostIdsRef.current.has(id)
+    );
+    const uncheckedFollowPetIds = petIds.filter(
+      (id) => !checkedFollowPetIdsRef.current.has(id)
+    );
+    if (
+      uncheckedLikeIds.length === 0 &&
+      uncheckedBookmarkIds.length === 0 &&
+      uncheckedFollowPetIds.length === 0
+    ) {
+      return;
+    }
     const loadStatus = async () => {
       const [likedSet, bookmarkedSet, followedSet] = await Promise.all([
-        batchCheckLikes(statusUserId, ids),
-        batchCheckBookmarks(statusUserId, ids),
-        batchCheckFollowingPets(statusUserId, petIds),
+        uncheckedLikeIds.length > 0
+          ? batchCheckLikes(statusUserId, uncheckedLikeIds)
+          : Promise.resolve(new Set<string>()),
+        uncheckedBookmarkIds.length > 0
+          ? batchCheckBookmarks(statusUserId, uncheckedBookmarkIds)
+          : Promise.resolve(new Set<string>()),
+        uncheckedFollowPetIds.length > 0
+          ? batchCheckFollowingPets(statusUserId, uncheckedFollowPetIds)
+          : Promise.resolve(new Set<string>()),
       ]);
       if (!ignore) {
-        setLikedPosts(likedSet);
-        setBookmarkedPosts(bookmarkedSet);
-        setFollowedPetIds(followedSet);
+        uncheckedLikeIds.forEach((id) => checkedLikePostIdsRef.current.add(id));
+        uncheckedBookmarkIds.forEach((id) =>
+          checkedBookmarkPostIdsRef.current.add(id)
+        );
+        uncheckedFollowPetIds.forEach((id) =>
+          checkedFollowPetIdsRef.current.add(id)
+        );
+        setLikedPosts((prev) => {
+          const next = new Set(prev);
+          uncheckedLikeIds.forEach((id) => next.delete(id));
+          likedSet.forEach((id) => next.add(id));
+          return next;
+        });
+        setBookmarkedPosts((prev) => {
+          const next = new Set(prev);
+          uncheckedBookmarkIds.forEach((id) => next.delete(id));
+          bookmarkedSet.forEach((id) => next.add(id));
+          return next;
+        });
+        setFollowedPetIds((prev) => {
+          const next = new Set(prev);
+          uncheckedFollowPetIds.forEach((id) => next.delete(id));
+          followedSet.forEach((id) => next.add(id));
+          return next;
+        });
       }
     };
     void loadStatus();
@@ -151,6 +216,82 @@ export function Feed() {
       ignore = true;
     };
   }, [filteredPetIdsKey, filteredPostIdsKey, statusUserId]);
+
+  useEffect(() => {
+    let ignore = false;
+    if (!filteredPetIdsKey) {
+      setBirthdayPetIds(new Set());
+      checkedBirthdayPetIdsRef.current.clear();
+      return;
+    }
+    const petIds = filteredPetIdsKey.split("\n");
+    const uncheckedPetIds = petIds.filter(
+      (id) => !checkedBirthdayPetIdsRef.current.has(id)
+    );
+    if (uncheckedPetIds.length === 0) return;
+
+    const loadBirthdays = async () => {
+      const birthdaySet = await batchCheckPetBirthdays(uncheckedPetIds);
+      if (!ignore) {
+        uncheckedPetIds.forEach((id) => checkedBirthdayPetIdsRef.current.add(id));
+        setBirthdayPetIds((prev) => {
+          const next = new Set(prev);
+          uncheckedPetIds.forEach((id) => next.delete(id));
+          birthdaySet.forEach((id) => next.add(id));
+          return next;
+        });
+      }
+    };
+    void loadBirthdays();
+    return () => {
+      ignore = true;
+    };
+  }, [filteredPetIdsKey]);
+
+  const handleLikeChanged = useCallback((postId: string, liked: boolean) => {
+    checkedLikePostIdsRef.current.add(postId);
+    setLikedPosts((prev) => {
+      const next = new Set(prev);
+      if (liked) {
+        next.add(postId);
+      } else {
+        next.delete(postId);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleBookmarkChanged = useCallback(
+    (postId: string, bookmarked: boolean) => {
+      checkedBookmarkPostIdsRef.current.add(postId);
+      setBookmarkedPosts((prev) => {
+        const next = new Set(prev);
+        if (bookmarked) {
+          next.add(postId);
+        } else {
+          next.delete(postId);
+        }
+        return next;
+      });
+    },
+    []
+  );
+
+  const handlePetFollowChanged = useCallback(
+    (petId: string, following: boolean) => {
+      checkedFollowPetIdsRef.current.add(petId);
+      setFollowedPetIds((prev) => {
+        const next = new Set(prev);
+        if (following) {
+          next.add(petId);
+        } else {
+          next.delete(petId);
+        }
+        return next;
+      });
+    },
+    []
+  );
 
   const pullLabel = refreshing
     ? t("feed.refreshing")
@@ -288,6 +429,12 @@ export function Feed() {
             initialFollowingPet={
               post.petId ? followedPetIds.has(post.petId) : undefined
             }
+            initialBirthday={
+              post.petId ? birthdayPetIds.has(post.petId) : undefined
+            }
+            onLikeChanged={handleLikeChanged}
+            onBookmarkChanged={handleBookmarkChanged}
+            onPetFollowChanged={handlePetFollowChanged}
             onDeleted={(postId) =>
               setLocalPosts((prev) => prev.filter((item) => item.id !== postId))
             }

@@ -1,5 +1,13 @@
-import { doc, getDoc } from "firebase/firestore";
+import {
+  collection,
+  documentId,
+  getDocs,
+  query,
+  where,
+} from "firebase/firestore";
 import { db } from "../services/firebase";
+
+const BATCH_SIZE = 10;
 
 export async function batchCheckFollowingPets(
   userId: string,
@@ -9,22 +17,19 @@ export async function batchCheckFollowingPets(
 
   const followed = new Set<string>();
   const unique = Array.from(new Set(petIds.filter(Boolean)));
-  const chunkSize = 30;
+  const followingRef = collection(db, "users", userId, "followingPets");
 
-  for (let i = 0; i < unique.length; i += chunkSize) {
-    const chunk = unique.slice(i, i + chunkSize);
-    await Promise.all(
-      chunk.map(async (petId) => {
-        try {
-          const snap = await getDoc(
-            doc(db, "users", userId, "followingPets", petId)
-          );
-          if (snap.exists()) followed.add(petId);
-        } catch {
-          // ignore individual failures
-        }
-      })
-    );
+  for (let i = 0; i < unique.length; i += BATCH_SIZE) {
+    const chunk = unique.slice(i, i + BATCH_SIZE);
+    if (chunk.length === 0) continue;
+    try {
+      const snapshot = await getDocs(
+        query(followingRef, where(documentId(), "in", chunk))
+      );
+      snapshot.forEach((docSnap) => followed.add(docSnap.id));
+    } catch {
+      // ignore chunk failures so the feed can still render
+    }
   }
 
   return followed;
