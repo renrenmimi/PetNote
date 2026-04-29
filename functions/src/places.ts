@@ -6,6 +6,8 @@ import { getNotificationActor } from "./notifications";
 import {
   applyReviewAggregationDelta,
   getDefaultAvatar,
+  LOCATION_PHOTO_PREVIEW_LIMIT,
+  mergeCappedStrings,
   optionalTrimmedString,
   requiredTrimmedString,
   validateCoordinateRange,
@@ -39,6 +41,69 @@ const allowedPlaceFeatures = new Set([
   "trails",
   "food_nearby",
 ]);
+
+function locationPhotoEntryId(url: string): string {
+  return createHash("sha1").update(url).digest("hex");
+}
+
+async function writeLocationPhotoEntries(
+  locationId: string,
+  photoUrls: string[],
+  source: "place" | "review" | "location_photo",
+  addedBy?: string
+): Promise<void> {
+  if (photoUrls.length === 0) return;
+  const batch = db.batch();
+  photoUrls.forEach((url) => {
+    const entryRef = db.doc(
+      `locations/${locationId}/photoEntries/${locationPhotoEntryId(url)}`
+    );
+    batch.set(
+      entryRef,
+      {
+        url,
+        source,
+        addedBy: addedBy || "",
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+  });
+  await batch.commit();
+}
+
+async function appendLocationPhotoPreviews(
+  locationId: string,
+  photoUrls: string[],
+  incrementTotalPhotos: boolean
+): Promise<void> {
+  if (photoUrls.length === 0) return;
+  const locationRef = db.doc(`locations/${locationId}`);
+  await db.runTransaction(async (transaction) => {
+    const locationSnap = await transaction.get(locationRef);
+    if (!locationSnap.exists) {
+      throw new HttpsError("not-found", "Location not found.");
+    }
+    const data = locationSnap.data() ?? {};
+    transaction.update(locationRef, {
+      photos: mergeCappedStrings(
+        data.photos,
+        photoUrls,
+        LOCATION_PHOTO_PREVIEW_LIMIT
+      ),
+      locationPhotos: mergeCappedStrings(
+        data.locationPhotos,
+        photoUrls,
+        LOCATION_PHOTO_PREVIEW_LIMIT
+      ),
+      ...(incrementTotalPhotos
+        ? { totalPhotos: admin.firestore.FieldValue.increment(photoUrls.length) }
+        : {}),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  });
+}
 
 function buildLocationId(lat: number, lng: number, name: string): string {
   // 5 decimals ~= 1.1m precision (vs. the previous 4 decimals / ~11m which
@@ -206,12 +271,20 @@ export const onReviewCreated = onDocumentCreated(
           (photo): photo is string => typeof photo === "string" && photo.length > 0
         )
       : [];
-    await applyReviewAggregationDelta(event.params.locationId, {
-      ratingSum: rating,
-      count: 1,
-      tagsToAdd,
-      photosToAdd,
-    });
+    await Promise.all([
+      applyReviewAggregationDelta(event.params.locationId, {
+        ratingSum: rating,
+        count: 1,
+        tagsToAdd,
+        photosToAdd,
+      }),
+      writeLocationPhotoEntries(
+        event.params.locationId,
+        photosToAdd,
+        "review",
+        typeof reviewData.userId === "string" ? reviewData.userId : undefined
+      ),
+    ]);
   }
 );
 
@@ -334,6 +407,10 @@ export const addPlaceCallable = onCall(async (request) => {
     );
   });
 
+  if (!alreadyExisted) {
+    await writeLocationPhotoEntries(locationId, place.photos, "place", callerUid);
+  }
+
   return { locationId, alreadyExisted };
 });
 
@@ -376,12 +453,8 @@ export const addLocationPhotosCallable = onCall(async (request) => {
     throw new HttpsError("permission-denied", "Cannot add photos to this location.");
   }
 
-  await locationRef.update({
-    locationPhotos: admin.firestore.FieldValue.arrayUnion(...photoUrls),
-    photos: admin.firestore.FieldValue.arrayUnion(...photoUrls),
-    totalPhotos: admin.firestore.FieldValue.increment(photoUrls.length),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
+  await appendLocationPhotoPreviews(data.locationId, photoUrls, true);
+  await writeLocationPhotoEntries(data.locationId, photoUrls, "location_photo", callerUid);
 
   return { success: true };
 });

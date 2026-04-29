@@ -109,9 +109,28 @@ const relationshipLabelMapZh: Record<PetFamilyRelationship, string> = {
 };
 
 const PET_CACHE_MS = 60_000;
+const PET_CACHE_MAX_ENTRIES = 500;
 const DOCUMENT_ID_BATCH_SIZE = 10;
 const petCache = new Map<string, { pet: Pet | null; expiresAt: number }>();
 const petRequestCache = new Map<string, Promise<Pet | null>>();
+
+function setPetCacheEntry(petId: string, pet: Pet | null): void {
+  const now = Date.now();
+  for (const [key, value] of petCache) {
+    if (value.expiresAt <= now) {
+      petCache.delete(key);
+    }
+  }
+  while (petCache.size >= PET_CACHE_MAX_ENTRIES) {
+    const oldestKey = petCache.keys().next().value;
+    if (!oldestKey) break;
+    petCache.delete(oldestKey);
+  }
+  petCache.set(petId, {
+    pet,
+    expiresAt: now + PET_CACHE_MS,
+  });
+}
 
 function clearPetCache(petId?: string): void {
   if (petId) {
@@ -406,14 +425,14 @@ export async function getPetById(petId: string): Promise<Pet | null> {
     const petRef = doc(db, "pets", petId);
     const snapshot = await getDoc(petRef);
     if (!snapshot.exists()) {
-      petCache.set(petId, { pet: null, expiresAt: Date.now() + PET_CACHE_MS });
+      setPetCacheEntry(petId, null);
       return null;
     }
     const pet = {
       id: snapshot.id,
       ...(snapshot.data() as Omit<Pet, "id">),
     };
-    petCache.set(petId, { pet, expiresAt: Date.now() + PET_CACHE_MS });
+    setPetCacheEntry(petId, pet);
     return pet;
   })().finally(() => {
     petRequestCache.delete(petId);
@@ -444,10 +463,7 @@ export async function batchCheckPetBirthdays(
           id: docSnap.id,
           ...(docSnap.data() as Omit<Pet, "id">),
         };
-        petCache.set(docSnap.id, {
-          pet,
-          expiresAt: Date.now() + PET_CACHE_MS,
-        });
+        setPetCacheEntry(docSnap.id, pet);
         if (isBirthdayToday(pet.birthday)) {
           birthdayPetIds.add(docSnap.id);
         }
