@@ -253,6 +253,31 @@ export const ensureUserProfileCallable = onCall(async (request) => {
   throw new HttpsError("resource-exhausted", "Could not create a unique profile.");
 });
 
+export const checkDisplayNameAvailabilityCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Must be logged in.");
+  }
+
+  const data = requestData(request.data);
+  const displayName = normalizeDisplayName(data.displayName);
+  if (!displayName) {
+    throw new HttpsError("invalid-argument", "Display name is required.");
+  }
+
+  const displayNameLower = displayName.toLowerCase();
+  const [reservationSnap, existingUsersSnap] = await Promise.all([
+    usernameRef(displayNameLower).get(),
+    db.collection("users").where("displayNameLower", "==", displayNameLower).limit(2).get(),
+  ]);
+  const reservedByOther =
+    reservationSnap.exists && reservationSnap.data()?.userId !== callerUid;
+  const usedByOther = existingUsersSnap.docs.some((docSnap) => docSnap.id !== callerUid);
+  const taken = reservedByOther || usedByOther;
+
+  return { available: !taken, taken };
+});
+
 export const updateUserProfileCallable = onCall(async (request) => {
   const callerUid = request.auth?.uid;
   if (!callerUid) {

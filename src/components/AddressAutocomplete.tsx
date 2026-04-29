@@ -18,6 +18,7 @@ export function AddressAutocomplete({
   placeholder = "Search for a location",
 }: AddressAutocompleteProps) {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const confirmedValueRef = useRef("");
   const [results, setResults] = useState<AddressResult[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -39,23 +40,46 @@ export function AddressAutocomplete({
     if (!value.trim()) {
       setResults([]);
       setConfirmed(false);
+      confirmedValueRef.current = "";
+      setLoading(false);
       return;
     }
+    if (confirmed && value === confirmedValueRef.current) {
+      setResults([]);
+      setLoading(false);
+      return;
+    }
+    if (confirmed) {
+      setConfirmed(false);
+      confirmedValueRef.current = "";
+    }
+    let ignore = false;
     setLoading(true);
     const handle = window.setTimeout(async () => {
       try {
-        setResults(await searchAddresses(value));
+        const nextResults = await searchAddresses(value);
+        if (!ignore) {
+          setResults(nextResults);
+        }
       } catch {
-        setResults([]);
+        if (!ignore) {
+          setResults([]);
+        }
       } finally {
-        setLoading(false);
+        if (!ignore) {
+          setLoading(false);
+        }
       }
     }, 300);
 
-    return () => window.clearTimeout(handle);
-  }, [value]);
+    return () => {
+      ignore = true;
+      window.clearTimeout(handle);
+    };
+  }, [confirmed, value]);
 
   const handleSelect = (result: AddressResult) => {
+    confirmedValueRef.current = result.fullAddress;
     onChange(result.fullAddress, result);
     setConfirmed(true);
     setOpen(false);
@@ -67,6 +91,7 @@ export function AddressAutocomplete({
         type="text"
         value={value}
         onChange={(event) => {
+          confirmedValueRef.current = "";
           onChange(event.target.value, null);
           setConfirmed(false);
           setOpen(true);

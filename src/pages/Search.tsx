@@ -263,6 +263,7 @@ export function Search() {
       return;
     }
 
+    let ignore = false;
     const handle = window.setTimeout(async () => {
       setSearching(true);
       const keyword = normalizedQuery.replace(/^#/, "").toLowerCase();
@@ -274,18 +275,28 @@ export function Search() {
           searchTags(keyword),
           isTagQuery ? getPostsByTag(keyword) : searchByText(keyword),
         ]);
+        if (ignore) return;
         setSearchResults({
           users: userResults,
           pets: petResults,
           tags: tagResults,
           posts: postResults,
         });
+      } catch {
+        if (!ignore) {
+          setSearchResults({ users: [], pets: [], tags: [], posts: [] });
+        }
       } finally {
-        setSearching(false);
+        if (!ignore) {
+          setSearching(false);
+        }
       }
     }, 300);
 
-    return () => window.clearTimeout(handle);
+    return () => {
+      ignore = true;
+      window.clearTimeout(handle);
+    };
   }, [hasQuery, normalizedQuery]);
 
   const filteredSearchPosts = useMemo(() => {

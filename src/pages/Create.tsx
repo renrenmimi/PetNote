@@ -54,6 +54,7 @@ export function Create() {
   const [dragActive, setDragActive] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const filesRef = useRef(files);
+  const navigateTimerRef = useRef<number | null>(null);
   const [pets, setPets] = useState<Pet[]>([]);
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [draft, setDraft] = useState<PostDraft | null>(null);
@@ -149,16 +150,28 @@ export function Create() {
     new Promise<number>((resolve, reject) => {
       const url = URL.createObjectURL(file);
       const video = document.createElement("video");
+      let settled = false;
+      let timeoutId = 0;
+      const settle = (callback: () => void) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        URL.revokeObjectURL(url);
+        video.removeAttribute("src");
+        video.load();
+        callback();
+      };
       video.preload = "metadata";
       video.onloadedmetadata = () => {
         const duration = video.duration;
-        URL.revokeObjectURL(url);
-        resolve(duration);
+        settle(() => resolve(duration));
       };
       video.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error("Failed to load video metadata"));
+        settle(() => reject(new Error("Failed to load video metadata")));
       };
+      timeoutId = window.setTimeout(() => {
+        settle(() => reject(new Error("Failed to load video metadata")));
+      }, 10000);
       video.src = url;
     });
 
@@ -459,7 +472,11 @@ export function Create() {
       });
       sessionStorage.removeItem(DRAFT_KEY);
       showToast("Posted successfully!", "success");
-      setTimeout(() => {
+      if (navigateTimerRef.current) {
+        window.clearTimeout(navigateTimerRef.current);
+      }
+      navigateTimerRef.current = window.setTimeout(() => {
+        navigateTimerRef.current = null;
         navigate("/", { replace: true });
       }, 600);
     } catch (err) {
@@ -517,6 +534,9 @@ export function Create() {
       filesRef.current.forEach((item) =>
         URL.revokeObjectURL(item.previewUrl)
       );
+      if (navigateTimerRef.current) {
+        window.clearTimeout(navigateTimerRef.current);
+      }
     };
   }, []);
 
@@ -565,36 +585,38 @@ export function Create() {
     if (filterCSS === "none") return file;
     const img = new Image();
     const url = URL.createObjectURL(file);
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve();
-      img.onerror = () => reject(new Error("Failed to load image"));
-      img.src = url;
-    });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("Failed to load image"));
+        img.src = url;
+      });
 
-    const canvas = document.createElement("canvas");
-    canvas.width = img.width;
-    canvas.height = img.height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        return file;
+      }
+      ctx.filter = filterCSS;
+      ctx.drawImage(img, 0, 0);
+
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob(
+          (result) => {
+            if (result) resolve(result);
+            else reject(new Error("Failed to apply filter"));
+          },
+          "image/jpeg",
+          0.9
+        );
+      });
+      const nextName = file.name.replace(/\.\w+$/, ".jpg");
+      return new File([blob], nextName, { type: "image/jpeg" });
+    } finally {
       URL.revokeObjectURL(url);
-      return file;
     }
-    ctx.filter = filterCSS;
-    ctx.drawImage(img, 0, 0);
-
-    const blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob(
-        (result) => {
-          if (result) resolve(result);
-          else reject(new Error("Failed to apply filter"));
-        },
-        "image/jpeg",
-        0.9
-      );
-    });
-    URL.revokeObjectURL(url);
-    const nextName = file.name.replace(/\.\w+$/, ".jpg");
-    return new File([blob], nextName, { type: "image/jpeg" });
   };
 
   return (

@@ -1,13 +1,8 @@
 import { updateProfile } from "firebase/auth";
 import {
-  collection,
   doc,
   getDoc,
-  getDocs,
-  query,
   setDoc,
-  where,
-  limit,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { auth, db, functions } from "./firebase";
@@ -186,39 +181,18 @@ export async function isUsernameTaken(
   username: string,
   excludeUserId?: string
 ): Promise<boolean> {
+  void excludeUserId;
   const normalized = username.trim();
   if (!normalized) {
     return false;
   }
-  const normalizedLower = normalized.toLowerCase();
-
-  const usersRef = collection(db, "users");
-  const usersQuery = query(
-    usersRef,
-    where("displayNameLower", "==", normalizedLower),
-    limit(10)
-  );
-  const snapshot = await getDocs(usersQuery);
-  if (!snapshot.empty) {
-    if (!excludeUserId) {
-      return true;
-    }
-    return snapshot.docs.some((docSnap) => docSnap.id !== excludeUserId);
-  }
-
-  // Backward compatible fallback for users without displayNameLower.
-  const fallbackSnapshot = await getDocs(query(usersRef, limit(200)));
-  const taken = fallbackSnapshot.docs.some((docSnap) => {
-    if (excludeUserId && docSnap.id === excludeUserId) {
-      return false;
-    }
-    const value = (docSnap.data().displayName as string | undefined) ?? "";
-    return value.trim().toLowerCase() === normalizedLower;
+  const result = await httpsCallable<
+    { displayName: string },
+    { available: boolean; taken: boolean }
+  >(functions, "checkDisplayNameAvailabilityCallable")({
+    displayName: normalized,
   });
-  if (taken) {
-    return true;
-  }
-  return false;
+  return result.data.taken;
 }
 
 export async function generateUniqueUsername(): Promise<string> {

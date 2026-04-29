@@ -69,23 +69,13 @@ export async function getSuggestedPets(
     .filter((pet) => !followedIds.has(pet.id))
     .slice(0, limitCount);
 
-  const postCounts = await Promise.all(
-    rankedPets.map(async (pet) => {
-      const postsSnapshot = await getDocs(
-        query(
-          collection(db, "posts"),
-          where("petId", "==", pet.id),
-          limit(100)
-        )
-      );
-      return { petId: pet.id, count: postsSnapshot.size };
-    })
-  );
-  const countMap = new Map(postCounts.map((item) => [item.petId, item.count]));
-  return rankedPets.map((pet) => ({
-    ...pet,
-    postCount: countMap.get(pet.id) ?? 0,
-  }));
+  return rankedPets.map((pet) => {
+    const storedPostCount = (pet as Pet & { postCount?: unknown }).postCount;
+    return {
+      ...pet,
+      postCount: typeof storedPostCount === "number" ? storedPostCount : 0,
+    };
+  });
 }
 
 export async function getPopularPets(limitCount = 8): Promise<Array<Pet & { postCount: number }>> {

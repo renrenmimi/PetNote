@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Toast, type ToastItem, type ToastType } from "../components/Toast";
 
 type ToastContextValue = {
@@ -11,16 +19,31 @@ const AUTO_DISMISS_MS = 2600;
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const dismissTimersRef = useRef<Map<string, number>>(new Map());
 
   const dismissToast = useCallback((id: string) => {
+    const timer = dismissTimersRef.current.get(id);
+    if (timer) {
+      window.clearTimeout(timer);
+      dismissTimersRef.current.delete(id);
+    }
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
   }, []);
 
   const showToast = useCallback((message: string, type: ToastType) => {
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     setToasts((prev) => [...prev, { id, message, type }]);
-    window.setTimeout(() => dismissToast(id), AUTO_DISMISS_MS);
+    const timer = window.setTimeout(() => dismissToast(id), AUTO_DISMISS_MS);
+    dismissTimersRef.current.set(id, timer);
   }, [dismissToast]);
+
+  useEffect(() => {
+    const timers = dismissTimersRef.current;
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+      timers.clear();
+    };
+  }, []);
 
   const value = useMemo(() => ({ showToast }), [showToast]);
 
