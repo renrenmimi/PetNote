@@ -253,6 +253,10 @@ export const deletePetCallable = onCall(async (request) => {
   if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
 
   const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot delete pets.");
+  }
+
   const { petId } = request.data as { petId?: string };
   if (!petId || typeof petId !== "string") {
     throw new HttpsError("invalid-argument", "Missing petId.");
@@ -321,6 +325,11 @@ export const followPetCallable = onCall(async (request) => {
 export const unfollowPetCallable = onCall(async (request) => {
   const callerUid = request.auth?.uid;
   if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+
+  const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot unfollow pets.");
+  }
 
   const { petId } = request.data as { petId?: string };
   if (!petId || typeof petId !== "string") {

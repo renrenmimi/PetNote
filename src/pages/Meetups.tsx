@@ -15,7 +15,7 @@ import {
 } from "../services/meetups";
 import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 import { calculateDistance, getUserLocation, type UserLocation } from "../services/location";
-import { getLocation, type Location } from "../services/locations";
+import { batchGetLocations, type Location } from "../services/locations";
 
 type FilterKey = "nearby" | "week" | "mine" | "dogs" | "cats" | "other";
 
@@ -169,12 +169,10 @@ export function Meetups() {
         setLocationRatings({});
         return;
       }
-      const entries = await Promise.all(
-        ids.map(async (id) => [id, await getLocation(id)] as const)
-      );
+      const locations = await batchGetLocations(ids);
       if (!ignore) {
         const map: Record<string, Location> = {};
-        entries.forEach(([id, data]) => {
+        Object.entries(locations).forEach(([id, data]) => {
           if (data) map[id] = data;
         });
         setLocationRatings(map);

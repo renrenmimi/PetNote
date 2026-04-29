@@ -70,6 +70,11 @@ export const submitFeedbackCallable = onCall(async (request) => {
   const callerUid = callerAuth?.uid;
   if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
 
+  const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot submit feedback.");
+  }
+
   const data = request.data as {
     type?: "bug" | "feature" | "complaint" | "other";
     subject?: string;
@@ -85,7 +90,6 @@ export const submitFeedbackCallable = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "Missing feedback message.");
   }
 
-  const caller = await getNotificationActor(callerUid);
   const result = await db.collection("feedback").add({
     userId: callerUid,
     userName: caller.fromUserName,

@@ -389,6 +389,10 @@ export const cancelMeetupCallable = onCall(async (request) => {
   if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
 
   const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot cancel meetups.");
+  }
+
   const { meetupId } = request.data as { meetupId?: string };
   if (!meetupId || typeof meetupId !== "string") {
     throw new HttpsError("invalid-argument", "Missing meetupId.");

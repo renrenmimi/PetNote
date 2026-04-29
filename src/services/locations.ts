@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  documentId,
   getDoc,
   getDocs,
   limit,
@@ -14,6 +15,8 @@ import {
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
 import { calculateDistance } from "./location";
+
+const DOCUMENT_ID_BATCH_SIZE = 30;
 
 export type PlaceCategory =
   | "dog_park"
@@ -171,6 +174,33 @@ export async function getLocation(locationId: string): Promise<Location | null> 
   const snapshot = await getDoc(locationRef);
   if (!snapshot.exists()) return null;
   return { id: snapshot.id, ...(snapshot.data() as Omit<Location, "id">) };
+}
+
+export async function batchGetLocations(
+  locationIds: string[]
+): Promise<Record<string, Location | null>> {
+  const uniqueIds = Array.from(new Set(locationIds.filter(Boolean)));
+  const locations: Record<string, Location | null> = {};
+  uniqueIds.forEach((id) => {
+    locations[id] = null;
+  });
+  if (uniqueIds.length === 0) return locations;
+
+  const locationsRef = collection(db, "locations");
+  for (let i = 0; i < uniqueIds.length; i += DOCUMENT_ID_BATCH_SIZE) {
+    const chunk = uniqueIds.slice(i, i + DOCUMENT_ID_BATCH_SIZE);
+    const snapshot = await getDocs(
+      query(locationsRef, where(documentId(), "in", chunk))
+    );
+    snapshot.docs.forEach((docSnap) => {
+      locations[docSnap.id] = {
+        id: docSnap.id,
+        ...(docSnap.data() as Omit<Location, "id">),
+      };
+    });
+  }
+
+  return locations;
 }
 
 export async function getPlaces(options: {
