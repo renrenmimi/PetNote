@@ -153,15 +153,21 @@ export async function getPopularPosts(
   const postsQuery = query(
     postsRef,
     where("createdAt", ">=", cutoff),
-    orderBy("likeCount", "desc"),
     orderBy("createdAt", "desc"),
-    limit(limitCount)
+    limit(Math.max(limitCount * 10, 50))
   );
   const snapshot = await getDocs(postsQuery);
-  return snapshot.docs.map((docSnap) => ({
-    id: docSnap.id,
-    ...(docSnap.data() as PostData),
-  }));
+  return snapshot.docs
+    .map((docSnap) => ({
+      id: docSnap.id,
+      ...(docSnap.data() as PostData),
+    }))
+    .sort((a, b) => {
+      const likeDelta = (b.likeCount ?? 0) - (a.likeCount ?? 0);
+      if (likeDelta !== 0) return likeDelta;
+      return (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0);
+    })
+    .slice(0, limitCount);
 }
 
 export async function getPostById(id: string): Promise<Post | null> {
@@ -357,14 +363,14 @@ export async function getUserStats(userId: string): Promise<{
   return { postCount: posts.length, totalLikes };
 }
 
-export async function pinPost(_userId: string, postId: string): Promise<void> {
+export async function pinPost(postId: string): Promise<void> {
   await httpsCallable<{ postId: string }, { success: boolean }>(
     functions,
     "setPinnedPostCallable"
   )({ postId });
 }
 
-export async function unpinPost(_userId: string): Promise<void> {
+export async function unpinPost(): Promise<void> {
   await httpsCallable<{ postId: null }, { success: boolean }>(
     functions,
     "setPinnedPostCallable"

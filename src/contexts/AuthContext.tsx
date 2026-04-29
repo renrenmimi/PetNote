@@ -1,4 +1,4 @@
-import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
@@ -10,7 +10,7 @@ import {
   updateProfile,
   type User,
 } from "firebase/auth";
-import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "../services/firebase";
 import { getUserLocation } from "../services/location";
 import {
@@ -21,6 +21,7 @@ import {
   createUserProfile,
   generateUniqueUsername,
   isUsernameTaken,
+  updateUserProfile,
   type UserProfile,
 } from "../services/users";
 
@@ -48,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profileLoading, setProfileLoading] = useState(true);
   const [adminState, setAdminState] = useState<AdminState | null>(null);
   const [adminLoading, setAdminLoading] = useState(true);
+  const profileRepairingRef = useRef<Set<string>>(new Set());
   const hasProfileLocation = Boolean(profile?.location);
   const profileLocationKey = profile?.location
     ? `${profile.location.city}|${profile.location.state}`
@@ -75,13 +77,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const userRef = doc(db, "users", user.uid);
     const unsubscribe = onSnapshot(userRef, (snapshot) => {
       if (!snapshot.exists()) {
-        setProfile(null);
-        setProfileLoading(false);
+        if (!profileRepairingRef.current.has(user.uid)) {
+          profileRepairingRef.current.add(user.uid);
+          void (async () => {
+            const displayName =
+              user.displayName?.trim() || (await generateUniqueUsername());
+            await createUserProfile(user.uid, {
+              displayName,
+              avatarUrl:
+                user.photoURL ||
+                `https://api.dicebear.com/7.x/thumbs/svg?seed=${user.uid}`,
+              bio: "",
+              onboardingComplete: false,
+              createdAt: serverTimestamp(),
+            });
+          })()
+            .catch(() => {
+              setProfile(null);
+              setProfileLoading(false);
+            })
+            .finally(() => {
+              profileRepairingRef.current.delete(user.uid);
+            });
+        }
         return;
+      }
+      const data = snapshot.data() as Omit<UserProfile, "id">;
+      const needsProfileRepair =
+        !data.displayName?.trim() || !data.avatarUrl?.trim();
+      if (needsProfileRepair && !profileRepairingRef.current.has(user.uid)) {
+        profileRepairingRef.current.add(user.uid);
+        void (async () => {
+          await updateUserProfile(user.uid, {
+            displayName:
+              data.displayName?.trim() ||
+              user.displayName?.trim() ||
+              (await generateUniqueUsername()),
+            avatarUrl:
+              data.avatarUrl?.trim() ||
+              user.photoURL ||
+              `https://api.dicebear.com/7.x/thumbs/svg?seed=${user.uid}`,
+          });
+        })().finally(() => {
+          profileRepairingRef.current.delete(user.uid);
+        });
       }
       setProfile({
         id: snapshot.id,
-        ...(snapshot.data() as Omit<UserProfile, "id">),
+        ...data,
       });
       setProfileLoading(false);
     });
@@ -178,17 +221,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         !profileData?.avatarUrl ||
         (profileData.avatarUrl ?? "").includes("googleusercontent");
       if (needsAvatar || !profileData?.displayName) {
-        await setDoc(
-          userRef,
-          {
-            displayName,
-            avatarUrl: profileData?.avatarUrl || avatarUrl,
-          },
-          { merge: true }
-        );
-        await updateProfile(googleUser, {
+        await updateUserProfile(googleUser.uid, {
           displayName,
-          photoURL: profileData?.avatarUrl || avatarUrl,
+          avatarUrl: needsAvatar ? avatarUrl : profileData?.avatarUrl || avatarUrl,
         });
       }
     }

@@ -7,6 +7,7 @@ export {
   validateInvitationCallable,
 } from "./invitations";
 export { getCloudinaryUploadSignature } from "./media";
+export { reverseGeocodeCallable, searchAddressesCallable } from "./geo";
 export {
   autoCompleteMeetups,
   cancelMeetupCallable,
@@ -54,4 +55,10 @@ export {
   updatePetCallable,
 } from "./pets";
 export { reportContentCallable, submitFeedbackCallable } from "./moderation";
-export { deleteUserAccount, onFamilyCreated, onUserUpdated } from "./users";
+export {
+  deleteUserAccount,
+  ensureUserProfileCallable,
+  onFamilyCreated,
+  onUserUpdated,
+  updateUserProfileCallable,
+} from "./users";

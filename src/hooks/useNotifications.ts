@@ -147,6 +147,7 @@ export function useNotifications(
   const markAsRead = useCallback(
     async (id: string) => {
       let shouldDecrement = false;
+      let previousUnreadCount = 0;
       setNotifications((prev) =>
         prev.map((item) => {
           if (item.id === id && !item.read) {
@@ -157,20 +158,47 @@ export function useNotifications(
         })
       );
       if (shouldDecrement) {
-        setUnreadCount((prev) => Math.max(0, prev - 1));
+        setUnreadCount((prev) => {
+          previousUnreadCount = prev;
+          return Math.max(0, prev - 1);
+        });
       }
-      await markOne(id);
+      try {
+        await markOne(id);
+      } catch (error) {
+        if (shouldDecrement) {
+          setNotifications((prev) =>
+            prev.map((item) =>
+              item.id === id ? { ...item, read: false } : item
+            )
+          );
+          setUnreadCount(previousUnreadCount);
+        }
+        throw error;
+      }
     },
     [setNotifications]
   );
 
   const markAllAsRead = useCallback(async () => {
     if (!userId) return;
-    await markAll(userId);
-    setNotifications((prev) =>
-      prev.map((item) => ({ ...item, read: true }))
-    );
-    setUnreadCount(0);
+    let previousNotifications: NotificationItem[] = [];
+    let previousUnreadCount = 0;
+    setNotifications((prev) => {
+      previousNotifications = prev;
+      return prev.map((item) => ({ ...item, read: true }));
+    });
+    setUnreadCount((prev) => {
+      previousUnreadCount = prev;
+      return 0;
+    });
+    try {
+      await markAll(userId);
+    } catch (error) {
+      setNotifications(previousNotifications);
+      setUnreadCount(previousUnreadCount);
+      throw error;
+    }
   }, [userId]);
 
   return {

@@ -34,10 +34,9 @@ service cloud.firestore {
     }
 
     function isAllowedUserUpdate() {
-      // pinnedPostId is written exclusively by setPinnedPostCallable (admin
-      // SDK bypasses rules) so the client cannot pin arbitrary posts.
-      let allowed = ['displayName', 'displayNameLower', 'avatarUrl', 'bio',
-                      'location', 'onboardingComplete'];
+      // Profile identity fields are written exclusively by callable functions
+      // so displayName uniqueness is enforced through /usernames reservations.
+      let allowed = ['location', 'onboardingComplete'];
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed) &&
         hasSafePublicLocation(request.resource.data);
     }
@@ -45,8 +44,7 @@ service cloud.firestore {
     // Safe fields allowed during user document creation.
     // Prevents setting role, banned, or other sensitive fields on create.
     function isAllowedUserCreate() {
-      let allowed = ['displayName', 'displayNameLower', 'avatarUrl', 'bio',
-                      'location', 'onboardingComplete', 'createdAt'];
+      let allowed = ['location', 'onboardingComplete'];
       return request.resource.data.keys().hasOnly(allowed) &&
         hasSafePublicLocation(request.resource.data);
     }
@@ -174,19 +172,24 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /usernames/{usernameId} {
+      allow read: if false;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+
     // ========= notifications =========
     match /notifications/{notificationId} {
       allow read: if isAuthenticated() &&
-        (resource.data.userId == request.auth.uid || resource.data.fromUserId == request.auth.uid);
+        (resource.data.userId == request.auth.uid || isAdmin());
       allow create: if false;
       allow update: if isAuthenticated() &&
         resource.data.userId == request.auth.uid &&
         request.resource.data.read is bool &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
       allow delete: if isAuthenticated() &&
-        (resource.data.userId == request.auth.uid ||
-         resource.data.fromUserId == request.auth.uid ||
-         isAdmin());
+        (resource.data.userId == request.auth.uid || isAdmin());
     }
 
     // ========= meetups =========
@@ -295,7 +298,8 @@ service cloud.firestore {
     }
 
     match /{path=**}/participants/{participantId} {
-      allow read: if true;
+      allow read: if isAuthenticated() &&
+        (resource.data.userId == request.auth.uid || isAdmin());
     }
 
     match /{path=**}/reviews/{reviewId} {

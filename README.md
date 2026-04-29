@@ -122,7 +122,7 @@ PetNote now uses signed uploads.
 - A Cloudinary account with these signed upload presets:
   - `petnote_image_signed`
   - `petnote_video_signed`
-- Optional Geoapify API key
+- A Geoapify API key stored as a Firebase Functions secret
 
 ### Install dependencies
 
@@ -142,28 +142,24 @@ VITE_FIREBASE_PROJECT_ID=your_project_id
 VITE_FIREBASE_STORAGE_BUCKET=your_project.firebasestorage.app
 VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
 VITE_FIREBASE_APP_ID=your_app_id
-VITE_GEOAPIFY_KEY=your_geoapify_api_key
 ```
 
-Cloudinary upload no longer needs any `VITE_CLOUDINARY_*` frontend variable because uploads now use Firebase-signed parameters.
-
-Restrict the Geoapify key by HTTP referrer before production rollout.
-
-- Production: your production Vercel or custom domain
-- Preview: your Vercel preview domain pattern
-- Local development: `http://localhost:5173/*`
-
-The app currently serves root-relative Open Graph image URLs from `public/og-image.png`, so social cards resolve correctly on production, preview, and local builds without a hardcoded deployment host.
+Cloudinary and Geoapify no longer need frontend `VITE_*` variables because uploads and address lookup run through Firebase callable functions.
 
 ### Firebase Functions secrets
 
-Set Cloudinary secrets for signed upload generation:
+Set backend-only secrets before deploying functions:
 
 ```bash
 firebase functions:secrets:set CLOUDINARY_CLOUD_NAME
 firebase functions:secrets:set CLOUDINARY_API_KEY
 firebase functions:secrets:set CLOUDINARY_API_SECRET
+firebase functions:secrets:set GEOAPIFY_API_KEY
 ```
+
+Restrict the Geoapify key in the Geoapify console before production rollout. Because requests now come from Cloud Functions, use provider-supported server-side restrictions instead of exposing the key to browsers.
+
+The app currently serves root-relative Open Graph image URLs from `public/og-image.png`, so social cards resolve correctly on production, preview, and local builds without a hardcoded deployment host.
 
 ### Start the frontend
 

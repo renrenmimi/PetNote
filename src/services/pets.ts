@@ -106,6 +106,17 @@ const relationshipLabelMapZh: Record<PetFamilyRelationship, string> = {
   other: "其他",
 };
 
+const PET_CACHE_MS = 60_000;
+const petCache = new Map<string, { pet: Pet | null; expiresAt: number }>();
+
+function clearPetCache(petId?: string): void {
+  if (petId) {
+    petCache.delete(petId);
+    return;
+  }
+  petCache.clear();
+}
+
 export const getRelationshipLabel = (
   relationship?: PetFamilyRelationship,
   customRelationship?: string
@@ -248,6 +259,7 @@ export async function updatePet(
     ...(typeof data.bio === "string" ? { bio: data.bio } : {}),
     ...(typeof data.avatarUrl === "string" ? { avatarUrl: data.avatarUrl } : {}),
   });
+  clearPetCache(petId);
 }
 
 export async function deletePet(petId: string): Promise<void> {
@@ -255,6 +267,7 @@ export async function deletePet(petId: string): Promise<void> {
     functions,
     "deletePetCallable"
   )({ petId });
+  clearPetCache(petId);
 }
 
 export async function getPetsByOwner(ownerId: string): Promise<Pet[]> {
@@ -349,13 +362,23 @@ export async function removeFamilyMember(
 }
 
 export async function getPetById(petId: string): Promise<Pet | null> {
+  const cached = petCache.get(petId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.pet;
+  }
+
   const petRef = doc(db, "pets", petId);
   const snapshot = await getDoc(petRef);
-  if (!snapshot.exists()) return null;
-  return {
+  if (!snapshot.exists()) {
+    petCache.set(petId, { pet: null, expiresAt: Date.now() + PET_CACHE_MS });
+    return null;
+  }
+  const pet = {
     id: snapshot.id,
     ...(snapshot.data() as Omit<Pet, "id">),
   };
+  petCache.set(petId, { pet, expiresAt: Date.now() + PET_CACHE_MS });
+  return pet;
 }
 
 export async function getPostsByPet(petId: string): Promise<Post[]> {

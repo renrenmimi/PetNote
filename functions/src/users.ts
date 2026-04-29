@@ -1,3 +1,4 @@
+import { createHash, randomInt } from "node:crypto";
 import { onDocumentCreated, onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
@@ -9,7 +10,91 @@ import {
   deleteQueryDocs,
 } from "./cleanup";
 import { getNotificationActor } from "./notifications";
-import { batchChunked, getDefaultAvatar } from "./shared";
+import { batchChunked, getDefaultAvatar, stripUndefined } from "./shared";
+
+const MAX_DISPLAY_NAME = 30;
+const MAX_BIO = 150;
+
+function requestData(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, unknown>;
+}
+
+function normalizeDisplayName(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.length < 2 || trimmed.length > MAX_DISPLAY_NAME) {
+    throw new HttpsError("invalid-argument", "Display name must be 2-30 characters.");
+  }
+  return trimmed;
+}
+
+function normalizeBio(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    throw new HttpsError("invalid-argument", "Bio must be a string.");
+  }
+  return value.trim().slice(0, MAX_BIO);
+}
+
+function normalizeAvatarUrl(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    throw new HttpsError("invalid-argument", "Avatar URL must be a string.");
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.length > 2048) {
+    throw new HttpsError("invalid-argument", "Avatar URL is too long.");
+  }
+  return trimmed;
+}
+
+function usernameKey(displayNameLower: string): string {
+  return createHash("sha256").update(displayNameLower).digest("hex");
+}
+
+function usernameRef(displayNameLower: string): admin.firestore.DocumentReference {
+  return db.doc(`usernames/${usernameKey(displayNameLower)}`);
+}
+
+async function assertDisplayNameAvailable(
+  transaction: admin.firestore.Transaction,
+  displayNameLower: string,
+  callerUid: string
+): Promise<admin.firestore.DocumentReference> {
+  const reservationRef = usernameRef(displayNameLower);
+  const reservationSnap = await transaction.get(reservationRef);
+  if (
+    reservationSnap.exists &&
+    reservationSnap.data()?.userId !== callerUid
+  ) {
+    throw new HttpsError("already-exists", "Display name is already taken.");
+  }
+
+  // Backward-compatible guard for users created before /usernames reservations.
+  const existingUsersSnap = await transaction.get(
+    db.collection("users").where("displayNameLower", "==", displayNameLower).limit(2)
+  );
+  const conflictingUser = existingUsersSnap.docs.find((docSnap) => docSnap.id !== callerUid);
+  if (conflictingUser) {
+    throw new HttpsError("already-exists", "Display name is already taken.");
+  }
+
+  return reservationRef;
+}
+
+function defaultDisplayName(userId: string): string {
+  return `petnote_${userId.slice(0, 8)}`;
+}
+
+function withNumericSuffix(base: string): string {
+  const suffix = String(randomInt(1000, 10000));
+  return `${base.slice(0, MAX_DISPLAY_NAME - suffix.length)}${suffix}`;
+}
 
 export const onUserUpdated = onDocumentWritten("users/{userId}", async (event) => {
   const before = event.data?.before?.data();
@@ -36,32 +121,45 @@ export const onUserUpdated = onDocumentWritten("users/{userId}", async (event) =
   const postFields: Record<string, string> = {};
   if (nameChanged) postFields.authorName = after.displayName;
   if (avatarChanged) postFields.authorAvatar = after.avatarUrl;
-  await syncCollection(db.collection("posts").where("authorId", "==", userId), postFields);
 
   const commentFields: Record<string, string> = {};
   if (nameChanged) commentFields.authorName = after.displayName;
   if (avatarChanged) commentFields.authorAvatar = after.avatarUrl;
-  await syncCollection(db.collectionGroup("comments").where("authorId", "==", userId), commentFields);
 
   const notifFields: Record<string, string> = {};
   if (nameChanged) notifFields.fromUserName = after.displayName;
   if (avatarChanged) notifFields.fromUserAvatar = after.avatarUrl;
-  await syncCollection(db.collection("notifications").where("fromUserId", "==", userId), notifFields);
 
   const partFields: Record<string, string> = {};
   if (nameChanged) partFields.userName = after.displayName;
   if (avatarChanged) partFields.userAvatar = after.avatarUrl;
-  await syncCollection(db.collectionGroup("participants").where("userId", "==", userId), partFields);
 
   const reviewFields: Record<string, string> = {};
   if (nameChanged) reviewFields.userName = after.displayName;
   if (avatarChanged) reviewFields.userAvatar = after.avatarUrl;
-  await syncCollection(db.collectionGroup("reviews").where("userId", "==", userId), reviewFields);
 
   const familyFields: Record<string, string> = {};
   if (nameChanged) familyFields.userName = after.displayName;
   if (avatarChanged) familyFields.userAvatar = after.avatarUrl;
-  await syncCollection(db.collectionGroup("family").where("userId", "==", userId), familyFields);
+
+  const syncTasks: Array<[string, () => Promise<void>]> = [
+    ["posts", () => syncCollection(db.collection("posts").where("authorId", "==", userId), postFields)],
+    ["comments", () => syncCollection(db.collectionGroup("comments").where("authorId", "==", userId), commentFields)],
+    ["notifications", () => syncCollection(db.collection("notifications").where("fromUserId", "==", userId), notifFields)],
+    ["participants", () => syncCollection(db.collectionGroup("participants").where("userId", "==", userId), partFields)],
+    ["reviews", () => syncCollection(db.collectionGroup("reviews").where("userId", "==", userId), reviewFields)],
+    ["family", () => syncCollection(db.collectionGroup("family").where("userId", "==", userId), familyFields)],
+  ];
+
+  await Promise.all(
+    syncTasks.map(async ([label, task]) => {
+      try {
+        await task();
+      } catch (error) {
+        console.error(`onUserUpdated sync failed for ${label}`, error);
+      }
+    })
+  );
 });
 
 export const onFamilyCreated = onDocumentCreated(
@@ -76,6 +174,159 @@ export const onFamilyCreated = onDocumentCreated(
     });
   }
 );
+
+export const ensureUserProfileCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Must be logged in.");
+  }
+
+  const data = requestData(request.data);
+  const requestedName = normalizeDisplayName(data.displayName);
+  const baseName = requestedName ?? defaultDisplayName(callerUid);
+  const avatarUrl = normalizeAvatarUrl(data.avatarUrl) ?? getDefaultAvatar(callerUid);
+  const bio = normalizeBio(data.bio) ?? "";
+  const onboardingComplete =
+    typeof data.onboardingComplete === "boolean" ? data.onboardingComplete : false;
+
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const displayName = attempt === 0 ? baseName : withNumericSuffix(baseName);
+    const displayNameLower = displayName.toLowerCase();
+    try {
+      const result = await db.runTransaction(async (transaction) => {
+        const userRef = db.doc(`users/${callerUid}`);
+        const userSnap = await transaction.get(userRef);
+        if (userSnap.exists) {
+          const existing = userSnap.data() ?? {};
+          return {
+            displayName:
+              typeof existing.displayName === "string" && existing.displayName.trim()
+                ? existing.displayName
+                : displayName,
+            avatarUrl:
+              typeof existing.avatarUrl === "string" && existing.avatarUrl.trim()
+                ? existing.avatarUrl
+                : avatarUrl,
+          };
+        }
+
+        const reservationRef = await assertDisplayNameAvailable(
+          transaction,
+          displayNameLower,
+          callerUid
+        );
+
+        transaction.set(reservationRef, {
+          userId: callerUid,
+          displayName,
+          displayNameLower,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        transaction.set(userRef, {
+          displayName,
+          displayNameLower,
+          avatarUrl,
+          bio,
+          onboardingComplete,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return { displayName, avatarUrl };
+      });
+
+      await admin.auth().updateUser(callerUid, {
+        displayName: result.displayName,
+        photoURL: result.avatarUrl,
+      });
+      return result;
+    } catch (error) {
+      if (error instanceof HttpsError && error.code === "already-exists") {
+        if (attempt === 5) {
+          throw error;
+        }
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw new HttpsError("resource-exhausted", "Could not create a unique profile.");
+});
+
+export const updateUserProfileCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Must be logged in.");
+  }
+
+  const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot update profiles.");
+  }
+
+  const data = requestData(request.data);
+  const displayName =
+    "displayName" in data ? normalizeDisplayName(data.displayName) : undefined;
+  const avatarUrl =
+    "avatarUrl" in data ? normalizeAvatarUrl(data.avatarUrl) : undefined;
+  const bio = "bio" in data ? normalizeBio(data.bio) : undefined;
+  if (displayName === undefined && avatarUrl === undefined && bio === undefined) {
+    throw new HttpsError("invalid-argument", "No profile fields to update.");
+  }
+
+  await db.runTransaction(async (transaction) => {
+    const userRef = db.doc(`users/${callerUid}`);
+    const userSnap = await transaction.get(userRef);
+    const current = userSnap.exists ? userSnap.data() ?? {} : {};
+    const update: Record<string, unknown> = {};
+
+    if (displayName !== undefined) {
+      const displayNameLower = displayName.toLowerCase();
+      const nextReservationRef = await assertDisplayNameAvailable(
+        transaction,
+        displayNameLower,
+        callerUid
+      );
+
+      const previousLower =
+        typeof current.displayNameLower === "string" ? current.displayNameLower : "";
+      if (previousLower && previousLower !== displayNameLower) {
+        transaction.delete(usernameRef(previousLower));
+      }
+
+      transaction.set(nextReservationRef, {
+        userId: callerUid,
+        displayName,
+        displayNameLower,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      update.displayName = displayName;
+      update.displayNameLower = displayNameLower;
+    }
+    if (avatarUrl !== undefined) update.avatarUrl = avatarUrl;
+    if (bio !== undefined) update.bio = bio;
+
+    transaction.set(
+      userRef,
+      stripUndefined({
+        ...update,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        ...(userSnap.exists ? {} : { createdAt: admin.firestore.FieldValue.serverTimestamp() }),
+      }),
+      { merge: true }
+    );
+  });
+
+  await admin.auth().updateUser(
+    callerUid,
+    stripUndefined({
+      displayName,
+      photoURL: avatarUrl,
+    })
+  );
+
+  return { success: true };
+});
 
 // Account deletion can take a while for heavy accounts. Allow up to nine
 // minutes so large cascades finish in a single run; the function is still
