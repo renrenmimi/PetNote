@@ -420,6 +420,11 @@ export const removeFamilyMemberCallable = onCall(async (request) => {
     throw new HttpsError("unauthenticated", "Must be logged in.");
   }
 
+  const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot remove family members.");
+  }
+
   const { petId, targetUserId } = request.data as {
     petId?: string;
     targetUserId?: string;

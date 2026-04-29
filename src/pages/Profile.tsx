@@ -13,7 +13,7 @@ import {
   unfollowPet,
   type FollowingPet,
 } from "../services/follow";
-import { getLocation, type Location } from "../services/locations";
+import { batchGetLocations, type Location } from "../services/locations";
 import { type Post } from "../services/posts";
 import {
   getRelationshipLabel,
@@ -132,15 +132,9 @@ export function Profile() {
         const uniqueIds = Array.from(
           new Set(list.map((item) => item.locationId).filter(Boolean))
         );
-        const entries = await Promise.all(
-          uniqueIds.map(async (id) => [id, await getLocation(id)] as const)
-        );
+        const mapping = await batchGetLocations(uniqueIds);
         if (ignore) return;
 
-        const mapping: Record<string, Location | null> = {};
-        entries.forEach(([id, location]) => {
-          mapping[id] = location;
-        });
         setCheckinLocations(mapping);
       } catch (error) {
         console.warn("Permission error while loading check-ins:", error);

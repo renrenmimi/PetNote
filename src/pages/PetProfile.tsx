@@ -8,7 +8,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useFollowPet } from "../hooks/useFollow";
 import { getPetFollowers, type PetFollower } from "../services/follow";
 import { getCheckinsByPet, type Checkin } from "../services/checkins";
-import { getLocation, type Location } from "../services/locations";
+import { batchGetLocations, type Location } from "../services/locations";
 import {
   deletePet,
   getPetById,
@@ -105,13 +105,7 @@ export function PetProfile() {
       const uniqueLocationIds = Array.from(
         new Set(petCheckins.map((item) => item.locationId).filter(Boolean))
       );
-      const locationEntries = await Promise.all(
-        uniqueLocationIds.map(async (id) => [id, await getLocation(id)] as const)
-      );
-      const locationMap: Record<string, Location | null> = {};
-      locationEntries.forEach(([id, location]) => {
-        locationMap[id] = location;
-      });
+      const locationMap = await batchGetLocations(uniqueLocationIds);
 
       if (!ignore) {
         setPet(petData);

@@ -264,6 +264,10 @@ export const deletePostCallable = onCall(async (request) => {
   if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
 
   const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot delete posts.");
+  }
+
   const { postId } = request.data as { postId?: string };
   if (!postId || typeof postId !== "string") {
     throw new HttpsError("invalid-argument", "Missing postId.");
@@ -356,6 +360,10 @@ export const deleteCommentCallable = onCall(async (request) => {
   }
 
   const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot delete comments.");
+  }
+
   const { postId, commentId } = request.data as { postId?: string; commentId?: string };
   if (!postId || !commentId) {
     throw new HttpsError("invalid-argument", "Missing postId or commentId.");
