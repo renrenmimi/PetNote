@@ -14,11 +14,10 @@ import { RequireAdmin } from "./components/RequireAdmin";
 import { SuspendedBanner } from "./components/SuspendedBanner";
 import PageTransition from "./components/PageTransition";
 import { SplashScreen } from "./components/SplashScreen";
-import { Feed } from "./pages/Feed";
-import { Login } from "./pages/Login";
-import { SignUp } from "./pages/SignUp";
-import { NotFound } from "./pages/NotFound";
 
+const Feed = lazy(() =>
+  import("./pages/Feed").then((module) => ({ default: module.Feed }))
+);
 const AddPet = lazy(() =>
   import("./pages/AddPet").then((module) => ({ default: module.AddPet }))
 );
@@ -48,6 +47,9 @@ const ForgotPassword = lazy(() =>
     default: module.ForgotPassword,
   }))
 );
+const Login = lazy(() =>
+  import("./pages/Login").then((module) => ({ default: module.Login }))
+);
 const LocationDetail = lazy(() =>
   import("./pages/LocationDetail").then((module) => ({
     default: module.LocationDetail,
@@ -66,6 +68,9 @@ const Notifications = lazy(() =>
   import("./pages/Notifications").then((module) => ({
     default: module.Notifications,
   }))
+);
+const NotFound = lazy(() =>
+  import("./pages/NotFound").then((module) => ({ default: module.NotFound }))
 );
 const PetProfile = lazy(() =>
   import("./pages/PetProfile").then((module) => ({
@@ -90,6 +95,9 @@ const Search = lazy(() =>
 );
 const Settings = lazy(() =>
   import("./pages/Settings").then((module) => ({ default: module.Settings }))
+);
+const SignUp = lazy(() =>
+  import("./pages/SignUp").then((module) => ({ default: module.SignUp }))
 );
 const UserProfile = lazy(() =>
   import("./pages/UserProfile").then((module) => ({
