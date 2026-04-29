@@ -1,6 +1,9 @@
 import { HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
 
+export const FIRESTORE_BATCH_LIMIT = 450;
+export const LOCATION_PHOTO_PREVIEW_LIMIT = 30;
+
 export const VALIDATION_LIMITS = {
   displayName: 30,
   bio: 150,
@@ -83,16 +86,46 @@ export function validateCoordinateRange(lat: number, lng: number): boolean {
   );
 }
 
+export function mergeCappedStrings(
+  existing: unknown,
+  additions: string[],
+  limit: number
+): string[] {
+  const existingStrings = Array.isArray(existing)
+    ? existing.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : [];
+  const seen = new Set<string>();
+  const merged: string[] = [];
+  [...existingStrings, ...additions].forEach((item) => {
+    if (seen.has(item)) return;
+    seen.add(item);
+    merged.push(item);
+  });
+  return merged.slice(-limit);
+}
+
 // Helper: batch operations in chunks of 450 (under Firestore 500 limit)
 export async function batchChunked(
   docs: admin.firestore.QueryDocumentSnapshot[],
   operation: (batch: admin.firestore.WriteBatch, doc: admin.firestore.QueryDocumentSnapshot) => void
 ): Promise<void> {
-  const chunkSize = 450;
-  for (let i = 0; i < docs.length; i += chunkSize) {
+  for (let i = 0; i < docs.length; i += FIRESTORE_BATCH_LIMIT) {
     const batch = db.batch();
-    docs.slice(i, i + chunkSize).forEach((d) => operation(batch, d));
+    docs.slice(i, i + FIRESTORE_BATCH_LIMIT).forEach((d) => operation(batch, d));
     await batch.commit();
+  }
+}
+
+export async function processQueryInBatches(
+  queryRef: admin.firestore.Query,
+  operation: (batch: admin.firestore.WriteBatch, doc: admin.firestore.QueryDocumentSnapshot) => void
+): Promise<void> {
+  while (true) {
+    const snapshot = await queryRef.limit(FIRESTORE_BATCH_LIMIT).get();
+    if (snapshot.empty) return;
+
+    await batchChunked(snapshot.docs, operation);
+    if (snapshot.size < FIRESTORE_BATCH_LIMIT) return;
   }
 }
 
@@ -138,7 +171,11 @@ export async function applyReviewAggregationDelta(
       update.tags = admin.firestore.FieldValue.arrayUnion(...delta.tagsToAdd);
     }
     if (delta.photosToAdd && delta.photosToAdd.length > 0) {
-      update.photos = admin.firestore.FieldValue.arrayUnion(...delta.photosToAdd);
+      update.photos = mergeCappedStrings(
+        data.photos,
+        delta.photosToAdd,
+        LOCATION_PHOTO_PREVIEW_LIMIT
+      );
     }
 
     t.update(locationRef, update);

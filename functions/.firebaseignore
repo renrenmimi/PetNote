@@ -1,0 +1,4 @@
+lib/**/*.map
+src/**/*.ts
+*.log
+.DS_Store

@@ -30,11 +30,33 @@ export type UserProfile = {
 };
 
 const USER_PROFILE_CACHE_MS = 60_000;
+const USER_PROFILE_CACHE_MAX_ENTRIES = 500;
 const userProfileCache = new Map<
   string,
   { profile: UserProfile | null; expiresAt: number }
 >();
 const userProfileRequestCache = new Map<string, Promise<UserProfile | null>>();
+
+function setUserProfileCache(
+  userId: string,
+  profile: UserProfile | null
+): void {
+  const now = Date.now();
+  for (const [key, value] of userProfileCache) {
+    if (value.expiresAt <= now) {
+      userProfileCache.delete(key);
+    }
+  }
+  while (userProfileCache.size >= USER_PROFILE_CACHE_MAX_ENTRIES) {
+    const oldestKey = userProfileCache.keys().next().value;
+    if (!oldestKey) break;
+    userProfileCache.delete(oldestKey);
+  }
+  userProfileCache.set(userId, {
+    profile,
+    expiresAt: now + USER_PROFILE_CACHE_MS,
+  });
+}
 
 export function clearUserProfileCache(userId?: string): void {
   if (userId) {
@@ -61,20 +83,14 @@ export async function getUserProfile(
     const userRef = doc(db, "users", userId);
     const snapshot = await getDoc(userRef);
     if (!snapshot.exists()) {
-      userProfileCache.set(userId, {
-        profile: null,
-        expiresAt: Date.now() + USER_PROFILE_CACHE_MS,
-      });
+      setUserProfileCache(userId, null);
       return null;
     }
     const profile = {
       id: snapshot.id,
       ...(snapshot.data() as Omit<UserProfile, "id">),
     };
-    userProfileCache.set(userId, {
-      profile,
-      expiresAt: Date.now() + USER_PROFILE_CACHE_MS,
-    });
+    setUserProfileCache(userId, profile);
     return profile;
   })().finally(() => {
     userProfileRequestCache.delete(userId);

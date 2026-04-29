@@ -10,7 +10,13 @@ import {
   deleteQueryDocs,
 } from "./cleanup";
 import { getNotificationActor } from "./notifications";
-import { batchChunked, getDefaultAvatar, stripUndefined, VALIDATION_LIMITS } from "./shared";
+import {
+  batchChunked,
+  FIRESTORE_BATCH_LIMIT,
+  getDefaultAvatar,
+  stripUndefined,
+  VALIDATION_LIMITS,
+} from "./shared";
 
 function requestData(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -97,71 +103,98 @@ function withNumericSuffix(base: string): string {
   return `${base.slice(0, VALIDATION_LIMITS.displayName - suffix.length)}${suffix}`;
 }
 
-export const onUserUpdated = onDocumentWritten("users/{userId}", async (event) => {
-  const before = event.data?.before?.data();
-  const after = event.data?.after?.data();
-  if (!before || !after) return;
+export const onUserUpdated = onDocumentWritten(
+  {
+    document: "users/{userId}",
+    timeoutSeconds: 540,
+    memory: "1GiB",
+  },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!before || !after) return;
 
-  const nameChanged = before.displayName !== after.displayName;
-  const avatarChanged = before.avatarUrl !== after.avatarUrl;
-  if (!nameChanged && !avatarChanged) return;
+    const nameChanged = before.displayName !== after.displayName;
+    const avatarChanged = before.avatarUrl !== after.avatarUrl;
+    if (!nameChanged && !avatarChanged) return;
 
-  const userId = event.params.userId;
+    const userId = event.params.userId;
 
-  const syncCollection = async (
-    collectionQuery: admin.firestore.Query,
-    fields: Record<string, string>
-  ) => {
-    const snap = await collectionQuery.get();
-    if (snap.empty) return;
-    await batchChunked(snap.docs, (batch, doc) => {
-      batch.update(doc.ref, fields);
-    });
-  };
-
-  const postFields: Record<string, string> = {};
-  if (nameChanged) postFields.authorName = after.displayName;
-  if (avatarChanged) postFields.authorAvatar = after.avatarUrl;
-
-  const commentFields: Record<string, string> = {};
-  if (nameChanged) commentFields.authorName = after.displayName;
-  if (avatarChanged) commentFields.authorAvatar = after.avatarUrl;
-
-  const notifFields: Record<string, string> = {};
-  if (nameChanged) notifFields.fromUserName = after.displayName;
-  if (avatarChanged) notifFields.fromUserAvatar = after.avatarUrl;
-
-  const partFields: Record<string, string> = {};
-  if (nameChanged) partFields.userName = after.displayName;
-  if (avatarChanged) partFields.userAvatar = after.avatarUrl;
-
-  const reviewFields: Record<string, string> = {};
-  if (nameChanged) reviewFields.userName = after.displayName;
-  if (avatarChanged) reviewFields.userAvatar = after.avatarUrl;
-
-  const familyFields: Record<string, string> = {};
-  if (nameChanged) familyFields.userName = after.displayName;
-  if (avatarChanged) familyFields.userAvatar = after.avatarUrl;
-
-  const syncTasks: Array<[string, () => Promise<void>]> = [
-    ["posts", () => syncCollection(db.collection("posts").where("authorId", "==", userId), postFields)],
-    ["comments", () => syncCollection(db.collectionGroup("comments").where("authorId", "==", userId), commentFields)],
-    ["notifications", () => syncCollection(db.collection("notifications").where("fromUserId", "==", userId), notifFields)],
-    ["participants", () => syncCollection(db.collectionGroup("participants").where("userId", "==", userId), partFields)],
-    ["reviews", () => syncCollection(db.collectionGroup("reviews").where("userId", "==", userId), reviewFields)],
-    ["family", () => syncCollection(db.collectionGroup("family").where("userId", "==", userId), familyFields)],
-  ];
-
-  await Promise.all(
-    syncTasks.map(async ([label, task]) => {
-      try {
-        await task();
-      } catch (error) {
-        console.error(`onUserUpdated sync failed for ${label}`, error);
+    const syncCollection = async (
+      collectionQuery: admin.firestore.Query,
+      fields: Record<string, string>
+    ) => {
+      if (Object.keys(fields).length === 0) return;
+      const orderedQuery: admin.firestore.Query = collectionQuery.orderBy(
+        admin.firestore.FieldPath.documentId()
+      );
+      let lastDoc: admin.firestore.QueryDocumentSnapshot | null = null;
+      while (true) {
+        const pageQuery: admin.firestore.Query = lastDoc
+          ? orderedQuery.startAfter(lastDoc).limit(FIRESTORE_BATCH_LIMIT)
+          : orderedQuery.limit(FIRESTORE_BATCH_LIMIT);
+        const snap: admin.firestore.QuerySnapshot = await pageQuery.get();
+        if (snap.empty) return;
+        await batchChunked(snap.docs, (batch, doc) => {
+          batch.update(doc.ref, fields);
+        });
+        lastDoc = snap.docs[snap.docs.length - 1];
+        if (snap.size < FIRESTORE_BATCH_LIMIT) return;
       }
-    })
-  );
-});
+    };
+
+    const postFields: Record<string, string> = {};
+    if (nameChanged) postFields.authorName = after.displayName;
+    if (avatarChanged) postFields.authorAvatar = after.avatarUrl;
+
+    const commentFields: Record<string, string> = {};
+    if (nameChanged) commentFields.authorName = after.displayName;
+    if (avatarChanged) commentFields.authorAvatar = after.avatarUrl;
+
+    const notifFields: Record<string, string> = {};
+    if (nameChanged) notifFields.fromUserName = after.displayName;
+    if (avatarChanged) notifFields.fromUserAvatar = after.avatarUrl;
+
+    const partFields: Record<string, string> = {};
+    if (nameChanged) partFields.userName = after.displayName;
+    if (avatarChanged) partFields.userAvatar = after.avatarUrl;
+
+    const reviewFields: Record<string, string> = {};
+    if (nameChanged) reviewFields.userName = after.displayName;
+    if (avatarChanged) reviewFields.userAvatar = after.avatarUrl;
+
+    const familyFields: Record<string, string> = {};
+    if (nameChanged) familyFields.userName = after.displayName;
+    if (avatarChanged) familyFields.userAvatar = after.avatarUrl;
+
+    const syncTasks: Array<[string, () => Promise<void>]> = [
+      ["posts", () => syncCollection(db.collection("posts").where("authorId", "==", userId), postFields)],
+      ["comments", () => syncCollection(db.collectionGroup("comments").where("authorId", "==", userId), commentFields)],
+      ["notifications", () => syncCollection(db.collection("notifications").where("fromUserId", "==", userId), notifFields)],
+      ["participants", () => syncCollection(db.collectionGroup("participants").where("userId", "==", userId), partFields)],
+      ["reviews", () => syncCollection(db.collectionGroup("reviews").where("userId", "==", userId), reviewFields)],
+      ["family", () => syncCollection(db.collectionGroup("family").where("userId", "==", userId), familyFields)],
+    ];
+
+    const syncFailures = await Promise.all(
+      syncTasks.map(async ([label, task]) => {
+        try {
+          await task();
+          return null;
+        } catch (error) {
+          console.error(`onUserUpdated sync failed for ${label}`, error);
+          return label;
+        }
+      })
+    );
+    const failedLabels = syncFailures.filter(
+      (label): label is string => typeof label === "string"
+    );
+    if (failedLabels.length > 0) {
+      throw new Error(`onUserUpdated sync failed for: ${failedLabels.join(", ")}`);
+    }
+  }
+);
 
 export const onFamilyCreated = onDocumentCreated(
   "pets/{petId}/family/{userId}",
