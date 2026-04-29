@@ -264,7 +264,7 @@ export const updateMeetupCallable = onCall(async (request) => {
   if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
 
   const caller = await getNotificationActor(callerUid);
-  if (caller.banned === true && caller.role !== "admin") {
+  if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot edit meetups.");
   }
 
