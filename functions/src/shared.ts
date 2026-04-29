@@ -1,4 +1,87 @@
+import { HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
+
+export const VALIDATION_LIMITS = {
+  displayName: 30,
+  bio: 150,
+  petName: 20,
+  petBreed: 80,
+  petCustomRelationship: 30,
+  postText: 2000,
+  commentText: 500,
+  tag: 40,
+  maxTags: 20,
+  meetupTitle: 60,
+  meetupDescription: 500,
+  meetupCustomPetType: 30,
+  meetupAdditionalNotes: 200,
+  placeName: 60,
+  placeDescription: 500,
+  address: 200,
+  city: 100,
+  state: 100,
+  reviewComment: 300,
+  checkInCaption: 150,
+  reportReason: 500,
+  reportDescription: 1000,
+  feedbackSubject: 100,
+  feedbackMessage: 1000,
+  notificationMessage: 500,
+  warningReason: 200,
+  warningDetails: 1000,
+  url: 2048,
+} as const;
+
+export function trimString(value: unknown, fieldName: string): string {
+  if (typeof value !== "string") {
+    throw new HttpsError("invalid-argument", `${fieldName} must be a string.`);
+  }
+  return value.trim();
+}
+
+export function validateMaxLength(
+  value: string,
+  maxLength: number,
+  fieldName: string
+): string {
+  if (value.length > maxLength) {
+    throw new HttpsError(
+      "invalid-argument",
+      `${fieldName} must be ${maxLength} characters or fewer.`
+    );
+  }
+  return value;
+}
+
+export function optionalTrimmedString(
+  value: unknown,
+  maxLength: number,
+  fieldName: string
+): string {
+  if (value === undefined || value === null) return "";
+  return validateMaxLength(trimString(value, fieldName), maxLength, fieldName);
+}
+
+export function requiredTrimmedString(
+  value: unknown,
+  maxLength: number,
+  fieldName: string
+): string {
+  const trimmed = optionalTrimmedString(value, maxLength, fieldName);
+  if (!trimmed) {
+    throw new HttpsError("invalid-argument", `${fieldName} is required.`);
+  }
+  return trimmed;
+}
+
+export function validateCoordinateRange(lat: number, lng: number): boolean {
+  return (
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    Math.abs(lat) <= 90 &&
+    Math.abs(lng) <= 180
+  );
+}
 
 // Helper: batch operations in chunks of 450 (under Firestore 500 limit)
 export async function batchChunked(

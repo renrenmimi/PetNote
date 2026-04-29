@@ -29,10 +29,6 @@ service cloud.firestore {
       );
     }
 
-    function isEmailVerified() {
-      return request.auth.token.email_verified == true;
-    }
-
     function isAllowedUserUpdate() {
       // Profile identity fields are written exclusively by callable functions
       // so displayName uniqueness is enforced through /usernames reservations.
@@ -125,7 +121,9 @@ service cloud.firestore {
           request.auth.uid == likeId &&
           isNotBanned() &&
           exists(/databases/$(database)/documents/posts/$(postId));
-        allow delete: if isAuthenticated() && request.auth.uid == likeId;
+        allow delete: if isAuthenticated() &&
+          request.auth.uid == likeId &&
+          isNotBanned();
       }
 
       match /comments/{commentId} {

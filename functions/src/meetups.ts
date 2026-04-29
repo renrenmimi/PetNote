@@ -3,7 +3,15 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { admin, db } from "./platform";
 import { getNotificationActor } from "./notifications";
-import { batchChunked, getDefaultAvatar, stripUndefined } from "./shared";
+import {
+  batchChunked,
+  getDefaultAvatar,
+  optionalTrimmedString,
+  requiredTrimmedString,
+  stripUndefined,
+  validateCoordinateRange,
+  VALIDATION_LIMITS,
+} from "./shared";
 import { getOrCreatePublicMeetupLocation } from "./places";
 
 const allowedMeetupDogSizes = new Set([
@@ -37,24 +45,29 @@ function sanitizeMeetupLocation(value: unknown): {
       ? (value as Record<string, unknown>)
       : {};
 
-  const name = typeof location.name === "string" ? location.name.trim() : "";
-  const address =
-    typeof location.address === "string" ? location.address.trim() : "";
+  const name = requiredTrimmedString(
+    location.name,
+    VALIDATION_LIMITS.placeName,
+    "Location name"
+  );
+  const address = requiredTrimmedString(
+    location.address,
+    VALIDATION_LIMITS.address,
+    "Location address"
+  );
   const lat = typeof location.lat === "number" ? location.lat : Number.NaN;
   const lng = typeof location.lng === "number" ? location.lng : Number.NaN;
 
-  if (!name || !address || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+  if (!validateCoordinateRange(lat, lng)) {
     throw new HttpsError("invalid-argument", "Meetup location is invalid.");
   }
 
   const city =
-    typeof location.city === "string" && location.city.trim().length > 0
-      ? location.city.trim()
-      : undefined;
+    optionalTrimmedString(location.city, VALIDATION_LIMITS.city, "City") ||
+    undefined;
   const state =
-    typeof location.state === "string" && location.state.trim().length > 0
-      ? location.state.trim()
-      : undefined;
+    optionalTrimmedString(location.state, VALIDATION_LIMITS.state, "State") ||
+    undefined;
 
   return { name, address, lat, lng, city, state };
 }
@@ -113,7 +126,11 @@ function sanitizeMeetupRequirements(value: unknown): {
     petType === "other" &&
     typeof requirements.customPetType === "string" &&
     requirements.customPetType.trim().length > 0
-      ? requirements.customPetType.trim()
+      ? optionalTrimmedString(
+          requirements.customPetType,
+          VALIDATION_LIMITS.meetupCustomPetType,
+          "Custom pet type"
+        )
       : undefined;
 
   const maxPetsValue =
@@ -136,7 +153,11 @@ function sanitizeMeetupRequirements(value: unknown): {
     minFollowers: Math.max(0, Math.floor(minFollowersValue)),
     additionalNotes:
       typeof requirements.additionalNotes === "string"
-        ? requirements.additionalNotes.trim()
+        ? optionalTrimmedString(
+            requirements.additionalNotes,
+            VALIDATION_LIMITS.meetupAdditionalNotes,
+            "Additional notes"
+          )
         : "",
   });
 }
@@ -177,12 +198,16 @@ export const createMeetupCallable = onCall(async (request) => {
     requirements?: unknown;
   };
 
-  const title = typeof data.title === "string" ? data.title.trim() : "";
-  const description =
-    typeof data.description === "string" ? data.description.trim() : "";
-  if (!title || !description) {
-    throw new HttpsError("invalid-argument", "Meetup title and description are required.");
-  }
+  const title = requiredTrimmedString(
+    data.title,
+    VALIDATION_LIMITS.meetupTitle,
+    "Meetup title"
+  );
+  const description = requiredTrimmedString(
+    data.description,
+    VALIDATION_LIMITS.meetupDescription,
+    "Meetup description"
+  );
 
   const dateMillis =
     typeof data.dateMillis === "number" ? data.dateMillis : Number.NaN;
@@ -229,7 +254,7 @@ export const createMeetupCallable = onCall(async (request) => {
       description,
       coverImage:
         typeof data.coverImage === "string" && data.coverImage.trim().length > 0
-          ? data.coverImage.trim()
+          ? optionalTrimmedString(data.coverImage, VALIDATION_LIMITS.url, "Cover image URL")
           : undefined,
       date: admin.firestore.Timestamp.fromMillis(dateMillis),
       duration,
@@ -300,12 +325,16 @@ export const updateMeetupCallable = onCall(async (request) => {
     throw new HttpsError("permission-denied", "Cannot edit this meetup.");
   }
 
-  const title = typeof data.title === "string" ? data.title.trim() : "";
-  const description =
-    typeof data.description === "string" ? data.description.trim() : "";
-  if (!title || !description) {
-    throw new HttpsError("invalid-argument", "Meetup title and description are required.");
-  }
+  const title = requiredTrimmedString(
+    data.title,
+    VALIDATION_LIMITS.meetupTitle,
+    "Meetup title"
+  );
+  const description = requiredTrimmedString(
+    data.description,
+    VALIDATION_LIMITS.meetupDescription,
+    "Meetup description"
+  );
 
   const dateMillis =
     typeof data.dateMillis === "number" ? data.dateMillis : Number.NaN;
@@ -349,7 +378,7 @@ export const updateMeetupCallable = onCall(async (request) => {
     description,
     coverImage:
       typeof data.coverImage === "string" && data.coverImage.trim().length > 0
-        ? data.coverImage.trim()
+        ? optionalTrimmedString(data.coverImage, VALIDATION_LIMITS.url, "Cover image URL")
         : undefined,
     date: admin.firestore.Timestamp.fromMillis(dateMillis),
     duration,

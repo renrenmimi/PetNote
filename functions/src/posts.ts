@@ -3,7 +3,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
 import { cascadeDeletePost, deleteQueryDocs } from "./cleanup";
 import { getNotificationActor } from "./notifications";
-import { getDefaultAvatar } from "./shared";
+import { getDefaultAvatar, optionalTrimmedString, VALIDATION_LIMITS } from "./shared";
 import { getAccessiblePet } from "./pets";
 
 function normalizeTags(tags: unknown): string[] {
@@ -11,8 +11,10 @@ function normalizeTags(tags: unknown): string[] {
   return Array.from(
     new Set(
       tags
+        .slice(0, VALIDATION_LIMITS.maxTags)
         .filter((tag): tag is string => typeof tag === "string")
         .map((tag) => tag.trim().toLowerCase().replace(/^#/, ""))
+        .filter((tag) => tag.length <= VALIDATION_LIMITS.tag)
         .filter(Boolean)
     )
   );
@@ -133,14 +135,37 @@ export const createPostCallable = onCall(async (request) => {
             (item.type === "image" || item.type === "video")
         )
         .slice(0, 9)
+        .map((item) => {
+          const mediaItem: {
+            url: string;
+            type: "image" | "video";
+            thumbUrl?: string;
+          } = {
+            url: optionalTrimmedString(item.url, VALIDATION_LIMITS.url, "Media URL"),
+            type: item.type,
+          };
+          if (item.thumbUrl) {
+            mediaItem.thumbUrl = optionalTrimmedString(
+              item.thumbUrl,
+              VALIDATION_LIMITS.url,
+              "Media thumbnail URL"
+            );
+          }
+          return mediaItem;
+        })
     : [];
   const firstMedia = media[0];
+  const text = optionalTrimmedString(
+    data.text,
+    VALIDATION_LIMITS.postText,
+    "Post text"
+  );
 
   const result = await db.collection("posts").add({
     authorId: callerUid,
     authorName: caller.fromUserName,
     authorAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
-    text: typeof data.text === "string" ? data.text : "",
+    text,
     media,
     mediaUrl: firstMedia?.url,
     mediaType: firstMedia?.type,
@@ -193,7 +218,11 @@ export const updatePostCallable = onCall(async (request) => {
   }
 
   const updates: Record<string, unknown> = {
-    text: typeof data.text === "string" ? data.text : "",
+    text: optionalTrimmedString(
+      data.text,
+      VALIDATION_LIMITS.postText,
+      "Post text"
+    ),
     tags: normalizeTags(data.tags),
   };
 
@@ -341,17 +370,30 @@ export const createCommentCallable = onCall(async (request) => {
   }
 
   const commentRef = db.collection(`posts/${data.postId}/comments`).doc();
+  const text = requiredCommentText(data.text);
   await commentRef.set({
     authorId: callerUid,
     authorName: caller.fromUserName,
     authorAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
-    text: typeof data.text === "string" ? data.text : "",
+    text,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     ...(replyTo ? { replyTo } : {}),
   });
 
   return { id: commentRef.id };
 });
+
+function requiredCommentText(value: unknown): string {
+  const text = optionalTrimmedString(
+    value,
+    VALIDATION_LIMITS.commentText,
+    "Comment text"
+  );
+  if (!text) {
+    throw new HttpsError("invalid-argument", "Comment text is required.");
+  }
+  return text;
+}
 
 export const deleteCommentCallable = onCall(async (request) => {
   const callerUid = request.auth?.uid;

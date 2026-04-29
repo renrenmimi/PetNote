@@ -1,7 +1,12 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
 import { getNotificationActor } from "./notifications";
-import { getDefaultAvatar } from "./shared";
+import {
+  getDefaultAvatar,
+  optionalTrimmedString,
+  requiredTrimmedString,
+  VALIDATION_LIMITS,
+} from "./shared";
 
 export const reportContentCallable = onCall(async (request) => {
   const callerUid = request.auth?.uid;
@@ -24,9 +29,16 @@ export const reportContentCallable = onCall(async (request) => {
   if (!data.targetId || typeof data.targetId !== "string") {
     throw new HttpsError("invalid-argument", "Missing targetId.");
   }
-  if (!data.reason || typeof data.reason !== "string" || data.reason.trim().length === 0) {
-    throw new HttpsError("invalid-argument", "Missing report reason.");
-  }
+  const reason = requiredTrimmedString(
+    data.reason,
+    VALIDATION_LIMITS.reportReason,
+    "Report reason"
+  );
+  const description = optionalTrimmedString(
+    data.description,
+    VALIDATION_LIMITS.reportDescription,
+    "Report description"
+  );
 
   // Deterministic id == one report per (reporter, targetType, target). Any
   // replay or button-mash is silently deduped by Firestore rejecting the
@@ -42,8 +54,8 @@ export const reportContentCallable = onCall(async (request) => {
       reporterAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
       targetType: data.targetType,
       targetId: data.targetId,
-      reason: data.reason.trim(),
-      description: typeof data.description === "string" ? data.description.trim() : "",
+      reason,
+      description,
       status: "pending",
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -83,20 +95,24 @@ export const submitFeedbackCallable = onCall(async (request) => {
   if (!data.type || !["bug", "feature", "complaint", "other"].includes(data.type)) {
     throw new HttpsError("invalid-argument", "Invalid feedback type.");
   }
-  if (!data.subject || typeof data.subject !== "string" || data.subject.trim().length === 0) {
-    throw new HttpsError("invalid-argument", "Missing subject.");
-  }
-  if (!data.message || typeof data.message !== "string" || data.message.trim().length === 0) {
-    throw new HttpsError("invalid-argument", "Missing feedback message.");
-  }
+  const subject = requiredTrimmedString(
+    data.subject,
+    VALIDATION_LIMITS.feedbackSubject,
+    "Feedback subject"
+  );
+  const message = requiredTrimmedString(
+    data.message,
+    VALIDATION_LIMITS.feedbackMessage,
+    "Feedback message"
+  );
 
   const result = await db.collection("feedback").add({
     userId: callerUid,
     userName: caller.fromUserName,
     userEmail: typeof callerAuth.token.email === "string" ? callerAuth.token.email : "",
     type: data.type,
-    subject: data.subject.trim(),
-    message: data.message.trim(),
+    subject,
+    message,
     status: "new",
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });

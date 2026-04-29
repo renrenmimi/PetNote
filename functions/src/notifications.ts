@@ -1,7 +1,7 @@
 import { onDocumentCreated, onDocumentDeleted, onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
-import { getDefaultAvatar } from "./shared";
+import { getDefaultAvatar, optionalTrimmedString, requiredTrimmedString, VALIDATION_LIMITS } from "./shared";
 
 export type ServerNotificationType =
   | "like"
@@ -494,9 +494,27 @@ export const sendNotification = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "Only warning notifications are supported.");
   }
 
-  if (typeof data.message !== "string" || data.message.trim().length === 0) {
-    throw new HttpsError("invalid-argument", "Missing notification message.");
-  }
+  const message = requiredTrimmedString(
+    data.message,
+    VALIDATION_LIMITS.notificationMessage,
+    "Notification message"
+  );
+  const warningReason =
+    data.warningReason === undefined
+      ? undefined
+      : optionalTrimmedString(
+          data.warningReason,
+          VALIDATION_LIMITS.warningReason,
+          "Warning reason"
+        );
+  const warningDetails =
+    data.warningDetails === undefined
+      ? undefined
+      : optionalTrimmedString(
+          data.warningDetails,
+          VALIDATION_LIMITS.warningDetails,
+          "Warning details"
+        );
 
   // The client must not control the `read` flag — otherwise an admin (or
   // anyone replaying the call) could push warnings already marked read and
@@ -507,11 +525,9 @@ export const sendNotification = onCall(async (request) => {
     fromUserId: callerUid,
     fromUserName: "PetNote Team",
     fromUserAvatar: getDefaultAvatar("petnote-team"),
-    message: data.message.trim(),
-    warningReason:
-      typeof data.warningReason === "string" ? data.warningReason.trim() : undefined,
-    warningDetails:
-      typeof data.warningDetails === "string" ? data.warningDetails.trim() : undefined,
+    message,
+    warningReason,
+    warningDetails,
     read: false,
   };
 
