@@ -234,6 +234,12 @@ export async function assertRateLimit(
   });
 }
 
+/**
+ * Applies one batched write page at a time, using document-id cursors so the
+ * operation does not rely on mutated documents disappearing from the query.
+ * Queries that combine filters with this helper's document-id ordering may
+ * need matching composite indexes in firestore.indexes.json.
+ */
 export async function processQueryInBatches(
   queryRef: admin.firestore.Query,
   operation: (batch: admin.firestore.WriteBatch, doc: admin.firestore.QueryDocumentSnapshot) => void
@@ -256,6 +262,10 @@ export async function processQueryInBatches(
   }
 }
 
+/**
+ * Iterates one query page at a time, using the same document-id cursor pattern
+ * as processQueryInBatches for long-running per-document operations.
+ */
 export async function forEachQueryDocumentInBatches(
   queryRef: admin.firestore.Query,
   operation: (doc: admin.firestore.QueryDocumentSnapshot) => Promise<void>
