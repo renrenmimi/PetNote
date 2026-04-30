@@ -73,7 +73,12 @@ export async function getUserProfile(
 ): Promise<UserProfile | null> {
   const cached = userProfileCache.get(userId);
   if (cached && cached.expiresAt > Date.now()) {
+    userProfileCache.delete(userId);
+    userProfileCache.set(userId, cached);
     return cached.profile;
+  }
+  if (cached) {
+    userProfileCache.delete(userId);
   }
 
   const pending = userProfileRequestCache.get(userId);

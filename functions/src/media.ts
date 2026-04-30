@@ -7,6 +7,7 @@ import {
   CLOUDINARY_FOLDER,
 } from "./platform";
 import { getNotificationActor } from "./notifications";
+import { assertRateLimit, RATE_LIMITS } from "./shared";
 
 function signCloudinaryParams(params: Record<string, string>, apiSecret: string): string {
   const paramsToSign = Object.entries(params)
@@ -40,6 +41,11 @@ export const getCloudinaryUploadSignature = onCall(
     if (caller.banned === true) {
       throw new HttpsError("permission-denied", "Banned users cannot upload media.");
     }
+    await assertRateLimit(
+      callerUid,
+      "getCloudinaryUploadSignature",
+      RATE_LIMITS.uploadSignature
+    );
 
     const { resourceType } = request.data as { resourceType?: string };
     if (resourceType !== "image" && resourceType !== "video") {

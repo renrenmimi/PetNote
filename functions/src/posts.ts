@@ -3,7 +3,15 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
 import { cascadeDeletePost, deleteQueryDocs } from "./cleanup";
 import { getNotificationActor } from "./notifications";
-import { getDefaultAvatar, optionalTrimmedString, VALIDATION_LIMITS } from "./shared";
+import {
+  assertRateLimit,
+  getDefaultAvatar,
+  optionalTrimmedString,
+  optionalTrustedHttpsUrl,
+  RATE_LIMITS,
+  TRUSTED_MEDIA_URL_HOSTS,
+  VALIDATION_LIMITS,
+} from "./shared";
 import { getAccessiblePet } from "./pets";
 
 function normalizeTags(tags: unknown): string[] {
@@ -109,6 +117,7 @@ export const createPostCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot create posts.");
   }
+  await assertRateLimit(callerUid, "createPost", RATE_LIMITS.write);
 
   const data = request.data as {
     text?: string;
@@ -141,14 +150,20 @@ export const createPostCallable = onCall(async (request) => {
             type: "image" | "video";
             thumbUrl?: string;
           } = {
-            url: optionalTrimmedString(item.url, VALIDATION_LIMITS.url, "Media URL"),
+            url: optionalTrustedHttpsUrl(
+              item.url,
+              VALIDATION_LIMITS.url,
+              "Media URL",
+              TRUSTED_MEDIA_URL_HOSTS
+            ),
             type: item.type,
           };
           if (item.thumbUrl) {
-            mediaItem.thumbUrl = optionalTrimmedString(
+            mediaItem.thumbUrl = optionalTrustedHttpsUrl(
               item.thumbUrl,
               VALIDATION_LIMITS.url,
-              "Media thumbnail URL"
+              "Media thumbnail URL",
+              TRUSTED_MEDIA_URL_HOSTS
             );
           }
           return mediaItem;
@@ -195,6 +210,7 @@ export const updatePostCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot edit posts.");
   }
+  await assertRateLimit(callerUid, "updatePost", RATE_LIMITS.write);
   const data = request.data as {
     postId?: string;
     text?: string;
@@ -258,6 +274,7 @@ export const setPinnedPostCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot pin posts.");
   }
+  await assertRateLimit(callerUid, "setPinnedPost", RATE_LIMITS.write);
 
   const { postId } = request.data as { postId?: string | null };
   const userRef = db.doc(`users/${callerUid}`);
@@ -296,6 +313,7 @@ export const deletePostCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot delete posts.");
   }
+  await assertRateLimit(callerUid, "deletePost", RATE_LIMITS.write);
 
   const { postId } = request.data as { postId?: string };
   if (!postId || typeof postId !== "string") {
@@ -329,6 +347,7 @@ export const createCommentCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot comment.");
   }
+  await assertRateLimit(callerUid, "createComment", RATE_LIMITS.write);
 
   const data = request.data as {
     postId?: string;
@@ -405,6 +424,7 @@ export const deleteCommentCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot delete comments.");
   }
+  await assertRateLimit(callerUid, "deleteComment", RATE_LIMITS.write);
 
   const { postId, commentId } = request.data as { postId?: string; commentId?: string };
   if (!postId || !commentId) {

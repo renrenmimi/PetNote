@@ -3,13 +3,19 @@ import { onDocumentCreated, onDocumentDeleted } from "firebase-functions/v2/fire
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
 import { getNotificationActor } from "./notifications";
+import { deleteCollectionPath } from "./cleanup";
 import {
   applyReviewAggregationDelta,
+  assertRateLimit,
   getDefaultAvatar,
   LOCATION_PHOTO_PREVIEW_LIMIT,
   mergeCappedStrings,
   optionalTrimmedString,
+  optionalTrustedHttpsUrl,
+  RATE_LIMITS,
   requiredTrimmedString,
+  requiredTrustedHttpsUrl,
+  TRUSTED_MEDIA_URL_HOSTS,
   validateCoordinateRange,
   VALIDATION_LIMITS,
 } from "./shared";
@@ -41,6 +47,26 @@ const allowedPlaceFeatures = new Set([
   "trails",
   "food_nearby",
 ]);
+
+function sanitizePhotoUrls(
+  value: unknown,
+  maxCount: number,
+  fieldName: string
+): string[] {
+  return Array.isArray(value)
+    ? value
+        .filter((photo): photo is string => typeof photo === "string" && photo.trim().length > 0)
+        .slice(0, maxCount)
+        .map((photo) =>
+          optionalTrustedHttpsUrl(
+            photo,
+            VALIDATION_LIMITS.url,
+            fieldName,
+            TRUSTED_MEDIA_URL_HOSTS
+          )
+        )
+    : [];
+}
 
 function locationPhotoEntryId(url: string): string {
   return createHash("sha1").update(url).digest("hex");
@@ -176,12 +202,7 @@ function sanitizePlaceDraft(value: unknown): {
         )
       )
     : [];
-  const photos = Array.isArray(data.photos)
-    ? data.photos
-        .filter((photo): photo is string => typeof photo === "string" && photo.trim().length > 0)
-        .slice(0, 5)
-        .map((photo) => optionalTrimmedString(photo, VALIDATION_LIMITS.url, "Photo URL"))
-    : [];
+  const photos = sanitizePhotoUrls(data.photos, 5, "Photo URL");
   const source = data.source === "meetup" ? "meetup" : "user";
 
   return {
@@ -352,6 +373,18 @@ export const onCheckinDeleted = onDocumentDeleted(
   }
 );
 
+export const onLocationDeleted = onDocumentDeleted(
+  "locations/{locationId}",
+  async (event) => {
+    const locationPath = `locations/${event.params.locationId}`;
+    await Promise.all([
+      deleteCollectionPath(`${locationPath}/photoEntries`),
+      deleteCollectionPath(`${locationPath}/reviews`),
+      deleteCollectionPath(`${locationPath}/checkins`),
+    ]);
+  }
+);
+
 export const addPlaceCallable = onCall(async (request) => {
   const callerAuth = request.auth;
   const callerUid = callerAuth?.uid;
@@ -364,6 +397,7 @@ export const addPlaceCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot create places.");
   }
+  await assertRateLimit(callerUid, "addPlace", RATE_LIMITS.strictWrite);
 
   const place = sanitizePlaceDraft(request.data);
   const locationId = buildLocationId(place.lat, place.lng, place.name);
@@ -426,17 +460,13 @@ export const addLocationPhotosCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot add place photos.");
   }
+  await assertRateLimit(callerUid, "addLocationPhotos", RATE_LIMITS.write);
 
   const data = request.data as { locationId?: string; photoUrls?: unknown };
   if (!data.locationId || typeof data.locationId !== "string") {
     throw new HttpsError("invalid-argument", "Missing locationId.");
   }
-  const photoUrls = Array.isArray(data.photoUrls)
-    ? data.photoUrls
-        .filter((photo): photo is string => typeof photo === "string" && photo.trim().length > 0)
-        .slice(0, 5)
-        .map((photo) => optionalTrimmedString(photo, VALIDATION_LIMITS.url, "Photo URL"))
-    : [];
+  const photoUrls = sanitizePhotoUrls(data.photoUrls, 5, "Photo URL");
   if (photoUrls.length === 0) {
     return { success: true };
   }
@@ -471,6 +501,7 @@ export const submitReviewCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot review locations.");
   }
+  await assertRateLimit(callerUid, "submitReview", RATE_LIMITS.write);
 
   const data = request.data as {
     locationId?: string;
@@ -529,12 +560,7 @@ export const submitReviewCallable = onCall(async (request) => {
         VALIDATION_LIMITS.reviewComment,
         "Review comment"
       ),
-      photos: Array.isArray(data.photos)
-        ? data.photos
-            .filter((p): p is string => typeof p === "string" && p.trim().length > 0)
-            .slice(0, 3)
-            .map((photo) => optionalTrimmedString(photo, VALIDATION_LIMITS.url, "Photo URL"))
-        : [],
+      photos: sanitizePhotoUrls(data.photos, 3, "Photo URL"),
       tags: Array.isArray(data.tags)
         ? data.tags
             .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
@@ -574,6 +600,7 @@ export const checkInCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot check in.");
   }
+  await assertRateLimit(callerUid, "checkIn", RATE_LIMITS.write);
 
   const data = request.data as {
     locationId?: string;
@@ -588,10 +615,11 @@ export const checkInCallable = onCall(async (request) => {
   if (!data.photoUrl || typeof data.photoUrl !== "string") {
     throw new HttpsError("invalid-argument", "Missing photoUrl.");
   }
-  const photoUrl = requiredTrimmedString(
+  const photoUrl = requiredTrustedHttpsUrl(
     data.photoUrl,
     VALIDATION_LIMITS.url,
-    "Photo URL"
+    "Photo URL",
+    TRUSTED_MEDIA_URL_HOSTS
   );
 
   const locationRef = db.doc(`locations/${data.locationId}`);
