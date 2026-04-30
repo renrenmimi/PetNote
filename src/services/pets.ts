@@ -132,7 +132,7 @@ function setPetCacheEntry(petId: string, pet: Pet | null): void {
   });
 }
 
-function clearPetCache(petId?: string): void {
+export function clearPetCache(petId?: string): void {
   if (petId) {
     petCache.delete(petId);
     petRequestCache.delete(petId);
@@ -415,7 +415,12 @@ export async function removeFamilyMember(
 export async function getPetById(petId: string): Promise<Pet | null> {
   const cached = petCache.get(petId);
   if (cached && cached.expiresAt > Date.now()) {
+    petCache.delete(petId);
+    petCache.set(petId, cached);
     return cached.pet;
+  }
+  if (cached) {
+    petCache.delete(petId);
   }
 
   const pending = petRequestCache.get(petId);

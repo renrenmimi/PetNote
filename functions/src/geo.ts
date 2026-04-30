@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db, GEOAPIFY_API_KEY } from "./platform";
 import { getNotificationActor } from "./notifications";
+import { assertRateLimit, RATE_LIMITS } from "./shared";
 
 type GeoapifyFeature = {
   properties?: {
@@ -197,6 +198,7 @@ export const searchAddressesCallable = onCall(
     const callerUid = request.auth?.uid;
     if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
     await assertLookupAllowed(callerUid);
+    await assertRateLimit(callerUid, "searchAddresses", RATE_LIMITS.read);
 
     const rawText =
       typeof (request.data as { text?: unknown }).text === "string"
@@ -240,6 +242,7 @@ export const reverseGeocodeCallable = onCall(
     const callerUid = request.auth?.uid;
     if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
     await assertLookupAllowed(callerUid);
+    await assertRateLimit(callerUid, "reverseGeocode", RATE_LIMITS.read);
 
     const { lat, lng } = request.data as { lat?: unknown; lng?: unknown };
     assertLatLng(lat, lng);

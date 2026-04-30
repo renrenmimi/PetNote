@@ -3,9 +3,13 @@ import { admin, db } from "./platform";
 import { cascadeDeletePet } from "./cleanup";
 import { getNotificationActor } from "./notifications";
 import {
+  assertRateLimit,
   getDefaultAvatar,
   optionalTrimmedString,
+  optionalTrustedHttpsUrl,
+  RATE_LIMITS,
   stripUndefined,
+  TRUSTED_AVATAR_URL_HOSTS,
   VALIDATION_LIMITS,
 } from "./shared";
 
@@ -97,10 +101,11 @@ function sanitizePetDraft(value: unknown): {
     "Pet breed"
   );
   const bio = optionalTrimmedString(data.bio, VALIDATION_LIMITS.bio, "Pet bio");
-  const avatarUrl = optionalTrimmedString(
+  const avatarUrl = optionalTrustedHttpsUrl(
     data.avatarUrl,
     VALIDATION_LIMITS.url,
-    "Pet avatar URL"
+    "Pet avatar URL",
+    TRUSTED_AVATAR_URL_HOSTS
   );
   const birthday = timestampFromMillis(data.birthdayMillis);
 
@@ -140,6 +145,7 @@ export const createPetCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot create pets.");
   }
+  await assertRateLimit(callerUid, "createPet", RATE_LIMITS.strictWrite);
 
   const payload = sanitizePetDraft(request.data);
   const relationshipData = sanitizePetRelationship(
@@ -196,6 +202,7 @@ export const updatePetCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot update pets.");
   }
+  await assertRateLimit(callerUid, "updatePet", RATE_LIMITS.write);
 
   const { petId, ...rawUpdates } = request.data as { petId?: string } & Record<string, unknown>;
   if (!petId || typeof petId !== "string") {
@@ -256,10 +263,11 @@ export const updatePetCallable = onCall(async (request) => {
     );
   }
   if ("avatarUrl" in rawUpdates) {
-    updates.avatarUrl = optionalTrimmedString(
+    updates.avatarUrl = optionalTrustedHttpsUrl(
       rawUpdates.avatarUrl,
       VALIDATION_LIMITS.url,
-      "Pet avatar URL"
+      "Pet avatar URL",
+      TRUSTED_AVATAR_URL_HOSTS
     );
   }
   if ("birthdayMillis" in rawUpdates) {
@@ -284,6 +292,7 @@ export const deletePetCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot delete pets.");
   }
+  await assertRateLimit(callerUid, "deletePet", RATE_LIMITS.write);
 
   const { petId } = request.data as { petId?: string };
   if (!petId || typeof petId !== "string") {
@@ -316,6 +325,7 @@ export const followPetCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot follow pets.");
   }
+  await assertRateLimit(callerUid, "followPet", RATE_LIMITS.write);
 
   const { petId } = request.data as { petId?: string };
   if (!petId || typeof petId !== "string") {
@@ -358,6 +368,7 @@ export const unfollowPetCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot unfollow pets.");
   }
+  await assertRateLimit(callerUid, "unfollowPet", RATE_LIMITS.write);
 
   const { petId } = request.data as { petId?: string };
   if (!petId || typeof petId !== "string") {

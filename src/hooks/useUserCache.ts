@@ -25,7 +25,12 @@ export async function getCachedUser(
 ): Promise<UserProfile | null> {
   const cached = userCache.get(userId);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    userCache.delete(userId);
+    userCache.set(userId, cached);
     return cached.data;
+  }
+  if (cached) {
+    userCache.delete(userId);
   }
 
   const profile = await getUserProfile(userId);
@@ -35,4 +40,8 @@ export async function getCachedUser(
   }
 
   return null;
+}
+
+export function clearCachedUsers(): void {
+  userCache.clear();
 }

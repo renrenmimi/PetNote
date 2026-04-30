@@ -4,11 +4,15 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { admin, db } from "./platform";
 import { getNotificationActor } from "./notifications";
 import {
+  assertRateLimit,
   batchChunked,
   getDefaultAvatar,
   optionalTrimmedString,
+  optionalTrustedHttpsUrl,
+  RATE_LIMITS,
   requiredTrimmedString,
   stripUndefined,
+  TRUSTED_MEDIA_URL_HOSTS,
   validateCoordinateRange,
   VALIDATION_LIMITS,
 } from "./shared";
@@ -186,6 +190,7 @@ export const createMeetupCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot create meetups.");
   }
+  await assertRateLimit(callerUid, "createMeetup", RATE_LIMITS.strictWrite);
 
   const data = request.data as {
     title?: string;
@@ -254,7 +259,12 @@ export const createMeetupCallable = onCall(async (request) => {
       description,
       coverImage:
         typeof data.coverImage === "string" && data.coverImage.trim().length > 0
-          ? optionalTrimmedString(data.coverImage, VALIDATION_LIMITS.url, "Cover image URL")
+          ? optionalTrustedHttpsUrl(
+              data.coverImage,
+              VALIDATION_LIMITS.url,
+              "Cover image URL",
+              TRUSTED_MEDIA_URL_HOSTS
+            )
           : undefined,
       date: admin.firestore.Timestamp.fromMillis(dateMillis),
       duration,
@@ -292,6 +302,7 @@ export const updateMeetupCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot edit meetups.");
   }
+  await assertRateLimit(callerUid, "updateMeetup", RATE_LIMITS.write);
 
   const data = request.data as {
     meetupId?: string;
@@ -378,7 +389,12 @@ export const updateMeetupCallable = onCall(async (request) => {
     description,
     coverImage:
       typeof data.coverImage === "string" && data.coverImage.trim().length > 0
-        ? optionalTrimmedString(data.coverImage, VALIDATION_LIMITS.url, "Cover image URL")
+        ? optionalTrustedHttpsUrl(
+            data.coverImage,
+            VALIDATION_LIMITS.url,
+            "Cover image URL",
+            TRUSTED_MEDIA_URL_HOSTS
+          )
         : undefined,
     date: admin.firestore.Timestamp.fromMillis(dateMillis),
     duration,
@@ -421,6 +437,7 @@ export const cancelMeetupCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot cancel meetups.");
   }
+  await assertRateLimit(callerUid, "cancelMeetup", RATE_LIMITS.write);
 
   const { meetupId } = request.data as { meetupId?: string };
   if (!meetupId || typeof meetupId !== "string") {
@@ -454,6 +471,7 @@ export const joinMeetupCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot join meetups.");
   }
+  await assertRateLimit(callerUid, "joinMeetup", RATE_LIMITS.write);
 
   const { meetupId, petId } = request.data as {
     meetupId: string; petId?: string;
@@ -619,7 +637,9 @@ export const autoCompleteMeetups = onSchedule("every 15 minutes", async () => {
 });
 
 export const checkMeetupStatusCallable = onCall(async (request) => {
-  if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Must be logged in.");
+  const callerUid = request.auth?.uid;
+  if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+  await assertRateLimit(callerUid, "checkMeetupStatus", RATE_LIMITS.read);
 
   const { meetupId } = request.data as { meetupId: string };
   if (!meetupId) throw new HttpsError("invalid-argument", "Missing meetupId.");

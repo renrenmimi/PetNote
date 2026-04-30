@@ -3,6 +3,20 @@ import { admin, db } from "./platform";
 
 export const FIRESTORE_BATCH_LIMIT = 450;
 export const LOCATION_PHOTO_PREVIEW_LIMIT = 30;
+export const TRUSTED_AVATAR_URL_HOSTS = [
+  "res.cloudinary.com",
+  "api.dicebear.com",
+  "lh3.googleusercontent.com",
+] as const;
+export const TRUSTED_MEDIA_URL_HOSTS = ["res.cloudinary.com"] as const;
+
+export const RATE_LIMITS = {
+  read: { limit: 120, windowMs: 60_000 },
+  write: { limit: 30, windowMs: 60_000 },
+  strictWrite: { limit: 10, windowMs: 60_000 },
+  uploadSignature: { limit: 30, windowMs: 60_000 },
+  accountDeletion: { limit: 3, windowMs: 60 * 60_000 },
+} as const;
 
 export const VALIDATION_LIMITS = {
   displayName: 30,
@@ -86,6 +100,64 @@ export function validateCoordinateRange(lat: number, lng: number): boolean {
   );
 }
 
+export function validateTrustedHttpsUrl(
+  value: string,
+  fieldName: string,
+  allowedHosts: readonly string[]
+): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new HttpsError("invalid-argument", `${fieldName} must be a valid URL.`);
+  }
+  if (parsed.protocol !== "https:" || !allowedHosts.includes(parsed.hostname)) {
+    throw new HttpsError(
+      "invalid-argument",
+      `${fieldName} must use a trusted HTTPS host.`
+    );
+  }
+  return value;
+}
+
+export function isTrustedHttpsUrl(
+  value: unknown,
+  allowedHosts: readonly string[]
+): value is string {
+  if (typeof value !== "string") return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:" || !allowedHosts.includes(parsed.hostname)) {
+    return false;
+  }
+  return true;
+}
+
+export function optionalTrustedHttpsUrl(
+  value: unknown,
+  maxLength: number,
+  fieldName: string,
+  allowedHosts: readonly string[]
+): string {
+  const trimmed = optionalTrimmedString(value, maxLength, fieldName);
+  if (!trimmed) return "";
+  return validateTrustedHttpsUrl(trimmed, fieldName, allowedHosts);
+}
+
+export function requiredTrustedHttpsUrl(
+  value: unknown,
+  maxLength: number,
+  fieldName: string,
+  allowedHosts: readonly string[]
+): string {
+  const trimmed = requiredTrimmedString(value, maxLength, fieldName);
+  return validateTrustedHttpsUrl(trimmed, fieldName, allowedHosts);
+}
+
 export function mergeCappedStrings(
   existing: unknown,
   additions: string[],
@@ -116,15 +188,94 @@ export async function batchChunked(
   }
 }
 
+export async function assertRateLimit(
+  callerUid: string,
+  action: string,
+  options: { limit: number; windowMs: number } = RATE_LIMITS.write
+): Promise<void> {
+  const now = Date.now();
+  const windowStartedAt = Math.floor(now / options.windowMs) * options.windowMs;
+  const safeUid = callerUid.replace(/\//g, "_");
+  const safeAction = action.replace(/[^A-Za-z0-9_-]/g, "_");
+  const rateLimitRef = db.doc(`callableRateLimits/${safeUid}_${safeAction}`);
+
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(rateLimitRef);
+    const data = snapshot.exists ? snapshot.data() ?? {} : {};
+    const storedWindow =
+      typeof data.windowStartedAt === "number" ? data.windowStartedAt : Number.NaN;
+    const currentCount =
+      storedWindow === windowStartedAt && typeof data.count === "number"
+        ? data.count
+        : 0;
+
+    if (currentCount >= options.limit) {
+      throw new HttpsError(
+        "resource-exhausted",
+        "Too many requests. Please wait a moment and try again."
+      );
+    }
+
+    transaction.set(
+      rateLimitRef,
+      {
+        userId: callerUid,
+        action,
+        windowStartedAt,
+        windowMs: options.windowMs,
+        count: currentCount + 1,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        expiresAt: admin.firestore.Timestamp.fromMillis(
+          windowStartedAt + options.windowMs * 2
+        ),
+      },
+      { merge: true }
+    );
+  });
+}
+
 export async function processQueryInBatches(
   queryRef: admin.firestore.Query,
   operation: (batch: admin.firestore.WriteBatch, doc: admin.firestore.QueryDocumentSnapshot) => void
 ): Promise<void> {
+  const orderedQuery: admin.firestore.Query = queryRef.orderBy(
+    admin.firestore.FieldPath.documentId()
+  );
+  let lastDoc: admin.firestore.QueryDocumentSnapshot | null = null;
+
   while (true) {
-    const snapshot = await queryRef.limit(FIRESTORE_BATCH_LIMIT).get();
+    const pageQuery: admin.firestore.Query = lastDoc
+      ? orderedQuery.startAfter(lastDoc).limit(FIRESTORE_BATCH_LIMIT)
+      : orderedQuery.limit(FIRESTORE_BATCH_LIMIT);
+    const snapshot: admin.firestore.QuerySnapshot = await pageQuery.get();
     if (snapshot.empty) return;
 
     await batchChunked(snapshot.docs, operation);
+    lastDoc = snapshot.docs[snapshot.docs.length - 1];
+    if (snapshot.size < FIRESTORE_BATCH_LIMIT) return;
+  }
+}
+
+export async function forEachQueryDocumentInBatches(
+  queryRef: admin.firestore.Query,
+  operation: (doc: admin.firestore.QueryDocumentSnapshot) => Promise<void>
+): Promise<void> {
+  const orderedQuery: admin.firestore.Query = queryRef.orderBy(
+    admin.firestore.FieldPath.documentId()
+  );
+  let lastDoc: admin.firestore.QueryDocumentSnapshot | null = null;
+
+  while (true) {
+    const pageQuery: admin.firestore.Query = lastDoc
+      ? orderedQuery.startAfter(lastDoc).limit(FIRESTORE_BATCH_LIMIT)
+      : orderedQuery.limit(FIRESTORE_BATCH_LIMIT);
+    const snapshot: admin.firestore.QuerySnapshot = await pageQuery.get();
+    if (snapshot.empty) return;
+
+    for (const doc of snapshot.docs) {
+      await operation(doc);
+    }
+    lastDoc = snapshot.docs[snapshot.docs.length - 1];
     if (snapshot.size < FIRESTORE_BATCH_LIMIT) return;
   }
 }

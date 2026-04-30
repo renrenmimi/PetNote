@@ -18,6 +18,7 @@ export {
   updateMeetupCallable,
 } from "./meetups";
 export {
+  cleanupOldReadNotifications,
   onCommentCreated,
   onCommentDeleted,
   onFollowingPetCreated,
@@ -34,6 +35,7 @@ export {
   checkInCallable,
   onCheckinCreated,
   onCheckinDeleted,
+  onLocationDeleted,
   onReviewCreated,
   onReviewDeleted,
   submitReviewCallable,

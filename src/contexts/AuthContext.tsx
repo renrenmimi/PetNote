@@ -19,11 +19,14 @@ import {
 } from "../services/adminState";
 import {
   createUserProfile,
+  clearUserProfileCache,
   generateUniqueUsername,
   isUsernameTaken,
   updateUserProfile,
   type UserProfile,
 } from "../services/users";
+import { clearPetCache } from "../services/pets";
+import { clearCachedUsers } from "../hooks/useUserCache";
 
 type AuthContextValue = {
   user: User | null;
@@ -232,6 +235,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await firebaseSignOut(auth);
+    clearUserProfileCache();
+    clearPetCache();
+    clearCachedUsers();
   }, []);
 
   const isAdmin = adminState?.role === "admin";

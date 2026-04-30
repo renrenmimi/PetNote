@@ -1,7 +1,19 @@
 import { onDocumentCreated, onDocumentDeleted, onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import { admin, db } from "./platform";
-import { getDefaultAvatar, optionalTrimmedString, requiredTrimmedString, VALIDATION_LIMITS } from "./shared";
+import {
+  assertRateLimit,
+  batchChunked,
+  FIRESTORE_BATCH_LIMIT,
+  getDefaultAvatar,
+  isTrustedHttpsUrl,
+  optionalTrimmedString,
+  RATE_LIMITS,
+  requiredTrimmedString,
+  TRUSTED_AVATAR_URL_HOSTS,
+  VALIDATION_LIMITS,
+} from "./shared";
 
 export type ServerNotificationType =
   | "like"
@@ -46,10 +58,11 @@ export async function getNotificationActor(userId: string): Promise<Notification
     typeof data.displayName === "string" && data.displayName.trim().length > 0
       ? data.displayName
       : "PetNote User";
-  const avatarUrl =
-    typeof data.avatarUrl === "string" && data.avatarUrl.trim().length > 0
-      ? data.avatarUrl
-      : getDefaultAvatar(userId);
+  const storedAvatarUrl =
+    typeof data.avatarUrl === "string" ? data.avatarUrl.trim() : "";
+  const avatarUrl = isTrustedHttpsUrl(storedAvatarUrl, TRUSTED_AVATAR_URL_HOSTS)
+    ? storedAvatarUrl
+    : getDefaultAvatar(userId);
 
   return {
     fromUserId: userId,
@@ -102,6 +115,33 @@ export async function createNotificationIfAllowed(
   const result = await db.collection("notifications").add(docData);
   return result.id;
 }
+
+const READ_NOTIFICATION_RETENTION_DAYS = 90;
+
+export const cleanupOldReadNotifications = onSchedule(
+  { schedule: "every 24 hours", timeoutSeconds: 540, memory: "512MiB" },
+  async () => {
+    const cutoff = admin.firestore.Timestamp.fromMillis(
+      Date.now() - READ_NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000
+    );
+
+    while (true) {
+      const snapshot = await db
+        .collection("notifications")
+        .where("read", "==", true)
+        .where("createdAt", "<", cutoff)
+        .orderBy("createdAt", "asc")
+        .limit(FIRESTORE_BATCH_LIMIT)
+        .get();
+
+      if (snapshot.empty) return;
+      await batchChunked(snapshot.docs, (batch, docSnap) => {
+        batch.delete(docSnap.ref);
+      });
+      if (snapshot.size < FIRESTORE_BATCH_LIMIT) return;
+    }
+  }
+);
 
 export async function getPetFamilyRecipientIds(
   petId: string,
@@ -473,6 +513,7 @@ export const sendNotification = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot send notifications.");
   }
+  await assertRateLimit(callerUid, "sendNotification", RATE_LIMITS.write);
 
   if (caller.role !== "admin") {
     throw new HttpsError("permission-denied", "Only admins can send warning notifications.");

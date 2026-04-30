@@ -2,8 +2,10 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
 import { getNotificationActor } from "./notifications";
 import {
+  assertRateLimit,
   getDefaultAvatar,
   optionalTrimmedString,
+  RATE_LIMITS,
   requiredTrimmedString,
   VALIDATION_LIMITS,
 } from "./shared";
@@ -16,6 +18,7 @@ export const reportContentCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot submit reports.");
   }
+  await assertRateLimit(callerUid, "reportContent", RATE_LIMITS.strictWrite);
 
   const data = request.data as {
     targetType?: "post" | "comment" | "user";
@@ -86,6 +89,7 @@ export const submitFeedbackCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot submit feedback.");
   }
+  await assertRateLimit(callerUid, "submitFeedback", RATE_LIMITS.strictWrite);
 
   const data = request.data as {
     type?: "bug" | "feature" | "complaint" | "other";

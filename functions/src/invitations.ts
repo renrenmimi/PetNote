@@ -2,7 +2,7 @@ import { randomInt } from "node:crypto";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
 import { getNotificationActor } from "./notifications";
-import { getDefaultAvatar, stripUndefined } from "./shared";
+import { assertRateLimit, getDefaultAvatar, RATE_LIMITS, stripUndefined } from "./shared";
 
 type ActiveInvitation = {
   code: string;
@@ -165,6 +165,7 @@ export const createInvitationCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot create invitations.");
   }
+  await assertRateLimit(callerUid, "createInvitation", RATE_LIMITS.write);
 
   const { petId } = request.data as { petId?: string };
   if (!petId || typeof petId !== "string") {
@@ -236,6 +237,7 @@ export const getActiveInvitationCallable = onCall(async (request) => {
   if (!callerUid) {
     throw new HttpsError("unauthenticated", "Must be logged in.");
   }
+  await assertRateLimit(callerUid, "getActiveInvitation", RATE_LIMITS.read);
 
   const { petId } = request.data as { petId?: string };
   if (!petId || typeof petId !== "string") {
@@ -255,6 +257,7 @@ export const validateInvitationCallable = onCall(async (request) => {
   if (!callerUid) {
     throw new HttpsError("unauthenticated", "Must be logged in.");
   }
+  await assertRateLimit(callerUid, "validateInvitation", RATE_LIMITS.read);
 
   const normalizedCode = normalizeInvitationCode(
     (request.data as { code?: unknown } | undefined)?.code
@@ -294,6 +297,7 @@ export const redeemInvitationCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot redeem invitations.");
   }
+  await assertRateLimit(callerUid, "redeemInvitation", RATE_LIMITS.strictWrite);
 
   const data = request.data as {
     code?: string;
@@ -424,6 +428,7 @@ export const removeFamilyMemberCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot remove family members.");
   }
+  await assertRateLimit(callerUid, "removeFamilyMember", RATE_LIMITS.write);
 
   const { petId, targetUserId } = request.data as {
     petId?: string;

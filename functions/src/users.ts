@@ -11,10 +11,15 @@ import {
 } from "./cleanup";
 import { getNotificationActor } from "./notifications";
 import {
+  assertRateLimit,
   batchChunked,
+  forEachQueryDocumentInBatches,
   FIRESTORE_BATCH_LIMIT,
   getDefaultAvatar,
   stripUndefined,
+  optionalTrustedHttpsUrl,
+  RATE_LIMITS,
+  TRUSTED_AVATAR_URL_HOSTS,
   VALIDATION_LIMITS,
 } from "./shared";
 
@@ -49,15 +54,14 @@ function normalizeBio(value: unknown): string | undefined {
 
 function normalizeAvatarUrl(value: unknown): string | undefined {
   if (value === undefined) return undefined;
-  if (typeof value !== "string") {
-    throw new HttpsError("invalid-argument", "Avatar URL must be a string.");
-  }
-  const trimmed = value.trim();
-  if (!trimmed) return undefined;
-  if (trimmed.length > VALIDATION_LIMITS.url) {
-    throw new HttpsError("invalid-argument", "Avatar URL is too long.");
-  }
-  return trimmed;
+  return (
+    optionalTrustedHttpsUrl(
+      value,
+      VALIDATION_LIMITS.url,
+      "Avatar URL",
+      TRUSTED_AVATAR_URL_HOSTS
+    ) || undefined
+  );
 }
 
 function usernameKey(displayNameLower: string): string {
@@ -214,6 +218,7 @@ export const ensureUserProfileCallable = onCall(async (request) => {
   if (!callerUid) {
     throw new HttpsError("unauthenticated", "Must be logged in.");
   }
+  await assertRateLimit(callerUid, "ensureUserProfile", RATE_LIMITS.strictWrite);
 
   const data = requestData(request.data);
   const requestedName = normalizeDisplayName(data.displayName);
@@ -292,6 +297,11 @@ export const checkDisplayNameAvailabilityCallable = onCall(async (request) => {
   if (!callerUid) {
     throw new HttpsError("unauthenticated", "Must be logged in.");
   }
+  await assertRateLimit(
+    callerUid,
+    "checkDisplayNameAvailability",
+    RATE_LIMITS.read
+  );
 
   const data = requestData(request.data);
   const displayName = normalizeDisplayName(data.displayName);
@@ -322,6 +332,7 @@ export const updateUserProfileCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot update profiles.");
   }
+  await assertRateLimit(callerUid, "updateUserProfile", RATE_LIMITS.write);
 
   const data = requestData(request.data);
   const displayName =
@@ -400,6 +411,7 @@ export const deleteUserAccount = onCall({ timeoutSeconds: 540 }, async (request)
   if (callerUid !== userId) {
     throw new HttpsError("permission-denied", "Can only delete your own account.");
   }
+  await assertRateLimit(callerUid, "deleteUserAccount", RATE_LIMITS.accountDeletion);
 
   const userRef = db.doc(`users/${userId}`);
   await userRef.set(
@@ -422,24 +434,30 @@ export const deleteUserAccount = onCall({ timeoutSeconds: 540 }, async (request)
   };
 
   await runStep("posts", async () => {
-    const postsSnap = await db.collection("posts").where("authorId", "==", userId).get();
-    for (const docSnap of postsSnap.docs) {
-      await cascadeDeletePost(docSnap.id);
-    }
+    await forEachQueryDocumentInBatches(
+      db.collection("posts").where("authorId", "==", userId),
+      async (docSnap) => {
+        await cascadeDeletePost(docSnap.id);
+      }
+    );
   });
 
   await runStep("pets", async () => {
-    const petsSnap = await db.collection("pets").where("ownerId", "==", userId).get();
-    for (const docSnap of petsSnap.docs) {
-      await cascadeDeletePet(docSnap.id);
-    }
+    await forEachQueryDocumentInBatches(
+      db.collection("pets").where("ownerId", "==", userId),
+      async (docSnap) => {
+        await cascadeDeletePet(docSnap.id);
+      }
+    );
   });
 
   await runStep("meetups", async () => {
-    const meetupsSnap = await db.collection("meetups").where("organizerId", "==", userId).get();
-    for (const docSnap of meetupsSnap.docs) {
-      await cascadeDeleteMeetup(docSnap.id);
-    }
+    await forEachQueryDocumentInBatches(
+      db.collection("meetups").where("organizerId", "==", userId),
+      async (docSnap) => {
+        await cascadeDeleteMeetup(docSnap.id);
+      }
+    );
   });
 
   const crossRefSteps: Array<[string, () => Promise<void>]> = [
