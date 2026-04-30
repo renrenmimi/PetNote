@@ -177,6 +177,18 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Backend-only rate-limit buckets. These are written with Admin SDK by
+    // callable functions and must never be readable or writable by clients.
+    match /callableRateLimits/{docId} {
+      allow read: if false;
+      allow write: if false;
+    }
+
+    match /geoapifyRateLimits/{docId} {
+      allow read: if false;
+      allow write: if false;
+    }
+
     // ========= notifications =========
     match /notifications/{notificationId} {
       allow read: if isAuthenticated() &&
