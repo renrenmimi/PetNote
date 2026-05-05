@@ -206,19 +206,37 @@ export async function getMeetupPrivateAddress(
 }
 
 export async function getMeetupsByLocation(
-  locationId: string
-): Promise<Meetup[]> {
+  locationId: string,
+  options?: { limitCount?: number; lastDoc?: QueryDocumentSnapshot }
+): Promise<{
+  meetups: Meetup[];
+  lastDoc: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+}> {
+  const limitCount = options?.limitCount ?? 50;
   const meetupsRef = collection(db, "meetups");
-  const meetupQuery = query(
-    meetupsRef,
+  const constraints: QueryConstraint[] = [
     where("locationId", "==", locationId),
-    orderBy("date", "desc")
-  );
-  const snapshot = await getDocs(meetupQuery);
-  return snapshot.docs.map((docSnap) => ({
+    orderBy("date", "desc"),
+    limit(limitCount),
+  ];
+  if (options?.lastDoc) {
+    constraints.push(startAfter(options.lastDoc));
+  }
+  const snapshot = await getDocs(query(meetupsRef, ...constraints));
+  const meetups = snapshot.docs.map((docSnap) => ({
     id: docSnap.id,
     ...(docSnap.data() as MeetupData),
   }));
+  const nextLast =
+    (snapshot.docs[snapshot.docs.length - 1] as
+      | QueryDocumentSnapshot
+      | undefined) ?? null;
+  return {
+    meetups,
+    lastDoc: nextLast,
+    hasMore: snapshot.docs.length === limitCount,
+  };
 }
 
 export async function getUpcomingMeetups(

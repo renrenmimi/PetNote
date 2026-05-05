@@ -138,9 +138,11 @@ export function LocationDetail() {
       getCheckins(id, 20),
     ]);
     setLocation(loc);
-    setReviews(revs);
+    setReviews(revs.reviews);
     setCheckins(checkinList);
-    setMeetups(meetupsData.filter((meetup) => meetup.status === "completed"));
+    setMeetups(
+      meetupsData.meetups.filter((meetup) => meetup.status === "completed")
+    );
     if (userId) {
       const existingReview = await getUserReview(id, userId);
       setUserReview(existingReview);
