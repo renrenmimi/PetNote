@@ -3,6 +3,7 @@
   "description": "PetNote Cloud Functions",
   "scripts": {
     "build": "tsc",
+    "lint": "eslint .",
     "migrate:admin-state": "node scripts/migrate-admin-state.js",
     "serve": "npm run build && firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions"
@@ -23,7 +24,11 @@
     "uuid": "^14.0.0"
   },
   "devDependencies": {
-    "typescript": "^5.9.0"
+    "@eslint/js": "^9.39.1",
+    "eslint": "^9.39.1",
+    "globals": "^16.5.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.46.4"
   },
   "private": true
 }
