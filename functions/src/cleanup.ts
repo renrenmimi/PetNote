@@ -57,7 +57,14 @@ export const onPetDeleted = onDocumentDeleted("pets/{petId}", async (event) => {
     processQueryInBatches(
       db.collection("posts").where("petId", "==", petId),
       (batch, doc) => {
-        batch.update(doc.ref, { petId: "", petName: "", petAvatarUrl: "" });
+        // FieldValue.delete() instead of empty strings: empty strings still
+        // index, so where("petId","==","") would otherwise match orphaned
+        // posts. Deleting the field removes them from petId-keyed indexes.
+        batch.update(doc.ref, {
+          petId: admin.firestore.FieldValue.delete(),
+          petName: admin.firestore.FieldValue.delete(),
+          petAvatarUrl: admin.firestore.FieldValue.delete(),
+        });
       }
     ),
   ]);

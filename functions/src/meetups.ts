@@ -250,7 +250,14 @@ export const createMeetupCallable = onCall(async (request) => {
       })
     : toStoredMeetupLocation(location);
 
-  const meetupRef = await db.collection("meetups").add(
+  // Pre-allocate the meetup id so the main doc and the private/address doc
+  // commit atomically in one batch. Previously the two were sequential
+  // writes — a failure between them left a private meetup without its
+  // address subdocument, breaking participants' detail page.
+  const meetupRef = db.collection("meetups").doc();
+  const batch = db.batch();
+  batch.set(
+    meetupRef,
     stripUndefined({
       organizerId: callerUid,
       organizerName: caller.fromUserName,
@@ -281,7 +288,7 @@ export const createMeetupCallable = onCall(async (request) => {
   );
 
   if (isPrivate) {
-    await db.doc(`meetups/${meetupRef.id}/private/address`).set({
+    batch.set(db.doc(`meetups/${meetupRef.id}/private/address`), {
       address: location.address,
       lat: location.lat,
       lng: location.lng,
@@ -290,6 +297,8 @@ export const createMeetupCallable = onCall(async (request) => {
       state: location.state || "",
     });
   }
+
+  await batch.commit();
 
   return { id: meetupRef.id };
 });
@@ -410,11 +419,13 @@ export const updateMeetupCallable = onCall(async (request) => {
       : { locationId }),
   });
 
-  await meetupRef.update(updates);
-
+  // Atomic update: main doc and private/address subdoc commit together so a
+  // visibility flip can't leave the data in a half-applied state.
   const privateRef = db.doc(`meetups/${data.meetupId}/private/address`);
+  const batch = db.batch();
+  batch.update(meetupRef, updates);
   if (isPrivate) {
-    await privateRef.set({
+    batch.set(privateRef, {
       address: location.address,
       lat: location.lat,
       lng: location.lng,
@@ -423,8 +434,11 @@ export const updateMeetupCallable = onCall(async (request) => {
       state: location.state || "",
     });
   } else {
-    await privateRef.delete().catch(() => undefined);
+    // batch.delete is a no-op if the doc doesn't exist, so we don't need
+    // the previous .catch(() => undefined) error swallowing.
+    batch.delete(privateRef);
   }
+  await batch.commit();
 
   return { success: true };
 });
