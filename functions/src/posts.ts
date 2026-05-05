@@ -9,6 +9,7 @@ import {
   optionalTrimmedString,
   optionalTrustedHttpsUrl,
   RATE_LIMITS,
+  stripUndefined,
   TRUSTED_MEDIA_URL_HOSTS,
   VALIDATION_LIMITS,
 } from "./shared";
@@ -176,28 +177,33 @@ export const createPostCallable = onCall(async (request) => {
     "Post text"
   );
 
-  const result = await db.collection("posts").add({
-    authorId: callerUid,
-    authorName: caller.fromUserName,
-    authorAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
-    text,
-    media,
-    mediaUrl: firstMedia?.url,
-    mediaType: firstMedia?.type,
-    petId: data.petId,
-    petName:
-      typeof petData.name === "string" && petData.name.trim().length > 0
-        ? petData.name
-        : "Pet",
-    petAvatarUrl:
-      typeof petData.avatarUrl === "string" && petData.avatarUrl.trim().length > 0
-        ? petData.avatarUrl
-        : getDefaultAvatar(data.petId),
-    tags: normalizeTags(data.tags),
-    likeCount: 0,
-    commentCount: 0,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
+  // stripUndefined keeps text-only posts working: when no media is attached
+  // firstMedia is undefined and Firestore Admin SDK rejects undefined fields
+  // unless ignoreUndefinedProperties is enabled (we don't enable it globally).
+  const result = await db.collection("posts").add(
+    stripUndefined({
+      authorId: callerUid,
+      authorName: caller.fromUserName,
+      authorAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
+      text,
+      media,
+      mediaUrl: firstMedia?.url,
+      mediaType: firstMedia?.type,
+      petId: data.petId,
+      petName:
+        typeof petData.name === "string" && petData.name.trim().length > 0
+          ? petData.name
+          : "Pet",
+      petAvatarUrl:
+        typeof petData.avatarUrl === "string" && petData.avatarUrl.trim().length > 0
+          ? petData.avatarUrl
+          : getDefaultAvatar(data.petId),
+      tags: normalizeTags(data.tags),
+      likeCount: 0,
+      commentCount: 0,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+  );
 
   return { id: result.id };
 });
@@ -233,33 +239,48 @@ export const updatePostCallable = onCall(async (request) => {
     throw new HttpsError("permission-denied", "Cannot edit this post.");
   }
 
-  const updates: Record<string, unknown> = {
-    text: optionalTrimmedString(
+  // Field-preserving update: only overwrite a field when the request explicitly
+  // includes it. Previously we always wrote text and tags, which clobbered
+  // existing values whenever the caller wanted to change petId only.
+  const updates: Record<string, unknown> = {};
+
+  if ("text" in data) {
+    updates.text = optionalTrimmedString(
       data.text,
       VALIDATION_LIMITS.postText,
       "Post text"
-    ),
-    tags: normalizeTags(data.tags),
-  };
+    );
+  }
+  if ("tags" in data) {
+    updates.tags = normalizeTags(data.tags);
+  }
 
-  if (data.petId === null || data.petId === "") {
-    updates.petId = admin.firestore.FieldValue.delete();
-    updates.petName = admin.firestore.FieldValue.delete();
-    updates.petAvatarUrl = admin.firestore.FieldValue.delete();
-  } else if (typeof data.petId === "string") {
-    const petData = await getAccessiblePet(data.petId, callerUid);
-    if (!petData) {
-      throw new HttpsError("permission-denied", "You do not have access to this pet.");
+  if ("petId" in data) {
+    if (data.petId === null || data.petId === "") {
+      updates.petId = admin.firestore.FieldValue.delete();
+      updates.petName = admin.firestore.FieldValue.delete();
+      updates.petAvatarUrl = admin.firestore.FieldValue.delete();
+    } else if (typeof data.petId === "string") {
+      const petData = await getAccessiblePet(data.petId, callerUid);
+      if (!petData) {
+        throw new HttpsError("permission-denied", "You do not have access to this pet.");
+      }
+      updates.petId = data.petId;
+      updates.petName =
+        typeof petData.name === "string" && petData.name.trim().length > 0
+          ? petData.name
+          : "Pet";
+      updates.petAvatarUrl =
+        typeof petData.avatarUrl === "string" && petData.avatarUrl.trim().length > 0
+          ? petData.avatarUrl
+          : getDefaultAvatar(data.petId);
+    } else {
+      throw new HttpsError("invalid-argument", "Invalid petId.");
     }
-    updates.petId = data.petId;
-    updates.petName =
-      typeof petData.name === "string" && petData.name.trim().length > 0
-        ? petData.name
-        : "Pet";
-    updates.petAvatarUrl =
-      typeof petData.avatarUrl === "string" && petData.avatarUrl.trim().length > 0
-        ? petData.avatarUrl
-        : getDefaultAvatar(data.petId);
+  }
+
+  if (Object.keys(updates).length === 0) {
+    throw new HttpsError("invalid-argument", "No supported fields to update.");
   }
 
   await postRef.update(updates);

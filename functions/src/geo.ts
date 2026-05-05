@@ -137,8 +137,25 @@ async function getCachedOrFetchGeoapifyResults(
   return request;
 }
 
+const GEOAPIFY_FETCH_TIMEOUT_MS = 8000;
+
 async function callGeoapify(url: URL): Promise<AddressLocation[]> {
-  const response = await fetch(url);
+  // Bound the upstream call so a hung Geoapify response can't pin the
+  // Cloud Functions instance until the full 60s function timeout.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GEOAPIFY_FETCH_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(url, { signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new HttpsError("unavailable", "Address lookup timed out.");
+    }
+    throw new HttpsError("unavailable", "Address lookup failed.");
+  } finally {
+    clearTimeout(timer);
+  }
+
   if (!response.ok) {
     throw new HttpsError("unavailable", "Address lookup failed.");
   }
