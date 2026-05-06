@@ -81,8 +81,19 @@ function pickLatestActiveInvitation(
 async function getLatestActiveInvitationForPet(
   petId: string
 ): Promise<ActiveInvitation | null> {
-  const invitationsSnap = await db.collection(`pets/${petId}/invitations`).get();
-  const latest = pickLatestActiveInvitation(invitationsSnap.docs);
+  // Filter on the server with a composite index (used ASC, expiresAt DESC)
+  // instead of reading the entire invitations subcollection. Old expired
+  // invitations accumulate over time and were previously all loaded just to
+  // find the single active one.
+  const now = admin.firestore.Timestamp.now();
+  const invitationsSnap = await db
+    .collection(`pets/${petId}/invitations`)
+    .where("used", "==", false)
+    .where("expiresAt", ">", now)
+    .orderBy("expiresAt", "desc")
+    .limit(1)
+    .get();
+  const latest = invitationsSnap.docs[0] ?? null;
   return latest ? mapActiveInvitation(latest, petId) : null;
 }
 
