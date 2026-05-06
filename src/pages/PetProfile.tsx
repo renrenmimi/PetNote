@@ -109,7 +109,7 @@ export function PetProfile() {
 
       if (!ignore) {
         setPet(petData);
-        setPosts(petPosts);
+        setPosts(petPosts.posts);
         setPetLikes(totalLikes);
         setFamilyMembers(members);
         setViewerIsFamilyMember(isMember);

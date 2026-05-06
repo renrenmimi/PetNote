@@ -377,14 +377,37 @@ export async function getPlacesByCategory(
   }));
 }
 
-export async function getReviews(locationId: string): Promise<Review[]> {
+export async function getReviews(
+  locationId: string,
+  options?: { limitCount?: number; lastDoc?: QueryDocumentSnapshot }
+): Promise<{
+  reviews: Review[];
+  lastDoc: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+}> {
+  const limitCount = options?.limitCount ?? 50;
   const reviewsRef = collection(db, "locations", locationId, "reviews");
-  const reviewsQuery = query(reviewsRef, orderBy("createdAt", "desc"));
-  const snapshot = await getDocs(reviewsQuery);
-  return snapshot.docs.map((docSnap) => ({
+  const constraints: QueryConstraint[] = [
+    orderBy("createdAt", "desc"),
+    limit(limitCount),
+  ];
+  if (options?.lastDoc) {
+    constraints.push(startAfter(options.lastDoc));
+  }
+  const snapshot = await getDocs(query(reviewsRef, ...constraints));
+  const reviews = snapshot.docs.map((docSnap) => ({
     id: docSnap.id,
     ...(docSnap.data() as Omit<Review, "id">),
   }));
+  const nextLast =
+    (snapshot.docs[snapshot.docs.length - 1] as
+      | QueryDocumentSnapshot
+      | undefined) ?? null;
+  return {
+    reviews,
+    lastDoc: nextLast,
+    hasMore: snapshot.docs.length === limitCount,
+  };
 }
 
 export async function hasUserReviewed(

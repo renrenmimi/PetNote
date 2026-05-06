@@ -1,7 +1,9 @@
 import {
   collection,
+  count,
   deleteDoc,
   doc,
+  getAggregateFromServer,
   getDoc,
   getDocs,
   limit,
@@ -9,6 +11,7 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  sum,
   Timestamp,
   startAfter,
   type QueryConstraint,
@@ -327,40 +330,90 @@ export async function deletePost(postId: string): Promise<void> {
   )({ postId });
 }
 
-export async function getComments(postId: string): Promise<Comment[]> {
+export async function getComments(
+  postId: string,
+  options?: { limitCount?: number; lastDoc?: QueryDocumentSnapshot }
+): Promise<{
+  comments: Comment[];
+  lastDoc: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+}> {
+  const limitCount = options?.limitCount ?? 50;
   const commentsRef = collection(db, "posts", postId, "comments");
-  const commentsQuery = query(commentsRef, orderBy("createdAt", "desc"));
-  const snapshot = await getDocs(commentsQuery);
-  return snapshot.docs.map((docSnap) => ({
+  const constraints: QueryConstraint[] = [
+    orderBy("createdAt", "desc"),
+    limit(limitCount),
+  ];
+  if (options?.lastDoc) {
+    constraints.push(startAfter(options.lastDoc));
+  }
+  const snapshot = await getDocs(query(commentsRef, ...constraints));
+  const comments = snapshot.docs.map((docSnap) => ({
     id: docSnap.id,
     ...(docSnap.data() as Omit<Comment, "id">),
   }));
+  const nextLast =
+    (snapshot.docs[snapshot.docs.length - 1] as
+      | QueryDocumentSnapshot
+      | undefined) ?? null;
+  return {
+    comments,
+    lastDoc: nextLast,
+    hasMore: snapshot.docs.length === limitCount,
+  };
 }
 
-export async function getPostsByUser(userId: string): Promise<Post[]> {
+export async function getPostsByUser(
+  userId: string,
+  options?: { limitCount?: number; lastDoc?: QueryDocumentSnapshot }
+): Promise<{
+  posts: Post[];
+  lastDoc: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+}> {
+  const limitCount = options?.limitCount ?? 20;
   const postsRef = collection(db, "posts");
-  const postsQuery = query(
-    postsRef,
+  const constraints: QueryConstraint[] = [
     where("authorId", "==", userId),
-    orderBy("createdAt", "desc")
-  );
-  const snapshot = await getDocs(postsQuery);
-  return snapshot.docs.map((docSnap) => ({
+    orderBy("createdAt", "desc"),
+    limit(limitCount),
+  ];
+  if (options?.lastDoc) {
+    constraints.push(startAfter(options.lastDoc));
+  }
+  const snapshot = await getDocs(query(postsRef, ...constraints));
+  const posts = snapshot.docs.map((docSnap) => ({
     id: docSnap.id,
     ...(docSnap.data() as PostData),
   }));
+  const nextLast =
+    (snapshot.docs[snapshot.docs.length - 1] as
+      | QueryDocumentSnapshot
+      | undefined) ?? null;
+  return {
+    posts,
+    lastDoc: nextLast,
+    hasMore: snapshot.docs.length === limitCount,
+  };
 }
 
 export async function getUserStats(userId: string): Promise<{
   postCount: number;
   totalLikes: number;
 }> {
-  const posts = await getPostsByUser(userId);
-  const totalLikes = posts.reduce(
-    (sum, post) => sum + (post.likeCount ?? 0),
-    0
-  );
-  return { postCount: posts.length, totalLikes };
+  // Aggregate query: Firestore returns count and sum without scanning every
+  // document, so this stays cheap even for users with thousands of posts.
+  const postsRef = collection(db, "posts");
+  const userPostsQuery = query(postsRef, where("authorId", "==", userId));
+  const aggSnap = await getAggregateFromServer(userPostsQuery, {
+    postCount: count(),
+    totalLikes: sum("likeCount"),
+  });
+  const data = aggSnap.data();
+  return {
+    postCount: typeof data.postCount === "number" ? data.postCount : 0,
+    totalLikes: typeof data.totalLikes === "number" ? data.totalLikes : 0,
+  };
 }
 
 export async function pinPost(postId: string): Promise<void> {

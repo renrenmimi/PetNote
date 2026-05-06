@@ -3,10 +3,16 @@ import {
   collectionGroup,
   doc,
   documentId,
+  getAggregateFromServer,
   getDoc,
   getDocs,
+  limit,
   orderBy,
   query,
+  startAfter,
+  sum,
+  type QueryConstraint,
+  type QueryDocumentSnapshot,
   where,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
@@ -310,36 +316,51 @@ export async function getPetsByOwner(ownerId: string): Promise<Pet[]> {
 }
 
 export async function getUserPets(userId: string): Promise<Pet[]> {
+  // Single collectionGroup read for family memberships, then chunked
+  // documentId() "in" reads for the pet docs themselves. Previously we
+  // issued one getDoc per family record (N+1).
   const familyQuery = query(
     collectionGroup(db, "family"),
     where("userId", "==", userId)
   );
   const familySnapshot = await getDocs(familyQuery);
 
-  const petEntries = await Promise.all(
-    familySnapshot.docs.map(async (familyDoc) => {
-      const petId = familyDoc.ref.parent.parent?.id;
-      if (!petId) return null;
-      const petSnap = await getDoc(doc(db, "pets", petId));
-      if (!petSnap.exists()) return null;
-      const familyData = familyDoc.data() as FamilyMember;
-      return {
-        id: petSnap.id,
-        ...(petSnap.data() as Omit<Pet, "id">),
+  const familyByPetId = new Map<string, FamilyMember>();
+  familySnapshot.docs.forEach((familyDoc) => {
+    const petId = familyDoc.ref.parent.parent?.id;
+    if (petId) {
+      familyByPetId.set(petId, familyDoc.data() as FamilyMember);
+    }
+  });
+
+  const petIds = Array.from(familyByPetId.keys());
+  if (petIds.length === 0) return [];
+
+  const petsRef = collection(db, "pets");
+  const fetched = new Map<string, Pet>();
+  for (let i = 0; i < petIds.length; i += DOCUMENT_ID_BATCH_SIZE) {
+    const chunk = petIds.slice(i, i + DOCUMENT_ID_BATCH_SIZE);
+    const snapshot = await getDocs(
+      query(petsRef, where(documentId(), "in", chunk))
+    );
+    snapshot.docs.forEach((d) => {
+      fetched.set(d.id, { id: d.id, ...(d.data() as Omit<Pet, "id">) });
+    });
+  }
+
+  const result: Pet[] = [];
+  familyByPetId.forEach((familyData, petId) => {
+    const pet = fetched.get(petId);
+    if (pet) {
+      result.push({
+        ...pet,
         relationship: familyData.relationship,
         customRelationship: familyData.customRelationship,
         role: familyData.role,
-      } as Pet;
-    })
-  );
-
-  const filtered: Pet[] = [];
-  for (const entry of petEntries) {
-    if (entry) {
-      filtered.push(entry);
+      });
     }
-  }
-  return filtered;
+  });
+  return result;
 }
 
 export async function getUserPetCounts(userIds: string[]): Promise<Record<string, number>> {
@@ -481,18 +502,38 @@ export async function batchCheckPetBirthdays(
   return birthdayPetIds;
 }
 
-export async function getPostsByPet(petId: string): Promise<Post[]> {
+export async function getPostsByPet(
+  petId: string,
+  options?: { limitCount?: number; lastDoc?: QueryDocumentSnapshot }
+): Promise<{
+  posts: Post[];
+  lastDoc: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+}> {
+  const limitCount = options?.limitCount ?? 20;
   const postsRef = collection(db, "posts");
-  const postsQuery = query(
-    postsRef,
+  const constraints: QueryConstraint[] = [
     where("petId", "==", petId),
-    orderBy("createdAt", "desc")
-  );
-  const snapshot = await getDocs(postsQuery);
-  return snapshot.docs.map((docSnap) => ({
+    orderBy("createdAt", "desc"),
+    limit(limitCount),
+  ];
+  if (options?.lastDoc) {
+    constraints.push(startAfter(options.lastDoc));
+  }
+  const snapshot = await getDocs(query(postsRef, ...constraints));
+  const posts = snapshot.docs.map((docSnap) => ({
     id: docSnap.id,
     ...(docSnap.data() as PostData),
   }));
+  const nextLast =
+    (snapshot.docs[snapshot.docs.length - 1] as
+      | QueryDocumentSnapshot
+      | undefined) ?? null;
+  return {
+    posts,
+    lastDoc: nextLast,
+    hasMore: snapshot.docs.length === limitCount,
+  };
 }
 
 export async function getBirthdayPets(ownerId: string): Promise<Pet[]> {
@@ -501,14 +542,14 @@ export async function getBirthdayPets(ownerId: string): Promise<Pet[]> {
 }
 
 export async function getPetTotalLikes(petId: string): Promise<number> {
+  // Aggregate sum query keeps this O(1) reads even for prolific pets that
+  // would otherwise require scanning every post they're tagged in.
   if (!petId) return 0;
   const postsRef = collection(db, "posts");
-  const postsQuery = query(postsRef, where("petId", "==", petId));
-  const snapshot = await getDocs(postsQuery);
-  let total = 0;
-  snapshot.docs.forEach((docSnap) => {
-    const data = docSnap.data() as { likeCount?: number };
-    total += data.likeCount || 0;
+  const petPostsQuery = query(postsRef, where("petId", "==", petId));
+  const aggSnap = await getAggregateFromServer(petPostsQuery, {
+    totalLikes: sum("likeCount"),
   });
-  return total;
+  const total = aggSnap.data().totalLikes;
+  return typeof total === "number" ? total : 0;
 }

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import type { QueryDocumentSnapshot } from "firebase/firestore";
 import { useAuth } from "../hooks/useAuth";
 import {
   addComment,
@@ -39,6 +40,10 @@ export function CommentSection({
   const focusTimerRef = useRef<number | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const lastDocRef = useRef<QueryDocumentSnapshot | null>(null);
+  const [showAll, setShowAll] = useState(false);
   const [text, setText] = useState("");
   const [viewportOffset, setViewportOffset] = useState(0);
   const [replyTarget, setReplyTarget] = useState<{
@@ -63,7 +68,11 @@ export function CommentSection({
       setLoading(true);
       try {
         const data = await getComments(postId);
-        if (!ignore) setComments(data);
+        if (!ignore) {
+          setComments(data.comments);
+          setHasMore(data.hasMore);
+          lastDocRef.current = data.lastDoc;
+        }
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Failed to load comments";
@@ -79,6 +88,26 @@ export function CommentSection({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [postId]);
+
+  const loadMoreComments = async () => {
+    if (loadingMore || !hasMore || !lastDocRef.current) return;
+    setLoadingMore(true);
+    try {
+      const data = await getComments(postId, { lastDoc: lastDocRef.current });
+      setComments((prev) => {
+        const seen = new Set(prev.map((c) => c.id));
+        return [...prev, ...data.comments.filter((c) => !seen.has(c.id))];
+      });
+      setHasMore(data.hasMore);
+      lastDocRef.current = data.lastDoc;
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to load more comments";
+      showToast(message, "error");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   useEffect(() => {
     if (!stickyInput || !window.visualViewport) return;
@@ -108,14 +137,16 @@ export function CommentSection({
   }, []);
 
   const visibleComments = useMemo(() => {
-    if (!Number.isFinite(maxVisible)) {
+    if (showAll || !Number.isFinite(maxVisible)) {
       return comments;
     }
     return comments.slice(0, maxVisible);
-  }, [comments, maxVisible]);
+  }, [comments, maxVisible, showAll]);
 
   const showViewAll =
-    Number.isFinite(maxVisible) && comments.length > maxVisible;
+    !showAll &&
+    Number.isFinite(maxVisible) &&
+    (comments.length > maxVisible || hasMore);
 
   const handleSend = async () => {
     if (!user) {
@@ -307,9 +338,23 @@ export function CommentSection({
         {showViewAll ? (
           <button
             type="button"
+            onClick={() => {
+              setShowAll(true);
+              if (hasMore) void loadMoreComments();
+            }}
             className="text-xs font-semibold text-purple-600 hover:text-purple-500"
           >
             View all {commentCount} comments
+          </button>
+        ) : null}
+        {showAll && hasMore ? (
+          <button
+            type="button"
+            onClick={() => void loadMoreComments()}
+            disabled={loadingMore}
+            className="text-xs font-semibold text-purple-600 hover:text-purple-500 disabled:opacity-50"
+          >
+            {loadingMore ? "Loading..." : "Load more comments"}
           </button>
         ) : null}
       </div>
