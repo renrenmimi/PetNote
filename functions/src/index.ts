@@ -6,7 +6,10 @@ export {
   removeFamilyMemberCallable,
   validateInvitationCallable,
 } from "./invitations";
-export { getCloudinaryUploadSignature } from "./media";
+export {
+  deleteCloudinaryAssetsCallable,
+  getCloudinaryUploadSignature,
+} from "./media";
 export { reverseGeocodeCallable, searchAddressesCallable } from "./geo";
 export {
   autoCompleteMeetups,

@@ -4,7 +4,11 @@ import { Timestamp } from "firebase/firestore";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../contexts/ToastContext";
-import { uploadImage } from "../services/cloudinary";
+import {
+  deleteCloudinaryAssets,
+  uploadImage,
+  type UploadedAsset,
+} from "../services/cloudinary";
 import { reverseGeocode } from "../services/geoapify";
 import { getCurrentLocation } from "../services/location";
 import {
@@ -205,10 +209,13 @@ export function EditMeetup() {
     }
 
     setSaving(true);
+    const uploaded: UploadedAsset[] = [];
     try {
       let coverImage = meetup.coverImage;
       if (coverFile) {
-        coverImage = await uploadImage(coverFile);
+        const asset = await uploadImage(coverFile);
+        uploaded.push(asset);
+        coverImage = asset.url;
       }
       const requirements: MeetupRequirements = {
         dogSize,
@@ -243,6 +250,10 @@ export function EditMeetup() {
       showToast("Meetup updated", "success");
       navigate(`/meetups/${meetup.id}`, { replace: true });
     } catch (err) {
+      // Best-effort orphan cleanup of the freshly uploaded cover (the old
+      // cover URL persists on Cloudinary regardless and is handled by a
+      // separate scheduled cleanup if/when we add one).
+      void deleteCloudinaryAssets(uploaded);
       const message =
         err instanceof Error ? err.message : "Failed to update meetup.";
       showToast(message, "error");

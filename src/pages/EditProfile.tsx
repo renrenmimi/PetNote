@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import { uploadImage } from "../services/cloudinary";
+import {
+  deleteCloudinaryAssets,
+  uploadImage,
+  type UploadedAsset,
+} from "../services/cloudinary";
 import {
   getUserProfile,
   isUsernameTaken,
@@ -140,11 +144,13 @@ export function EditProfile() {
     }
 
     setSaving(true);
-
+    const uploaded: UploadedAsset[] = [];
     try {
       let avatarUrl = avatarPreview || user.photoURL || "";
       if (avatarFile) {
-        avatarUrl = await uploadImage(avatarFile);
+        const asset = await uploadImage(avatarFile);
+        uploaded.push(asset);
+        avatarUrl = asset.url;
       }
 
       await updateUserProfile(user.uid, {
@@ -155,6 +161,9 @@ export function EditProfile() {
 
       navigate("/profile", { replace: true });
     } catch (err) {
+      // Best-effort orphan cleanup if updateUserProfile rejected the new
+      // avatar upload.
+      void deleteCloudinaryAssets(uploaded);
       const message =
         err instanceof Error ? err.message : "Failed to update profile.";
       showToast(message, "error");

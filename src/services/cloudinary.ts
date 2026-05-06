@@ -34,10 +34,21 @@ async function prepareImageForUpload(file: File): Promise<File> {
   });
 }
 
+// Asset metadata returned by every upload. publicId / resourceType are the
+// inputs deleteCloudinaryAssets needs to clean up the asset on the server
+// when a downstream Firestore write fails.
+export type UploadedAsset = {
+  url: string;
+  publicId: string;
+  resourceType: CloudinaryResourceType;
+  type: "image" | "video";
+  thumbUrl?: string;
+};
+
 async function uploadToCloudinary(
   file: File,
   resourceType: CloudinaryResourceType
-): Promise<string> {
+): Promise<{ url: string; publicId: string }> {
   const getCloudinaryUploadSignature = httpsCallable<
     SignedUploadSignatureRequest,
     SignedUploadSignatureResponse
@@ -75,33 +86,57 @@ async function uploadToCloudinary(
     throw new Error(message || "Cloudinary upload failed");
   }
 
-  const payload = (await response.json()) as { secure_url?: string };
-  if (!payload.secure_url) {
-    throw new Error("Cloudinary response missing secure_url");
+  const payload = (await response.json()) as {
+    secure_url?: string;
+    public_id?: string;
+  };
+  if (!payload.secure_url || !payload.public_id) {
+    throw new Error("Cloudinary response missing secure_url or public_id");
   }
 
-  return payload.secure_url;
+  return { url: payload.secure_url, publicId: payload.public_id };
 }
 
-export async function uploadImage(file: File): Promise<string> {
-  return uploadToCloudinary(await prepareImageForUpload(file), "image");
+export async function uploadImage(file: File): Promise<UploadedAsset> {
+  const prepared = await prepareImageForUpload(file);
+  const { url, publicId } = await uploadToCloudinary(prepared, "image");
+  return { url, publicId, resourceType: "image", type: "image" };
 }
 
-export async function uploadMedia(
-  file: File
-): Promise<{ url: string; type: "image" | "video"; thumbUrl?: string }> {
+export async function uploadMedia(file: File): Promise<UploadedAsset> {
   const isVideo = file.type.startsWith("video/");
   const resourceType: CloudinaryResourceType = isVideo ? "video" : "image";
   const uploadFile = isVideo ? file : await prepareImageForUpload(file);
-  const secureUrl = await uploadToCloudinary(uploadFile, resourceType);
+  const { url, publicId } = await uploadToCloudinary(uploadFile, resourceType);
 
   if (!isVideo) {
-    return { url: secureUrl, type: "image" };
+    return { url, publicId, resourceType: "image", type: "image" };
   }
 
-  const thumbUrl = secureUrl
+  const thumbUrl = url
     .replace("/video/upload/", "/video/upload/so_0,w_400,h_400,c_fill/")
     .replace(/\.\w+$/, ".jpg");
 
-  return { url: secureUrl, type: "video", thumbUrl };
+  return { url, publicId, resourceType: "video", type: "video", thumbUrl };
+}
+
+// Best-effort cleanup of assets the user just uploaded but failed to
+// reference (e.g. createPost rejected after media upload). Never throws —
+// the caller's original error toast must always win.
+export async function deleteCloudinaryAssets(
+  assets: UploadedAsset[]
+): Promise<void> {
+  if (assets.length === 0) return;
+  const payload = assets.map((asset) => ({
+    publicId: asset.publicId,
+    resourceType: asset.resourceType,
+  }));
+  try {
+    await httpsCallable<
+      { assets: typeof payload },
+      { deleted: number }
+    >(functions, "deleteCloudinaryAssetsCallable")({ assets: payload });
+  } catch (error) {
+    console.warn("Failed to clean up orphan Cloudinary assets:", error);
+  }
 }

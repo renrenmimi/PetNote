@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { uploadMedia } from "../services/cloudinary";
+import {
+  deleteCloudinaryAssets,
+  uploadMedia,
+  type UploadedAsset,
+} from "../services/cloudinary";
 import { checkIn } from "../services/checkins";
 import { useToast } from "../contexts/ToastContext";
 import Avatar from "./Avatar";
@@ -91,8 +95,10 @@ export function CheckInModal({
   const handleSubmit = async () => {
     if (!file || submitting) return;
     setSubmitting(true);
+    const uploaded: UploadedAsset[] = [];
     try {
       const upload = await uploadMedia(file);
+      uploaded.push(upload);
       const selectedPet = userPets.find((pet) => pet.id === selectedPetId);
       await checkIn(locationId, {
         userId: currentUser.uid,
@@ -107,6 +113,8 @@ export function CheckInModal({
       onSuccess?.();
       onClose();
     } catch {
+      // Best-effort orphan cleanup before surfacing the original error toast.
+      void deleteCloudinaryAssets(uploaded);
       showToast("Check-in failed. Try again.", "error");
     } finally {
       if (mountedRef.current) {

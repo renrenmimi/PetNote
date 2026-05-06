@@ -3,7 +3,11 @@ import { doc, getDoc, serverTimestamp } from "firebase/firestore";
 import PawIcon from "./PawIcon";
 import Avatar from "./Avatar";
 import { auth, db } from "../services/firebase";
-import { uploadImage } from "../services/cloudinary";
+import {
+  deleteCloudinaryAssets,
+  uploadImage,
+  type UploadedAsset,
+} from "../services/cloudinary";
 import {
   createPet,
   PET_FAMILY_RELATIONSHIP_OPTIONS,
@@ -232,11 +236,14 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
       return;
     }
     setSavingPet(true);
+    const uploaded: UploadedAsset[] = [];
     try {
       const currentUser = await ensureUserProfile();
       let uploadedAvatarUrl = "";
       if (avatarFile) {
-        uploadedAvatarUrl = await uploadImage(avatarFile);
+        const asset = await uploadImage(avatarFile);
+        uploaded.push(asset);
+        uploadedAvatarUrl = asset.url;
       }
       await createPet(
         currentUser.uid,
@@ -253,6 +260,8 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
       );
       handleNext();
     } catch (error) {
+      // Best-effort orphan cleanup if createPet rejected the new avatar.
+      void deleteCloudinaryAssets(uploaded);
       const message =
         error instanceof Error ? error.message : "Failed to add pet.";
       showToast(message, "error");

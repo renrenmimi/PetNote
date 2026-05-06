@@ -2,7 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Timestamp } from "firebase/firestore";
 import { useAuth } from "../hooks/useAuth";
-import { uploadImage } from "../services/cloudinary";
+import {
+  deleteCloudinaryAssets,
+  uploadImage,
+  type UploadedAsset,
+} from "../services/cloudinary";
 import {
   createPet,
   getPetById,
@@ -223,11 +227,13 @@ export function AddPet() {
     }
 
     setSaving(true);
-
+    const uploaded: UploadedAsset[] = [];
     try {
       let finalAvatarUrl = avatarUrl;
       if (avatarFile) {
-        finalAvatarUrl = await uploadImage(avatarFile);
+        const asset = await uploadImage(avatarFile);
+        uploaded.push(asset);
+        finalAvatarUrl = asset.url;
       }
 
       const payload: Omit<Pet, "id" | "ownerId" | "createdAt" | "primaryOwnerId"> = {
@@ -258,6 +264,10 @@ export function AddPet() {
         navigate(`/pet/${targetId}`, { replace: true });
       }
     } catch (err) {
+      // Best-effort orphan cleanup: only the freshly uploaded avatar (not
+      // the previous one if it's an edit) — the old avatarUrl persisting is
+      // expected and stays referenced by the pet doc on the server.
+      void deleteCloudinaryAssets(uploaded);
       const message =
         err instanceof Error ? err.message : "Failed to save pet.";
       showToast(message, "error");
