@@ -209,6 +209,13 @@ export function LocationDetail() {
   }, [user?.uid]);
 
   const ratingStats = useMemo(() => {
+    // Prefer the server-aggregated petFriendlyAvg so the displayed
+    // subscores reflect every review, not just the first paginated 50.
+    // Fallback path computes from loaded reviews for legacy locations
+    // whose aggregates haven't been backfilled yet.
+    if (location?.petFriendlyAvg) {
+      return location.petFriendlyAvg;
+    }
     if (reviews.length === 0) {
       return { space: 0, safety: 0, cleanliness: 0 };
     }
@@ -226,9 +233,16 @@ export function LocationDetail() {
       safety: totals.safety / reviews.length,
       cleanliness: totals.cleanliness / reviews.length,
     };
-  }, [reviews]);
+  }, [location, reviews]);
 
   const tagCounts = useMemo(() => {
+    // Same precedence as ratingStats: server-maintained tagCounts is
+    // exact; reviews-derived counts only see the first paginated page.
+    if (location?.tagCounts) {
+      return Object.entries(location.tagCounts)
+        .filter(([, count]) => count > 0)
+        .sort((a, b) => b[1] - a[1]);
+    }
     const counts: Record<string, number> = {};
     reviews.forEach((review) => {
       (review.tags || []).forEach((tag) => {
@@ -236,7 +250,7 @@ export function LocationDetail() {
       });
     });
     return Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  }, [reviews]);
+  }, [location, reviews]);
 
   const distance = useMemo(() => {
     if (!location || !viewerLocation) return null;

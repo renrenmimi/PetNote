@@ -13,6 +13,7 @@ import {
   optionalTrimmedString,
   optionalTrustedHttpsUrl,
   RATE_LIMITS,
+  recomputeLocationReviewAggregates,
   requestData,
   requiredTrimmedString,
   requiredTrustedHttpsUrl,
@@ -270,6 +271,27 @@ export async function getOrCreatePublicMeetupLocation(params: {
   return locationId;
 }
 
+function readReviewSubscores(
+  data: admin.firestore.DocumentData,
+  fallback: number
+): { space: number; safety: number; cleanliness: number } {
+  const pf = data.petFriendly;
+  const space =
+    pf && typeof pf.space === "number" ? pf.space : fallback;
+  const safety =
+    pf && typeof pf.safety === "number" ? pf.safety : fallback;
+  const cleanliness =
+    pf && typeof pf.cleanliness === "number" ? pf.cleanliness : fallback;
+  return { space, safety, cleanliness };
+}
+
+function readReviewTags(data: admin.firestore.DocumentData): string[] {
+  if (!Array.isArray(data.tags)) return [];
+  return (data.tags as unknown[]).filter(
+    (tag): tag is string => typeof tag === "string" && tag.length > 0
+  );
+}
+
 export const onReviewCreated = onDocumentCreated(
   "locations/{locationId}/reviews/{reviewId}",
   async (event) => {
@@ -283,22 +305,25 @@ export const onReviewCreated = onDocumentCreated(
       });
     }
     const rating = typeof reviewData.rating === "number" ? reviewData.rating : 0;
-    const tagsToAdd = Array.isArray(reviewData.tags)
-      ? (reviewData.tags as unknown[]).filter(
-          (tag): tag is string => typeof tag === "string" && tag.length > 0
-        )
-      : [];
+    const tagList = readReviewTags(reviewData);
     const photosToAdd = Array.isArray(reviewData.photos)
       ? (reviewData.photos as unknown[]).filter(
           (photo): photo is string => typeof photo === "string" && photo.length > 0
         )
       : [];
+    const subscores = readReviewSubscores(reviewData, rating);
+    const tagCountsDelta: Record<string, number> = {};
+    for (const tag of tagList) {
+      tagCountsDelta[tag] = (tagCountsDelta[tag] ?? 0) + 1;
+    }
     await Promise.all([
       applyReviewAggregationDelta(event.params.locationId, {
         ratingSum: rating,
         count: 1,
-        tagsToAdd,
+        tagsToAdd: tagList,
         photosToAdd,
+        petFriendlySumDelta: subscores,
+        tagCountsDelta,
       }),
       writeLocationPhotoEntries(
         event.params.locationId,
@@ -315,13 +340,25 @@ export const onReviewDeleted = onDocumentDeleted(
   async (event) => {
     const reviewData = event.data?.data() ?? {};
     const rating = typeof reviewData.rating === "number" ? reviewData.rating : 0;
-    // Intentionally does not remove tags/photos: they may still be
-    // referenced by other remaining reviews, and arrayRemove without that
-    // knowledge would lose real data. Stale entries get cleaned up on a
-    // periodic full recompute if ever needed.
+    const subscores = readReviewSubscores(reviewData, rating);
+    const tagList = readReviewTags(reviewData);
+    const tagCountsDelta: Record<string, number> = {};
+    for (const tag of tagList) {
+      tagCountsDelta[tag] = (tagCountsDelta[tag] ?? 0) - 1;
+    }
+    // The legacy `tags` array still uses arrayUnion-only semantics —
+    // arrayRemove on delete would drop tags other remaining reviews still
+    // reference, so we only update the histogram (tagCounts / topTags).
+    // The recompute callable refreshes both whenever it runs.
     await applyReviewAggregationDelta(event.params.locationId, {
       ratingSum: -rating,
       count: -1,
+      petFriendlySumDelta: {
+        space: -subscores.space,
+        safety: -subscores.safety,
+        cleanliness: -subscores.cleanliness,
+      },
+      tagCountsDelta,
     });
   }
 );
@@ -686,3 +723,44 @@ export const checkInCallable = onCall(async (request) => {
 
   return { id: checkinId };
 });
+
+// Admin-only backfill: rebuilds petFriendlySum / petFriendlyAvg /
+// tagCounts / topTags from the location's review subcollection. Used to
+// initialise these aggregates on locations whose reviews predate the
+// trigger that maintains them, or to repair drift after manual data
+// edits.
+export const recomputeLocationReviewAggregatesCallable = onCall(
+  async (request) => {
+    const callerUid = request.auth?.uid;
+    if (!callerUid) {
+      throw new HttpsError("unauthenticated", "Must be logged in.");
+    }
+    const caller = await getNotificationActor(callerUid);
+    if (caller.role !== "admin") {
+      throw new HttpsError(
+        "permission-denied",
+        "Only admins can recompute location aggregates."
+      );
+    }
+    await assertRateLimit(
+      callerUid,
+      "recomputeLocationReviewAggregates",
+      RATE_LIMITS.write
+    );
+
+    const { locationId } = requestData(request.data) as {
+      locationId?: string;
+    };
+    if (!locationId || typeof locationId !== "string") {
+      throw new HttpsError("invalid-argument", "Missing locationId.");
+    }
+
+    const locationSnap = await db.doc(`locations/${locationId}`).get();
+    if (!locationSnap.exists) {
+      throw new HttpsError("not-found", "Location not found.");
+    }
+
+    const result = await recomputeLocationReviewAggregates(locationId);
+    return { success: true, ...result };
+  }
+);

@@ -43,6 +43,12 @@ export type PlaceFeature =
   | "trails"
   | "food_nearby";
 
+export type PetFriendlySubscores = {
+  space: number;
+  safety: number;
+  cleanliness: number;
+};
+
 export type Location = {
   id: string;
   name: string;
@@ -64,6 +70,13 @@ export type Location = {
   totalCheckins?: number;
   verifiedByCheckins?: boolean;
   tags: string[];
+  // Server-aggregated fields populated by onReviewCreated / onReviewDeleted
+  // and the recompute callable. Optional because legacy locations created
+  // before these aggregates existed won't have them until recompute runs.
+  petFriendlySum?: PetFriendlySubscores;
+  petFriendlyAvg?: PetFriendlySubscores;
+  tagCounts?: Record<string, number>;
+  topTags?: string[];
   source: "user" | "meetup";
   verified: boolean;
   createdAt?: unknown;
