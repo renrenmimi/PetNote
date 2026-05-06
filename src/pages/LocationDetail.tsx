@@ -587,7 +587,7 @@ export function LocationDetail() {
         <section className="rounded-2xl bg-white p-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-              Reviews ({reviews.length})
+              Reviews ({location.totalRatings ?? reviews.length})
             </h3>
             {!userReview ? (
               <button

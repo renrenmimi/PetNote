@@ -7,7 +7,10 @@ import {
   limit,
   orderBy,
   query,
+  startAfter,
   where,
+  type QueryConstraint,
+  type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
@@ -99,15 +102,40 @@ export async function hasUserCheckedIn(
   return snapshot.exists();
 }
 
-export async function getUserCheckins(userId: string): Promise<Checkin[]> {
+export async function getUserCheckins(
+  userId: string,
+  options?: { limitCount?: number; lastDoc?: QueryDocumentSnapshot }
+): Promise<{
+  checkins: Checkin[];
+  lastDoc: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+}> {
+  const limitCount = options?.limitCount ?? 100;
+  const constraints: QueryConstraint[] = [
+    where("userId", "==", userId),
+    orderBy("createdAt", "desc"),
+    limit(limitCount),
+  ];
+  if (options?.lastDoc) {
+    constraints.push(startAfter(options.lastDoc));
+  }
   const snapshot = await getDocs(
-    query(collectionGroup(db, "checkins"), where("userId", "==", userId), orderBy("createdAt", "desc"))
+    query(collectionGroup(db, "checkins"), ...constraints)
   );
-  return snapshot.docs.map((docSnap) => ({
+  const checkins = snapshot.docs.map((docSnap) => ({
     id: docSnap.id,
     locationId: docSnap.ref.parent.parent?.id || "",
     ...(docSnap.data() as Omit<Checkin, "id" | "locationId">),
   }));
+  const nextLast =
+    (snapshot.docs[snapshot.docs.length - 1] as
+      | QueryDocumentSnapshot
+      | undefined) ?? null;
+  return {
+    checkins,
+    lastDoc: nextLast,
+    hasMore: snapshot.docs.length === limitCount,
+  };
 }
 
 export async function getCheckinsByPet(
