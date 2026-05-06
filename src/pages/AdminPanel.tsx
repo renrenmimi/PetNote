@@ -181,7 +181,7 @@ export function AdminPanel() {
           getReviewedReports(),
         ]);
         if (!active) return;
-        const merged = [...pending, ...reviewed].sort(
+        const merged = [...pending.reports, ...reviewed.reports].sort(
           (a, b) => toMillis(b.createdAt) - toMillis(a.createdAt)
         );
         setReports(merged);

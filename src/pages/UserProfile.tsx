@@ -54,15 +54,21 @@ export function UserProfile() {
     const load = async () => {
       setLoading(true);
       try {
-        const [profileData, petList, followingList] = await Promise.all([
+        const [profileData, petList, followingResult] = await Promise.all([
           getUserProfile(userId),
           getUserPets(userId),
-          user?.uid === userId ? getFollowingPets(userId) : Promise.resolve([]),
+          user?.uid === userId
+            ? getFollowingPets(userId)
+            : Promise.resolve({
+                followingPets: [] as FollowingPet[],
+                lastDoc: null,
+                hasMore: false,
+              }),
         ]);
         if (ignore) return;
         setProfile(profileData);
         setPets(petList);
-        setFollowingPets(followingList);
+        setFollowingPets(followingResult.followingPets);
       } finally {
         if (!ignore) {
           setLoading(false);

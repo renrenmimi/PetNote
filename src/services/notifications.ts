@@ -7,9 +7,9 @@ import {
   query,
   updateDoc,
   where,
-  writeBatch,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { httpsCallable } from "firebase/functions";
+import { db, functions } from "./firebase";
 
 export type NotificationType =
   | "like"
@@ -67,23 +67,16 @@ export async function markAsRead(notificationId: string): Promise<void> {
   await updateDoc(notificationRef, { read: true });
 }
 
-export async function markAllAsRead(userId: string): Promise<void> {
-  const notificationsRef = collection(db, "notifications");
-  const notificationsQuery = query(
-    notificationsRef,
-    where("userId", "==", userId),
-    where("read", "==", false)
-  );
-  const snapshot = await getDocs(notificationsQuery);
-  const chunkSize = 400;
-
-  for (let index = 0; index < snapshot.docs.length; index += chunkSize) {
-    const batch = writeBatch(db);
-    snapshot.docs.slice(index, index + chunkSize).forEach((docSnap) => {
-      batch.update(docSnap.ref, { read: true });
-    });
-    await batch.commit();
-  }
+// Server-side cursor-paged batch update via callable. The previous
+// version pulled every unread notification doc to the client first; for
+// users with a large unread backlog that's hundreds of unnecessary reads
+// on a single button tap. The callable derives the user from auth, so
+// callers no longer need to pass a userId.
+export async function markAllAsRead(): Promise<void> {
+  await httpsCallable<unknown, { updated: number }>(
+    functions,
+    "markAllNotificationsAsReadCallable"
+  )({});
 }
 
 export async function getUnreadCount(userId: string): Promise<number> {

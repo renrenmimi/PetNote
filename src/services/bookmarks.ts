@@ -5,10 +5,14 @@ import {
   documentId,
   getDoc,
   getDocs,
+  limit,
   orderBy,
   query,
   serverTimestamp,
   setDoc,
+  startAfter,
+  type QueryConstraint,
+  type QueryDocumentSnapshot,
   where,
 } from "firebase/firestore";
 import { db } from "./firebase";
@@ -46,16 +50,48 @@ export async function checkIfBookmarked(
   return snapshot.exists();
 }
 
-export async function getBookmarks(userId: string): Promise<string[]> {
+export async function getBookmarks(
+  userId: string,
+  options?: { limitCount?: number; lastDoc?: QueryDocumentSnapshot }
+): Promise<{
+  ids: string[];
+  lastDoc: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+}> {
+  const limitCount = options?.limitCount ?? 50;
   const bookmarksRef = collection(db, "users", userId, "bookmarks");
-  const bookmarksQuery = query(bookmarksRef, orderBy("createdAt", "desc"));
-  const snapshot = await getDocs(bookmarksQuery);
-  return snapshot.docs.map((docSnap) => docSnap.id);
+  const constraints: QueryConstraint[] = [
+    orderBy("createdAt", "desc"),
+    limit(limitCount),
+  ];
+  if (options?.lastDoc) {
+    constraints.push(startAfter(options.lastDoc));
+  }
+  const snapshot = await getDocs(query(bookmarksRef, ...constraints));
+  const ids = snapshot.docs.map((docSnap) => docSnap.id);
+  const nextLast =
+    (snapshot.docs[snapshot.docs.length - 1] as
+      | QueryDocumentSnapshot
+      | undefined) ?? null;
+  return {
+    ids,
+    lastDoc: nextLast,
+    hasMore: snapshot.docs.length === limitCount,
+  };
 }
 
-export async function getBookmarkedPosts(userId: string): Promise<Post[]> {
-  const ids = await getBookmarks(userId);
-  if (ids.length === 0) return [];
+export async function getBookmarkedPosts(
+  userId: string,
+  options?: { limitCount?: number; lastDoc?: QueryDocumentSnapshot }
+): Promise<{
+  posts: Post[];
+  lastDoc: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+}> {
+  const { ids, lastDoc, hasMore } = await getBookmarks(userId, options);
+  if (ids.length === 0) {
+    return { posts: [], lastDoc, hasMore };
+  }
 
   const postsRef = collection(db, "posts");
   const chunkSize = 10;
@@ -73,5 +109,8 @@ export async function getBookmarkedPosts(userId: string): Promise<Post[]> {
   }
 
   const postsById = new Map(posts.map((post) => [post.id, post]));
-  return ids.map((id) => postsById.get(id)).filter(Boolean) as Post[];
+  const ordered = ids
+    .map((id) => postsById.get(id))
+    .filter(Boolean) as Post[];
+  return { posts: ordered, lastDoc, hasMore };
 }

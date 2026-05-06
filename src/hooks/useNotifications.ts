@@ -206,7 +206,7 @@ export function useNotifications(
       return 0;
     });
     try {
-      await markAll(userId);
+      await markAll();
     } catch (error) {
       if (mountedRef.current) {
         setNotifications(previousNotifications);

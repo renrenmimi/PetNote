@@ -447,8 +447,11 @@ export async function checkRequirements(
 
   if (requirements.minFollowers > 0) {
     // Count actual followingPets subcollection instead of trusting
-    // the denormalized counter (which could be tampered with)
-    const followingPets = await getFollowingPets(userId);
+    // the denormalized counter (which could be tampered with). The
+    // server-side joinMeetupCallable does the authoritative version of
+    // this check inside its transaction; this client-side path is just
+    // for UI eligibility preview, so the default limit (200) is fine.
+    const { followingPets } = await getFollowingPets(userId);
     if (followingPets.length < requirements.minFollowers) {
       reasons.push(
         `Requires at least ${requirements.minFollowers} followed pets.`

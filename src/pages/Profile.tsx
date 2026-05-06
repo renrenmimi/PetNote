@@ -103,7 +103,7 @@ export function Profile() {
       try {
         const saved = await getBookmarkedPosts(user.uid);
         if (!ignore) {
-          setSavedPosts(saved);
+          setSavedPosts(saved.posts);
         }
       } finally {
         if (!ignore) {
@@ -251,7 +251,9 @@ export function Profile() {
                 onClick={async () => {
                   setFollowingPetsLoading(true);
                   try {
-                    const items = await getFollowingPets(user.uid);
+                    const { followingPets: items } = await getFollowingPets(
+                      user.uid
+                    );
                     setFollowingPets(items);
                     setFollowingModalOpen(true);
                   } finally {
