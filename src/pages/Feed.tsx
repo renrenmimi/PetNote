@@ -82,8 +82,8 @@ export function Feed() {
     let ignore = false;
     if (!user || activeTab !== "following") return;
     const loadFollowing = async () => {
-      const items = await getFollowingPets(user.uid);
-      if (!ignore) setFollowingCount(items.length);
+      const { followingPets } = await getFollowingPets(user.uid);
+      if (!ignore) setFollowingCount(followingPets.length);
     };
     void loadFollowing();
     return () => {

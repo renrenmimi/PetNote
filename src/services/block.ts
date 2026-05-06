@@ -26,7 +26,7 @@ export async function blockUser(
 
   // Unfollow any pets owned by the blocked user
   try {
-    const myFollowing = await getFollowingPets(myUid);
+    const { followingPets: myFollowing } = await getFollowingPets(myUid);
     for (const follow of myFollowing) {
       const petRef = doc(db, "pets", follow.petId);
       const petSnap = await getDoc(petRef);

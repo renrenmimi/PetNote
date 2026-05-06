@@ -485,3 +485,84 @@ export const deleteCommentCallable = onCall(async (request) => {
   await commentRef.delete();
   return { success: true };
 });
+
+// Admin-only: recompute pet.postCount from posts.where(petId == petId)
+// using a server-side count() aggregate. Use to repair drift after a
+// missed onPostWritten increment (the trigger swallows certain errors
+// to keep post creation flowing — see applyPetPostCountDelta).
+export const recomputePetPostCountCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Must be logged in.");
+  }
+  const caller = await getNotificationActor(callerUid);
+  if (caller.role !== "admin") {
+    throw new HttpsError("permission-denied", "Only admins can recompute pet post counts.");
+  }
+  await assertRateLimit(callerUid, "recomputePetPostCount", RATE_LIMITS.write);
+
+  const { petId } = requestData(request.data) as { petId?: string };
+  if (!petId || typeof petId !== "string") {
+    throw new HttpsError("invalid-argument", "Missing petId.");
+  }
+
+  const petRef = db.doc(`pets/${petId}`);
+  const petSnap = await petRef.get();
+  if (!petSnap.exists) {
+    throw new HttpsError("not-found", "Pet not found.");
+  }
+
+  const aggSnap = await db
+    .collection("posts")
+    .where("petId", "==", petId)
+    .count()
+    .get();
+  const postCount = aggSnap.data().count;
+  await petRef.update({ postCount });
+  return { success: true, postCount };
+});
+
+// Admin-only: recompute likeCount and commentCount on a single post from
+// its subcollection sizes. Repairs drift from missed onLikeCreated /
+// onCommentCreated triggers (e.g. event delivery failures), and backfills
+// posts that never had those fields written in the first place.
+export const recomputePostInteractionCountsCallable = onCall(
+  async (request) => {
+    const callerUid = request.auth?.uid;
+    if (!callerUid) {
+      throw new HttpsError("unauthenticated", "Must be logged in.");
+    }
+    const caller = await getNotificationActor(callerUid);
+    if (caller.role !== "admin") {
+      throw new HttpsError(
+        "permission-denied",
+        "Only admins can recompute post interaction counts."
+      );
+    }
+    await assertRateLimit(
+      callerUid,
+      "recomputePostInteractionCounts",
+      RATE_LIMITS.write
+    );
+
+    const { postId } = requestData(request.data) as { postId?: string };
+    if (!postId || typeof postId !== "string") {
+      throw new HttpsError("invalid-argument", "Missing postId.");
+    }
+
+    const postRef = db.doc(`posts/${postId}`);
+    const postSnap = await postRef.get();
+    if (!postSnap.exists) {
+      throw new HttpsError("not-found", "Post not found.");
+    }
+
+    const [likeAgg, commentAgg] = await Promise.all([
+      db.collection(`posts/${postId}/likes`).count().get(),
+      db.collection(`posts/${postId}/comments`).count().get(),
+    ]);
+    const likeCount = likeAgg.data().count;
+    const commentCount = commentAgg.data().count;
+    await postRef.update({ likeCount, commentCount });
+    return { success: true, likeCount, commentCount };
+  }
+);

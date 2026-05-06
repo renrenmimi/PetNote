@@ -194,6 +194,43 @@ export const onUserUpdated = onDocumentWritten(
   }
 );
 
+// Sync admin/banned to Auth custom claims so firestore.rules can short-
+// circuit cheap token-claim checks (admin == true, banned == true) ahead
+// of the existing get(/admin/state) reads. Custom claims are eventually
+// consistent — they only land on the user's NEXT id token, up to 1h
+// later — so callables continue to read Firestore directly via
+// getNotificationActor for time-critical authorization. Rules combine
+// both: positive token claim trusted, negative/missing falls back to
+// Firestore.
+export const onAdminStateWritten = onDocumentWritten(
+  "users/{userId}/admin/state",
+  async (event) => {
+    const userId = event.params.userId;
+    const after = event.data?.after?.data();
+
+    const isAdmin = after?.role === "admin";
+    const isBanned = after?.banned === true;
+
+    // setCustomUserClaims overwrites the entire claims object, so any
+    // future per-user claims must be merged in here too. Keep this list
+    // exhaustive — silently dropping a claim is a security regression.
+    const claims: Record<string, unknown> = {};
+    if (isAdmin) claims.admin = true;
+    if (isBanned) claims.banned = true;
+
+    try {
+      await admin
+        .auth()
+        .setCustomUserClaims(userId, Object.keys(claims).length > 0 ? claims : null);
+    } catch (error) {
+      // Auth user might not exist yet (admin/state created before Auth
+      // record) or might already have been deleted. Don't fail the trigger
+      // — Firestore read fallback in rules still enforces the policy.
+      console.warn("Failed to sync admin custom claims", { userId, error });
+    }
+  }
+);
+
 export const onFamilyCreated = onDocumentCreated(
   "pets/{petId}/family/{userId}",
   async (event) => {

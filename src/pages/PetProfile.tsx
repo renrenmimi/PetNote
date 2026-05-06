@@ -254,7 +254,7 @@ export function PetProfile() {
               onClick={async () => {
                 setFollowersLoading(true);
                 try {
-                  const data = await getPetFollowers(pet.id);
+                  const { followers: data } = await getPetFollowers(pet.id);
                   setFollowers(data);
                   setFollowersOpen(true);
                 } finally {

@@ -22,6 +22,7 @@ export {
 } from "./meetups";
 export {
   cleanupOldReadNotifications,
+  markAllNotificationsAsReadCallable,
   onCommentCreated,
   onCommentDeleted,
   onFollowingPetCreated,
@@ -50,6 +51,8 @@ export {
   deleteCommentCallable,
   deletePostCallable,
   onPostWritten,
+  recomputePetPostCountCallable,
+  recomputePostInteractionCountsCallable,
   setPinnedPostCallable,
   updatePostCallable,
 } from "./posts";
@@ -65,6 +68,7 @@ export {
   checkDisplayNameAvailabilityCallable,
   deleteUserAccount,
   ensureUserProfileCallable,
+  onAdminStateWritten,
   onFamilyCreated,
   onUserUpdated,
   updateUserProfileCallable,

@@ -10,8 +10,11 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  startAfter,
   updateDoc,
   where,
+  type QueryConstraint,
+  type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { setAdminState } from "./adminState";
@@ -58,32 +61,63 @@ async function sendWarningNotification(params: {
   });
 }
 
-export async function getPendingReports(): Promise<ReportItem[]> {
+async function pagedReportsQuery(
+  statusFilter: QueryConstraint,
+  options?: { limitCount?: number; lastDoc?: QueryDocumentSnapshot }
+): Promise<{
+  reports: ReportItem[];
+  lastDoc: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+}> {
+  const limitCount = options?.limitCount ?? 50;
   const reportsRef = collection(db, "reports");
-  const reportsQuery = query(
-    reportsRef,
-    where("status", "==", "pending"),
-    orderBy("createdAt", "desc")
-  );
-  const snapshot = await getDocs(reportsQuery);
-  return snapshot.docs.map((docSnap) => ({
+  const constraints: QueryConstraint[] = [
+    statusFilter,
+    orderBy("createdAt", "desc"),
+    limit(limitCount),
+  ];
+  if (options?.lastDoc) {
+    constraints.push(startAfter(options.lastDoc));
+  }
+  const snapshot = await getDocs(query(reportsRef, ...constraints));
+  const reports = snapshot.docs.map((docSnap) => ({
     id: docSnap.id,
     ...(docSnap.data() as Omit<ReportItem, "id">),
   }));
+  const nextLast =
+    (snapshot.docs[snapshot.docs.length - 1] as
+      | QueryDocumentSnapshot
+      | undefined) ?? null;
+  return {
+    reports,
+    lastDoc: nextLast,
+    hasMore: snapshot.docs.length === limitCount,
+  };
 }
 
-export async function getReviewedReports(): Promise<ReportItem[]> {
-  const reportsRef = collection(db, "reports");
-  const reportsQuery = query(
-    reportsRef,
+export async function getPendingReports(options?: {
+  limitCount?: number;
+  lastDoc?: QueryDocumentSnapshot;
+}): Promise<{
+  reports: ReportItem[];
+  lastDoc: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+}> {
+  return pagedReportsQuery(where("status", "==", "pending"), options);
+}
+
+export async function getReviewedReports(options?: {
+  limitCount?: number;
+  lastDoc?: QueryDocumentSnapshot;
+}): Promise<{
+  reports: ReportItem[];
+  lastDoc: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+}> {
+  return pagedReportsQuery(
     where("status", "in", ["reviewed", "resolved"]),
-    orderBy("createdAt", "desc")
+    options
   );
-  const snapshot = await getDocs(reportsQuery);
-  return snapshot.docs.map((docSnap) => ({
-    id: docSnap.id,
-    ...(docSnap.data() as Omit<ReportItem, "id">),
-  }));
 }
 
 export async function resolveReport(
@@ -224,22 +258,32 @@ export async function blockUserByAdmin(
   });
 }
 
-export async function getBannedUsers() {
+export async function getBannedUsers(options?: {
+  limitCount?: number;
+  lastDoc?: QueryDocumentSnapshot;
+}): Promise<{
+  users: Array<{ id: string } & Record<string, unknown>>;
+  lastDoc: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+}> {
+  const limitCount = options?.limitCount ?? 50;
+  const constraints: QueryConstraint[] = [
+    where(documentId(), "==", "state"),
+    where("banned", "==", true),
+    limit(limitCount),
+  ];
+  if (options?.lastDoc) {
+    constraints.push(startAfter(options.lastDoc));
+  }
   const adminStateSnapshot = await getDocs(
-    query(
-      collectionGroup(db, "admin"),
-      where(documentId(), "==", "state"),
-      where("banned", "==", true)
-    )
+    query(collectionGroup(db, "admin"), ...constraints)
   );
 
-  const adminStateEntries = (
+  const users = (
     await Promise.all(
       adminStateSnapshot.docs.map(async (docSnap) => {
         const userId = docSnap.ref.parent.parent?.id;
-        if (!userId) {
-          return null;
-        }
+        if (!userId) return null;
         const userSnap = await getDoc(doc(db, "users", userId));
         const userData = userSnap.exists()
           ? (userSnap.data() as Record<string, unknown>)
@@ -253,7 +297,15 @@ export async function getBannedUsers() {
     )
   ).filter((entry): entry is { id: string } & Record<string, unknown> => !!entry);
 
-  return adminStateEntries;
+  const nextLast =
+    (adminStateSnapshot.docs[adminStateSnapshot.docs.length - 1] as
+      | QueryDocumentSnapshot
+      | undefined) ?? null;
+  return {
+    users,
+    lastDoc: nextLast,
+    hasMore: adminStateSnapshot.docs.length === limitCount,
+  };
 }
 
 export async function unbanUser(userId: string): Promise<void> {

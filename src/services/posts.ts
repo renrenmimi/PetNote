@@ -196,7 +196,7 @@ export async function getFollowingPosts(
   lastDoc: QueryDocumentSnapshot | null;
   hasMore: boolean;
 }> {
-  const followingPets = await getFollowingPets(userId);
+  const { followingPets } = await getFollowingPets(userId);
   const petIds = Array.from(
     new Set(followingPets.map((item) => item.petId).filter(Boolean))
   );

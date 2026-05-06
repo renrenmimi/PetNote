@@ -12,21 +12,39 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    // Admin and banned status are mirrored to Auth custom claims by the
+    // onAdminStateWritten trigger (functions/src/users.ts). Rules trust a
+    // POSITIVE token claim (cheap, no Firestore read) and fall back to
+    // the admin/state doc when the token doesn't carry the claim — covers
+    // freshly issued tokens that haven't picked up a recent change yet.
+    //
+    // CALLABLES still read admin/state directly (via getNotificationActor)
+    // because custom claims have up-to-1h propagation lag, and we don't
+    // want a banned user to keep mutating until their token refreshes.
     function isAdmin() {
       let adminDoc = /databases/$(database)/documents/users/$(request.auth.uid)/admin/state;
-      return isAuthenticated() &&
-        exists(adminDoc) &&
-        'role' in get(adminDoc).data &&
-        get(adminDoc).data.role == 'admin';
+      return isAuthenticated() && (
+        request.auth.token.admin == true ||
+        (
+          exists(adminDoc) &&
+          'role' in get(adminDoc).data &&
+          get(adminDoc).data.role == 'admin'
+        )
+      );
     }
 
     function isNotBanned() {
       let adminDoc = /databases/$(database)/documents/users/$(request.auth.uid)/admin/state;
-      return isAuthenticated() && (
-        !exists(adminDoc) ||
-        !('banned' in get(adminDoc).data) ||
-        get(adminDoc).data.banned != true
-      );
+      // Positive token claim → confirmed banned, no fallback needed.
+      // Negative/missing token claim → check Firestore in case a brand-new
+      // ban hasn't propagated to the caller's id token yet.
+      return isAuthenticated() &&
+        request.auth.token.banned != true &&
+        (
+          !exists(adminDoc) ||
+          !('banned' in get(adminDoc).data) ||
+          get(adminDoc).data.banned != true
+        );
     }
 
     // Block direct client writes while the account is mid-deletion. The

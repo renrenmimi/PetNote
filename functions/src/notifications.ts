@@ -9,6 +9,7 @@ import {
   getDefaultAvatar,
   isTrustedHttpsUrl,
   optionalTrimmedString,
+  processQueryInBatches,
   RATE_LIMITS,
   requestData,
   requiredTrimmedString,
@@ -592,3 +593,35 @@ export const sendNotification = onCall(async (request) => {
   const id = await createNotificationIfAllowed(payload);
   return { id };
 });
+
+// Mark every unread notification for the caller as read. Server-side so
+// the client doesn't have to fetch all unread docs first. Uses cursor
+// paging via processQueryInBatches so it stays bounded for users with a
+// large unread backlog.
+export const markAllNotificationsAsReadCallable = onCall(
+  { timeoutSeconds: 120 },
+  async (request) => {
+    const callerUid = request.auth?.uid;
+    if (!callerUid) {
+      throw new HttpsError("unauthenticated", "Must be logged in.");
+    }
+    await assertRateLimit(
+      callerUid,
+      "markAllNotificationsAsRead",
+      RATE_LIMITS.write
+    );
+
+    let updated = 0;
+    await processQueryInBatches(
+      db
+        .collection("notifications")
+        .where("userId", "==", callerUid)
+        .where("read", "==", false),
+      (batch, docSnap) => {
+        batch.update(docSnap.ref, { read: true });
+        updated += 1;
+      }
+    );
+    return { updated };
+  }
+);

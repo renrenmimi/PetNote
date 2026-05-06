@@ -55,11 +55,19 @@ export async function getSuggestedPets(
   limitCount = 8
 ): Promise<Array<Pet & { postCount: number }>> {
   const petsRef = collection(db, "pets");
-  const [petSnapshot, followingPets] = await Promise.all([
+  const [petSnapshot, followingResult] = await Promise.all([
     getDocs(query(petsRef, orderBy("followerCount", "desc"), limit(50))),
-    currentUserId ? getFollowingPets(currentUserId) : Promise.resolve([]),
+    currentUserId
+      ? getFollowingPets(currentUserId)
+      : Promise.resolve({
+          followingPets: [] as Array<{ petId: string }>,
+          lastDoc: null,
+          hasMore: false,
+        }),
   ]);
-  const followedIds = new Set(followingPets.map((item) => item.petId));
+  const followedIds = new Set(
+    followingResult.followingPets.map((item) => item.petId)
+  );
 
   const rankedPets = petSnapshot.docs
     .map((docSnap) => ({
