@@ -73,7 +73,7 @@ export function PetProfile() {
         getPostsByPet(petId),
         getPetFamily(petId),
         getPetTotalLikes(petId),
-        getCheckinsByPet(petId, 100),
+        getCheckinsByPet(petId, { limitCount: 100 }),
       ]);
 
       const primaryOwnerId = petData.primaryOwnerId || petData.ownerId;
@@ -103,7 +103,9 @@ export function PetProfile() {
         : false;
 
       const uniqueLocationIds = Array.from(
-        new Set(petCheckins.map((item) => item.locationId).filter(Boolean))
+        new Set(
+          petCheckins.checkins.map((item) => item.locationId).filter(Boolean)
+        )
       );
       const locationMap = await batchGetLocations(uniqueLocationIds);
 
@@ -116,7 +118,7 @@ export function PetProfile() {
         setOwnerName(
           primaryMember?.userName || fallbackOwnerProfile?.displayName || "Family"
         );
-        setCheckins(petCheckins);
+        setCheckins(petCheckins.checkins);
         setCheckinLocations(locationMap);
         setLoading(false);
       }

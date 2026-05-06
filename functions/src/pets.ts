@@ -1,13 +1,14 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
 import { cascadeDeletePet } from "./cleanup";
-import { getNotificationActor } from "./notifications";
+import { assertActorNotDeleting, getNotificationActor } from "./notifications";
 import {
   assertRateLimit,
   getDefaultAvatar,
   optionalTrimmedString,
   optionalTrustedHttpsUrl,
   RATE_LIMITS,
+  requestData,
   stripUndefined,
   TRUSTED_AVATAR_URL_HOSTS,
   VALIDATION_LIMITS,
@@ -46,6 +47,43 @@ function timestampFromMillis(value: unknown): admin.firestore.Timestamp | null {
     : null;
 }
 
+// Pets store both a legacy birthday Timestamp (for "Born: <date>" display)
+// and a canonical month/day pair so isBirthdayToday is timezone-safe. Client
+// passes either explicit { birthdayMonth, birthdayDay } or birthdayMillis;
+// from millis we derive month/day in UTC, which still beats comparing two
+// timestamps in mixed timezones.
+function deriveBirthdayMonthDay(
+  data: Record<string, unknown>,
+  birthday: admin.firestore.Timestamp | null
+): { birthdayMonth?: number; birthdayDay?: number } {
+  const explicitMonth =
+    typeof data.birthdayMonth === "number" && Number.isFinite(data.birthdayMonth)
+      ? Math.floor(data.birthdayMonth)
+      : null;
+  const explicitDay =
+    typeof data.birthdayDay === "number" && Number.isFinite(data.birthdayDay)
+      ? Math.floor(data.birthdayDay)
+      : null;
+  if (
+    explicitMonth !== null &&
+    explicitDay !== null &&
+    explicitMonth >= 1 &&
+    explicitMonth <= 12 &&
+    explicitDay >= 1 &&
+    explicitDay <= 31
+  ) {
+    return { birthdayMonth: explicitMonth, birthdayDay: explicitDay };
+  }
+  if (birthday) {
+    const date = birthday.toDate();
+    return {
+      birthdayMonth: date.getUTCMonth() + 1,
+      birthdayDay: date.getUTCDate(),
+    };
+  }
+  return {};
+}
+
 function sanitizePetRelationship(value: unknown, customValue: unknown): {
   relationship: string;
   customRelationship?: string;
@@ -71,6 +109,8 @@ function sanitizePetDraft(value: unknown): {
   species: string;
   breed: string;
   birthday?: admin.firestore.Timestamp;
+  birthdayMonth?: number;
+  birthdayDay?: number;
   gender: string;
   bio: string;
   avatarUrl: string;
@@ -108,6 +148,7 @@ function sanitizePetDraft(value: unknown): {
     TRUSTED_AVATAR_URL_HOSTS
   );
   const birthday = timestampFromMillis(data.birthdayMillis);
+  const { birthdayMonth, birthdayDay } = deriveBirthdayMonthDay(data, birthday);
 
   return stripUndefined({
     name,
@@ -115,6 +156,8 @@ function sanitizePetDraft(value: unknown): {
     species,
     breed,
     birthday: birthday ?? undefined,
+    birthdayMonth,
+    birthdayDay,
     gender,
     bio,
     avatarUrl,
@@ -145,12 +188,14 @@ export const createPetCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot create pets.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "createPet", RATE_LIMITS.strictWrite);
 
-  const payload = sanitizePetDraft(request.data);
+  const data = requestData(request.data);
+  const payload = sanitizePetDraft(data);
   const relationshipData = sanitizePetRelationship(
-    (request.data as { relationship?: unknown }).relationship,
-    (request.data as { customRelationship?: unknown }).customRelationship
+    data.relationship,
+    data.customRelationship
   );
 
   const petRef = db.collection("pets").doc();
@@ -202,9 +247,12 @@ export const updatePetCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot update pets.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "updatePet", RATE_LIMITS.write);
 
-  const { petId, ...rawUpdates } = request.data as { petId?: string } & Record<string, unknown>;
+  const { petId, ...rawUpdates } = requestData(request.data) as {
+    petId?: string;
+  } & Record<string, unknown>;
   if (!petId || typeof petId !== "string") {
     throw new HttpsError("invalid-argument", "Missing petId.");
   }
@@ -270,10 +318,20 @@ export const updatePetCallable = onCall(async (request) => {
       TRUSTED_AVATAR_URL_HOSTS
     );
   }
-  if ("birthdayMillis" in rawUpdates) {
+  if (
+    "birthdayMillis" in rawUpdates ||
+    "birthdayMonth" in rawUpdates ||
+    "birthdayDay" in rawUpdates
+  ) {
     const birthday = timestampFromMillis(rawUpdates.birthdayMillis);
-    updates.birthday =
-      birthday ?? admin.firestore.FieldValue.delete();
+    updates.birthday = birthday ?? admin.firestore.FieldValue.delete();
+    const { birthdayMonth, birthdayDay } = deriveBirthdayMonthDay(
+      rawUpdates,
+      birthday
+    );
+    updates.birthdayMonth =
+      birthdayMonth ?? admin.firestore.FieldValue.delete();
+    updates.birthdayDay = birthdayDay ?? admin.firestore.FieldValue.delete();
   }
 
   if (Object.keys(updates).length === 0) {
@@ -292,9 +350,10 @@ export const deletePetCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot delete pets.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "deletePet", RATE_LIMITS.write);
 
-  const { petId } = request.data as { petId?: string };
+  const { petId } = requestData(request.data) as { petId?: string };
   if (!petId || typeof petId !== "string") {
     throw new HttpsError("invalid-argument", "Missing petId.");
   }
@@ -325,9 +384,10 @@ export const followPetCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot follow pets.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "followPet", RATE_LIMITS.write);
 
-  const { petId } = request.data as { petId?: string };
+  const { petId } = requestData(request.data) as { petId?: string };
   if (!petId || typeof petId !== "string") {
     throw new HttpsError("invalid-argument", "Missing petId.");
   }
@@ -368,9 +428,10 @@ export const unfollowPetCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot unfollow pets.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "unfollowPet", RATE_LIMITS.write);
 
-  const { petId } = request.data as { petId?: string };
+  const { petId } = requestData(request.data) as { petId?: string };
   if (!petId || typeof petId !== "string") {
     throw new HttpsError("invalid-argument", "Missing petId.");
   }

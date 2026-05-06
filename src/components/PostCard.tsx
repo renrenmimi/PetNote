@@ -143,7 +143,7 @@ export function PostCard({
     const loadPet = async () => {
       const pet = await getPetById(post.petId as string);
       if (!ignore) {
-        setIsBirthday(!!pet && isBirthdayToday(pet.birthday));
+        setIsBirthday(!!pet && isBirthdayToday(pet));
       }
     };
     void loadPet();

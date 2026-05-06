@@ -1,8 +1,8 @@
 import { randomInt } from "node:crypto";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
-import { getNotificationActor } from "./notifications";
-import { assertRateLimit, getDefaultAvatar, RATE_LIMITS, stripUndefined } from "./shared";
+import { assertActorNotDeleting, getNotificationActor } from "./notifications";
+import { assertRateLimit, getDefaultAvatar, RATE_LIMITS, requestData, stripUndefined } from "./shared";
 
 type ActiveInvitation = {
   code: string;
@@ -176,9 +176,10 @@ export const createInvitationCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot create invitations.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "createInvitation", RATE_LIMITS.write);
 
-  const { petId } = request.data as { petId?: string };
+  const { petId } = requestData(request.data) as { petId?: string };
   if (!petId || typeof petId !== "string") {
     throw new HttpsError("invalid-argument", "Missing petId.");
   }
@@ -250,7 +251,7 @@ export const getActiveInvitationCallable = onCall(async (request) => {
   }
   await assertRateLimit(callerUid, "getActiveInvitation", RATE_LIMITS.read);
 
-  const { petId } = request.data as { petId?: string };
+  const { petId } = requestData(request.data) as { petId?: string };
   if (!petId || typeof petId !== "string") {
     throw new HttpsError("invalid-argument", "Missing petId.");
   }
@@ -271,7 +272,7 @@ export const validateInvitationCallable = onCall(async (request) => {
   await assertRateLimit(callerUid, "validateInvitation", RATE_LIMITS.read);
 
   const normalizedCode = normalizeInvitationCode(
-    (request.data as { code?: unknown } | undefined)?.code
+    (requestData(request.data) as { code?: unknown }).code
   );
   if (normalizedCode.length !== 8) {
     throw new HttpsError("invalid-argument", "Invitation code must be 8 characters.");
@@ -308,9 +309,10 @@ export const redeemInvitationCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot redeem invitations.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "redeemInvitation", RATE_LIMITS.strictWrite);
 
-  const data = request.data as {
+  const data = requestData(request.data) as {
     code?: string;
     relationship?: string;
     customRelationship?: string;
@@ -439,9 +441,10 @@ export const removeFamilyMemberCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot remove family members.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "removeFamilyMember", RATE_LIMITS.write);
 
-  const { petId, targetUserId } = request.data as {
+  const { petId, targetUserId } = requestData(request.data) as {
     petId?: string;
     targetUserId?: string;
   };

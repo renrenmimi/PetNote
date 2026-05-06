@@ -28,20 +28,6 @@ export type Checkin = {
   createdAt?: unknown;
 };
 
-const toDate = (value: unknown): Date | null => {
-  if (!value) return null;
-  if (value instanceof Date) return value;
-  if (
-    typeof value === "object" &&
-    value !== null &&
-    "toDate" in value &&
-    typeof (value as { toDate: () => Date }).toDate === "function"
-  ) {
-    return (value as { toDate: () => Date }).toDate();
-  }
-  return null;
-};
-
 const getUtcDayKey = (date = new Date()) => date.toISOString().slice(0, 10);
 
 export async function checkIn(
@@ -140,25 +126,41 @@ export async function getUserCheckins(
 
 export async function getCheckinsByPet(
   petId: string,
-  limitCount = 50
-): Promise<Checkin[]> {
-  if (!petId) return [];
+  options?: { limitCount?: number; lastDoc?: QueryDocumentSnapshot }
+): Promise<{
+  checkins: Checkin[];
+  lastDoc: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+}> {
+  if (!petId) return { checkins: [], lastDoc: null, hasMore: false };
+  const limitCount = options?.limitCount ?? 50;
+  // Order on the server with a (petId ASC, createdAt DESC) collection-group
+  // index so we get the *latest* N rather than an unordered slice that we
+  // then sort locally. Without orderBy, `.limit(50)` could return any 50
+  // matching docs and miss recent check-ins for prolific pets.
+  const constraints: QueryConstraint[] = [
+    where("petId", "==", petId),
+    orderBy("createdAt", "desc"),
+    limit(limitCount),
+  ];
+  if (options?.lastDoc) {
+    constraints.push(startAfter(options.lastDoc));
+  }
   const snapshot = await getDocs(
-    query(
-      collectionGroup(db, "checkins"),
-      where("petId", "==", petId),
-      limit(limitCount)
-    )
+    query(collectionGroup(db, "checkins"), ...constraints)
   );
-  const rows = snapshot.docs.map((docSnap) => ({
+  const checkins = snapshot.docs.map((docSnap) => ({
     id: docSnap.id,
     locationId: docSnap.ref.parent.parent?.id || "",
     ...(docSnap.data() as Omit<Checkin, "id" | "locationId">),
   }));
-  rows.sort((a, b) => {
-    const aDate = toDate(a.createdAt)?.getTime() ?? 0;
-    const bDate = toDate(b.createdAt)?.getTime() ?? 0;
-    return bDate - aDate;
-  });
-  return rows;
+  const nextLast =
+    (snapshot.docs[snapshot.docs.length - 1] as
+      | QueryDocumentSnapshot
+      | undefined) ?? null;
+  return {
+    checkins,
+    lastDoc: nextLast,
+    hasMore: snapshot.docs.length === limitCount,
+  };
 }

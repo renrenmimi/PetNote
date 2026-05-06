@@ -44,6 +44,10 @@ export function CommentSection({
   const [hasMore, setHasMore] = useState(false);
   const lastDocRef = useRef<QueryDocumentSnapshot | null>(null);
   const [showAll, setShowAll] = useState(false);
+  // Track which postId the in-flight loads belong to. If postId changes
+  // (e.g. PostDetail navigates to a sibling) async responses are dropped
+  // instead of polluting the new post's comment list.
+  const activePostIdRef = useRef(postId);
   const [text, setText] = useState("");
   const [viewportOffset, setViewportOffset] = useState(0);
   const [replyTarget, setReplyTarget] = useState<{
@@ -63,22 +67,34 @@ export function CommentSection({
       : "text-slate-400 dark:text-slate-500";
 
   useEffect(() => {
+    activePostIdRef.current = postId;
+    // Reset paging state for the new post so a stale lastDoc from the
+    // previous post can't accidentally drive the next loadMore.
+    lastDocRef.current = null;
+    setComments([]);
+    setHasMore(false);
+    setLoadingMore(false);
+    setShowAll(false);
+
     let ignore = false;
     const load = async () => {
       setLoading(true);
       try {
         const data = await getComments(postId);
-        if (!ignore) {
-          setComments(data.comments);
-          setHasMore(data.hasMore);
-          lastDocRef.current = data.lastDoc;
-        }
+        if (ignore || activePostIdRef.current !== postId) return;
+        setComments(data.comments);
+        setHasMore(data.hasMore);
+        lastDocRef.current = data.lastDoc;
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Failed to load comments";
-        if (!ignore) showToast(message, "error");
+        if (!ignore && activePostIdRef.current === postId) {
+          showToast(message, "error");
+        }
       } finally {
-        if (!ignore) setLoading(false);
+        if (!ignore && activePostIdRef.current === postId) {
+          setLoading(false);
+        }
       }
     };
 
@@ -91,9 +107,13 @@ export function CommentSection({
 
   const loadMoreComments = async () => {
     if (loadingMore || !hasMore || !lastDocRef.current) return;
+    // Capture the postId this request belongs to so a late response after
+    // navigation doesn't append the wrong post's comments.
+    const requestPostId = postId;
     setLoadingMore(true);
     try {
       const data = await getComments(postId, { lastDoc: lastDocRef.current });
+      if (activePostIdRef.current !== requestPostId) return;
       setComments((prev) => {
         const seen = new Set(prev.map((c) => c.id));
         return [...prev, ...data.comments.filter((c) => !seen.has(c.id))];
@@ -101,11 +121,14 @@ export function CommentSection({
       setHasMore(data.hasMore);
       lastDocRef.current = data.lastDoc;
     } catch (err) {
+      if (activePostIdRef.current !== requestPostId) return;
       const message =
         err instanceof Error ? err.message : "Failed to load more comments";
       showToast(message, "error");
     } finally {
-      setLoadingMore(false);
+      if (activePostIdRef.current === requestPostId) {
+        setLoadingMore(false);
+      }
     }
   };
 

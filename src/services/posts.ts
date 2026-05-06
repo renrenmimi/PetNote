@@ -3,6 +3,7 @@ import {
   count,
   deleteDoc,
   doc,
+  documentId,
   getAggregateFromServer,
   getDoc,
   getDocs,
@@ -203,12 +204,16 @@ export async function getFollowingPosts(
     return { posts: [], lastDoc: null, hasMore: false };
   }
 
-  // Firestore "in" queries support max 30 values; split into chunks and merge.
-  // Use a value-based cursor (createdAt < lastSeenCreatedAt) because a
-  // DocumentSnapshot cursor is scoped to the specific query that produced it
-  // and will return wrong results when reused across different "in" chunks.
+  // Firestore "in" queries support max 30 values; split into chunks and
+  // merge. We can't reuse `lastDoc` directly across the chunked queries
+  // because a QueryDocumentSnapshot cursor is bound to its source query, so
+  // we extract a (createdAt, docId) tuple and feed it via startAfter on a
+  // stable double-field order. The __name__ tiebreaker means posts that
+  // share a serverTimestamp (rare but possible) don't get skipped on the
+  // next page — strict `where(createdAt < t)` would drop them.
   const cursorTimestamp =
     (lastDoc?.data() as PostData | undefined)?.createdAt ?? null;
+  const cursorDocId = lastDoc?.id ?? null;
 
   const chunkSize = 30;
   const postsRef = collection(db, "posts");
@@ -220,10 +225,11 @@ export async function getFollowingPosts(
     const chunk = petIds.slice(i, i + chunkSize);
     const constraints: QueryConstraint[] = [
       where("petId", "in", chunk),
-      ...(cursorTimestamp
-        ? [where("createdAt", "<", cursorTimestamp)]
-        : []),
       orderBy("createdAt", "desc"),
+      orderBy(documentId(), "desc"),
+      ...(cursorTimestamp && cursorDocId
+        ? [startAfter(cursorTimestamp, cursorDocId)]
+        : []),
       limit(perChunkLimit),
     ];
     const snapshot = await getDocs(query(postsRef, ...constraints));

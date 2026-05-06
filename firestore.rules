@@ -29,6 +29,19 @@ service cloud.firestore {
       );
     }
 
+    // Block direct client writes while the account is mid-deletion. The
+    // deleteUserAccount callable sets users/{uid}.deletionPending = true at
+    // the start of its cascade; without this check the user could keep
+    // creating new likes / bookmarks faster than the cleanup deletes them.
+    function isNotDeleting() {
+      let userDoc = /databases/$(database)/documents/users/$(request.auth.uid);
+      return isAuthenticated() && (
+        !exists(userDoc) ||
+        !('deletionPending' in get(userDoc).data) ||
+        get(userDoc).data.deletionPending != true
+      );
+    }
+
     function isAllowedUserUpdate() {
       // Profile identity fields are written exclusively by callable functions
       // so displayName uniqueness is enforced through /usernames reservations.
@@ -70,7 +83,16 @@ service cloud.firestore {
 
       match /bookmarks/{bookmarkId} {
         allow read: if isOwner(userId);
-        allow write: if isOwner(userId);
+        // Bookmark doc id IS the postId. Validate the post exists and the
+        // user is in good standing on create; allow delete unconditionally
+        // for the owner so cleanup paths work even after a ban or during
+        // account deletion.
+        allow create: if isOwner(userId) &&
+          isNotBanned() &&
+          isNotDeleting() &&
+          exists(/databases/$(database)/documents/posts/$(bookmarkId));
+        allow update: if false;
+        allow delete: if isOwner(userId);
       }
 
       match /following/{targetId} {
@@ -120,7 +142,10 @@ service cloud.firestore {
         allow create: if isAuthenticated() &&
           request.auth.uid == likeId &&
           isNotBanned() &&
+          isNotDeleting() &&
           exists(/databases/$(database)/documents/posts/$(postId));
+        // Allow delete during deletion so cleanup paths work even when the
+        // user is being torn down.
         allow delete: if isAuthenticated() &&
           request.auth.uid == likeId &&
           isNotBanned();
@@ -316,9 +341,10 @@ service cloud.firestore {
       allow read: if true;
     }
 
-    match /{path=**}/bookmarks/{bookmarkId} {
-      allow read: if isAuthenticated() && request.auth.uid == bookmarkId;
-    }
+    // bookmarks collection-group rule intentionally omitted: the
+    // `users/{userId}/bookmarks/{postId}` rule above already gates owner
+    // reads, and no client query reads bookmarks via the collection group.
+    // (Server-side cleanup uses the Admin SDK and bypasses rules.)
 
     match /{path=**}/family/{userId} {
       allow read: if true;

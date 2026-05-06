@@ -28,7 +28,7 @@ export function BirthdayCelebration({ ownerId }: BirthdayCelebrationProps) {
 
   const birthdayPet = pets[0];
   const ageLabel = useMemo(() => {
-    if (!birthdayPet?.birthday || !isBirthdayToday(birthdayPet.birthday)) {
+    if (!birthdayPet || !isBirthdayToday(birthdayPet)) {
       return "";
     }
     const date =

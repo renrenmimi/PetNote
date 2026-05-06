@@ -2,7 +2,7 @@ import { onDocumentDeleted } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { admin, db } from "./platform";
-import { getNotificationActor } from "./notifications";
+import { assertActorNotDeleting, getNotificationActor } from "./notifications";
 import {
   assertRateLimit,
   batchChunked,
@@ -10,6 +10,7 @@ import {
   optionalTrimmedString,
   optionalTrustedHttpsUrl,
   RATE_LIMITS,
+  requestData,
   requiredTrimmedString,
   stripUndefined,
   TRUSTED_MEDIA_URL_HOSTS,
@@ -190,9 +191,10 @@ export const createMeetupCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot create meetups.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "createMeetup", RATE_LIMITS.strictWrite);
 
-  const data = request.data as {
+  const data = requestData(request.data) as {
     title?: string;
     description?: string;
     coverImage?: string;
@@ -311,9 +313,10 @@ export const updateMeetupCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot edit meetups.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "updateMeetup", RATE_LIMITS.write);
 
-  const data = request.data as {
+  const data = requestData(request.data) as {
     meetupId?: string;
     title?: string;
     description?: string;
@@ -451,9 +454,10 @@ export const cancelMeetupCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot cancel meetups.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "cancelMeetup", RATE_LIMITS.write);
 
-  const { meetupId } = request.data as { meetupId?: string };
+  const { meetupId } = requestData(request.data) as { meetupId?: string };
   if (!meetupId || typeof meetupId !== "string") {
     throw new HttpsError("invalid-argument", "Missing meetupId.");
   }
@@ -485,11 +489,16 @@ export const joinMeetupCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot join meetups.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "joinMeetup", RATE_LIMITS.write);
 
-  const { meetupId, petId } = request.data as {
-    meetupId: string; petId?: string;
+  const { meetupId, petId } = requestData(request.data) as {
+    meetupId?: string;
+    petId?: string;
   };
+  if (!meetupId || typeof meetupId !== "string") {
+    throw new HttpsError("invalid-argument", "Missing meetupId.");
+  }
 
   const meetupRef = db.doc(`meetups/${meetupId}`);
   const participantRef = db.doc(`meetups/${meetupId}/participants/${callerUid}`);
@@ -594,13 +603,16 @@ export const joinMeetupCallable = onCall(async (request) => {
       }
     }
 
-    const actor = await getNotificationActor(callerUid);
-
+    // Reuse the pre-transaction caller actor instead of re-reading inside
+    // the transaction. participant display fields (userName, userAvatar)
+    // are denormalized snapshots — onUserUpdated trigger keeps them in
+    // sync with the user doc, so a tiny window of staleness is acceptable
+    // and saves a redundant read on every join.
     t.set(participantRef, {
       meetupId,
       userId: callerUid,
-      userName: actor.fromUserName,
-      userAvatar: actor.fromUserAvatar || getDefaultAvatar(callerUid),
+      userName: caller.fromUserName,
+      userAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
       petId: participantPetId,
       petName: participantPetName,
       petAvatar: participantPetAvatar,
@@ -655,8 +667,10 @@ export const checkMeetupStatusCallable = onCall(async (request) => {
   if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
   await assertRateLimit(callerUid, "checkMeetupStatus", RATE_LIMITS.read);
 
-  const { meetupId } = request.data as { meetupId: string };
-  if (!meetupId) throw new HttpsError("invalid-argument", "Missing meetupId.");
+  const { meetupId } = requestData(request.data) as { meetupId?: string };
+  if (!meetupId || typeof meetupId !== "string") {
+    throw new HttpsError("invalid-argument", "Missing meetupId.");
+  }
 
   const meetupRef = db.doc(`meetups/${meetupId}`);
   const meetupSnap = await meetupRef.get();

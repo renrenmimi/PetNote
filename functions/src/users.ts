@@ -16,19 +16,13 @@ import {
   forEachQueryDocumentInBatches,
   FIRESTORE_BATCH_LIMIT,
   getDefaultAvatar,
+  requestData,
   stripUndefined,
   optionalTrustedHttpsUrl,
   RATE_LIMITS,
   TRUSTED_AVATAR_URL_HOSTS,
   VALIDATION_LIMITS,
 } from "./shared";
-
-function requestData(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return {};
-  }
-  return value as Record<string, unknown>;
-}
 
 function normalizeDisplayName(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -411,7 +405,10 @@ export const deleteUserAccount = onCall({ timeoutSeconds: 540 }, async (request)
     throw new HttpsError("unauthenticated", "Must be logged in.");
   }
 
-  const { userId } = request.data as { userId: string };
+  const { userId } = requestData(request.data) as { userId?: string };
+  if (!userId || typeof userId !== "string") {
+    throw new HttpsError("invalid-argument", "Missing userId.");
+  }
   if (callerUid !== userId) {
     throw new HttpsError("permission-denied", "Can only delete your own account.");
   }

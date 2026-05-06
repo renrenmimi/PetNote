@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { onDocumentCreated, onDocumentDeleted } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
-import { getNotificationActor } from "./notifications";
+import { assertActorNotDeleting, getNotificationActor } from "./notifications";
 import { deleteCollectionPath } from "./cleanup";
 import {
   applyReviewAggregationDelta,
@@ -13,6 +13,7 @@ import {
   optionalTrimmedString,
   optionalTrustedHttpsUrl,
   RATE_LIMITS,
+  requestData,
   requiredTrimmedString,
   requiredTrustedHttpsUrl,
   TRUSTED_MEDIA_URL_HOSTS,
@@ -397,9 +398,10 @@ export const addPlaceCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot create places.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "addPlace", RATE_LIMITS.strictWrite);
 
-  const place = sanitizePlaceDraft(request.data);
+  const place = sanitizePlaceDraft(requestData(request.data));
   const locationId = buildLocationId(place.lat, place.lng, place.name);
   const locationRef = db.doc(`locations/${locationId}`);
   let alreadyExisted = false;
@@ -460,9 +462,13 @@ export const addLocationPhotosCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot add place photos.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "addLocationPhotos", RATE_LIMITS.write);
 
-  const data = request.data as { locationId?: string; photoUrls?: unknown };
+  const data = requestData(request.data) as {
+    locationId?: string;
+    photoUrls?: unknown;
+  };
   if (!data.locationId || typeof data.locationId !== "string") {
     throw new HttpsError("invalid-argument", "Missing locationId.");
   }
@@ -501,9 +507,10 @@ export const submitReviewCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot review locations.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "submitReview", RATE_LIMITS.write);
 
-  const data = request.data as {
+  const data = requestData(request.data) as {
     locationId?: string;
     meetupId?: string;
     rating?: number;
@@ -600,9 +607,10 @@ export const checkInCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot check in.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "checkIn", RATE_LIMITS.write);
 
-  const data = request.data as {
+  const data = requestData(request.data) as {
     locationId?: string;
     photoUrl?: string;
     caption?: string;
