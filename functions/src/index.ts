@@ -41,6 +41,7 @@ export {
   onLocationDeleted,
   onReviewCreated,
   onReviewDeleted,
+  recomputeLocationReviewAggregatesCallable,
   submitReviewCallable,
 } from "./places";
 export {

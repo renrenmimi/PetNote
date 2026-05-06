@@ -300,12 +300,67 @@ export async function forEachQueryDocumentInBatches(
   }
 }
 
+export type PetFriendlySubscores = {
+  space: number;
+  safety: number;
+  cleanliness: number;
+};
+
 export type ReviewAggregationDelta = {
   ratingSum: number;
   count: number;
   tagsToAdd?: string[];
   photosToAdd?: string[];
+  // Per-dimension sum delta (positive on create, negative on delete). The
+  // location doc maintains both petFriendlySum (raw) and petFriendlyAvg
+  // (sum / totalRatings) so the UI can render the subscores without
+  // pulling every review.
+  petFriendlySumDelta?: PetFriendlySubscores;
+  // Tag histogram delta: { puppy: 1, friendly: 1 } on create, the same
+  // tags with -1 on delete. Keys whose count goes <= 0 are removed from
+  // tagCounts via FieldValue.delete so the map doesn't accumulate dead
+  // entries forever.
+  tagCountsDelta?: Record<string, number>;
 };
+
+const TOP_TAGS_LIMIT = 10;
+
+function divideSubscores(
+  sum: PetFriendlySubscores,
+  count: number
+): PetFriendlySubscores {
+  if (count <= 0) {
+    return { space: 0, safety: 0, cleanliness: 0 };
+  }
+  return {
+    space: Number((sum.space / count).toFixed(2)),
+    safety: Number((sum.safety / count).toFixed(2)),
+    cleanliness: Number((sum.cleanliness / count).toFixed(2)),
+  };
+}
+
+function readSubscores(value: unknown): PetFriendlySubscores {
+  if (!value || typeof value !== "object") {
+    return { space: 0, safety: 0, cleanliness: 0 };
+  }
+  const record = value as Record<string, unknown>;
+  return {
+    space: typeof record.space === "number" ? record.space : 0,
+    safety: typeof record.safety === "number" ? record.safety : 0,
+    cleanliness: typeof record.cleanliness === "number" ? record.cleanliness : 0,
+  };
+}
+
+function readTagCounts(value: unknown): Record<string, number> {
+  if (!value || typeof value !== "object") return {};
+  const out: Record<string, number> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof raw === "number" && raw > 0) {
+      out[key] = raw;
+    }
+  }
+  return out;
+}
 
 // Apply a per-review delta to location aggregation counters in a single
 // transaction. Avoids re-reading every review on the location on every
@@ -349,8 +404,113 @@ export async function applyReviewAggregationDelta(
       );
     }
 
+    if (delta.petFriendlySumDelta) {
+      const prevPfSum = readSubscores(data.petFriendlySum);
+      const newPfSum: PetFriendlySubscores = {
+        space: Math.max(0, prevPfSum.space + delta.petFriendlySumDelta.space),
+        safety: Math.max(0, prevPfSum.safety + delta.petFriendlySumDelta.safety),
+        cleanliness: Math.max(
+          0,
+          prevPfSum.cleanliness + delta.petFriendlySumDelta.cleanliness
+        ),
+      };
+      update.petFriendlySum = newPfSum;
+      update.petFriendlyAvg = divideSubscores(newPfSum, newCount);
+    }
+
+    if (delta.tagCountsDelta && Object.keys(delta.tagCountsDelta).length > 0) {
+      const prevCounts = readTagCounts(data.tagCounts);
+      for (const [tag, change] of Object.entries(delta.tagCountsDelta)) {
+        const next = (prevCounts[tag] ?? 0) + change;
+        if (next <= 0) {
+          // Drop the key entirely so the map doesn't accumulate dead tags.
+          delete prevCounts[tag];
+          update[`tagCounts.${tag}`] = admin.firestore.FieldValue.delete();
+        } else {
+          prevCounts[tag] = next;
+          update[`tagCounts.${tag}`] = next;
+        }
+      }
+      // topTags: highest-count tags up to TOP_TAGS_LIMIT, alphabetical
+      // tiebreak. Pre-computed so the UI doesn't need the full histogram
+      // for the common chips display.
+      const topTags = Object.entries(prevCounts)
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, TOP_TAGS_LIMIT)
+        .map(([tag]) => tag);
+      update.topTags = topTags;
+    }
+
     t.update(locationRef, update);
   });
+}
+
+// Recompute every aggregate field from the location's review subcollection.
+// Used by the admin recompute callable to backfill petFriendly* / tagCounts
+// for locations whose reviews predate the trigger that maintains them.
+export async function recomputeLocationReviewAggregates(
+  locationId: string
+): Promise<{
+  totalRatings: number;
+  averageRating: number;
+  petFriendlyAvg: PetFriendlySubscores;
+  tagCount: number;
+}> {
+  const locationRef = db.doc(`locations/${locationId}`);
+  const reviewsRef = db.collection(`locations/${locationId}/reviews`);
+  const reviewsSnap = await reviewsRef.get();
+
+  let sumRating = 0;
+  const pfSum: PetFriendlySubscores = { space: 0, safety: 0, cleanliness: 0 };
+  const tagCounts: Record<string, number> = {};
+  const distinctTags = new Set<string>();
+
+  for (const docSnap of reviewsSnap.docs) {
+    const data = docSnap.data() ?? {};
+    const rating = typeof data.rating === "number" ? data.rating : 0;
+    sumRating += rating;
+    const pf = readSubscores(data.petFriendly);
+    pfSum.space += pf.space || rating;
+    pfSum.safety += pf.safety || rating;
+    pfSum.cleanliness += pf.cleanliness || rating;
+    if (Array.isArray(data.tags)) {
+      for (const raw of data.tags as unknown[]) {
+        if (typeof raw === "string" && raw.length > 0) {
+          tagCounts[raw] = (tagCounts[raw] ?? 0) + 1;
+          distinctTags.add(raw);
+        }
+      }
+    }
+  }
+
+  const count = reviewsSnap.size;
+  const averageRating = count === 0 ? 0 : Number((sumRating / count).toFixed(2));
+  const petFriendlyAvg = divideSubscores(pfSum, count);
+  const topTags = Object.entries(tagCounts)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, TOP_TAGS_LIMIT)
+    .map(([tag]) => tag);
+
+  await locationRef.set(
+    {
+      sumRating,
+      totalRatings: count,
+      averageRating,
+      petFriendlySum: pfSum,
+      petFriendlyAvg,
+      tagCounts,
+      topTags,
+      tags: Array.from(distinctTags),
+    },
+    { merge: true }
+  );
+
+  return {
+    totalRatings: count,
+    averageRating,
+    petFriendlyAvg,
+    tagCount: Object.keys(tagCounts).length,
+  };
 }
 
 export function getDefaultAvatar(seed: string): string {
