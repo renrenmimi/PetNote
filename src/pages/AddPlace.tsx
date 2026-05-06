@@ -3,7 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../contexts/ToastContext";
-import { uploadImage } from "../services/cloudinary";
+import {
+  deleteCloudinaryAssets,
+  uploadImage,
+  type UploadedAsset,
+} from "../services/cloudinary";
 import { reverseGeocode } from "../services/geoapify";
 import { getCurrentLocation } from "../services/location";
 import {
@@ -119,6 +123,7 @@ export function AddPlace() {
       return;
     }
     setSaving(true);
+    const uploaded: UploadedAsset[] = [];
     try {
       const { locationId, alreadyExisted } = await addPlace({
         name: name.trim(),
@@ -139,9 +144,11 @@ export function AddPlace() {
         navigate(`/location/${locationId}`, { replace: true });
         return;
       }
-      const photoUrls = await Promise.all(
+      const photoAssets = await Promise.all(
         photos.map((file) => uploadImage(file))
       );
+      uploaded.push(...photoAssets);
+      const photoUrls = photoAssets.map((asset) => asset.url);
       if (!alreadyExisted && photoUrls.length > 0) {
         await addPhotosToPlace(locationId, photoUrls);
       }
@@ -167,6 +174,8 @@ export function AddPlace() {
       showToast(alreadyExisted ? "Place contribution added!" : "Place added!", "success");
       navigate(`/location/${locationId}`, { replace: true });
     } catch {
+      // Best-effort orphan cleanup if any of the downstream writes failed.
+      void deleteCloudinaryAssets(uploaded);
       showToast("Failed to add place.", "error");
     } finally {
       setSaving(false);

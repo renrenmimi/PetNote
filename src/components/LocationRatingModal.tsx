@@ -2,7 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "../contexts/ToastContext";
 import { submitReview } from "../services/locations";
 import { useAuth } from "../hooks/useAuth";
-import { uploadImage } from "../services/cloudinary";
+import {
+  deleteCloudinaryAssets,
+  uploadImage,
+  type UploadedAsset,
+} from "../services/cloudinary";
 
 type LocationRatingModalProps = {
   open: boolean;
@@ -96,8 +100,10 @@ export function LocationRatingModal({
       return;
     }
     setSubmitting(true);
+    const uploaded: UploadedAsset[] = [];
     try {
-      const photoUrls = await Promise.all(photos.map((file) => uploadImage(file)));
+      const uploads = await Promise.all(photos.map((file) => uploadImage(file)));
+      uploaded.push(...uploads);
       const reviewPayload: Parameters<typeof submitReview>[1] = {
         userId: user.uid,
         userName: profile?.displayName || user.displayName || "PetNote User",
@@ -107,7 +113,7 @@ export function LocationRatingModal({
           `https://api.dicebear.com/7.x/thumbs/svg?seed=${user.uid}`,
         rating,
         comment: comment.trim(),
-        photos: photoUrls,
+        photos: uploads.map((u) => u.url),
         tags,
         petFriendly: {
           space: space || rating,
@@ -125,6 +131,8 @@ export function LocationRatingModal({
       onSubmitted?.();
       onClose();
     } catch {
+      // Best-effort orphan cleanup before surfacing the error toast.
+      void deleteCloudinaryAssets(uploaded);
       showToast("Failed to submit review.", "error");
     } finally {
       if (mountedRef.current) {

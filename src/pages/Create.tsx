@@ -2,7 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { sendEmailVerification } from "firebase/auth";
 import { useAuth } from "../hooks/useAuth";
-import { uploadMedia } from "../services/cloudinary";
+import {
+  deleteCloudinaryAssets,
+  uploadMedia,
+  type UploadedAsset,
+} from "../services/cloudinary";
 import { createPost, type MediaItem } from "../services/posts";
 import { getUserPets, type Pet } from "../services/pets";
 import { getUserProfile, type UserProfile } from "../services/users";
@@ -407,8 +411,9 @@ export function Create() {
     setLoading(true);
     setUploadingIndex(1);
 
+    const uploadedAssets: UploadedAsset[] = [];
     try {
-      const uploaded: MediaItem[] = [];
+      const media: MediaItem[] = [];
       for (let i = 0; i < files.length; i += 1) {
         setUploadingIndex(i + 1);
         const current = files[i];
@@ -432,7 +437,12 @@ export function Create() {
           }
         }
         const result = await uploadMedia(uploadFile);
-        uploaded.push(result);
+        uploadedAssets.push(result);
+        media.push({
+          url: result.url,
+          type: result.type,
+          ...(result.thumbUrl ? { thumbUrl: result.thumbUrl } : {}),
+        });
       }
       const selectedPet = pets.find((petItem) => petItem.id === selectedPetId);
       if (!selectedPet) {
@@ -447,7 +457,7 @@ export function Create() {
           user.photoURL ||
           `https://api.dicebear.com/7.x/thumbs/svg?seed=${user.uid}`,
         text: caption.trim(),
-        media: uploaded,
+        media,
         tags,
         petId: selectedPet.id,
         petName: selectedPet.name,
@@ -466,6 +476,10 @@ export function Create() {
         navigate("/", { replace: true });
       }, 600);
     } catch (err) {
+      // Best-effort orphan cleanup. Covers both partial-upload failures
+      // (loop threw mid-iteration) and createPost rejecting after every
+      // upload finished — both leak Cloudinary assets without this.
+      void deleteCloudinaryAssets(uploadedAssets);
       const message =
         err instanceof Error ? err.message : "Failed to post. Try again.";
       showToast(message, "error");

@@ -4,7 +4,11 @@ import { Timestamp } from "firebase/firestore";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../contexts/ToastContext";
-import { uploadImage } from "../services/cloudinary";
+import {
+  deleteCloudinaryAssets,
+  uploadImage,
+  type UploadedAsset,
+} from "../services/cloudinary";
 import { reverseGeocode } from "../services/geoapify";
 import { getCurrentLocation } from "../services/location";
 import { getPetsByOwner, type Pet } from "../services/pets";
@@ -164,10 +168,13 @@ export function CreateMeetup() {
     }
 
     setSaving(true);
+    const uploaded: UploadedAsset[] = [];
     try {
       let coverImage: string | undefined;
       if (coverFile) {
-        coverImage = await uploadImage(coverFile);
+        const asset = await uploadImage(coverFile);
+        uploaded.push(asset);
+        coverImage = asset.url;
       }
       const requirements: MeetupRequirements = {
         dogSize,
@@ -217,6 +224,8 @@ export function CreateMeetup() {
       showToast("Meetup created!", "success");
       navigate(`/meetups/${meetupId}`, { replace: true });
     } catch (err) {
+      // Best-effort orphan cleanup if createMeetup rejected the cover.
+      void deleteCloudinaryAssets(uploaded);
       const message =
         err instanceof Error ? err.message : "Failed to create meetup.";
       showToast(message, "error");
