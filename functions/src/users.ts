@@ -387,13 +387,17 @@ export const updateUserProfileCallable = onCall(async (request) => {
     );
   });
 
-  await admin.auth().updateUser(
-    callerUid,
-    stripUndefined({
-      displayName,
-      photoURL: avatarUrl,
-    })
-  );
+  // Only hit Auth when something Auth-visible actually changed. Bio-only
+  // edits don't need to touch Auth, and updateUser({}) is a wasted RPC.
+  if (displayName !== undefined || avatarUrl !== undefined) {
+    await admin.auth().updateUser(
+      callerUid,
+      stripUndefined({
+        displayName,
+        photoURL: avatarUrl,
+      })
+    );
+  }
 
   return { success: true };
 });

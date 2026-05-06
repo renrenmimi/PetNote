@@ -161,8 +161,18 @@ export async function checkAndUpdateMeetupStatus(
   if (meetup.status === "cancelled" || meetup.status === "completed") {
     return meetup;
   }
+  // Defensive: if the stored date is neither a Timestamp nor a Date (corrupt
+  // or legacy data) just return the meetup unchanged instead of crashing the
+  // detail page on dateValue.getTime(). Cast through unknown so TS lets us
+  // probe a value the type system claims is always Timestamp.
+  const rawDate: unknown = meetup.date;
   const dateValue =
-    meetup.date instanceof Timestamp ? meetup.date.toDate() : meetup.date;
+    rawDate instanceof Timestamp
+      ? rawDate.toDate()
+      : rawDate instanceof Date
+        ? rawDate
+        : null;
+  if (!dateValue) return meetup;
   const endTime = new Date(
     dateValue.getTime() + (meetup.duration || 0) * 60 * 1000
   );
