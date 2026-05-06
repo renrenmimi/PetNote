@@ -125,12 +125,12 @@ export function Profile() {
     const loadCheckins = async () => {
       setCheckinsLoading(true);
       try {
-        const list = await getUserCheckins(user.uid);
+        const result = await getUserCheckins(user.uid);
         if (ignore) return;
-        setCheckins(list);
+        setCheckins(result.checkins);
 
         const uniqueIds = Array.from(
-          new Set(list.map((item) => item.locationId).filter(Boolean))
+          new Set(result.checkins.map((item) => item.locationId).filter(Boolean))
         );
         const mapping = await batchGetLocations(uniqueIds);
         if (ignore) return;

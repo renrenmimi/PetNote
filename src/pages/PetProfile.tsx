@@ -268,7 +268,7 @@ export function PetProfile() {
             </button>
             <div className="px-2 py-2">
               <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                {posts.length}
+                {pet.postCount ?? posts.length}
               </p>
               <p className="text-xs text-slate-400 dark:text-slate-500">Posts</p>
             </div>
