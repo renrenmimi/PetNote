@@ -46,6 +46,8 @@ export type Pet = {
   species: PetSpecies;
   breed?: string;
   birthday?: unknown;
+  birthdayMonth?: number;
+  birthdayDay?: number;
   age?: string;
   gender: PetGender;
   bio: string;
@@ -177,14 +179,51 @@ const toDate = (value: unknown): Date | null => {
   return null;
 };
 
-export const isBirthdayToday = (birthday: unknown): boolean => {
-  const date = toDate(birthday);
-  if (!date) return false;
+// Timezone-safe birthday match. Prefer the canonical month/day fields the
+// callable now writes so a pet with birthday stored as 2020-06-01T00:00:00Z
+// is recognised on 6/1 in every viewer's local timezone — not 5/31 in
+// negative-UTC zones because of the toDate() conversion.
+//
+// Accepts either:
+//   - a Pet-like object with optional birthdayMonth/birthdayDay numbers
+//     plus a fallback `birthday` Timestamp/Date for legacy pets;
+//   - a bare birthday value (legacy callers).
+export const isBirthdayToday = (
+  input: unknown,
+  fallbackBirthday?: unknown
+): boolean => {
+  let month: number | null = null;
+  let day: number | null = null;
+  let legacyBirthday = fallbackBirthday;
+
+  if (input && typeof input === "object") {
+    const record = input as {
+      birthday?: unknown;
+      birthdayMonth?: unknown;
+      birthdayDay?: unknown;
+    };
+    if (
+      typeof record.birthdayMonth === "number" &&
+      typeof record.birthdayDay === "number"
+    ) {
+      month = Math.floor(record.birthdayMonth);
+      day = Math.floor(record.birthdayDay);
+    } else if (record.birthday !== undefined) {
+      legacyBirthday = record.birthday;
+    }
+  }
+
+  if (month === null || day === null) {
+    const date = toDate(legacyBirthday ?? input);
+    if (!date) return false;
+    // Use UTC fields on the legacy Timestamp so behaviour matches what the
+    // callable now derives at write time.
+    month = date.getUTCMonth() + 1;
+    day = date.getUTCDate();
+  }
+
   const today = new Date();
-  return (
-    date.getMonth() === today.getMonth() &&
-    date.getDate() === today.getDate()
-  );
+  return today.getMonth() + 1 === month && today.getDate() === day;
 };
 
 const sanitizeRelationship = (
@@ -225,6 +264,8 @@ export async function createPet(
         species: PetSpecies;
         breed?: string;
         birthdayMillis?: number;
+        birthdayMonth?: number;
+        birthdayDay?: number;
         gender: PetGender;
         bio: string;
         avatarUrl: string;
@@ -234,11 +275,17 @@ export async function createPet(
       { id: string }
     >(functions, "createPetCallable");
 
+    // Send month/day from the picker's local Date so timezone math doesn't
+    // shift the birthday (a UTC+14 user picking "June 1" produces a Date
+    // whose UTC fields are May 31; deriving server-side from UTC would lose
+    // a day).
     const result = await createPetCallable({
       name: data.name,
       species: data.species,
       breed: data.breed,
       birthdayMillis: birthdayDate?.getTime(),
+      birthdayMonth: birthdayDate ? birthdayDate.getMonth() + 1 : undefined,
+      birthdayDay: birthdayDate ? birthdayDate.getDate() : undefined,
       gender: data.gender,
       bio: data.bio,
       avatarUrl: data.avatarUrl,
@@ -275,6 +322,8 @@ export async function updatePet(
       species?: PetSpecies;
       breed?: string;
       birthdayMillis?: number;
+      birthdayMonth?: number;
+      birthdayDay?: number;
       gender?: PetGender;
       bio?: string;
       avatarUrl?: string;
@@ -285,7 +334,15 @@ export async function updatePet(
     ...(data.name ? { name: data.name } : {}),
     ...(data.species ? { species: data.species } : {}),
     ...(typeof data.breed === "string" ? { breed: data.breed } : {}),
-    ...(birthdayDate ? { birthdayMillis: birthdayDate.getTime() } : {}),
+    ...(birthdayDate
+      ? {
+          birthdayMillis: birthdayDate.getTime(),
+          // Local-timezone month/day so the canonical fields stay aligned
+          // with what the user picked, regardless of their UTC offset.
+          birthdayMonth: birthdayDate.getMonth() + 1,
+          birthdayDay: birthdayDate.getDate(),
+        }
+      : {}),
     ...(data.gender ? { gender: data.gender } : {}),
     ...(typeof data.bio === "string" ? { bio: data.bio } : {}),
     ...(typeof data.avatarUrl === "string" ? { avatarUrl: data.avatarUrl } : {}),
@@ -490,7 +547,7 @@ export async function batchCheckPetBirthdays(
           ...(docSnap.data() as Omit<Pet, "id">),
         };
         setPetCacheEntry(docSnap.id, pet);
-        if (isBirthdayToday(pet.birthday)) {
+        if (isBirthdayToday(pet)) {
           birthdayPetIds.add(docSnap.id);
         }
       });
@@ -538,7 +595,7 @@ export async function getPostsByPet(
 
 export async function getBirthdayPets(ownerId: string): Promise<Pet[]> {
   const pets = await getUserPets(ownerId);
-  return pets.filter((pet) => isBirthdayToday(pet.birthday));
+  return pets.filter((pet) => isBirthdayToday(pet));
 }
 
 export async function getPetTotalLikes(petId: string): Promise<number> {

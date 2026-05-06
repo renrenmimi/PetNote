@@ -49,6 +49,16 @@ export const VALIDATION_LIMITS = {
   url: 2048,
 } as const;
 
+// Normalize callable `request.data` into a plain object so handler code can
+// safely use `"key" in data` and indexed access without crashing on undefined
+// or array payloads. Always prefer this over `request.data as { ... }`.
+export function requestData(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, unknown>;
+}
+
 export function trimString(value: unknown, fieldName: string): string {
   if (typeof value !== "string") {
     throw new HttpsError("invalid-argument", `${fieldName} must be a string.`);

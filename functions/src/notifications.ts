@@ -10,6 +10,7 @@ import {
   isTrustedHttpsUrl,
   optionalTrimmedString,
   RATE_LIMITS,
+  requestData,
   requiredTrimmedString,
   TRUSTED_AVATAR_URL_HOSTS,
   VALIDATION_LIMITS,
@@ -45,6 +46,9 @@ export type NotificationActor = {
   fromUserAvatar: string;
   role?: string;
   banned?: boolean;
+  // True while deleteUserAccount is in flight; mutating callables should
+  // refuse new writes from this user until the cascade completes.
+  deletionPending?: boolean;
 };
 
 export async function getNotificationActor(userId: string): Promise<NotificationActor> {
@@ -70,7 +74,19 @@ export async function getNotificationActor(userId: string): Promise<Notification
     fromUserAvatar: avatarUrl,
     role: typeof adminData.role === "string" ? adminData.role : undefined,
     banned: adminData.banned === true,
+    deletionPending: data.deletionPending === true,
   };
+}
+
+// Throws if the actor's account is mid-deletion. Use after the ban check on
+// every mutating callable so concurrent writes can't race the cascade.
+export function assertActorNotDeleting(actor: NotificationActor): void {
+  if (actor.deletionPending === true) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Account deletion is in progress."
+    );
+  }
 }
 
 async function shouldSendNotification(
@@ -513,16 +529,17 @@ export const sendNotification = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot send notifications.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "sendNotification", RATE_LIMITS.write);
 
   if (caller.role !== "admin") {
     throw new HttpsError("permission-denied", "Only admins can send warning notifications.");
   }
 
-  const data = request.data as {
-    userId: string;
-    type: string;
-    message: string;
+  const data = requestData(request.data) as {
+    userId?: string;
+    type?: string;
+    message?: string;
     warningReason?: string;
     warningDetails?: string;
   };

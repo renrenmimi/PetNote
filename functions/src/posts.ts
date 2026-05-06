@@ -2,13 +2,14 @@ import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
 import { cascadeDeletePost, deleteQueryDocs } from "./cleanup";
-import { getNotificationActor } from "./notifications";
+import { assertActorNotDeleting, getNotificationActor } from "./notifications";
 import {
   assertRateLimit,
   getDefaultAvatar,
   optionalTrimmedString,
   optionalTrustedHttpsUrl,
   RATE_LIMITS,
+  requestData,
   stripUndefined,
   TRUSTED_MEDIA_URL_HOSTS,
   VALIDATION_LIMITS,
@@ -118,9 +119,10 @@ export const createPostCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot create posts.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "createPost", RATE_LIMITS.write);
 
-  const data = request.data as {
+  const data = requestData(request.data) as {
     text?: string;
     tags?: unknown;
     media?: Array<{ url?: string; type?: "image" | "video"; thumbUrl?: string }>;
@@ -216,8 +218,9 @@ export const updatePostCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot edit posts.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "updatePost", RATE_LIMITS.write);
-  const data = request.data as {
+  const data = requestData(request.data) as {
     postId?: string;
     text?: string;
     tags?: unknown;
@@ -295,9 +298,10 @@ export const setPinnedPostCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot pin posts.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "setPinnedPost", RATE_LIMITS.write);
 
-  const { postId } = request.data as { postId?: string | null };
+  const { postId } = requestData(request.data) as { postId?: string | null };
   const userRef = db.doc(`users/${callerUid}`);
 
   // postId === null or missing means "unpin"
@@ -334,9 +338,10 @@ export const deletePostCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot delete posts.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "deletePost", RATE_LIMITS.write);
 
-  const { postId } = request.data as { postId?: string };
+  const { postId } = requestData(request.data) as { postId?: string };
   if (!postId || typeof postId !== "string") {
     throw new HttpsError("invalid-argument", "Missing postId.");
   }
@@ -368,9 +373,10 @@ export const createCommentCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot comment.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "createComment", RATE_LIMITS.write);
 
-  const data = request.data as {
+  const data = requestData(request.data) as {
     postId?: string;
     text?: string;
     replyToCommentId?: string;
@@ -445,9 +451,13 @@ export const deleteCommentCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot delete comments.");
   }
+  assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "deleteComment", RATE_LIMITS.write);
 
-  const { postId, commentId } = request.data as { postId?: string; commentId?: string };
+  const { postId, commentId } = requestData(request.data) as {
+    postId?: string;
+    commentId?: string;
+  };
   if (!postId || !commentId) {
     throw new HttpsError("invalid-argument", "Missing postId or commentId.");
   }
