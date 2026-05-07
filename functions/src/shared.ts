@@ -110,6 +110,51 @@ export function validateCoordinateRange(lat: number, lng: number): boolean {
   );
 }
 
+// Validate any caller-supplied string used as a Firestore document id /
+// path segment. Without this guard a value like "abc/likes/xyz" silently
+// reroutes db.doc("posts/${value}") into a different collection because
+// "/" is the path separator. Firestore SDK accepts the resulting path
+// when the segment count happens to land even, so the write or read
+// goes to the wrong place rather than failing loudly.
+//
+// The character class matches Firestore's auto-generated ids and our
+// own derived ones (auth uids, generated nanoid-style codes); reject
+// "." or ".." which Firestore rejects anyway, and slashes which it
+// silently accepts.
+export function validateDocId(value: string): boolean {
+  if (!value || value.length > 200) return false;
+  if (value === "." || value === "..") return false;
+  return /^[A-Za-z0-9_\-:.@+|=]+$/.test(value);
+}
+
+export function requiredDocId(value: unknown, fieldName: string): string {
+  if (typeof value !== "string" || !validateDocId(value.trim())) {
+    throw new HttpsError("invalid-argument", `Invalid ${fieldName}.`);
+  }
+  return value.trim();
+}
+
+// 1-5 finite check shared by rating + petFriendly subscores. The bare
+// "typeof === number" guard let NaN/Infinity/out-of-range values slip
+// through, which then poisoned the location aggregate sums.
+export function validateRatingScore(
+  value: unknown,
+  fieldName: string
+): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    value < 1 ||
+    value > 5
+  ) {
+    throw new HttpsError(
+      "invalid-argument",
+      `${fieldName} must be a finite number between 1 and 5.`
+    );
+  }
+  return value;
+}
+
 export function validateTrustedHttpsUrl(
   value: string,
   fieldName: string,

@@ -15,10 +15,12 @@ import {
   RATE_LIMITS,
   recomputeLocationReviewAggregates,
   requestData,
+  requiredDocId,
   requiredTrimmedString,
   requiredTrustedHttpsUrl,
   TRUSTED_MEDIA_URL_HOSTS,
   validateCoordinateRange,
+  validateRatingScore,
   VALIDATION_LIMITS,
 } from "./shared";
 import { getAccessiblePet } from "./pets";
@@ -506,15 +508,13 @@ export const addLocationPhotosCallable = onCall(async (request) => {
     locationId?: string;
     photoUrls?: unknown;
   };
-  if (!data.locationId || typeof data.locationId !== "string") {
-    throw new HttpsError("invalid-argument", "Missing locationId.");
-  }
+  const locationId = requiredDocId(data.locationId, "locationId");
   const photoUrls = sanitizePhotoUrls(data.photoUrls, 5, "Photo URL");
   if (photoUrls.length === 0) {
     return { success: true };
   }
 
-  const locationRef = db.doc(`locations/${data.locationId}`);
+  const locationRef = db.doc(`locations/${locationId}`);
   const locationSnap = await locationRef.get();
   if (!locationSnap.exists) {
     throw new HttpsError("not-found", "Location not found.");
@@ -526,8 +526,8 @@ export const addLocationPhotosCallable = onCall(async (request) => {
     throw new HttpsError("permission-denied", "Cannot add photos to this location.");
   }
 
-  await appendLocationPhotoPreviews(data.locationId, photoUrls, true);
-  await writeLocationPhotoEntries(data.locationId, photoUrls, "location_photo", callerUid);
+  await appendLocationPhotoPreviews(locationId, photoUrls, true);
+  await writeLocationPhotoEntries(locationId, photoUrls, "location_photo", callerUid);
 
   return { success: true };
 });
@@ -557,22 +557,44 @@ export const submitReviewCallable = onCall(async (request) => {
     petFriendly?: { space?: number; safety?: number; cleanliness?: number };
   };
 
-  if (!data.locationId || typeof data.locationId !== "string") {
-    throw new HttpsError("invalid-argument", "Missing locationId.");
-  }
-  if (typeof data.rating !== "number" || data.rating < 1 || data.rating > 5) {
-    throw new HttpsError("invalid-argument", "Rating must be between 1 and 5.");
-  }
+  const locationId = requiredDocId(data.locationId, "locationId");
+  // validateRatingScore rejects NaN/Infinity/out-of-range, which the
+  // bare typeof+range check used to allow through (NaN < 1 evaluates to
+  // false, slipping past the original guard).
+  const ratingValue = validateRatingScore(data.rating, "Rating");
+  // Subscores must also be 1-5 finite. Without this an attacker could
+  // submit petFriendly.space=999 and poison the location's rolling
+  // petFriendlySum / petFriendlyAvg aggregate forever.
+  const validatedSubscore = (
+    raw: unknown,
+    label: string
+  ): number =>
+    raw === undefined ? ratingValue : validateRatingScore(raw, label);
+  const petFriendlySpace = validatedSubscore(
+    data.petFriendly?.space,
+    "petFriendly.space"
+  );
+  const petFriendlySafety = validatedSubscore(
+    data.petFriendly?.safety,
+    "petFriendly.safety"
+  );
+  const petFriendlyCleanliness = validatedSubscore(
+    data.petFriendly?.cleanliness,
+    "petFriendly.cleanliness"
+  );
+  const meetupIdValue = data.meetupId
+    ? requiredDocId(data.meetupId, "meetupId")
+    : undefined;
 
-  const locationRef = db.doc(`locations/${data.locationId}`);
+  const locationRef = db.doc(`locations/${locationId}`);
   const locationSnap = await locationRef.get();
   if (!locationSnap.exists) {
     throw new HttpsError("not-found", "Location not found.");
   }
 
-  if (data.meetupId) {
-    const meetupRef = db.doc(`meetups/${data.meetupId}`);
-    const participantRef = db.doc(`meetups/${data.meetupId}/participants/${callerUid}`);
+  if (meetupIdValue) {
+    const meetupRef = db.doc(`meetups/${meetupIdValue}`);
+    const participantRef = db.doc(`meetups/${meetupIdValue}/participants/${callerUid}`);
     const [meetupSnap, participantSnap] = await Promise.all([meetupRef.get(), participantRef.get()]);
     if (!meetupSnap.exists) {
       throw new HttpsError("not-found", "Meetup not found.");
@@ -586,8 +608,8 @@ export const submitReviewCallable = onCall(async (request) => {
     }
   }
 
-  const reviewId = data.meetupId ? `${callerUid}_${data.meetupId}` : callerUid;
-  const reviewRef = db.doc(`locations/${data.locationId}/reviews/${reviewId}`);
+  const reviewId = meetupIdValue ? `${callerUid}_${meetupIdValue}` : callerUid;
+  const reviewRef = db.doc(`locations/${locationId}/reviews/${reviewId}`);
 
   // Use .create() so concurrent submissions can't both pass a stale
   // existence check and overwrite each other; Firestore rejects the
@@ -597,8 +619,8 @@ export const submitReviewCallable = onCall(async (request) => {
       userId: callerUid,
       userName: caller.fromUserName,
       userAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
-      meetupId: data.meetupId,
-      rating: data.rating,
+      meetupId: meetupIdValue,
+      rating: ratingValue,
       comment: optionalTrimmedString(
         data.comment,
         VALIDATION_LIMITS.reviewComment,
@@ -612,12 +634,9 @@ export const submitReviewCallable = onCall(async (request) => {
             .map((tag) => optionalTrimmedString(tag, VALIDATION_LIMITS.tag, "Review tag"))
         : [],
       petFriendly: {
-        space: typeof data.petFriendly?.space === "number" ? data.petFriendly.space : data.rating,
-        safety: typeof data.petFriendly?.safety === "number" ? data.petFriendly.safety : data.rating,
-        cleanliness:
-          typeof data.petFriendly?.cleanliness === "number"
-            ? data.petFriendly.cleanliness
-            : data.rating,
+        space: petFriendlySpace,
+        safety: petFriendlySafety,
+        cleanliness: petFriendlyCleanliness,
       },
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -654,9 +673,7 @@ export const checkInCallable = onCall(async (request) => {
     petId?: string;
   };
 
-  if (!data.locationId || typeof data.locationId !== "string") {
-    throw new HttpsError("invalid-argument", "Missing locationId.");
-  }
+  const locationId = requiredDocId(data.locationId, "locationId");
   if (!data.photoUrl || typeof data.photoUrl !== "string") {
     throw new HttpsError("invalid-argument", "Missing photoUrl.");
   }
@@ -666,16 +683,19 @@ export const checkInCallable = onCall(async (request) => {
     "Photo URL",
     TRUSTED_MEDIA_URL_HOSTS
   );
+  const checkinPetId = data.petId
+    ? requiredDocId(data.petId, "petId")
+    : undefined;
 
-  const locationRef = db.doc(`locations/${data.locationId}`);
+  const locationRef = db.doc(`locations/${locationId}`);
   const locationSnap = await locationRef.get();
   if (!locationSnap.exists) {
     throw new HttpsError("not-found", "Location not found.");
   }
 
   let petName: string | undefined;
-  if (data.petId) {
-    const petData = await getAccessiblePet(data.petId, callerUid);
+  if (checkinPetId) {
+    const petData = await getAccessiblePet(checkinPetId, callerUid);
     if (!petData) {
       throw new HttpsError("permission-denied", "You do not have access to this pet.");
     }
@@ -687,7 +707,7 @@ export const checkInCallable = onCall(async (request) => {
 
   const dayKey = new Date().toISOString().slice(0, 10);
   const checkinId = `${callerUid}_${dayKey}`;
-  const checkinRef = db.doc(`locations/${data.locationId}/checkins/${checkinId}`);
+  const checkinRef = db.doc(`locations/${locationId}/checkins/${checkinId}`);
 
   // Use .create() for atomic "once per user per day" semantics. Two
   // rapid-fire submissions can't both pass an existence check and then
@@ -703,9 +723,9 @@ export const checkInCallable = onCall(async (request) => {
         VALIDATION_LIMITS.checkInCaption,
         "Check-in caption"
       ),
-      petId: data.petId,
+      petId: checkinPetId,
       petName,
-      locationId: data.locationId,
+      locationId,
       dayKey,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -748,12 +768,12 @@ export const recomputeLocationReviewAggregatesCallable = onCall(
       RATE_LIMITS.write
     );
 
-    const { locationId } = requestData(request.data) as {
+    const { locationId: rawRecomputeLocationId } = requestData(
+      request.data
+    ) as {
       locationId?: string;
     };
-    if (!locationId || typeof locationId !== "string") {
-      throw new HttpsError("invalid-argument", "Missing locationId.");
-    }
+    const locationId = requiredDocId(rawRecomputeLocationId, "locationId");
 
     const locationSnap = await db.doc(`locations/${locationId}`).get();
     if (!locationSnap.exists) {

@@ -7,6 +7,7 @@ import {
   optionalTrimmedString,
   RATE_LIMITS,
   requestData,
+  requiredDocId,
   requiredTrimmedString,
   VALIDATION_LIMITS,
 } from "./shared";
@@ -31,9 +32,12 @@ export const reportContentCallable = onCall(async (request) => {
   if (!data.targetType || !["post", "comment", "user"].includes(data.targetType)) {
     throw new HttpsError("invalid-argument", "Invalid targetType.");
   }
-  if (!data.targetId || typeof data.targetId !== "string") {
-    throw new HttpsError("invalid-argument", "Missing targetId.");
-  }
+  // requiredDocId rejects "/" and other characters that would let a
+  // crafted targetId silently retarget the report doc to a sibling
+  // collection — Firestore's path parser splits on slash, so
+  // "abc/likes/xyz" would write to reports/abc/likes/xyz instead of
+  // reports/{callerUid}_{type}_abc/likes/xyz.
+  const targetId = requiredDocId(data.targetId, "targetId");
   const reason = requiredTrimmedString(
     data.reason,
     VALIDATION_LIMITS.reportReason,
@@ -49,7 +53,7 @@ export const reportContentCallable = onCall(async (request) => {
   // replay or button-mash is silently deduped by Firestore rejecting the
   // second .create() with ALREADY_EXISTS. This also gives admins a stable
   // identifier per reporter/target pair.
-  const reportId = `${callerUid}_${data.targetType}_${data.targetId}`;
+  const reportId = `${callerUid}_${data.targetType}_${targetId}`;
   const reportRef = db.doc(`reports/${reportId}`);
 
   try {
@@ -58,7 +62,7 @@ export const reportContentCallable = onCall(async (request) => {
       reporterName: caller.fromUserName,
       reporterAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
       targetType: data.targetType,
-      targetId: data.targetId,
+      targetId,
       reason,
       description,
       status: "pending",

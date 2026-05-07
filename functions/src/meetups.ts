@@ -11,6 +11,7 @@ import {
   optionalTrustedHttpsUrl,
   RATE_LIMITS,
   requestData,
+  requiredDocId,
   requiredTrimmedString,
   stripUndefined,
   TRUSTED_MEDIA_URL_HOSTS,
@@ -395,11 +396,9 @@ export const updateMeetupCallable = onCall(async (request) => {
     requirements?: unknown;
   };
 
-  if (!data.meetupId || typeof data.meetupId !== "string") {
-    throw new HttpsError("invalid-argument", "Missing meetupId.");
-  }
+  const meetupId = requiredDocId(data.meetupId, "meetupId");
 
-  const meetupRef = db.doc(`meetups/${data.meetupId}`);
+  const meetupRef = db.doc(`meetups/${meetupId}`);
   const meetupSnap = await meetupRef.get();
   if (!meetupSnap.exists) {
     throw new HttpsError("not-found", "Meetup not found.");
@@ -491,7 +490,7 @@ export const updateMeetupCallable = onCall(async (request) => {
 
   // Atomic update: main doc and private/address subdoc commit together so a
   // visibility flip can't leave the data in a half-applied state.
-  const privateRef = db.doc(`meetups/${data.meetupId}/private/address`);
+  const privateRef = db.doc(`meetups/${meetupId}/private/address`);
   const batch = db.batch();
   batch.update(meetupRef, updates);
   if (isPrivate) {
@@ -524,10 +523,10 @@ export const cancelMeetupCallable = onCall(async (request) => {
   assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "cancelMeetup", RATE_LIMITS.write);
 
-  const { meetupId } = requestData(request.data) as { meetupId?: string };
-  if (!meetupId || typeof meetupId !== "string") {
-    throw new HttpsError("invalid-argument", "Missing meetupId.");
-  }
+  const { meetupId: rawCancelMeetupId } = requestData(request.data) as {
+    meetupId?: string;
+  };
+  const meetupId = requiredDocId(rawCancelMeetupId, "meetupId");
 
   const meetupRef = db.doc(`meetups/${meetupId}`);
   const meetupSnap = await meetupRef.get();
@@ -559,13 +558,17 @@ export const joinMeetupCallable = onCall(async (request) => {
   assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "joinMeetup", RATE_LIMITS.write);
 
-  const { meetupId, petId } = requestData(request.data) as {
+  const { meetupId: rawMeetupId, petId: rawPetId } = requestData(request.data) as {
     meetupId?: string;
     petId?: string;
   };
-  if (!meetupId || typeof meetupId !== "string") {
-    throw new HttpsError("invalid-argument", "Missing meetupId.");
-  }
+  const meetupId = requiredDocId(rawMeetupId, "meetupId");
+  // petId is optional (organizers can join without a pet) so only
+  // validate when supplied.
+  const petId =
+    typeof rawPetId === "string" && rawPetId.trim().length > 0
+      ? requiredDocId(rawPetId, "petId")
+      : undefined;
 
   const meetupRef = db.doc(`meetups/${meetupId}`);
   const participantRef = db.doc(`meetups/${meetupId}/participants/${callerUid}`);
@@ -633,12 +636,19 @@ export const joinMeetupCallable = onCall(async (request) => {
       // Requirement reads must run through the transaction so the snapshot
       // is locked against concurrent writes (new posts, unfollows, etc.).
       // Run them in parallel but all before any write.
-      const [postsSnap, followingSnap] = await Promise.all([
+      //
+      // The followers count comes from users/{uid}.followingPetsCount
+      // (kept in sync by the onPetFollowed/onPetUnfollowed triggers)
+      // instead of pulling the entire followingPets subcollection. The
+      // old version read every follow doc just to count them, which
+      // both wasted reads and started failing for power users once
+      // their follow count crossed the Firestore transaction read cap.
+      const [postsSnap, callerProfileSnap] = await Promise.all([
         requirements.mustHavePosts
           ? t.get(db.collection("posts").where("authorId", "==", callerUid).limit(1))
           : Promise.resolve(null),
         minFollowers > 0
-          ? t.get(db.collection(`users/${callerUid}/followingPets`))
+          ? t.get(db.doc(`users/${callerUid}`))
           : Promise.resolve(null),
       ]);
 
@@ -650,8 +660,17 @@ export const joinMeetupCallable = onCall(async (request) => {
         reasons.push("Must have a pet profile.");
       }
 
-      if (minFollowers > 0 && followingSnap && followingSnap.size < minFollowers) {
-        reasons.push(`Requires at least ${minFollowers} followed pets.`);
+      if (minFollowers > 0 && callerProfileSnap) {
+        const profileData = callerProfileSnap.exists
+          ? callerProfileSnap.data() ?? {}
+          : {};
+        const followingPetsCount =
+          typeof profileData.followingPetsCount === "number"
+            ? profileData.followingPetsCount
+            : 0;
+        if (followingPetsCount < minFollowers) {
+          reasons.push(`Requires at least ${minFollowers} followed pets.`);
+        }
       }
 
       const petType = requirements.petType as string ?? "any";
@@ -734,10 +753,10 @@ export const checkMeetupStatusCallable = onCall(async (request) => {
   if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
   await assertRateLimit(callerUid, "checkMeetupStatus", RATE_LIMITS.read);
 
-  const { meetupId } = requestData(request.data) as { meetupId?: string };
-  if (!meetupId || typeof meetupId !== "string") {
-    throw new HttpsError("invalid-argument", "Missing meetupId.");
-  }
+  const { meetupId: rawCheckMeetupId } = requestData(request.data) as {
+    meetupId?: string;
+  };
+  const meetupId = requiredDocId(rawCheckMeetupId, "meetupId");
 
   const meetupRef = db.doc(`meetups/${meetupId}`);
   const meetupSnap = await meetupRef.get();

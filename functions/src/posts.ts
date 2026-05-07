@@ -10,6 +10,7 @@ import {
   optionalTrustedHttpsUrl,
   RATE_LIMITS,
   requestData,
+  requiredDocId,
   stripUndefined,
   TRUSTED_MEDIA_URL_HOSTS,
   VALIDATION_LIMITS,
@@ -129,11 +130,9 @@ export const createPostCallable = onCall(async (request) => {
     petId?: string;
   };
 
-  if (!data.petId || typeof data.petId !== "string") {
-    throw new HttpsError("invalid-argument", "Missing petId.");
-  }
+  const petId = requiredDocId(data.petId, "petId");
 
-  const petData = await getAccessiblePet(data.petId, callerUid);
+  const petData = await getAccessiblePet(petId, callerUid);
   if (!petData) {
     throw new HttpsError("permission-denied", "You do not have access to this pet.");
   }
@@ -191,7 +190,7 @@ export const createPostCallable = onCall(async (request) => {
       media,
       mediaUrl: firstMedia?.url,
       mediaType: firstMedia?.type,
-      petId: data.petId,
+      petId,
       petName:
         typeof petData.name === "string" && petData.name.trim().length > 0
           ? petData.name
@@ -199,7 +198,7 @@ export const createPostCallable = onCall(async (request) => {
       petAvatarUrl:
         typeof petData.avatarUrl === "string" && petData.avatarUrl.trim().length > 0
           ? petData.avatarUrl
-          : getDefaultAvatar(data.petId),
+          : getDefaultAvatar(petId),
       tags: normalizeTags(data.tags),
       likeCount: 0,
       commentCount: 0,
@@ -227,11 +226,9 @@ export const updatePostCallable = onCall(async (request) => {
     petId?: string | null;
   };
 
-  if (!data.postId || typeof data.postId !== "string") {
-    throw new HttpsError("invalid-argument", "Missing postId.");
-  }
+  const postId = requiredDocId(data.postId, "postId");
 
-  const postRef = db.doc(`posts/${data.postId}`);
+  const postRef = db.doc(`posts/${postId}`);
   const postSnap = await postRef.get();
   if (!postSnap.exists) {
     throw new HttpsError("not-found", "Post not found.");
@@ -264,11 +261,12 @@ export const updatePostCallable = onCall(async (request) => {
       updates.petName = admin.firestore.FieldValue.delete();
       updates.petAvatarUrl = admin.firestore.FieldValue.delete();
     } else if (typeof data.petId === "string") {
-      const petData = await getAccessiblePet(data.petId, callerUid);
+      const newPetId = requiredDocId(data.petId, "petId");
+      const petData = await getAccessiblePet(newPetId, callerUid);
       if (!petData) {
         throw new HttpsError("permission-denied", "You do not have access to this pet.");
       }
-      updates.petId = data.petId;
+      updates.petId = newPetId;
       updates.petName =
         typeof petData.name === "string" && petData.name.trim().length > 0
           ? petData.name
@@ -276,7 +274,7 @@ export const updatePostCallable = onCall(async (request) => {
       updates.petAvatarUrl =
         typeof petData.avatarUrl === "string" && petData.avatarUrl.trim().length > 0
           ? petData.avatarUrl
-          : getDefaultAvatar(data.petId);
+          : getDefaultAvatar(newPetId);
     } else {
       throw new HttpsError("invalid-argument", "Invalid petId.");
     }
@@ -313,11 +311,9 @@ export const setPinnedPostCallable = onCall(async (request) => {
     return { success: true };
   }
 
-  if (typeof postId !== "string") {
-    throw new HttpsError("invalid-argument", "Invalid postId.");
-  }
+  const validatedPostId = requiredDocId(postId, "postId");
 
-  const postSnap = await db.doc(`posts/${postId}`).get();
+  const postSnap = await db.doc(`posts/${validatedPostId}`).get();
   if (!postSnap.exists) {
     throw new HttpsError("not-found", "Post not found.");
   }
@@ -326,7 +322,7 @@ export const setPinnedPostCallable = onCall(async (request) => {
     throw new HttpsError("permission-denied", "You can only pin your own posts.");
   }
 
-  await userRef.set({ pinnedPostId: postId }, { merge: true });
+  await userRef.set({ pinnedPostId: validatedPostId }, { merge: true });
   return { success: true };
 });
 
@@ -341,10 +337,10 @@ export const deletePostCallable = onCall(async (request) => {
   assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "deletePost", RATE_LIMITS.write);
 
-  const { postId } = requestData(request.data) as { postId?: string };
-  if (!postId || typeof postId !== "string") {
-    throw new HttpsError("invalid-argument", "Missing postId.");
-  }
+  const { postId: rawDeletePostId } = requestData(request.data) as {
+    postId?: string;
+  };
+  const postId = requiredDocId(rawDeletePostId, "postId");
 
   const postRef = db.doc(`posts/${postId}`);
   const postSnap = await postRef.get();
@@ -382,11 +378,9 @@ export const createCommentCallable = onCall(async (request) => {
     replyToCommentId?: string;
   };
 
-  if (!data.postId || typeof data.postId !== "string") {
-    throw new HttpsError("invalid-argument", "Missing postId.");
-  }
+  const postId = requiredDocId(data.postId, "postId");
 
-  const postRef = db.doc(`posts/${data.postId}`);
+  const postRef = db.doc(`posts/${postId}`);
   const postSnap = await postRef.get();
   if (!postSnap.exists) {
     throw new HttpsError("not-found", "Post not found.");
@@ -400,14 +394,18 @@ export const createCommentCallable = onCall(async (request) => {
     | undefined;
 
   if (data.replyToCommentId) {
-    const replyRef = db.doc(`posts/${data.postId}/comments/${data.replyToCommentId}`);
+    const replyToCommentId = requiredDocId(
+      data.replyToCommentId,
+      "replyToCommentId"
+    );
+    const replyRef = db.doc(`posts/${postId}/comments/${replyToCommentId}`);
     const replySnap = await replyRef.get();
     if (!replySnap.exists) {
       throw new HttpsError("not-found", "Reply target not found.");
     }
     const replyData = replySnap.data() ?? {};
     replyTo = {
-      commentId: data.replyToCommentId,
+      commentId: replyToCommentId,
       authorName:
         typeof replyData.authorName === "string" && replyData.authorName.trim().length > 0
           ? replyData.authorName
@@ -415,7 +413,7 @@ export const createCommentCallable = onCall(async (request) => {
     };
   }
 
-  const commentRef = db.collection(`posts/${data.postId}/comments`).doc();
+  const commentRef = db.collection(`posts/${postId}/comments`).doc();
   const text = requiredCommentText(data.text);
   await commentRef.set({
     authorId: callerUid,
@@ -454,13 +452,14 @@ export const deleteCommentCallable = onCall(async (request) => {
   assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "deleteComment", RATE_LIMITS.write);
 
-  const { postId, commentId } = requestData(request.data) as {
+  const { postId: rawCommentPostId, commentId: rawCommentId } = requestData(
+    request.data
+  ) as {
     postId?: string;
     commentId?: string;
   };
-  if (!postId || !commentId) {
-    throw new HttpsError("invalid-argument", "Missing postId or commentId.");
-  }
+  const postId = requiredDocId(rawCommentPostId, "postId");
+  const commentId = requiredDocId(rawCommentId, "commentId");
 
   const commentRef = db.doc(`posts/${postId}/comments/${commentId}`);
   const postRef = db.doc(`posts/${postId}`);
@@ -501,10 +500,10 @@ export const recomputePetPostCountCallable = onCall(async (request) => {
   }
   await assertRateLimit(callerUid, "recomputePetPostCount", RATE_LIMITS.write);
 
-  const { petId } = requestData(request.data) as { petId?: string };
-  if (!petId || typeof petId !== "string") {
-    throw new HttpsError("invalid-argument", "Missing petId.");
-  }
+  const { petId: rawRecomputePetId } = requestData(request.data) as {
+    petId?: string;
+  };
+  const petId = requiredDocId(rawRecomputePetId, "petId");
 
   const petRef = db.doc(`pets/${petId}`);
   const petSnap = await petRef.get();
@@ -545,10 +544,10 @@ export const recomputePostInteractionCountsCallable = onCall(
       RATE_LIMITS.write
     );
 
-    const { postId } = requestData(request.data) as { postId?: string };
-    if (!postId || typeof postId !== "string") {
-      throw new HttpsError("invalid-argument", "Missing postId.");
-    }
+    const { postId: rawInteractPostId } = requestData(request.data) as {
+      postId?: string;
+    };
+    const postId = requiredDocId(rawInteractPostId, "postId");
 
     const postRef = db.doc(`posts/${postId}`);
     const postSnap = await postRef.get();

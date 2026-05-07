@@ -9,6 +9,7 @@ import {
   optionalTrustedHttpsUrl,
   RATE_LIMITS,
   requestData,
+  requiredDocId,
   stripUndefined,
   TRUSTED_AVATAR_URL_HOSTS,
   VALIDATION_LIMITS,
@@ -168,14 +169,21 @@ export async function getAccessiblePet(
   petId: string,
   userId: string
 ): Promise<admin.firestore.DocumentData | null> {
-  const petRef = db.doc(`pets/${petId}`);
-  const familyRef = db.doc(`pets/${petId}/family/${userId}`);
+  // Validate the path segments here as defense in depth — every callable
+  // already passes through requiredDocId, but a future entry point that
+  // forgets shouldn't be able to silently retarget the doc through "/"
+  // tricks because Firestore's path parser treats "abc/family/xyz" as a
+  // valid 4-segment path.
+  const safePetId = requiredDocId(petId, "petId");
+  const safeUserId = requiredDocId(userId, "userId");
+  const petRef = db.doc(`pets/${safePetId}`);
+  const familyRef = db.doc(`pets/${safePetId}/family/${safeUserId}`);
   const [petSnap, familySnap] = await Promise.all([petRef.get(), familyRef.get()]);
   if (!petSnap.exists) return null;
   const petData = petSnap.data() ?? {};
   const canAccess =
-    petData.ownerId === userId ||
-    petData.primaryOwnerId === userId ||
+    petData.ownerId === safeUserId ||
+    petData.primaryOwnerId === safeUserId ||
     familySnap.exists;
   return canAccess ? petData : null;
 }
@@ -250,12 +258,12 @@ export const updatePetCallable = onCall(async (request) => {
   assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "updatePet", RATE_LIMITS.write);
 
-  const { petId, ...rawUpdates } = requestData(request.data) as {
+  const { petId: rawUpdatePetId, ...rawUpdates } = requestData(
+    request.data
+  ) as {
     petId?: string;
   } & Record<string, unknown>;
-  if (!petId || typeof petId !== "string") {
-    throw new HttpsError("invalid-argument", "Missing petId.");
-  }
+  const petId = requiredDocId(rawUpdatePetId, "petId");
 
   const petRef = db.doc(`pets/${petId}`);
   const petSnap = await petRef.get();
@@ -353,10 +361,10 @@ export const deletePetCallable = onCall(async (request) => {
   assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "deletePet", RATE_LIMITS.write);
 
-  const { petId } = requestData(request.data) as { petId?: string };
-  if (!petId || typeof petId !== "string") {
-    throw new HttpsError("invalid-argument", "Missing petId.");
-  }
+  const { petId: rawDeletePetId } = requestData(request.data) as {
+    petId?: string;
+  };
+  const petId = requiredDocId(rawDeletePetId, "petId");
 
   const petRef = db.doc(`pets/${petId}`);
   const petSnap = await petRef.get();
@@ -387,10 +395,10 @@ export const followPetCallable = onCall(async (request) => {
   assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "followPet", RATE_LIMITS.write);
 
-  const { petId } = requestData(request.data) as { petId?: string };
-  if (!petId || typeof petId !== "string") {
-    throw new HttpsError("invalid-argument", "Missing petId.");
-  }
+  const { petId: rawFollowPetId } = requestData(request.data) as {
+    petId?: string;
+  };
+  const petId = requiredDocId(rawFollowPetId, "petId");
 
   const petRef = db.doc(`pets/${petId}`);
   const followingRef = db.doc(`users/${callerUid}/followingPets/${petId}`);
@@ -431,10 +439,10 @@ export const unfollowPetCallable = onCall(async (request) => {
   assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "unfollowPet", RATE_LIMITS.write);
 
-  const { petId } = requestData(request.data) as { petId?: string };
-  if (!petId || typeof petId !== "string") {
-    throw new HttpsError("invalid-argument", "Missing petId.");
-  }
+  const { petId: rawUnfollowPetId } = requestData(request.data) as {
+    petId?: string;
+  };
+  const petId = requiredDocId(rawUnfollowPetId, "petId");
 
   const followingRef = db.doc(`users/${callerUid}/followingPets/${petId}`);
   const followingSnap = await followingRef.get();
