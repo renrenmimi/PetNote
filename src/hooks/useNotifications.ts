@@ -51,6 +51,9 @@ export function useNotifications(
   const mountedRef = useRef(true);
 
   useEffect(() => {
+    // Re-arm on each mount so StrictMode's double-effect cycle doesn't
+    // leave the flag stuck at false after the first dev-only cleanup.
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };
