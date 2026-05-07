@@ -27,6 +27,7 @@ import { getUserPetCounts, type Pet } from "../services/pets";
 import { type Location } from "../services/locations";
 import { type Meetup } from "../services/meetups";
 import { useFollowPet } from "../hooks/useFollow";
+import { batchCheckFollowingPets } from "../hooks/useBatchFollowingPets";
 import { getVideoThumbnail } from "../utils/cloudinaryUrl";
 import { timeAgo } from "../utils/timeAgo";
 
@@ -66,9 +67,22 @@ const placeCategoryLabel: Record<string, string> = {
   other: "📍 Other",
 };
 
-function SuggestedPetCard({ pet }: { pet: PopularPet }) {
+function SuggestedPetCard({
+  pet,
+  initialFollowing,
+}: {
+  pet: PopularPet;
+  initialFollowing?: boolean;
+}) {
   const { user } = useAuth();
-  const { isFollowing, toggleFollow, loading } = useFollowPet(pet.id);
+  // Pass initialFollowing so the per-card lookup is skipped — the parent
+  // batched the status for every visible suggested pet in one read.
+  // fetchFollowerCount stays off because this card only renders the
+  // pet's existing follower count from the doc that was already fetched.
+  const { isFollowing, toggleFollow, loading } = useFollowPet(pet.id, {
+    initialFollowing,
+    fetchFollowerCount: false,
+  });
   const navigate = useNavigate();
 
   return (
@@ -160,6 +174,9 @@ export function Search() {
   const [trendingTags, setTrendingTags] = useState<Hashtag[]>([]);
   const [trendingPosts, setTrendingPosts] = useState<Post[]>([]);
   const [suggestedPets, setSuggestedPets] = useState<PopularPet[]>([]);
+  const [followedSuggestedIds, setFollowedSuggestedIds] = useState<
+    Set<string>
+  >(new Set());
   const [popularPets, setPopularPets] = useState<PopularPet[]>([]);
   const [topPlaces, setTopPlaces] = useState<Location[]>([]);
   const [upcomingMeetups, setUpcomingMeetups] = useState<Meetup[]>([]);
@@ -255,6 +272,29 @@ export function Search() {
     setShowAllPeople(false);
     setShowAllPets(false);
   }, [normalizedQuery]);
+
+  // Batch the viewer's follow status for every suggested pet so each
+  // SuggestedPetCard can skip its own checkIfFollowingPet getDoc.
+  useEffect(() => {
+    let ignore = false;
+    if (!user?.uid || suggestedPets.length === 0) {
+      setFollowedSuggestedIds(new Set());
+      return;
+    }
+    const load = async () => {
+      const followed = await batchCheckFollowingPets(
+        user.uid,
+        suggestedPets.map((pet) => pet.id)
+      );
+      if (!ignore) {
+        setFollowedSuggestedIds(followed);
+      }
+    };
+    void load();
+    return () => {
+      ignore = true;
+    };
+  }, [suggestedPets, user?.uid]);
 
   useEffect(() => {
     if (!hasQuery) {
@@ -461,6 +501,7 @@ export function Search() {
                     <SuggestedPetCard
                       key={pet.id}
                       pet={pet}
+                      initialFollowing={followedSuggestedIds.has(pet.id)}
                     />
                   ))}
                 </div>

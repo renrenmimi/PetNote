@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import Avatar from "../components/Avatar";
 import { useAuth } from "../hooks/useAuth";
 import { useBlockedUsers } from "../hooks/useBlockedUsers";
+import { batchCheckFollowingPets } from "../hooks/useBatchFollowingPets";
 import { unblockUser } from "../services/block";
 import { useFollowPet } from "../hooks/useFollow";
 import { getFollowingPets, type FollowingPet } from "../services/follow";
@@ -14,9 +15,22 @@ import {
 import { getUserProfile, type UserProfile } from "../services/users";
 import { getSpeciesMeta } from "../utils/petHelpers";
 
-function PetFollowButton({ petId }: { petId: string }) {
+// initialFollowing skips the per-card checkIfFollowingPet getDoc inside
+// useFollowPet, so the parent's batched lookup becomes the single source
+// of truth. Disabling fetchFollowerCount drops another per-pet getDoc
+// since this card doesn't render the follower number.
+function PetFollowButton({
+  petId,
+  initialFollowing,
+}: {
+  petId: string;
+  initialFollowing?: boolean;
+}) {
   const { user } = useAuth();
-  const { isFollowing, toggleFollow, loading } = useFollowPet(petId);
+  const { isFollowing, toggleFollow, loading } = useFollowPet(petId, {
+    initialFollowing,
+    fetchFollowerCount: false,
+  });
   if (!user) return null;
 
   return (
@@ -44,6 +58,7 @@ export function UserProfile() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [pets, setPets] = useState<Pet[]>([]);
   const [followingPets, setFollowingPets] = useState<FollowingPet[]>([]);
+  const [followedPetIds, setFollowedPetIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [followingModalOpen, setFollowingModalOpen] = useState(false);
 
@@ -81,6 +96,29 @@ export function UserProfile() {
       ignore = true;
     };
   }, [user?.uid, userId]);
+
+  // Pre-fetch the viewer's follow status for every pet rendered on this
+  // page in a single batched read instead of letting each PetFollowButton
+  // do its own checkIfFollowingPet getDoc (N+1 on profiles with many
+  // pets).
+  useEffect(() => {
+    let ignore = false;
+    if (!user?.uid || pets.length === 0) {
+      setFollowedPetIds(new Set());
+      return;
+    }
+    const load = async () => {
+      const ids = pets.map((pet) => pet.id);
+      const followed = await batchCheckFollowingPets(user.uid, ids);
+      if (!ignore) {
+        setFollowedPetIds(followed);
+      }
+    };
+    void load();
+    return () => {
+      ignore = true;
+    };
+  }, [pets, user?.uid]);
 
   const joinedDate = useMemo(() => {
     if (!profile?.createdAt) return "Unknown";
@@ -270,7 +308,10 @@ export function UserProfile() {
                           ) : null}
                         </div>
                       </button>
-                      <PetFollowButton petId={pet.id} />
+                      <PetFollowButton
+                        petId={pet.id}
+                        initialFollowing={followedPetIds.has(pet.id)}
+                      />
                     </div>
                   );
                 })}
