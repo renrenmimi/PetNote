@@ -1,12 +1,5 @@
-import {
-  collection,
-  getDocs,
-  orderBy,
-  query,
-  where,
-} from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
-import { db, functions } from "./firebase";
+import { functions } from "./firebase";
 
 export type ReportTargetType = "post" | "comment" | "user";
 
@@ -44,16 +37,6 @@ export async function reportContent(data: ReportInput): Promise<void> {
   });
 }
 
-export async function getReportsByUser(userId: string) {
-  const reportsRef = collection(db, "reports");
-  const reportsQuery = query(
-    reportsRef,
-    where("reporterId", "==", userId),
-    orderBy("createdAt", "desc")
-  );
-  const snapshot = await getDocs(reportsQuery);
-  return snapshot.docs.map((docSnap) => ({
-    id: docSnap.id,
-    ...(docSnap.data() as Record<string, unknown>),
-  }));
-}
+// `getReportsByUser` was removed — it had no callers and was unbounded.
+// If a "my reports" surface is ever added, build it through a paginated
+// callable so admin reads and reporter reads stay separated.

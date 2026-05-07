@@ -273,7 +273,9 @@ export function Search() {
           searchUsers(keyword),
           searchPets(keyword),
           searchTags(keyword),
-          isTagQuery ? getPostsByTag(keyword) : searchByText(keyword),
+          isTagQuery
+            ? getPostsByTag(keyword).then((result) => result.posts)
+            : searchByText(keyword),
         ]);
         if (ignore) return;
         setSearchResults({
