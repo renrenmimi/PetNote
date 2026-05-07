@@ -276,8 +276,13 @@ export async function likePost(postId: string, userId: string): Promise<void> {
       return;
     }
 
+    // postId is duplicated into the doc body so the collection-group
+    // batch lookup in useBatchLikeStatus can use a (userId, postId in)
+    // query instead of N parallel getDocs. The doc ID is userId, so a
+    // documentId() filter on postIds wouldn't work directly.
     transaction.set(likeRef, {
       userId,
+      postId,
       createdAt: serverTimestamp(),
     });
     didLike = true;
