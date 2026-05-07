@@ -27,6 +27,9 @@ export function useFollowPet(
   const userId = user?.uid ?? null;
 
   useEffect(() => {
+    // Re-arm the flag on each mount; StrictMode's setup→cleanup→setup
+    // would otherwise leave it false after the first dev-only cleanup.
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };

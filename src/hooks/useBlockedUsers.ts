@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "../services/firebase";
 
@@ -27,9 +27,16 @@ export function useBlockedUsers(userId: string | null): UseBlockedUsersResult {
     return () => unsubscribe();
   }, [userId]);
 
-  const isBlocked = useMemo(
-    () => (uid: string) => blockedUserIds.includes(uid),
+  // Build a Set once per ID change so isBlocked() is O(1). Without this
+  // every consumer that called isBlocked in a render loop scanned the
+  // whole array each time.
+  const blockedSet = useMemo(
+    () => new Set(blockedUserIds),
     [blockedUserIds]
+  );
+  const isBlocked = useCallback(
+    (uid: string) => blockedSet.has(uid),
+    [blockedSet]
   );
 
   return { blockedUserIds, isBlocked, loading };

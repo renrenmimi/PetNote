@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 export type ThemeMode = "light" | "dark" | "system";
 
@@ -40,10 +40,22 @@ export function useDarkMode() {
     localStorage.setItem("themeMode", mode);
   }, [isDark, mode]);
 
-  return {
-    isDark,
-    mode,
-    setMode,
-    toggle: () => setMode((prev) => (prev === "dark" ? "light" : "dark")),
-  };
+  const toggle = useCallback(
+    () => setMode((prev) => (prev === "dark" ? "light" : "dark")),
+    []
+  );
+
+  // Stable reference so ThemeContext's value object only changes when one
+  // of its actual fields changes — without this, every ThemeProvider
+  // render created a new toggle/value pair and forced re-renders on every
+  // useTheme() consumer (Settings page, etc.).
+  return useMemo(
+    () => ({
+      isDark,
+      mode,
+      setMode,
+      toggle,
+    }),
+    [isDark, mode, toggle]
+  );
 }

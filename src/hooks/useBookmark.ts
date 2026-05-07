@@ -21,6 +21,10 @@ export function useBookmark(
   const mountedRef = useRef(true);
 
   useEffect(() => {
+    // Set the flag back to true on every mount so React 18 StrictMode's
+    // setup → cleanup → setup cycle leaves the ref pointing at the live
+    // component, not the dev-only first cleanup.
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };
