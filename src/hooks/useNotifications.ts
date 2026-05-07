@@ -41,6 +41,13 @@ export function useNotifications(
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const lastDocRef = useRef<QueryDocumentSnapshot<DocumentData> | null>(null);
+  // Once the user has called loadMore, the realtime listener (which only
+  // sees the freshest PAGE_SIZE notifications) stops being the source of
+  // truth for the pagination cursor and the "hasMore" flag. A new incoming
+  // notification would otherwise reset lastDoc back to end-of-page-1 and
+  // strand the user — they could never reach the older pages they had
+  // already loaded past.
+  const paginatedRef = useRef(false);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -56,11 +63,15 @@ export function useNotifications(
       setHasMore(false);
       setLoadingMore(false);
       lastDocRef.current = null;
+      paginatedRef.current = false;
       setLoading(false);
       return;
     }
 
     let active = true;
+    // Each new subscription starts in "first page" mode — the realtime
+    // listener owns the cursor until the user explicitly paginates.
+    paginatedRef.current = false;
     setLoading(true);
     setLoadingMore(false);
 
@@ -98,8 +109,13 @@ export function useNotifications(
           ...list,
           ...prev.filter((item) => !firstPageIds.has(item.id)),
         ]);
-        setHasMore(snapshot.docs.length === PAGE_SIZE);
-        lastDocRef.current = snapshot.docs[snapshot.docs.length - 1] ?? null;
+        // Only the first-page subscription owns the pagination cursor.
+        // Once loadMore has run, its tail cursor must not be clobbered by
+        // a subsequent realtime update.
+        if (!paginatedRef.current) {
+          setHasMore(snapshot.docs.length === PAGE_SIZE);
+          lastDocRef.current = snapshot.docs[snapshot.docs.length - 1] ?? null;
+        }
         setLoading(false);
         void refreshUnreadCount();
       },
@@ -147,6 +163,7 @@ export function useNotifications(
       });
       setHasMore(snapshot.docs.length === PAGE_SIZE);
       lastDocRef.current = snapshot.docs[snapshot.docs.length - 1] ?? lastDocRef.current;
+      paginatedRef.current = true;
     } finally {
       if (mountedRef.current) {
         setLoadingMore(false);
