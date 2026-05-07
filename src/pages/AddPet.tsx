@@ -181,8 +181,13 @@ export function AddPet() {
             ? (pet.birthday as { toDate: () => Date }).toDate()
             : null;
         if (date) {
-          const formatted = date.toISOString().slice(0, 10);
-          setBirthday(formatted);
+          // Use local date fields so the value round-trips: we wrote local
+           // midnight on the picked day, and `toISOString()` would shift it
+           // back to UTC and lose a day for negative-UTC viewers.
+          const yyyy = date.getFullYear();
+          const mm = String(date.getMonth() + 1).padStart(2, "0");
+          const dd = String(date.getDate()).padStart(2, "0");
+          setBirthday(`${yyyy}-${mm}-${dd}`);
         }
       }
       setLoading(false);
@@ -236,6 +241,19 @@ export function AddPet() {
         finalAvatarUrl = asset.url;
       }
 
+      // Parse "yyyy-mm-dd" as a *local* date so derived month/day on the
+       // server (services/pets.ts uses local-timezone getMonth/getDate) match
+       // what the user picked. `new Date("2024-06-01")` is UTC midnight, which
+       // shifts to 5/31 in negative-UTC zones; constructing via the numeric
+       // ctor pins it to local midnight on the chosen day.
+      const localBirthday = birthday
+        ? (() => {
+            const [yyyy, mm, dd] = birthday.split("-").map(Number);
+            if (!yyyy || !mm || !dd) return null;
+            return new Date(yyyy, mm - 1, dd);
+          })()
+        : null;
+
       const payload: Omit<Pet, "id" | "ownerId" | "createdAt" | "primaryOwnerId"> = {
         name: name.trim(),
         species: species as PetSpecies,
@@ -243,8 +261,8 @@ export function AddPet() {
         gender,
         bio: bio.trim(),
         avatarUrl: finalAvatarUrl || "",
-        ...(birthday
-          ? { birthday: Timestamp.fromDate(new Date(birthday)) }
+        ...(localBirthday
+          ? { birthday: Timestamp.fromDate(localBirthday) }
           : {}),
       };
 

@@ -91,8 +91,17 @@ export function EditMeetup() {
       setCoverPreview(data.coverImage || null);
       const dateValue =
         data.date instanceof Timestamp ? data.date.toDate() : new Date();
-      setDate(dateValue.toISOString().slice(0, 10));
-      setTime(dateValue.toTimeString().slice(0, 5));
+      // Use local fields for both date and time. `toISOString()` returns the
+       // UTC calendar date, which doesn't match the local time we display
+       // alongside it — for evening meetups in negative-UTC zones, this shows
+       // tomorrow's date with today's time.
+      const yyyy = dateValue.getFullYear();
+      const mm = String(dateValue.getMonth() + 1).padStart(2, "0");
+      const dd = String(dateValue.getDate()).padStart(2, "0");
+      const hh = String(dateValue.getHours()).padStart(2, "0");
+      const minute = String(dateValue.getMinutes()).padStart(2, "0");
+      setDate(`${yyyy}-${mm}-${dd}`);
+      setTime(`${hh}:${minute}`);
       setDuration(data.duration);
       // For private meetups, read full address from private subcollection
       const isPrivate = (data.locationVisibility ?? "participants_only") === "participants_only";
