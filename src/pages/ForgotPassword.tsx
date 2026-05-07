@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { fetchSignInMethodsForEmail, sendPasswordResetEmail } from "firebase/auth";
+import { sendPasswordResetEmail } from "firebase/auth";
 import { LanguageSelector } from "../components/LanguageSelector";
 import { useLanguage } from "../hooks/useLanguage";
 import PawIcon from "../components/PawIcon";
@@ -24,68 +24,26 @@ function MailIcon() {
   );
 }
 
-function GoogleIcon() {
-  return (
-    <svg className="h-5 w-5" viewBox="0 0 48 48" aria-hidden="true">
-      <path
-        fill="#EA4335"
-        d="M24 9.5c3.54 0 6.7 1.22 9.19 3.6l6.87-6.87C35.87 2.38 30.33 0 24 0 14.62 0 6.5 5.38 2.56 13.22l8.02 6.22C12.59 13.09 17.87 9.5 24 9.5z"
-      />
-      <path
-        fill="#4285F4"
-        d="M46.5 24.5c0-1.56-.14-3.06-.4-4.5H24v9h12.65c-.55 2.96-2.18 5.47-4.61 7.16l7.11 5.52c4.16-3.84 6.35-9.5 6.35-17.18z"
-      />
-      <path
-        fill="#FBBC05"
-        d="M10.58 28.87A14.5 14.5 0 0 1 9.5 24c0-1.7.29-3.35.81-4.9l-8.02-6.22A23.98 23.98 0 0 0 0 24c0 3.86.92 7.5 2.56 10.78l8.02-6.91z"
-      />
-      <path
-        fill="#34A853"
-        d="M24 48c6.33 0 11.64-2.08 15.52-5.64l-7.11-5.52c-2 1.35-4.56 2.16-8.41 2.16-6.13 0-11.41-3.59-13.42-8.69l-8.02 6.91C6.5 42.62 14.62 48 24 48z"
-      />
-    </svg>
-  );
-}
-
 export function ForgotPassword() {
   const { t } = useLanguage();
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
-  const [googleOnly, setGoogleOnly] = useState(false);
-
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!email.trim()) return;
     setLoading(true);
     setStatus("idle");
     setMessage("");
-    setGoogleOnly(false);
     try {
-      let methods: string[] | null = null;
-      try {
-        methods = await fetchSignInMethodsForEmail(auth, email.trim());
-      } catch {
-        methods = null;
-      }
-
-      if (methods && methods.length > 0) {
-        const hasPassword = methods.includes("password");
-        const hasGoogle = methods.includes("google.com");
-        if (!hasPassword && hasGoogle) {
-          setGoogleOnly(true);
-          setStatus("error");
-          setMessage(t("forgot.googleOnly"));
-          return;
-        }
-        if (!hasPassword) {
-          setStatus("error");
-          setMessage(t("forgot.noAccount"));
-          return;
-        }
-      }
-
+      // Don't probe with fetchSignInMethodsForEmail first — Firebase
+      // disables it under Email Enumeration Protection (default for new
+      // projects since 2023-09), so it returns an empty array regardless
+      // of whether an account exists. sendPasswordResetEmail itself
+      // succeeds silently for unknown emails when protection is on,
+      // which is the privacy-correct behavior; we surface the same
+      // "if the email exists, a link was sent" message either way.
       await sendPasswordResetEmail(auth, email.trim());
       setStatus("success");
       setMessage(t("forgot.resetSent"));
@@ -155,21 +113,6 @@ export function ForgotPassword() {
             }`}
           >
             {status === "success" ? "📧 " : ""} {message}
-          </div>
-        ) : null}
-
-        {googleOnly ? (
-          <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/10 dark:text-blue-200">
-            <div className="flex items-center gap-2">
-              <GoogleIcon />
-              <span>{t("forgot.googleAccount")}</span>
-            </div>
-            <Link
-              to="/login"
-              className="mt-2 inline-block rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-blue-600 shadow-sm transition hover:bg-blue-100 dark:bg-slate-900 dark:text-blue-200"
-            >
-              {t("forgot.googleCta")}
-            </Link>
           </div>
         ) : null}
 
