@@ -65,64 +65,80 @@ export function PetProfile() {
 
     const load = async () => {
       setLoading(true);
-      const petData = await getPetById(petId);
-      if (!petData) {
-        if (!ignore) setLoading(false);
-        return;
-      }
+      try {
+        const petData = await getPetById(petId);
+        if (!petData) {
+          if (!ignore) setLoading(false);
+          return;
+        }
 
-      const [petPosts, family, totalLikes, petCheckins] = await Promise.all([
-        getPostsByPet(petId),
-        getPetFamily(petId),
-        getPetTotalLikes(petId),
-        getCheckinsByPet(petId, { limitCount: 100 }),
-      ]);
+        const [petPosts, family, totalLikes, petCheckins] = await Promise.all([
+          getPostsByPet(petId),
+          getPetFamily(petId),
+          getPetTotalLikes(petId),
+          getCheckinsByPet(petId, { limitCount: 100 }),
+        ]);
 
-      const primaryOwnerId = petData.primaryOwnerId || petData.ownerId;
-      const primaryMember = family.find((member) => member.role === "primary");
-      const fallbackOwnerProfile = primaryMember
-        ? null
-        : await getUserProfile(primaryOwnerId);
+        const primaryOwnerId = petData.primaryOwnerId || petData.ownerId;
+        const primaryMember = family.find((member) => member.role === "primary");
+        const fallbackOwnerProfile = primaryMember
+          ? null
+          : await getUserProfile(primaryOwnerId);
 
-      let members = family;
-      if (members.length === 0) {
-        members = [
-          {
-            userId: primaryOwnerId,
-            userName: fallbackOwnerProfile?.displayName || "Family",
-            userAvatar:
-              fallbackOwnerProfile?.avatarUrl ||
-              `https://api.dicebear.com/7.x/thumbs/svg?seed=${primaryOwnerId}`,
-            relationship: "caretaker",
-            role: "primary",
-          },
-        ];
-      }
+        let members = family;
+        if (members.length === 0) {
+          members = [
+            {
+              userId: primaryOwnerId,
+              userName: fallbackOwnerProfile?.displayName || "Family",
+              userAvatar:
+                fallbackOwnerProfile?.avatarUrl ||
+                `https://api.dicebear.com/7.x/thumbs/svg?seed=${primaryOwnerId}`,
+              relationship: "caretaker",
+              role: "primary",
+            },
+          ];
+        }
 
-      const isMember = user
-        ? members.some((member) => member.userId === user.uid) ||
-          (await isFamilyMember(petId, user.uid))
-        : false;
+        const isMember = user
+          ? members.some((member) => member.userId === user.uid) ||
+            (await isFamilyMember(petId, user.uid))
+          : false;
 
-      const uniqueLocationIds = Array.from(
-        new Set(
-          petCheckins.checkins.map((item) => item.locationId).filter(Boolean)
-        )
-      );
-      const locationMap = await batchGetLocations(uniqueLocationIds);
-
-      if (!ignore) {
-        setPet(petData);
-        setPosts(petPosts.posts);
-        setPetLikes(totalLikes);
-        setFamilyMembers(members);
-        setViewerIsFamilyMember(isMember);
-        setOwnerName(
-          primaryMember?.userName || fallbackOwnerProfile?.displayName || "Family"
+        const uniqueLocationIds = Array.from(
+          new Set(
+            petCheckins.checkins.map((item) => item.locationId).filter(Boolean)
+          )
         );
-        setCheckins(petCheckins.checkins);
-        setCheckinLocations(locationMap);
-        setLoading(false);
+        const locationMap = await batchGetLocations(uniqueLocationIds);
+
+        if (!ignore) {
+          setPet(petData);
+          setPosts(petPosts.posts);
+          setPetLikes(totalLikes);
+          setFamilyMembers(members);
+          setViewerIsFamilyMember(isMember);
+          setOwnerName(
+            primaryMember?.userName || fallbackOwnerProfile?.displayName || "Family"
+          );
+          setCheckins(petCheckins.checkins);
+          setCheckinLocations(locationMap);
+        }
+      } catch (error) {
+        // Without this catch, any failed read above (network blip,
+        // permission glitch on a private subcollection) left the page
+        // stuck on "Loading pet profile..." with no recovery.
+        console.error("Failed to load pet profile:", error);
+        if (!ignore) {
+          showToast(
+            error instanceof Error
+              ? error.message
+              : "Failed to load pet profile.",
+            "error"
+          );
+        }
+      } finally {
+        if (!ignore) setLoading(false);
       }
     };
 
@@ -130,6 +146,9 @@ export function PetProfile() {
     return () => {
       ignore = true;
     };
+    // showToast comes from a stable context value; the effect should
+    // re-run only when petId or user change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [petId, user]);
 
   const speciesMeta = useMemo(

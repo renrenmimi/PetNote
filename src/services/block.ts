@@ -30,18 +30,37 @@ export async function blockUser(
     { merge: true }
   );
 
-  // Unfollow any pets owned by the blocked user
+  // Unfollow any pets owned by the blocked user. Page through every
+  // followingPets entry instead of stopping at the default 200 — the
+  // first 200 was an arbitrary cap that left stale follow relationships
+  // in place for power users (we'd already filter the blocked author
+  // out of the feed via blockedUserIds, but the underlying follow doc
+  // would still get evaluated by the recommendation/feed logic).
   try {
-    const { followingPets: myFollowing } = await getFollowingPets(myUid);
-    for (const follow of myFollowing) {
-      const petRef = doc(db, "pets", follow.petId);
-      const petSnap = await getDoc(petRef);
-      if (petSnap.exists()) {
-        const petData = petSnap.data() as { ownerId?: string; primaryOwnerId?: string };
-        if (petData.ownerId === targetUid || petData.primaryOwnerId === targetUid) {
-          await unfollowPet(myUid, follow.petId);
+    let cursor: Awaited<ReturnType<typeof getFollowingPets>>["lastDoc"] = null;
+    for (;;) {
+      const page = await getFollowingPets(myUid, {
+        limitCount: 200,
+        lastDoc: cursor ?? undefined,
+      });
+      for (const follow of page.followingPets) {
+        const petRef = doc(db, "pets", follow.petId);
+        const petSnap = await getDoc(petRef);
+        if (petSnap.exists()) {
+          const petData = petSnap.data() as {
+            ownerId?: string;
+            primaryOwnerId?: string;
+          };
+          if (
+            petData.ownerId === targetUid ||
+            petData.primaryOwnerId === targetUid
+          ) {
+            await unfollowPet(myUid, follow.petId);
+          }
         }
       }
+      if (!page.hasMore || !page.lastDoc) break;
+      cursor = page.lastDoc;
     }
   } catch (error) {
     console.error("Failed to unfollow blocked user's pets:", error);
