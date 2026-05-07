@@ -81,6 +81,7 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
   const [suggestedLoading, setSuggestedLoading] = useState(false);
   const [followedIds, setFollowedIds] = useState<Set<string>>(new Set());
   const touchStartRef = useRef(0);
+  const touchStartYRef = useRef(0);
   const { showToast } = useToast();
 
   useEffect(() => {
@@ -385,11 +386,19 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
       className="fixed inset-0 z-50 flex flex-col items-center justify-between bg-white px-6 py-10 text-center dark:bg-slate-900"
       onTouchStart={(event) => {
         touchStartRef.current = event.touches[0].clientX;
+        touchStartYRef.current = event.touches[0].clientY;
       }}
       onTouchEnd={(event) => {
-        const delta = event.changedTouches[0].clientX - touchStartRef.current;
-        if (Math.abs(delta) < 50) return;
-        if (delta < 0) {
+        // Only treat the gesture as a swipe if the horizontal motion
+        // dominates the vertical one — otherwise scrolling the long
+        // form (relationship grid, suggested-pet list) on a phone
+        // would silently flip the user to the next/previous step.
+        const dx = event.changedTouches[0].clientX - touchStartRef.current;
+        const dy =
+          event.changedTouches[0].clientY - touchStartYRef.current;
+        if (Math.abs(dx) < 50) return;
+        if (Math.abs(dx) <= Math.abs(dy)) return;
+        if (dx < 0) {
           handleNext();
         } else {
           handleBack();

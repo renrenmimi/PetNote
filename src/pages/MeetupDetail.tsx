@@ -628,12 +628,19 @@ export function MeetupDetail() {
               <div>
                 <button
                   type="button"
-                  onClick={() =>
+                  onClick={() => {
+                    // Private meetups store 0,0 in the public location doc;
+                    // the real coordinates live on the privateAddress
+                    // payload visible to organizer/participants. Prefer
+                    // those when loaded so the map link doesn't drop the
+                    // user in the Atlantic Ocean at (0,0).
+                    const lat = privateAddress?.lat ?? meetup.location.lat;
+                    const lng = privateAddress?.lng ?? meetup.location.lng;
                     window.open(
-                      `https://maps.google.com/?q=${meetup.location.lat},${meetup.location.lng}`,
+                      `https://maps.google.com/?q=${lat},${lng}`,
                       "_blank"
-                    )
-                  }
+                    );
+                  }}
                   className="mt-2 inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700"
                 >
                   Open in Maps

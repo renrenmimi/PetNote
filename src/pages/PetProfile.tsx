@@ -5,6 +5,7 @@ import { EmptyState } from "../components/EmptyState";
 import { InviteCodeModal } from "../components/InviteCodeModal";
 import LazyImage from "../components/LazyImage";
 import { useAuth } from "../hooks/useAuth";
+import { useToast } from "../contexts/ToastContext";
 import { useFollowPet } from "../hooks/useFollow";
 import { getPetFollowers, type PetFollower } from "../services/follow";
 import { getCheckinsByPet, type Checkin } from "../services/checkins";
@@ -32,6 +33,7 @@ export function PetProfile() {
   const navigate = useNavigate();
   const { petId } = useParams();
   const { user, profile } = useAuth();
+  const { showToast } = useToast();
 
   const [pet, setPet] = useState<Pet | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -563,8 +565,21 @@ export function PetProfile() {
                 onClick={async () => {
                   if (deleting) return;
                   setDeleting(true);
-                  await deletePet(pet.id);
-                  navigate("/profile", { replace: true });
+                  try {
+                    await deletePet(pet.id);
+                    navigate("/profile", { replace: true });
+                  } catch (err) {
+                    // Without this catch, a transient network/permission
+                    // failure left the dialog stuck in "Deleting…" forever
+                    // — the only recovery was a full page reload.
+                    showToast(
+                      err instanceof Error
+                        ? err.message
+                        : "Failed to delete pet.",
+                      "error"
+                    );
+                    setDeleting(false);
+                  }
                 }}
                 className="rounded-full bg-red-500 px-4 py-2 text-sm font-semibold text-white transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
               >

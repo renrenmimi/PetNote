@@ -208,6 +208,20 @@ export function Places() {
   }, [hasMore, loadingMore, loading, searchMode]);
 
   useEffect(() => {
+    // Empty query + no address pin → drop back to the default category /
+    // sort listing. Without this, clearing the search box left the page
+    // pinned in "text" mode (with hasMore=false) so the user couldn't get
+    // back to the paginated default feed without changing a filter.
+    if (!searchQuery.trim() && !searchCenter) {
+      if (searchMode !== "none") {
+        setSearchMode("none");
+        setPlaces([]);
+        setLastDoc(null);
+        setHasMore(true);
+        void loadPlaces(true);
+      }
+      return;
+    }
     if (!searchQuery.trim() || searchCenter) return;
     let ignore = false;
     const handle = window.setTimeout(async () => {
@@ -222,7 +236,8 @@ export function Places() {
       ignore = true;
       window.clearTimeout(handle);
     };
-  }, [searchQuery, searchCenter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, searchCenter, searchMode]);
 
   const placeRows = useMemo(() => {
     return places.map((place) => {
