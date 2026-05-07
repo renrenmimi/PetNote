@@ -1,16 +1,13 @@
 import {
   collection,
-  doc,
-  getDoc,
   getDocs,
-  increment,
   limit,
   orderBy,
   query,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
+  startAfter,
   where,
+  type QueryConstraint,
+  type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { type Post, type PostData } from "./posts";
@@ -21,36 +18,9 @@ export type Hashtag = {
   lastUsed: unknown;
 };
 
-export async function incrementTag(tagName: string): Promise<void> {
-  const normalized = tagName.trim().toLowerCase();
-  if (!normalized) return;
-  const tagRef = doc(db, "hashtags", normalized);
-  const tagSnap = await getDoc(tagRef);
-  if (!tagSnap.exists()) {
-    await setDoc(tagRef, {
-      name: normalized,
-      postCount: 1,
-      lastUsed: serverTimestamp(),
-    });
-    return;
-  }
-  await updateDoc(tagRef, {
-    postCount: increment(1),
-    lastUsed: serverTimestamp(),
-  });
-}
-
-export async function decrementTag(tagName: string): Promise<void> {
-  const normalized = tagName.trim().toLowerCase();
-  if (!normalized) return;
-  const tagRef = doc(db, "hashtags", normalized);
-  const tagSnap = await getDoc(tagRef);
-  if (!tagSnap.exists()) return;
-  await updateDoc(tagRef, {
-    postCount: increment(-1),
-    lastUsed: serverTimestamp(),
-  });
-}
+// NOTE: client-side incrementTag/decrementTag were removed — Firestore
+// rules only allow admin writes to /hashtags, so any client call would
+// reject. Tag counts are maintained by the onPostWritten Cloud Function.
 
 export async function searchTags(queryText: string): Promise<Hashtag[]> {
   const keyword = queryText.trim().toLowerCase();
@@ -59,7 +29,7 @@ export async function searchTags(queryText: string): Promise<Hashtag[]> {
   const tagsQuery = query(
     tagsRef,
     where("name", ">=", keyword),
-    where("name", "<=", `${keyword}\uf8ff`),
+    where("name", "<=", `${keyword}`),
     orderBy("name"),
     limit(10)
   );
@@ -80,18 +50,42 @@ export async function getTrendingTags(limitCount = 8): Promise<Hashtag[]> {
   return snapshot.docs.map((docSnap) => docSnap.data() as Hashtag);
 }
 
-export async function getPostsByTag(tagName: string): Promise<Post[]> {
+// Paginated. A popular tag (#dogs etc.) can match thousands of posts —
+// without a limit, opening Search?tag=dogs would have downloaded the
+// entire history on every render. Default page size matches the other
+// feed endpoints.
+export async function getPostsByTag(
+  tagName: string,
+  options?: { limitCount?: number; lastDoc?: QueryDocumentSnapshot }
+): Promise<{
+  posts: Post[];
+  lastDoc: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+}> {
   const normalized = tagName.trim().toLowerCase();
-  if (!normalized) return [];
+  if (!normalized) return { posts: [], lastDoc: null, hasMore: false };
+  const limitCount = options?.limitCount ?? 50;
   const postsRef = collection(db, "posts");
-  const postsQuery = query(
-    postsRef,
+  const constraints: QueryConstraint[] = [
     where("tags", "array-contains", normalized),
-    orderBy("createdAt", "desc")
-  );
-  const snapshot = await getDocs(postsQuery);
-  return snapshot.docs.map((docSnap) => ({
+    orderBy("createdAt", "desc"),
+    limit(limitCount),
+  ];
+  if (options?.lastDoc) {
+    constraints.push(startAfter(options.lastDoc));
+  }
+  const snapshot = await getDocs(query(postsRef, ...constraints));
+  const posts = snapshot.docs.map((docSnap) => ({
     id: docSnap.id,
     ...(docSnap.data() as PostData),
   }));
+  const nextLast =
+    (snapshot.docs[snapshot.docs.length - 1] as
+      | QueryDocumentSnapshot
+      | undefined) ?? null;
+  return {
+    posts,
+    lastDoc: nextLast,
+    hasMore: snapshot.docs.length === limitCount,
+  };
 }

@@ -4,8 +4,14 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
+  orderBy,
+  query,
   serverTimestamp,
   setDoc,
+  startAfter,
+  type QueryConstraint,
+  type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { getFollowingPets, unfollowPet } from "./follow";
@@ -60,8 +66,38 @@ export async function checkIfBlocked(
   return snapshot.exists();
 }
 
-export async function getBlockedUsers(userId: string): Promise<string[]> {
+// Paginated blocked-user lookup. The realtime hook (useBlockedUsers)
+// still subscribes to the full subcollection for filter-set semantics,
+// but the BlockedUsers screen now reads through this paged version so a
+// moderator-flagged user with thousands of blocks doesn't pull every
+// entry on mount.
+export async function getBlockedUsers(
+  userId: string,
+  options?: { limitCount?: number; lastDoc?: QueryDocumentSnapshot }
+): Promise<{
+  ids: string[];
+  lastDoc: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+}> {
+  if (!userId) return { ids: [], lastDoc: null, hasMore: false };
+  const limitCount = options?.limitCount ?? 100;
   const blockedRef = collection(db, "users", userId, "blockedUsers");
-  const snapshot = await getDocs(blockedRef);
-  return snapshot.docs.map((docSnap) => docSnap.id);
+  const constraints: QueryConstraint[] = [
+    orderBy("blockedAt", "desc"),
+    limit(limitCount),
+  ];
+  if (options?.lastDoc) {
+    constraints.push(startAfter(options.lastDoc));
+  }
+  const snapshot = await getDocs(query(blockedRef, ...constraints));
+  const ids = snapshot.docs.map((docSnap) => docSnap.id);
+  const nextLast =
+    (snapshot.docs[snapshot.docs.length - 1] as
+      | QueryDocumentSnapshot
+      | undefined) ?? null;
+  return {
+    ids,
+    lastDoc: nextLast,
+    hasMore: snapshot.docs.length === limitCount,
+  };
 }

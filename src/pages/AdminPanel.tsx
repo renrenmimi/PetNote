@@ -200,7 +200,7 @@ export function AdminPanel() {
     const loadFeedback = async () => {
       setFeedbackLoading(true);
       try {
-        const entries = await getAllFeedback();
+        const { entries } = await getAllFeedback();
         if (active) {
           setFeedback(entries);
         }

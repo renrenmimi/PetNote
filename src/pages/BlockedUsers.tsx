@@ -16,7 +16,7 @@ export function BlockedUsers() {
     if (!user) return;
     const load = async () => {
       setLoading(true);
-      const ids = await getBlockedUsers(user.uid);
+      const { ids } = await getBlockedUsers(user.uid);
       const profiles = await getUsersByIds(ids);
       if (!ignore) {
         setUsers(profiles);
