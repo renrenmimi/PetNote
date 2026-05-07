@@ -2,7 +2,14 @@ import { randomInt } from "node:crypto";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
 import { assertActorNotDeleting, getNotificationActor } from "./notifications";
-import { assertRateLimit, getDefaultAvatar, RATE_LIMITS, requestData, stripUndefined } from "./shared";
+import {
+  assertRateLimit,
+  getDefaultAvatar,
+  RATE_LIMITS,
+  requestData,
+  requiredDocId,
+  stripUndefined,
+} from "./shared";
 
 type ActiveInvitation = {
   code: string;
@@ -179,10 +186,10 @@ export const createInvitationCallable = onCall(async (request) => {
   assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "createInvitation", RATE_LIMITS.write);
 
-  const { petId } = requestData(request.data) as { petId?: string };
-  if (!petId || typeof petId !== "string") {
-    throw new HttpsError("invalid-argument", "Missing petId.");
-  }
+  const { petId: rawInvitePetId } = requestData(request.data) as {
+    petId?: string;
+  };
+  const petId = requiredDocId(rawInvitePetId, "petId");
 
   await assertPetFamilyMember(petId, callerUid);
 
@@ -251,10 +258,10 @@ export const getActiveInvitationCallable = onCall(async (request) => {
   }
   await assertRateLimit(callerUid, "getActiveInvitation", RATE_LIMITS.read);
 
-  const { petId } = requestData(request.data) as { petId?: string };
-  if (!petId || typeof petId !== "string") {
-    throw new HttpsError("invalid-argument", "Missing petId.");
-  }
+  const { petId: rawInvitePetId } = requestData(request.data) as {
+    petId?: string;
+  };
+  const petId = requiredDocId(rawInvitePetId, "petId");
 
   await assertPetFamilyMember(petId, callerUid);
   const invitation = await getLatestActiveInvitationForPet(petId);
@@ -444,13 +451,14 @@ export const removeFamilyMemberCallable = onCall(async (request) => {
   assertActorNotDeleting(caller);
   await assertRateLimit(callerUid, "removeFamilyMember", RATE_LIMITS.write);
 
-  const { petId, targetUserId } = requestData(request.data) as {
+  const { petId: rawRemovePetId, targetUserId: rawTargetUserId } = requestData(
+    request.data
+  ) as {
     petId?: string;
     targetUserId?: string;
   };
-  if (!petId || !targetUserId) {
-    throw new HttpsError("invalid-argument", "Missing petId or targetUserId.");
-  }
+  const petId = requiredDocId(rawRemovePetId, "petId");
+  const targetUserId = requiredDocId(rawTargetUserId, "targetUserId");
 
   const petSnap = await db.doc(`pets/${petId}`).get();
   if (!petSnap.exists) {

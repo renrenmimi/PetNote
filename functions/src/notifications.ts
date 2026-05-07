@@ -12,6 +12,7 @@ import {
   processQueryInBatches,
   RATE_LIMITS,
   requestData,
+  requiredDocId,
   requiredTrimmedString,
   TRUSTED_AVATAR_URL_HOSTS,
   VALIDATION_LIMITS,
@@ -545,9 +546,7 @@ export const sendNotification = onCall(async (request) => {
     warningDetails?: string;
   };
 
-  if (!data.userId || typeof data.userId !== "string") {
-    throw new HttpsError("invalid-argument", "Missing notification recipient.");
-  }
+  const targetUserId = requiredDocId(data.userId, "userId");
 
   if (data.type !== "warning") {
     throw new HttpsError("invalid-argument", "Only warning notifications are supported.");
@@ -579,7 +578,7 @@ export const sendNotification = onCall(async (request) => {
   // anyone replaying the call) could push warnings already marked read and
   // silence the recipient.
   const payload: ServerNotificationPayload = {
-    userId: data.userId,
+    userId: targetUserId,
     type: "warning",
     fromUserId: callerUid,
     fromUserName: "PetNote Team",
