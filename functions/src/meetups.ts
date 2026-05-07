@@ -203,6 +203,12 @@ export const createMeetupCallable = onCall(async (request) => {
     location?: unknown;
     locationVisibility?: "everyone" | "participants_only";
     requirements?: unknown;
+    // Optional: include the organizer's chosen pet so this callable can
+    // create the organizer participant doc atomically with the meetup
+    // itself. Without it, the client used to issue a follow-up join call
+    // and a failure between the two left a meetup with no organizer in
+    // its participants subcollection.
+    organizerPetId?: string;
   };
 
   const title = requiredTrimmedString(
@@ -252,10 +258,54 @@ export const createMeetupCallable = onCall(async (request) => {
       })
     : toStoredMeetupLocation(location);
 
-  // Pre-allocate the meetup id so the main doc and the private/address doc
-  // commit atomically in one batch. Previously the two were sequential
-  // writes — a failure between them left a private meetup without its
-  // address subdocument, breaking participants' detail page.
+  // Resolve the organizer's pet info up front so the main doc, the
+  // private/address doc, and the organizer participant doc all commit
+  // in the same batch. The previous flow ran createMeetupCallable
+  // followed by a separate joinMeetupCallable from the client — if the
+  // second call failed (tab closed, network drop, callable cold start
+  // hiccup), the meetup existed in Firestore with participantCount=0
+  // and no organizer in /participants, breaking the detail page.
+  let organizerPetId = "";
+  let organizerPetName = "Organizer";
+  let organizerPetAvatar = getDefaultAvatar(callerUid);
+  if (
+    typeof data.organizerPetId === "string" &&
+    data.organizerPetId.trim().length > 0
+  ) {
+    const petId = data.organizerPetId.trim();
+    const petRef = db.doc(`pets/${petId}`);
+    const familyRef = db.doc(`pets/${petId}/family/${callerUid}`);
+    const [petSnap, familySnap] = await Promise.all([
+      petRef.get(),
+      familyRef.get(),
+    ]);
+    if (!petSnap.exists) {
+      throw new HttpsError("not-found", "Selected pet not found.");
+    }
+    const petData = petSnap.data() ?? {};
+    const canAccess =
+      petData.ownerId === callerUid ||
+      petData.primaryOwnerId === callerUid ||
+      familySnap.exists;
+    if (!canAccess) {
+      throw new HttpsError(
+        "permission-denied",
+        "You do not have access to this pet."
+      );
+    }
+    organizerPetId = petId;
+    organizerPetName =
+      typeof petData.name === "string" && petData.name.trim().length > 0
+        ? petData.name
+        : "Pet";
+    organizerPetAvatar =
+      typeof petData.avatarUrl === "string" && petData.avatarUrl.trim().length > 0
+        ? petData.avatarUrl
+        : getDefaultAvatar(petId);
+  }
+
+  // Pre-allocate the meetup id so the main doc, the private/address doc,
+  // and the organizer participant doc commit atomically in one batch.
   const meetupRef = db.collection("meetups").doc();
   const batch = db.batch();
   batch.set(
@@ -282,7 +332,9 @@ export const createMeetupCallable = onCall(async (request) => {
       locationVisibility,
       requirements,
       status: "upcoming",
-      participantCount: 0,
+      // Seed participantCount with 1 because the organizer participant
+      // is being created in the same batch.
+      participantCount: 1,
       isRatingOpen: false,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -299,6 +351,21 @@ export const createMeetupCallable = onCall(async (request) => {
       state: location.state || "",
     });
   }
+
+  batch.set(
+    db.doc(`meetups/${meetupRef.id}/participants/${callerUid}`),
+    {
+      meetupId: meetupRef.id,
+      userId: callerUid,
+      userName: caller.fromUserName,
+      userAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
+      petId: organizerPetId,
+      petName: organizerPetName,
+      petAvatar: organizerPetAvatar,
+      joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+      status: "confirmed",
+    }
+  );
 
   await batch.commit();
 

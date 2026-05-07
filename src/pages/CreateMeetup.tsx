@@ -14,7 +14,6 @@ import { getCurrentLocation } from "../services/location";
 import { getPetsByOwner, type Pet } from "../services/pets";
 import {
   createMeetup,
-  joinMeetup,
   type MeetupRequirements,
 } from "../services/meetups";
 import { buildLocationId, getLocation, type Location } from "../services/locations";
@@ -187,39 +186,40 @@ export function CreateMeetup() {
         customPetType: petType === "other" ? customPetType.trim() : undefined,
       };
       const resolvedLocationName = locationName.trim() || address.trim();
-      const meetupId = await createMeetup({
-        organizerId: user.uid,
-        organizerName: profile?.displayName || user.displayName || "PetNote User",
-        organizerAvatar:
-          profile?.avatarUrl ||
-          user.photoURL ||
-          `https://api.dicebear.com/7.x/thumbs/svg?seed=${user.uid}`,
-        title: title.trim(),
-        description: description.trim(),
-        coverImage,
-        date: Timestamp.fromDate(start),
-        duration,
-        location: {
-          name: resolvedLocationName,
-          address: address.trim(),
-          lat,
-          lng,
-          city: locationCity.trim() || undefined,
-          state: locationState.trim() || undefined,
-        },
-        locationVisibility,
-        requirements,
-        status: "upcoming",
-        participantCount: 0,
-      });
-
       const organizerPet = pets[0];
-      await joinMeetup(meetupId, user.uid, {
-        petId: organizerPet?.id || "",
-        petName: organizerPet?.name || "Organizer",
-        petAvatar: organizerPet?.avatarUrl || "",
-        petSpecies: organizerPet?.species,
-      });
+      // Pass the organizer pet up to the callable so the meetup, its
+      // private/address subdoc, and the organizer participant doc all
+      // commit in the same Firestore batch. Splitting into create +
+      // join used to leave half-built meetups when the second call
+      // failed (network drop, tab close, callable cold start).
+      const meetupId = await createMeetup(
+        {
+          organizerId: user.uid,
+          organizerName: profile?.displayName || user.displayName || "PetNote User",
+          organizerAvatar:
+            profile?.avatarUrl ||
+            user.photoURL ||
+            `https://api.dicebear.com/7.x/thumbs/svg?seed=${user.uid}`,
+          title: title.trim(),
+          description: description.trim(),
+          coverImage,
+          date: Timestamp.fromDate(start),
+          duration,
+          location: {
+            name: resolvedLocationName,
+            address: address.trim(),
+            lat,
+            lng,
+            city: locationCity.trim() || undefined,
+            state: locationState.trim() || undefined,
+          },
+          locationVisibility,
+          requirements,
+          status: "upcoming",
+          participantCount: 0,
+        },
+        { organizerPetId: organizerPet?.id }
+      );
 
       showToast("Meetup created!", "success");
       navigate(`/meetups/${meetupId}`, { replace: true });

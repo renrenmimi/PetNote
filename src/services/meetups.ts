@@ -84,7 +84,10 @@ export type Participant = {
   status: "confirmed" | "pending" | "cancelled";
 };
 
-export async function createMeetup(data: MeetupData): Promise<string> {
+export async function createMeetup(
+  data: MeetupData,
+  options?: { organizerPetId?: string }
+): Promise<string> {
   const dateMillis =
     data.date instanceof Timestamp
       ? data.date.toMillis()
@@ -99,6 +102,7 @@ export async function createMeetup(data: MeetupData): Promise<string> {
       location: MeetupLocation;
       locationVisibility?: "everyone" | "participants_only";
       requirements: MeetupRequirements;
+      organizerPetId?: string;
     },
     { id: string }
   >(functions, "createMeetupCallable")({
@@ -110,6 +114,9 @@ export async function createMeetup(data: MeetupData): Promise<string> {
     location: data.location,
     locationVisibility: data.locationVisibility ?? "participants_only",
     requirements: data.requirements,
+    ...(options?.organizerPetId
+      ? { organizerPetId: options.organizerPetId }
+      : {}),
   });
   return result.data.id;
 }
