@@ -302,7 +302,7 @@ export async function createPet(
 
 export async function updatePet(
   petId: string,
-  data: Partial<Omit<Pet, "id" | "ownerId">>
+  data: Partial<Omit<Pet, "id" | "ownerId">> & { clearBirthday?: boolean }
 ): Promise<void> {
   const birthdayValue = data.birthday;
   const birthdayDate =
@@ -315,15 +315,20 @@ export async function updatePet(
         ? (birthdayValue as { toDate: () => Date }).toDate()
         : undefined;
 
+  // The callable distinguishes "field omitted, leave alone" from
+  // "field present and empty, delete it" by checking explicit null on
+  // birthdayMillis. We send null when the caller asks to clear (edit
+  // mode resetting the date input); otherwise we send a positive
+  // millis so the canonical month/day get rewritten too.
   await httpsCallable<
     {
       petId: string;
       name?: string;
       species?: PetSpecies;
       breed?: string;
-      birthdayMillis?: number;
-      birthdayMonth?: number;
-      birthdayDay?: number;
+      birthdayMillis?: number | null;
+      birthdayMonth?: number | null;
+      birthdayDay?: number | null;
       gender?: PetGender;
       bio?: string;
       avatarUrl?: string;
@@ -342,7 +347,13 @@ export async function updatePet(
           birthdayMonth: birthdayDate.getMonth() + 1,
           birthdayDay: birthdayDate.getDate(),
         }
-      : {}),
+      : data.clearBirthday
+        ? {
+            birthdayMillis: null,
+            birthdayMonth: null,
+            birthdayDay: null,
+          }
+        : {}),
     ...(data.gender ? { gender: data.gender } : {}),
     ...(typeof data.bio === "string" ? { bio: data.bio } : {}),
     ...(typeof data.avatarUrl === "string" ? { avatarUrl: data.avatarUrl } : {}),

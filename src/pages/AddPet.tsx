@@ -268,7 +268,14 @@ export function AddPet() {
 
       let targetId = petId;
       if (isEdit && petId) {
-        await updatePet(petId, payload);
+        // In edit mode an empty birthday input is a deliberate "clear"
+        // — without the explicit flag the service would just omit the
+        // field and the existing value would stay on the pet doc, so
+        // there was no way to undo a birthday once set.
+        await updatePet(
+          petId,
+          localBirthday ? payload : { ...payload, clearBirthday: true }
+        );
       } else {
         targetId = await createPet(
           user.uid,

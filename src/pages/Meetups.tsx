@@ -108,49 +108,64 @@ export function Meetups() {
     let ignore = false;
     const load = async () => {
       setLoading(true);
-      let data: Meetup[] = [];
-      if (activeFilter === "nearby") {
-        if (userLocation) {
-          data = await getNearbyMeetups(
-            userLocation.lat,
-            userLocation.lng,
-            50
-          );
+      try {
+        let data: Meetup[] = [];
+        if (activeFilter === "nearby") {
+          if (userLocation) {
+            data = await getNearbyMeetups(
+              userLocation.lat,
+              userLocation.lng,
+              50
+            );
+          } else {
+            const upcoming = await getUpcomingMeetups(50);
+            data = upcoming.meetups;
+          }
+        } else if (activeFilter === "week") {
+          data = await getThisWeekMeetups();
+        } else if (activeFilter === "mine") {
+          data = user ? await getMyMeetups(user.uid) : [];
         } else {
           const upcoming = await getUpcomingMeetups(50);
-          data = upcoming.meetups;
+          data = upcoming.meetups.filter((meetup) => {
+            const type = meetup.requirements.petType;
+            if (activeFilter === "dogs") {
+              return type === "dog" || type === "any_dog";
+            }
+            if (activeFilter === "cats") {
+              return type === "cat" || type === "any_cat";
+            }
+            if (activeFilter === "other") {
+              return (
+                type !== "dog" &&
+                type !== "any_dog" &&
+                type !== "cat" &&
+                type !== "any_cat"
+              );
+            }
+            return true;
+          });
         }
-      } else if (activeFilter === "week") {
-        data = await getThisWeekMeetups();
-      } else if (activeFilter === "mine") {
-        data = user ? await getMyMeetups(user.uid) : [];
-      } else {
-        const upcoming = await getUpcomingMeetups(50);
-        data = upcoming.meetups.filter((meetup) => {
-          const type = meetup.requirements.petType;
-          if (activeFilter === "dogs") {
-            return type === "dog" || type === "any_dog";
-          }
-          if (activeFilter === "cats") {
-            return type === "cat" || type === "any_cat";
-          }
-          if (activeFilter === "other") {
-            return type !== "dog" && type !== "any_dog" && type !== "cat" && type !== "any_cat";
-          }
-          return true;
-        });
-      }
-      // Update stale meetup statuses (e.g. upcoming → completed)
-      const updated = await Promise.all(
-        data.map((m) =>
-          m.status === "upcoming" || m.status === "ongoing"
-            ? checkAndUpdateMeetupStatus(m.id).then((result) => result ?? m)
-            : Promise.resolve(m)
-        )
-      );
-      if (!ignore) {
-        setMeetups(updated);
-        setLoading(false);
+        // Update stale meetup statuses (e.g. upcoming → completed)
+        const updated = await Promise.all(
+          data.map((m) =>
+            m.status === "upcoming" || m.status === "ongoing"
+              ? checkAndUpdateMeetupStatus(m.id).then((result) => result ?? m)
+              : Promise.resolve(m)
+          )
+        );
+        if (!ignore) {
+          setMeetups(updated);
+        }
+      } catch (error) {
+        // Without this, a failed Firestore read left the skeleton up
+        // forever — there's no UI affordance for retry on this page.
+        console.error("Failed to load meetups:", error);
+        if (!ignore) {
+          setMeetups([]);
+        }
+      } finally {
+        if (!ignore) setLoading(false);
       }
     };
     void load();

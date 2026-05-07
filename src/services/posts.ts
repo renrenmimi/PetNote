@@ -243,10 +243,17 @@ export async function getFollowingPosts(
     seen.add(d.id);
     return true;
   });
+  // Local sort must mirror the server-side ordering: createdAt DESC then
+  // documentId DESC. Without the id tiebreaker, two posts that share a
+  // serverTimestamp (rare but possible during batch imports) could swap
+  // positions across pages and the next-page cursor we hand back to
+  // Firestore wouldn't line up — the user could either see a duplicate
+  // or skip a post.
   unique.sort((a, b) => {
     const aTime = (a.data() as PostData).createdAt?.toMillis?.() ?? 0;
     const bTime = (b.data() as PostData).createdAt?.toMillis?.() ?? 0;
-    return bTime - aTime;
+    if (bTime !== aTime) return bTime - aTime;
+    return b.id.localeCompare(a.id);
   });
 
   const limited = unique.slice(0, limitCount);

@@ -131,28 +131,42 @@ export function LocationDetail() {
 
   const refreshData = async (id: string, userId?: string) => {
     setLoading(true);
-    const [loc, revs, meetupsData, checkinList] = await Promise.all([
-      getLocation(id),
-      getReviews(id),
-      getMeetupsByLocation(id),
-      getCheckins(id, 20),
-    ]);
-    setLocation(loc);
-    setReviews(revs.reviews);
-    setCheckins(checkinList);
-    setMeetups(
-      meetupsData.meetups.filter((meetup) => meetup.status === "completed")
-    );
-    if (userId) {
-      const existingReview = await getUserReview(id, userId);
-      setUserReview(existingReview);
-      const checked = await hasUserCheckedIn(id, userId);
-      setCheckedInToday(checked);
-    } else {
-      setUserReview(null);
-      setCheckedInToday(false);
+    try {
+      const [loc, revs, meetupsData, checkinList] = await Promise.all([
+        getLocation(id),
+        getReviews(id),
+        getMeetupsByLocation(id),
+        getCheckins(id, 20),
+      ]);
+      setLocation(loc);
+      setReviews(revs.reviews);
+      setCheckins(checkinList);
+      setMeetups(
+        meetupsData.meetups.filter((meetup) => meetup.status === "completed")
+      );
+      if (userId) {
+        const existingReview = await getUserReview(id, userId);
+        setUserReview(existingReview);
+        const checked = await hasUserCheckedIn(id, userId);
+        setCheckedInToday(checked);
+      } else {
+        setUserReview(null);
+        setCheckedInToday(false);
+      }
+    } catch (error) {
+      // Without this catch, a failed read above left the page stuck on
+      // "Loading location..." with no recovery — no retry button, no
+      // not-found fallback path.
+      console.error("Failed to load location detail:", error);
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "Failed to load location details.",
+        "error"
+      );
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -166,12 +180,15 @@ export function LocationDetail() {
     return () => {
       ignore = true;
     };
+    // refreshData closes over showToast (stable context value) and
+    // doesn't need to drive the effect — re-run only on locationId /
+    // user identity changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId, user?.uid]);
 
   useEffect(() => {
     let ignore = false;
     if (!user?.uid) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setUserPets([]);
       return;
     }

@@ -83,7 +83,23 @@ export function EditMeetup() {
     let ignore = false;
     if (!meetupId) return;
     const load = async () => {
-      const data = await getMeetupById(meetupId);
+      let data;
+      try {
+        data = await getMeetupById(meetupId);
+      } catch (error) {
+        // Without this catch, a transient permission/network failure
+        // left the page stuck on "Loading meetup..." forever — meetup
+        // state never advanced past null, so the UI couldn't even
+        // surface a retry button.
+        console.error("Failed to load meetup for edit:", error);
+        if (!ignore) {
+          showToast(
+            error instanceof Error ? error.message : "Failed to load meetup.",
+            "error"
+          );
+        }
+        return;
+      }
       if (!data || ignore) return;
       setMeetup(data);
       setTitle(data.title);
@@ -140,13 +156,23 @@ export function EditMeetup() {
       setMustHavePetProfile(data.requirements.mustHavePetProfile);
       setMinFollowers(data.requirements.minFollowers);
       setAdditionalNotes(data.requirements.additionalNotes || "");
-      const participants = await getParticipants(meetupId);
-      if (!ignore) setParticipantsCount(participants.length);
+      try {
+        const participants = await getParticipants(meetupId);
+        if (!ignore) setParticipantsCount(participants.length);
+      } catch (error) {
+        // Participants list is informational only — log and continue
+        // so the rest of the form still saves correctly.
+        console.warn("Failed to load meetup participants:", error);
+      }
     };
     void load();
     return () => {
       ignore = true;
     };
+    // showToast comes from a context value that is stable across renders,
+    // so omitting it from the dep array is fine and keeps this effect
+    // tied to the meetupId param only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meetupId]);
 
   const handleUseMyLocation = async () => {

@@ -110,11 +110,19 @@ export function PostDetail() {
 
     const load = async () => {
       setLoading(true);
-      const data = await getPostById(postId);
-      if (!ignore) {
-        setPost(data);
-        setCommentCount(data?.commentCount ?? 0);
-        setLoading(false);
+      try {
+        const data = await getPostById(postId);
+        if (!ignore) {
+          setPost(data);
+          setCommentCount(data?.commentCount ?? 0);
+        }
+      } catch (error) {
+        // Without this catch, getPostById's network/permission failure
+        // left the skeleton spinner up forever. Surface the failure so
+        // the user can refresh.
+        console.error("Failed to load post:", error);
+      } finally {
+        if (!ignore) setLoading(false);
       }
     };
 

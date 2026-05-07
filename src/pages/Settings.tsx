@@ -172,12 +172,22 @@ export function Settings() {
   if (!user) return null;
 
   const handleSettingsUpdate = async (patch: Partial<UserSettings>) => {
-    const next = { ...settings, ...patch };
-    setSettings(next);
+    // Capture only the keys this patch is touching so a rollback after
+    // failure undoes just those keys. The previous version closed over
+    // the whole `settings` snapshot and would clobber any unrelated
+    // toggles that landed during the in-flight write — two concurrent
+    // toggles where the first failed could silently revert the second.
+    const previousValues = Object.fromEntries(
+      (Object.keys(patch) as Array<keyof UserSettings>).map((key) => [
+        key,
+        settings[key],
+      ])
+    ) as Partial<UserSettings>;
+    setSettings((prev) => ({ ...prev, ...patch }));
     try {
       await updateSettings(user.uid, patch);
     } catch (error) {
-      setSettings(settings);
+      setSettings((prev) => ({ ...prev, ...previousValues }));
       const message =
         error instanceof Error ? error.message : t("settings.saveFailed");
       showToast(message, "error");
