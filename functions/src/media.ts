@@ -186,11 +186,18 @@ export const deleteCloudinaryAssetsCallable = onCall(
       form.set("api_key", apiKey);
 
       const url = `https://api.cloudinary.com/v1_1/${cloudName}/${asset.resourceType}/destroy`;
+      // 8s per-asset timeout. Cloudinary destroy normally responds well
+      // under 1s; anything past 8s is a network problem we don't want to
+      // sit on inside a function instance, especially when the caller is
+      // already waiting to surface the original error.
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8_000);
       try {
         const response = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: form.toString(),
+          signal: controller.signal,
         });
         if (response.ok) {
           const payload = (await response.json()) as { result?: string };
@@ -202,6 +209,8 @@ export const deleteCloudinaryAssetsCallable = onCall(
         // Best-effort. Leaked asset will be picked up by a future scheduled
         // cleanup job; we don't want orphan-cleanup failures to mask the
         // original error the caller is reporting.
+      } finally {
+        clearTimeout(timeoutId);
       }
     }
 

@@ -73,13 +73,32 @@ async function uploadToCloudinary(
     formData.append("max_file_size", String(data.maxFileSize));
   }
 
-  const response = await fetch(
-    `https://api.cloudinary.com/v1_1/${data.cloudName}/${resourceType}/upload`,
-    {
-      method: "POST",
-      body: formData,
+  // 90s covers a max-size video on a sluggish uplink while still killing
+  // pathological hangs that used to leave the upload spinner stuck
+  // indefinitely. Smaller assets resolve well under this and the abort
+  // also fires if the user closes the tab.
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 90_000);
+  let response: Response;
+  try {
+    response = await fetch(
+      `https://api.cloudinary.com/v1_1/${data.cloudName}/${resourceType}/upload`,
+      {
+        method: "POST",
+        body: formData,
+        signal: controller.signal,
+      }
+    );
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error(
+        "Upload timed out. Please check your connection and try again."
+      );
     }
-  );
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     const message = await response.text();

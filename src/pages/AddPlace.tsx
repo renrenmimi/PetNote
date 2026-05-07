@@ -144,10 +144,29 @@ export function AddPlace() {
         navigate(`/location/${locationId}`, { replace: true });
         return;
       }
-      const photoAssets = await Promise.all(
+      // allSettled instead of all so a partial failure still hands us
+      // the already-uploaded assets. Promise.all rejects on the first
+      // failure and discards every resolved value, leaving us with no
+      // record of what made it to Cloudinary and nothing to clean up
+      // in the catch path below.
+      const settled = await Promise.allSettled(
         photos.map((file) => uploadImage(file))
       );
-      uploaded.push(...photoAssets);
+      const photoAssets: UploadedAsset[] = [];
+      for (const result of settled) {
+        if (result.status === "fulfilled") {
+          photoAssets.push(result.value);
+          uploaded.push(result.value);
+        }
+      }
+      const firstRejection = settled.find(
+        (r): r is PromiseRejectedResult => r.status === "rejected"
+      );
+      if (firstRejection) {
+        throw firstRejection.reason instanceof Error
+          ? firstRejection.reason
+          : new Error("Photo upload failed");
+      }
       const photoUrls = photoAssets.map((asset) => asset.url);
       if (!alreadyExisted && photoUrls.length > 0) {
         await addPhotosToPlace(locationId, photoUrls);
