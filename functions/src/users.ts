@@ -539,6 +539,42 @@ export const deleteUserAccount = onCall({ timeoutSeconds: 540 }, async (request)
     );
   }
 
+  // Delete the user doc and username reservation FIRST. If the final
+  // Firestore cleanup fails, the user can still log in and retry the
+  // callable — deletionPending is set, the cascade runs are idempotent,
+  // and Auth is the last bridge we burn. If we deleted Auth first, a
+  // failure on the final transaction would lock the user out forever
+  // with no way to retry.
+  await db.runTransaction(async (transaction) => {
+    const userSnap = await transaction.get(userRef);
+    const displayNameLower =
+      typeof userSnap.data()?.displayNameLower === "string"
+        ? (userSnap.data() as { displayNameLower: string }).displayNameLower
+        : "";
+
+    if (displayNameLower) {
+      const reservationRef = usernameRef(displayNameLower);
+      const reservationSnap = await transaction.get(reservationRef);
+      if (reservationSnap.exists && reservationSnap.data()?.userId === userId) {
+        transaction.delete(reservationRef);
+      }
+    }
+    transaction.delete(userRef);
+  }).catch((error) => {
+    console.error("deleteUserAccount: final user cleanup failed", error);
+    throw new HttpsError(
+      "internal",
+      "Failed to finalize account deletion; please retry."
+    );
+  });
+
+  // Auth deletion is the last step. If it fails, the user doc is already
+  // gone, so the next sign-in attempt sees an authenticated user with no
+  // backing profile — the AuthContext profile-repair branch will create
+  // a fresh skeleton and the user can re-trigger deleteUserAccount,
+  // which will succeed quickly since the cascade has nothing left to do.
+  // We deliberately do not throw on auth/user-not-found because retries
+  // commonly land here.
   await runStep("auth", async () => {
     try {
       await admin.auth().deleteUser(userId);
@@ -557,28 +593,11 @@ export const deleteUserAccount = onCall({ timeoutSeconds: 540 }, async (request)
   });
 
   if (failures.includes("auth")) {
-    throw new HttpsError("internal", "Failed to delete auth account; please retry.");
+    throw new HttpsError(
+      "internal",
+      "Account data deleted but auth removal failed; please retry."
+    );
   }
-
-  await db.runTransaction(async (transaction) => {
-    const userSnap = await transaction.get(userRef);
-    const displayNameLower =
-      typeof userSnap.data()?.displayNameLower === "string"
-        ? (userSnap.data() as { displayNameLower: string }).displayNameLower
-        : "";
-
-    if (displayNameLower) {
-      const reservationRef = usernameRef(displayNameLower);
-      const reservationSnap = await transaction.get(reservationRef);
-      if (reservationSnap.exists && reservationSnap.data()?.userId === userId) {
-        transaction.delete(reservationRef);
-      }
-    }
-    transaction.delete(userRef);
-  }).catch((error) => {
-    console.error("deleteUserAccount: final user cleanup failed", error);
-    throw new HttpsError("internal", "Failed to finalize account deletion; please retry.");
-  });
 
   return { success: true };
 });
