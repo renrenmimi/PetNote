@@ -1,13 +1,11 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { fetchSignInMethodsForEmail } from "firebase/auth";
 import { AuthNotice } from "../components/AuthNotice";
 import { LanguageSelector } from "../components/LanguageSelector";
 import { PasswordVisibilityButton } from "../components/PasswordVisibilityButton";
 import { useAuth } from "../hooks/useAuth";
 import { useLanguage } from "../hooks/useLanguage";
 import PawIcon from "../components/PawIcon";
-import { auth } from "../services/firebase";
 
 function MailIcon() {
   return (
@@ -118,35 +116,19 @@ export function Login() {
         code.includes("wrong-password") ||
         code.includes("invalid-credential")
       ) {
-        try {
-          const methods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
-          if (methods.length === 0) {
-            setNotice({
-              title: t("login.noAccountTitle"),
-              message: t("login.noAccountMessage"),
-              actionLabel: t("login.noAccountAction"),
-              action: () => navigate("/signup", { state: { email: normalizedEmail } }),
-            });
-            return;
-          }
-          if (methods.includes("google.com") && !methods.includes("password")) {
-            setNotice({
-              title: t("login.googleOnlyTitle"),
-              message: t("login.googleHint"),
-              actionLabel: t("login.googleOnlyAction"),
-              action: () => void handleGoogle(),
-              tone: "info",
-            });
-            return;
-          }
-        } catch {
-          // ignore
-        }
+        // Show a generic "invalid credentials" message with a sign-up
+        // CTA. We used to call fetchSignInMethodsForEmail here to figure
+        // out whether the email belonged to a Google-only account, but
+        // that API was deprecated by Firebase under Email Enumeration
+        // Protection (default since 2023-09) and now returns an empty
+        // array regardless. The "Continue with Google" button below
+        // covers the Google-only path without leaking account existence.
         setNotice({
           title: t("login.invalidTitle"),
           message: t("login.invalidMessage"),
           actionLabel: t("login.noAccountAction"),
-          action: () => navigate("/signup", { state: { email: normalizedEmail } }),
+          action: () =>
+            navigate("/signup", { state: { email: normalizedEmail } }),
         });
       } else {
         setNotice({
