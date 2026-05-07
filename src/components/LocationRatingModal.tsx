@@ -105,8 +105,29 @@ export function LocationRatingModal({
     setSubmitting(true);
     const uploaded: UploadedAsset[] = [];
     try {
-      const uploads = await Promise.all(photos.map((file) => uploadImage(file)));
-      uploaded.push(...uploads);
+      // allSettled instead of all so a partial failure still gives us
+      // every successfully-uploaded asset to feed into the cleanup
+      // below. Promise.all would reject on the first failure and we
+      // would lose track of the others — they'd leak as orphan
+      // Cloudinary objects.
+      const settled = await Promise.allSettled(
+        photos.map((file) => uploadImage(file))
+      );
+      const uploads: UploadedAsset[] = [];
+      for (const result of settled) {
+        if (result.status === "fulfilled") {
+          uploads.push(result.value);
+          uploaded.push(result.value);
+        }
+      }
+      const firstRejection = settled.find(
+        (r): r is PromiseRejectedResult => r.status === "rejected"
+      );
+      if (firstRejection) {
+        throw firstRejection.reason instanceof Error
+          ? firstRejection.reason
+          : new Error("Photo upload failed");
+      }
       const reviewPayload: Parameters<typeof submitReview>[1] = {
         userId: user.uid,
         userName: profile?.displayName || user.displayName || "PetNote User",
