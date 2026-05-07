@@ -75,14 +75,32 @@ async function loadAccessToken() {
   return refreshAccessToken(refreshToken);
 }
 
-async function listLikesPage(accessToken, pageToken) {
+// Page through every legacy `likes` doc using the document name as the
+// cursor. The previous version had a stray `break` after the first 500
+// docs and never paged again — so the script promised "every legacy
+// like" but only patched at most one page worth.
+async function listLikesPage(accessToken, lastDocName) {
   const body = {
     structuredQuery: {
       from: [{ collectionId: "likes", allDescendants: true }],
+      orderBy: [
+        {
+          field: { fieldPath: "__name__" },
+          direction: "ASCENDING",
+        },
+      ],
       limit: 500,
     },
   };
-  if (pageToken) body.structuredQuery.startAt = pageToken;
+  if (lastDocName) {
+    body.structuredQuery.startAt = {
+      values: [{ referenceValue: lastDocName }],
+      // before:false means "start strictly after this doc" — without it
+      // the API treats the cursor as inclusive and we re-process the
+      // last doc of the previous page on every iteration.
+      before: false,
+    };
+  }
   const response = await fetch(FIRESTORE_QUERY_URL, {
     method: "POST",
     headers: {
@@ -127,16 +145,18 @@ async function main() {
   let scanned = 0;
   let patched = 0;
   let skipped = 0;
-  let pageToken = null;
+  let cursor = null;
 
-  while (true) {
-    const results = await listLikesPage(accessToken, pageToken);
+  for (;;) {
+    const results = await listLikesPage(accessToken, cursor);
     if (!results || results.length === 0) break;
-    let lastDocName = null;
 
+    let lastDocName = null;
+    let docsThisPage = 0;
     for (const item of results) {
       const docNode = item.document;
       if (!docNode) continue;
+      docsThisPage += 1;
       scanned += 1;
       lastDocName = docNode.name;
       const fields = docNode.fields || {};
@@ -160,14 +180,8 @@ async function main() {
       }
     }
 
-    if (results.length < 500) break;
-    if (!lastDocName) break;
-    pageToken = null;
-    // The runQuery API doesn't expose a cursor token; emulate paging by
-    // reading the next chunk that starts after the last doc seen. For a
-    // one-time backfill this loop terminates once we land on a page
-    // shorter than the limit.
-    break;
+    if (docsThisPage < 500 || !lastDocName) break;
+    cursor = lastDocName;
   }
 
   console.log(`Done. Scanned ${scanned}, patched ${patched}, skipped ${skipped}.`);

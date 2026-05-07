@@ -52,11 +52,21 @@ export function ShareMenu({ open, onClose, postId, shareUrl, text, post }: Share
 
   const handleShare = async () => {
     if (!navigator.share) return;
-    await navigator.share({
-      title: "Check out this cute pet on PetNote!",
-      text: text ? text.slice(0, 100) : "",
-      url: postUrl,
-    });
+    try {
+      await navigator.share({
+        title: "Check out this cute pet on PetNote!",
+        text: text ? text.slice(0, 100) : "",
+        url: postUrl,
+      });
+    } catch (error) {
+      // navigator.share rejects with AbortError when the user dismisses
+      // the share sheet — that's a normal interaction, not an error
+      // worth surfacing or logging. Anything else we still want to see
+      // in the console.
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        console.warn("Share failed:", error);
+      }
+    }
   };
 
   const handleShareImage = async () => {
