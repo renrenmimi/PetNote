@@ -13,6 +13,71 @@ import { deletePost, getPostById, type Post } from "../services/posts";
 import { getCachedUser } from "../hooks/useUserCache";
 import { timeAgo } from "../utils/timeAgo";
 
+// Module-scoped icon components. Defining them inside PostDetail tripped
+// react-hooks/static-components and reset the SVG defs on every render —
+// even though the visual output looked the same, React was throwing away
+// and recreating the components every render cycle.
+function HeartIcon({
+  filled,
+  gradientId,
+}: {
+  filled: boolean;
+  gradientId: string;
+}) {
+  return (
+    <svg
+      className={`h-6 w-6 ${filled ? "text-red-500" : "text-slate-500 dark:text-slate-400"}`}
+      viewBox="0 0 24 24"
+      fill={filled ? `url(#${gradientId})` : "none"}
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <defs>
+        <linearGradient id={gradientId} x1="0" x2="1" y1="0" y2="1">
+          <stop offset="0%" stopColor="#a855f7" />
+          <stop offset="100%" stopColor="#ec4899" />
+        </linearGradient>
+      </defs>
+      <path d="M20.8 6.6a5.5 5.5 0 0 0-7.8 0l-1 1-1-1a5.5 5.5 0 1 0-7.8 7.8l1 1L12 21l7.8-5.6 1-1a5.5 5.5 0 0 0 0-7.8Z" />
+    </svg>
+  );
+}
+
+function BookmarkIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg
+      className={`h-6 w-6 ${filled ? "text-purple-500" : "text-slate-500 dark:text-slate-400"}`}
+      viewBox="0 0 24 24"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
+    </svg>
+  );
+}
+
+function ShareIcon() {
+  return (
+    <svg
+      className="h-6 w-6 text-slate-500 dark:text-slate-400"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M22 2L11 13" />
+      <path d="M22 2L15 22l-4-9-9-4Z" />
+    </svg>
+  );
+}
+
 export function PostDetail() {
   const navigate = useNavigate();
   const { postId = "" } = useParams();
@@ -77,7 +142,9 @@ export function PostDetail() {
 
   const timeLabel = useMemo(
     () => (post?.createdAt ? timeAgo(post.createdAt) : ""),
-    [post?.createdAt]
+    // The compiler infers `post` since createdAt is read off of it; align
+    // the manual deps to keep the rule happy.
+    [post]
   );
   const mediaItems =
     post?.media && post.media.length > 0
@@ -93,8 +160,12 @@ export function PostDetail() {
     setDeleting(true);
     try {
       await deletePost(post.id);
+      // Navigate without resetting the loading state in finally — the
+      // component is unmounting and setting state on an unmounted
+      // component triggers a React warning. We only need to reset on
+      // failure so the dialog button can recover.
       navigate("/", { replace: true });
-    } finally {
+    } catch {
       setDeleting(false);
       setConfirmOpen(false);
     }
@@ -119,59 +190,7 @@ export function PostDetail() {
     await toggleBookmark();
   };
 
-  const HeartIcon = ({ filled }: { filled: boolean }) => {
-    const gradientId = `heart-detail-${post?.id ?? "post"}`;
-    return (
-      <svg
-        className={`h-6 w-6 ${filled ? "text-red-500" : "text-slate-500 dark:text-slate-400"}`}
-        viewBox="0 0 24 24"
-        fill={filled ? `url(#${gradientId})` : "none"}
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <defs>
-          <linearGradient id={gradientId} x1="0" x2="1" y1="0" y2="1">
-            <stop offset="0%" stopColor="#a855f7" />
-            <stop offset="100%" stopColor="#ec4899" />
-          </linearGradient>
-        </defs>
-        <path d="M20.8 6.6a5.5 5.5 0 0 0-7.8 0l-1 1-1-1a5.5 5.5 0 1 0-7.8 7.8l1 1L12 21l7.8-5.6 1-1a5.5 5.5 0 0 0 0-7.8Z" />
-      </svg>
-    );
-  };
-
-  const BookmarkIcon = ({ filled }: { filled: boolean }) => {
-    return (
-      <svg
-        className={`h-6 w-6 ${filled ? "text-purple-500" : "text-slate-500 dark:text-slate-400"}`}
-        viewBox="0 0 24 24"
-        fill={filled ? "currentColor" : "none"}
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
-      </svg>
-    );
-  };
-
-  const ShareIcon = () => (
-    <svg
-      className="h-6 w-6 text-slate-500 dark:text-slate-400"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M22 2L11 13" />
-      <path d="M22 2L15 22l-4-9-9-4Z" />
-    </svg>
-  );
+  const heartGradientId = `heart-detail-${post?.id ?? "post"}`;
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20 dark:bg-slate-900">
@@ -294,7 +313,7 @@ export function PostDetail() {
                   className="text-2xl transition-all duration-200"
                   aria-label="Like"
                 >
-                  <HeartIcon filled={isLiked} />
+                  <HeartIcon filled={isLiked} gradientId={heartGradientId} />
                 </button>
                 <button
                   type="button"
