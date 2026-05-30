@@ -18,7 +18,7 @@ import {
 import { httpsCallable } from "firebase/functions";
 import { getDocumentLanguage, isChineseLanguage } from "../i18n/config";
 import { db, functions } from "./firebase";
-import type { PostData, Post } from "./posts";
+import { toPost, type Post } from "./posts";
 import { getUserProfile } from "./users";
 import type { PetGender, PetSpecies } from "../utils/petHelpers";
 
@@ -589,10 +589,7 @@ export async function getPostsByPet(
     constraints.push(startAfter(options.lastDoc));
   }
   const snapshot = await getDocs(query(postsRef, ...constraints));
-  const posts = snapshot.docs.map((docSnap) => ({
-    id: docSnap.id,
-    ...(docSnap.data() as PostData),
-  }));
+  const posts = snapshot.docs.map((docSnap) => toPost(docSnap.id, docSnap.data()));
   const nextLast =
     (snapshot.docs[snapshot.docs.length - 1] as
       | QueryDocumentSnapshot

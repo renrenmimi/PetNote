@@ -7,7 +7,7 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { type Post } from "./posts";
+import { toPost, type Post } from "./posts";
 import { type UserProfile } from "./users";
 import { type Pet } from "./pets";
 
@@ -21,10 +21,7 @@ export async function searchByTag(tag: string): Promise<Post[]> {
     limit(20)
   );
   const snapshot = await getDocs(postsQuery);
-  return snapshot.docs.map((docSnap) => ({
-    id: docSnap.id,
-    ...(docSnap.data() as Omit<Post, "id">),
-  }));
+  return snapshot.docs.map((docSnap) => toPost(docSnap.id, docSnap.data()));
 }
 
 export async function searchByText(text: string): Promise<Post[]> {
@@ -43,10 +40,7 @@ export async function searchByText(text: string): Promise<Post[]> {
     limit(20)
   );
   const snapshot = await getDocs(tagQuery);
-  return snapshot.docs.map((docSnap) => ({
-    id: docSnap.id,
-    ...(docSnap.data() as Omit<Post, "id">),
-  }));
+  return snapshot.docs.map((docSnap) => toPost(docSnap.id, docSnap.data()));
 }
 
 export async function searchUsers(name: string): Promise<UserProfile[]> {

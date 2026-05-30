@@ -10,7 +10,7 @@ import {
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { type Post, type PostData } from "./posts";
+import { toPost, type Post } from "./posts";
 
 export type Hashtag = {
   name: string;
@@ -75,10 +75,7 @@ export async function getPostsByTag(
     constraints.push(startAfter(options.lastDoc));
   }
   const snapshot = await getDocs(query(postsRef, ...constraints));
-  const posts = snapshot.docs.map((docSnap) => ({
-    id: docSnap.id,
-    ...(docSnap.data() as PostData),
-  }));
+  const posts = snapshot.docs.map((docSnap) => toPost(docSnap.id, docSnap.data()));
   const nextLast =
     (snapshot.docs[snapshot.docs.length - 1] as
       | QueryDocumentSnapshot

@@ -232,6 +232,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Backend-only account-deletion tombstones. Written with the Admin SDK by
+    // deleteUserAccount; profile create/update callables check them to block
+    // resurrection of a deleted account. Never client-readable or writable.
+    match /userDeletionTombstones/{docId} {
+      allow read: if false;
+      allow write: if false;
+    }
+
     // ========= notifications =========
     match /notifications/{notificationId} {
       allow read: if isAuthenticated() &&

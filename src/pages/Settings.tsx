@@ -23,6 +23,10 @@ import {
   updateSettings,
   type UserSettings,
 } from "../services/settings";
+import {
+  markAccountDeletionInProgress,
+  clearAccountDeletionInProgress,
+} from "../services/accountDeletion";
 import { LanguageSelector } from "../components/LanguageSelector";
 import { PasswordVisibilityButton } from "../components/PasswordVisibilityButton";
 import { useLanguage } from "../hooks/useLanguage";
@@ -243,10 +247,20 @@ export function Settings() {
       return;
     }
     setDeleting(true);
+    // Mark deletion in progress so AuthContext's profile listener won't
+    // recreate the user doc when it sees it disappear mid-cascade.
+    markAccountDeletionInProgress(user.uid);
     try {
       await deleteAccount(user.uid);
+      // Force sign-out so the realtime profile listener detaches and the
+      // (still-valid-for-up-to-1h) token can't drive a profile rebuild.
+      await signOut();
       navigate("/login", { replace: true });
     } catch (error) {
+      // Deletion failed (typically retryable): clear the local guard so the
+      // app behaves normally for a retry. The server-side tombstone still
+      // blocks any profile rebuild regardless.
+      clearAccountDeletionInProgress(user.uid);
       const message =
         error instanceof Error ? error.message : t("settings.deleteAccountFailed");
       showToast(message, "error");

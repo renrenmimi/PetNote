@@ -27,6 +27,7 @@ import {
 } from "../services/users";
 import { clearPetCache } from "../services/pets";
 import { clearCachedUsers } from "../hooks/useUserCache";
+import { isAccountDeletionInProgress } from "../services/accountDeletion";
 
 type AuthContextValue = {
   user: User | null;
@@ -53,6 +54,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [adminState, setAdminState] = useState<AdminState | null>(null);
   const [adminLoading, setAdminLoading] = useState(true);
   const profileRepairingRef = useRef<Set<string>>(new Set());
+  // Set true once we've seen this user's doc carry deletionPending; if the
+  // doc then disappears we treat it as a finalized deletion and refuse to
+  // repair it (see the profile listener below).
+  const sawDeletionPendingRef = useRef(false);
   const hasProfileLocation = Boolean(profile?.location);
   const profileLocationKey = profile?.location
     ? `${profile.location.city}|${profile.location.state}`
@@ -77,9 +82,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     setProfileLoading(true);
+    sawDeletionPendingRef.current = false;
     const userRef = doc(db, "users", user.uid);
     const unsubscribe = onSnapshot(userRef, (snapshot) => {
       if (!snapshot.exists()) {
+        // Account is mid-deletion: do NOT repair/recreate the profile, or
+        // the listener resurrects the user doc + username reservation the
+        // backend just removed. Sign out so the listener detaches instead.
+        if (
+          sawDeletionPendingRef.current ||
+          isAccountDeletionInProgress(user.uid)
+        ) {
+          setProfile(null);
+          setProfileLoading(false);
+          // Mirror signOut()'s local cache clearing so a passive tab that
+          // observes the deletion doesn't keep stale profile/pet/user caches.
+          clearUserProfileCache();
+          clearPetCache();
+          clearCachedUsers();
+          void firebaseSignOut(auth);
+          return;
+        }
         if (!profileRepairingRef.current.has(user.uid)) {
           profileRepairingRef.current.add(user.uid);
           void (async () => {
@@ -105,7 +128,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         return;
       }
-      const data = snapshot.data() as Omit<UserProfile, "id">;
+      const data = snapshot.data() as Omit<UserProfile, "id"> & {
+        deletionPending?: boolean;
+      };
+      if (data.deletionPending === true) {
+        // Account is being torn down — show current data but never trigger a
+        // profile repair (the !exists() branch will sign out shortly).
+        sawDeletionPendingRef.current = true;
+        setProfile({ id: snapshot.id, ...data });
+        setProfileLoading(false);
+        return;
+      }
       const needsProfileRepair =
         !data.displayName?.trim() || !data.avatarUrl?.trim();
       if (needsProfileRepair && !profileRepairingRef.current.has(user.uid)) {

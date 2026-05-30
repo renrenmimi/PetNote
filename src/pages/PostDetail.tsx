@@ -380,9 +380,9 @@ export function PostDetail() {
               {post.text}
             </p>
 
-            {post.tags.length > 0 ? (
+            {(post.tags ?? []).length > 0 ? (
               <div className="flex flex-wrap gap-2 text-xs">
-                {post.tags.map((tag) => (
+                {(post.tags ?? []).map((tag) => (
                   <button
                     key={tag}
                     type="button"
