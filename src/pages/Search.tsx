@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Navbar } from "../components/Navbar";
 import { PostCard } from "../components/PostCard";
 import { EmptyState } from "../components/EmptyState";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import Avatar from "../components/Avatar";
 import LazyImage from "../components/LazyImage";
 import { useAuth } from "../hooks/useAuth";
@@ -768,21 +769,29 @@ export function Search() {
                 </p>
                 <div className="space-y-4">
                   {filteredSearchPosts.slice(0, 5).map((post, index) => (
-                    <PostCard
+                    <ErrorBoundary
                       key={post.id}
-                      post={post}
-                      index={index}
-                      onDeleted={(postId) =>
-                        setSearchResults((prev) =>
-                          prev
-                            ? {
-                                ...prev,
-                                posts: prev.posts.filter((item) => item.id !== postId),
-                              }
-                            : prev
-                        )
+                      fallback={
+                        <div className="rounded-2xl bg-white p-4 text-center text-xs text-slate-400 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-500">
+                          This post couldn&apos;t be displayed.
+                        </div>
                       }
-                    />
+                    >
+                      <PostCard
+                        post={post}
+                        index={index}
+                        onDeleted={(postId) =>
+                          setSearchResults((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  posts: prev.posts.filter((item) => item.id !== postId),
+                                }
+                              : prev
+                          )
+                        }
+                      />
+                    </ErrorBoundary>
                   ))}
                 </div>
               </section>

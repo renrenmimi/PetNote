@@ -127,7 +127,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         deletionPending?: boolean;
       };
       if (data.deletionPending === true) {
+        // Account is being torn down — show current data but never trigger a
+        // profile repair (the !exists() branch will sign out shortly).
         sawDeletionPendingRef.current = true;
+        setProfile({ id: snapshot.id, ...data });
+        setProfileLoading(false);
+        return;
       }
       const needsProfileRepair =
         !data.displayName?.trim() || !data.avatarUrl?.trim();

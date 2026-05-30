@@ -36,7 +36,6 @@ export function CommentSection({
   const { showToast } = useToast();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const inputWrapperRef = useRef<HTMLDivElement | null>(null);
-  const deleteTimerRef = useRef<number | null>(null);
   const focusTimerRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
   const deletingIdsRef = useRef<Set<string>>(new Set());
@@ -58,7 +57,6 @@ export function CommentSection({
     authorId: string;
   } | null>(null);
   const [commentToDelete, setCommentToDelete] = useState<Comment | null>(null);
-  const [removingId, setRemovingId] = useState<string | null>(null);
   const isEmailVerified = !!user?.emailVerified;
   const remaining = 500 - text.length;
   const counterTone =
@@ -156,9 +154,6 @@ export function CommentSection({
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      if (deleteTimerRef.current) {
-        window.clearTimeout(deleteTimerRef.current);
-      }
       if (focusTimerRef.current) {
         window.clearTimeout(focusTimerRef.current);
       }
@@ -262,17 +257,12 @@ export function CommentSection({
       // never leaves the comment list / count out of sync with Firestore.
       await deleteComment(postId, targetId);
       if (!mountedRef.current) return;
+      // Remove immediately on success. (A shared 200ms removal timer would let
+      // a sibling delete cancel this one, leaving the comment stuck in the UI
+      // with a stale count.)
+      setComments((prev) => prev.filter((item) => item.id !== targetId));
+      onCommentDeleted?.();
       showToast("Comment deleted", "success");
-      setRemovingId(targetId);
-      if (deleteTimerRef.current) {
-        window.clearTimeout(deleteTimerRef.current);
-      }
-      deleteTimerRef.current = window.setTimeout(() => {
-        setComments((prev) => prev.filter((item) => item.id !== targetId));
-        onCommentDeleted?.();
-        setRemovingId(null);
-        deleteTimerRef.current = null;
-      }, 200);
     } catch (err) {
       if (!mountedRef.current) return;
       const message =
@@ -299,9 +289,7 @@ export function CommentSection({
           return (
             <div
               key={comment.id}
-              className={`border-b border-slate-200 pb-3 pt-2 text-left transition-all duration-200 last:border-b-0 dark:border-slate-700 ${
-                removingId === comment.id ? "opacity-0 -translate-x-2" : ""
-              }`}
+              className="border-b border-slate-200 pb-3 pt-2 text-left transition-all duration-200 last:border-b-0 dark:border-slate-700"
             >
               <div className="flex items-start gap-3">
                 <Avatar

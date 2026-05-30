@@ -123,10 +123,12 @@ export function AddPlace() {
     }
     setSaving(true);
     const uploaded: UploadedAsset[] = [];
-    // Once photos are committed to a created location/review, the catch must
-    // NOT delete them (that would leave a real location with dead image URLs).
-    // Only clean photos that never made it into Firestore.
-    let photosCommitted = false;
+    // Once the photos have been handed to addPlace, the location may already
+    // reference them (even on a post-commit error / network drop), so the
+    // catch must NOT delete them — that would leave a real location with dead
+    // image URLs. We only clean assets when the failure happened during the
+    // upload phase, before any location write.
+    let photosHandedToBackend = false;
     try {
       // 1. Upload photos FIRST. If this fails, no location is created — so the
       // catch just cleans the orphan Cloudinary assets and nothing is left
@@ -156,6 +158,9 @@ export function AddPlace() {
 
       // 2. Create/get the location WITH the photos (the create branch persists
       // them, including photoEntries), so a new place is never created empty.
+      // From here a failure can no longer safely delete the assets — a created
+      // location may reference them.
+      photosHandedToBackend = true;
       const { locationId, alreadyExisted } = await addPlace({
         name: name.trim(),
         category,
@@ -170,13 +175,9 @@ export function AddPlace() {
         addedBy: user.uid,
         addedByName: profile?.displayName || user.displayName || "PetNote User",
       });
-      // A new place created with our photos has them committed to the doc.
-      if (!alreadyExisted && photoUrls.length > 0) {
-        photosCommitted = true;
-      }
 
-      // Existing place and nothing else to contribute: the photos weren't
-      // attached anywhere, so clean them and bail to the detail page.
+      // Existing place and no review: addPlace ignored our photos (they were
+      // not attached to anything), so it's safe to clean them here.
       if (alreadyExisted && rating === 0) {
         if (uploaded.length > 0) void deleteCloudinaryAssets(uploaded);
         showToast("This place already exists. Add a review to contribute photos.", "warning");
@@ -205,13 +206,15 @@ export function AddPlace() {
             cleanliness: cleanliness || rating,
           },
         });
-        photosCommitted = true;
       }
       showToast(alreadyExisted ? "Place contribution added!" : "Place added!", "success");
       navigate(`/location/${locationId}`, { replace: true });
     } catch {
-      // Only clean photos that never got committed to a location/review.
-      if (!photosCommitted && uploaded.length > 0) {
+      // Only clean photos that never reached the backend (upload-phase
+      // failure). Once handed to addPlace a location may reference them, so
+      // deleting risks dead image URLs — accept a rare orphan asset instead
+      // (a future scheduled cleanup can reap it).
+      if (!photosHandedToBackend && uploaded.length > 0) {
         void deleteCloudinaryAssets(uploaded);
       }
       showToast("Failed to add place.", "error");

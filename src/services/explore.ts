@@ -8,7 +8,7 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import type { Post } from "./posts";
+import { toPost, type Post } from "./posts";
 import type { UserProfile } from "./users";
 import type { Pet } from "./pets";
 import type { Location } from "./locations";
@@ -28,10 +28,7 @@ export async function getTrendingPosts(limitCount = 6): Promise<Post[]> {
   );
   const snapshot = await getDocs(postsQuery);
   return snapshot.docs
-    .map((docSnap) => ({
-      id: docSnap.id,
-      ...(docSnap.data() as Omit<Post, "id">),
-    }))
+    .map((docSnap) => toPost(docSnap.id, docSnap.data()))
     .sort((a, b) => {
       const likeDelta = (b.likeCount ?? 0) - (a.likeCount ?? 0);
       if (likeDelta !== 0) return likeDelta;
