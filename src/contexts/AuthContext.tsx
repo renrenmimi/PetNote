@@ -95,6 +95,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ) {
           setProfile(null);
           setProfileLoading(false);
+          // Mirror signOut()'s local cache clearing so a passive tab that
+          // observes the deletion doesn't keep stale profile/pet/user caches.
+          clearUserProfileCache();
+          clearPetCache();
+          clearCachedUsers();
           void firebaseSignOut(auth);
           return;
         }
