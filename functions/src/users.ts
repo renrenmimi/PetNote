@@ -9,7 +9,7 @@ import {
   deleteCollectionPath,
   deleteQueryDocs,
 } from "./cleanup";
-import { getNotificationActor } from "./notifications";
+import { assertActorNotDeleting, getNotificationActor } from "./notifications";
 import {
   assertRateLimit,
   batchChunked,
@@ -23,6 +23,17 @@ import {
   TRUSTED_AVATAR_URL_HOSTS,
   VALIDATION_LIMITS,
 } from "./shared";
+
+// Reject profile create/update for a uid whose account is mid-deletion. The
+// deleteUserAccount cascade writes userDeletionTombstones/{uid} before it
+// removes the user doc, so this blocks a stale client or not-yet-expired
+// token from rebuilding the profile the cascade just deleted.
+async function assertUserNotDeletionTombstoned(uid: string): Promise<void> {
+  const snap = await db.doc(`userDeletionTombstones/${uid}`).get();
+  if (snap.exists) {
+    throw new HttpsError("failed-precondition", "This account is being deleted.");
+  }
+}
 
 function normalizeDisplayName(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -249,6 +260,7 @@ export const ensureUserProfileCallable = onCall(async (request) => {
   if (!callerUid) {
     throw new HttpsError("unauthenticated", "Must be logged in.");
   }
+  await assertUserNotDeletionTombstoned(callerUid);
   await assertRateLimit(callerUid, "ensureUserProfile", RATE_LIMITS.strictWrite);
 
   const data = requestData(request.data);
@@ -363,6 +375,8 @@ export const updateUserProfileCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot update profiles.");
   }
+  assertActorNotDeleting(caller);
+  await assertUserNotDeletionTombstoned(callerUid);
   await assertRateLimit(callerUid, "updateUserProfile", RATE_LIMITS.write);
 
   const data = requestData(request.data);
@@ -460,6 +474,20 @@ export const deleteUserAccount = onCall({ timeoutSeconds: 540 }, async (request)
     },
     { merge: true }
   );
+
+  // Write a tombstone BEFORE removing the user doc so profile create/update
+  // callables refuse to rebuild this account if a stale client or
+  // not-yet-expired token fires during/after the cascade. expiresAt is a TTL
+  // field — configure a Firestore TTL policy on this collection to auto-purge
+  // (not required for correctness; it only needs to outlive a token).
+  await db.doc(`userDeletionTombstones/${userId}`).set({
+    userId,
+    reason: "account_deleted",
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    expiresAt: admin.firestore.Timestamp.fromMillis(
+      Date.now() + 24 * 60 * 60 * 1000
+    ),
+  });
 
   const failures: string[] = [];
   const runStep = async (label: string, task: () => Promise<void>) => {

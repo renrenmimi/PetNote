@@ -16,7 +16,7 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import type { Post, PostData } from "./posts";
+import { toPost, type Post } from "./posts";
 
 export async function bookmarkPost(
   userId: string,
@@ -101,10 +101,7 @@ export async function getBookmarkedPosts(
     const postsQuery = query(postsRef, where(documentId(), "in", chunk));
     const snapshot = await getDocs(postsQuery);
     snapshot.docs.forEach((docSnap) => {
-      posts.push({
-        id: docSnap.id,
-        ...(docSnap.data() as PostData),
-      });
+      posts.push(toPost(docSnap.id, docSnap.data()));
     });
   }
 

@@ -12,7 +12,6 @@ import { reverseGeocode } from "../services/geoapify";
 import { getCurrentLocation } from "../services/location";
 import {
   addPlace,
-  addPhotosToPlace,
   submitReview,
   type PlaceCategory,
   type PlaceFeature,
@@ -124,7 +123,39 @@ export function AddPlace() {
     }
     setSaving(true);
     const uploaded: UploadedAsset[] = [];
+    // Once photos are committed to a created location/review, the catch must
+    // NOT delete them (that would leave a real location with dead image URLs).
+    // Only clean photos that never made it into Firestore.
+    let photosCommitted = false;
     try {
+      // 1. Upload photos FIRST. If this fails, no location is created — so the
+      // catch just cleans the orphan Cloudinary assets and nothing is left
+      // behind (no more empty placeholder location).
+      let photoUrls: string[] = [];
+      if (photos.length > 0) {
+        const settled = await Promise.allSettled(
+          photos.map((file) => uploadImage(file))
+        );
+        const photoAssets: UploadedAsset[] = [];
+        for (const result of settled) {
+          if (result.status === "fulfilled") {
+            photoAssets.push(result.value);
+            uploaded.push(result.value);
+          }
+        }
+        const firstRejection = settled.find(
+          (r): r is PromiseRejectedResult => r.status === "rejected"
+        );
+        if (firstRejection) {
+          throw firstRejection.reason instanceof Error
+            ? firstRejection.reason
+            : new Error("Photo upload failed");
+        }
+        photoUrls = photoAssets.map((asset) => asset.url);
+      }
+
+      // 2. Create/get the location WITH the photos (the create branch persists
+      // them, including photoEntries), so a new place is never created empty.
       const { locationId, alreadyExisted } = await addPlace({
         name: name.trim(),
         category,
@@ -135,42 +166,27 @@ export function AddPlace() {
         city: city || "",
         state: state || "",
         features,
-        photos: [],
+        photos: photoUrls,
         addedBy: user.uid,
         addedByName: profile?.displayName || user.displayName || "PetNote User",
       });
+      // A new place created with our photos has them committed to the doc.
+      if (!alreadyExisted && photoUrls.length > 0) {
+        photosCommitted = true;
+      }
+
+      // Existing place and nothing else to contribute: the photos weren't
+      // attached anywhere, so clean them and bail to the detail page.
       if (alreadyExisted && rating === 0) {
+        if (uploaded.length > 0) void deleteCloudinaryAssets(uploaded);
         showToast("This place already exists. Add a review to contribute photos.", "warning");
         navigate(`/location/${locationId}`, { replace: true });
         return;
       }
-      // allSettled instead of all so a partial failure still hands us
-      // the already-uploaded assets. Promise.all rejects on the first
-      // failure and discards every resolved value, leaving us with no
-      // record of what made it to Cloudinary and nothing to clean up
-      // in the catch path below.
-      const settled = await Promise.allSettled(
-        photos.map((file) => uploadImage(file))
-      );
-      const photoAssets: UploadedAsset[] = [];
-      for (const result of settled) {
-        if (result.status === "fulfilled") {
-          photoAssets.push(result.value);
-          uploaded.push(result.value);
-        }
-      }
-      const firstRejection = settled.find(
-        (r): r is PromiseRejectedResult => r.status === "rejected"
-      );
-      if (firstRejection) {
-        throw firstRejection.reason instanceof Error
-          ? firstRejection.reason
-          : new Error("Photo upload failed");
-      }
-      const photoUrls = photoAssets.map((asset) => asset.url);
-      if (!alreadyExisted && photoUrls.length > 0) {
-        await addPhotosToPlace(locationId, photoUrls);
-      }
+
+      // 3. Review carries the photos (this is how existing places get photos;
+      // for new places they're already on the location and onReviewCreated
+      // dedupes by URL).
       if (rating > 0) {
         await submitReview(locationId, {
           userId: user.uid,
@@ -189,12 +205,15 @@ export function AddPlace() {
             cleanliness: cleanliness || rating,
           },
         });
+        photosCommitted = true;
       }
       showToast(alreadyExisted ? "Place contribution added!" : "Place added!", "success");
       navigate(`/location/${locationId}`, { replace: true });
     } catch {
-      // Best-effort orphan cleanup if any of the downstream writes failed.
-      void deleteCloudinaryAssets(uploaded);
+      // Only clean photos that never got committed to a location/review.
+      if (!photosCommitted && uploaded.length > 0) {
+        void deleteCloudinaryAssets(uploaded);
+      }
       showToast("Failed to add place.", "error");
     } finally {
       setSaving(false);

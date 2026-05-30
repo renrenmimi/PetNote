@@ -10,6 +10,7 @@ type UsePostsResult = {
   error: string | null;
   loadMore: () => Promise<void>;
   refresh: () => Promise<void>;
+  removePost: (postId: string) => void;
 };
 
 export type FeedMode = "all" | "following";
@@ -46,6 +47,10 @@ export function usePosts(mode: FeedMode = "all", userId?: string | null): UsePos
     all: 0,
     following: 0,
   });
+  // Ids removed via removePost; filtered out of any subsequent fetch result
+  // so a concurrent loadMore (or the posts re-sync in Feed) can't resurrect a
+  // just-deleted post.
+  const removedPostIdsRef = useRef<Set<string>>(new Set());
 
   const activeFeed = useMemo(() => feeds[mode], [feeds, mode]);
 
@@ -105,7 +110,9 @@ export function usePosts(mode: FeedMode = "all", userId?: string | null): UsePos
           ...prev,
           [targetMode]: {
             ...prev[targetMode],
-            posts,
+            posts: posts.filter(
+              (item) => !removedPostIdsRef.current.has(item.id)
+            ),
             lastDoc,
             hasMore,
             loading: false,
@@ -201,7 +208,10 @@ export function usePosts(mode: FeedMode = "all", userId?: string | null): UsePos
         ...prev,
         [targetMode]: {
           ...prev[targetMode],
-          posts: [...prev[targetMode].posts, ...posts],
+          posts: [
+            ...prev[targetMode].posts,
+            ...posts.filter((item) => !removedPostIdsRef.current.has(item.id)),
+          ],
           lastDoc,
           hasMore,
           loadingMore: false,
@@ -231,6 +241,23 @@ export function usePosts(mode: FeedMode = "all", userId?: string | null): UsePos
     await loadPosts(mode, true);
   }, [loadPosts, mode]);
 
+  // Remove a post from both feed caches so a deleted post doesn't reappear
+  // when posts is re-synced or loadMore appends a new page.
+  const removePost = useCallback((postId: string) => {
+    if (!postId) return;
+    removedPostIdsRef.current.add(postId);
+    setFeeds((prev) => ({
+      all: {
+        ...prev.all,
+        posts: prev.all.posts.filter((item) => item.id !== postId),
+      },
+      following: {
+        ...prev.following,
+        posts: prev.following.posts.filter((item) => item.id !== postId),
+      },
+    }));
+  }, []);
+
   return {
     posts: activeFeed.posts,
     loading: activeFeed.loading,
@@ -239,5 +266,6 @@ export function usePosts(mode: FeedMode = "all", userId?: string | null): UsePos
     error: activeFeed.error,
     loadMore,
     refresh,
+    removePost,
   };
 }

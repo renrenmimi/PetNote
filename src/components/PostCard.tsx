@@ -675,7 +675,7 @@ export function PostCard({
         </p>
 
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
-          {post.tags.map((tag) => (
+          {(post.tags ?? []).map((tag) => (
             <button
               key={tag}
               type="button"

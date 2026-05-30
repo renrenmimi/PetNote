@@ -63,6 +63,10 @@ export function Create() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const filesRef = useRef(files);
   const navigateTimerRef = useRef<number | null>(null);
+  // Stays true from a successful submit until the component unmounts on
+  // navigate, so the post-success delay window can't accept a second submit
+  // and create a duplicate post.
+  const submitLockedRef = useRef(false);
   const [pets, setPets] = useState<Pet[]>([]);
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [draft, setDraft] = useState<PostDraft | null>(null);
@@ -395,7 +399,7 @@ export function Create() {
   };
 
   const handleShare = async () => {
-    if (files.length === 0 || !user || loading) return;
+    if (files.length === 0 || !user || loading || submitLockedRef.current) return;
     if (!isEmailVerified) {
       showToast("Please verify your email before posting", "warning");
       return;
@@ -408,6 +412,7 @@ export function Create() {
       showToast("Your account has been suspended.", "error");
       return;
     }
+    submitLockedRef.current = true;
     setLoading(true);
     setUploadingIndex(1);
 
@@ -480,12 +485,15 @@ export function Create() {
       // (loop threw mid-iteration) and createPost rejecting after every
       // upload finished — both leak Cloudinary assets without this.
       void deleteCloudinaryAssets(uploadedAssets);
+      // Only release the lock / loading on failure. On success we keep them
+      // set through the navigate timer so a second click in the post-success
+      // window can't re-upload and create a duplicate post.
+      submitLockedRef.current = false;
+      setLoading(false);
+      setUploadingIndex(null);
       const message =
         err instanceof Error ? err.message : "Failed to post. Try again.";
       showToast(message, "error");
-    } finally {
-      setLoading(false);
-      setUploadingIndex(null);
     }
   };
 

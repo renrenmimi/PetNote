@@ -15,6 +15,7 @@ import {
   sum,
   Timestamp,
   startAfter,
+  type DocumentData,
   type QueryConstraint,
   type QueryDocumentSnapshot,
   where,
@@ -87,6 +88,22 @@ export type UpdatePostInput = {
   petAvatarUrl?: string;
 };
 
+// Normalize a Firestore post document into a stable Post so UI code never has
+// to defend against missing arrays/counts (a doc lacking `tags` would
+// otherwise crash `post.tags.map`). Use everywhere a Post is built from
+// Firestore data.
+export function toPost(id: string, data: DocumentData): Post {
+  const raw = data as Record<string, unknown>;
+  return {
+    ...(data as PostData),
+    id,
+    tags: Array.isArray(raw.tags) ? (raw.tags as string[]) : [],
+    media: Array.isArray(raw.media) ? (raw.media as MediaItem[]) : undefined,
+    likeCount: typeof raw.likeCount === "number" ? raw.likeCount : 0,
+    commentCount: typeof raw.commentCount === "number" ? raw.commentCount : 0,
+  };
+}
+
 export async function createPost(data: CreatePostInput): Promise<string> {
   if (!data.petId) {
     throw new Error("Please select a pet before posting.");
@@ -136,10 +153,7 @@ export async function getPosts(
   }
   const postsQuery = query(postsRef, ...constraints);
   const snapshot = await getDocs(postsQuery);
-  const posts = snapshot.docs.map((docSnap) => ({
-    id: docSnap.id,
-    ...(docSnap.data() as PostData),
-  }));
+  const posts = snapshot.docs.map((docSnap) => toPost(docSnap.id, docSnap.data()));
   const nextLastDoc =
     (snapshot.docs[snapshot.docs.length - 1] as QueryDocumentSnapshot | undefined) ?? null;
   const hasMore = snapshot.docs.length === limitCount;
@@ -162,10 +176,7 @@ export async function getPopularPosts(
   );
   const snapshot = await getDocs(postsQuery);
   return snapshot.docs
-    .map((docSnap) => ({
-      id: docSnap.id,
-      ...(docSnap.data() as PostData),
-    }))
+    .map((docSnap) => toPost(docSnap.id, docSnap.data()))
     .sort((a, b) => {
       const likeDelta = (b.likeCount ?? 0) - (a.likeCount ?? 0);
       if (likeDelta !== 0) return likeDelta;
@@ -181,10 +192,7 @@ export async function getPostById(id: string): Promise<Post | null> {
     return null;
   }
 
-  return {
-    id: snapshot.id,
-    ...(snapshot.data() as PostData),
-  };
+  return toPost(snapshot.id, snapshot.data());
 }
 
 export async function getFollowingPosts(
@@ -257,10 +265,7 @@ export async function getFollowingPosts(
   });
 
   const limited = unique.slice(0, limitCount);
-  const posts = limited.map((docSnap) => ({
-    id: docSnap.id,
-    ...(docSnap.data() as PostData),
-  }));
+  const posts = limited.map((docSnap) => toPost(docSnap.id, docSnap.data()));
   // Use the last doc from the merged result as the cursor for next page
   const nextLastDoc = limited[limited.length - 1] ?? null;
   const hasMore = limited.length === limitCount;
@@ -400,10 +405,7 @@ export async function getPostsByUser(
     constraints.push(startAfter(options.lastDoc));
   }
   const snapshot = await getDocs(query(postsRef, ...constraints));
-  const posts = snapshot.docs.map((docSnap) => ({
-    id: docSnap.id,
-    ...(docSnap.data() as PostData),
-  }));
+  const posts = snapshot.docs.map((docSnap) => toPost(docSnap.id, docSnap.data()));
   const nextLast =
     (snapshot.docs[snapshot.docs.length - 1] as
       | QueryDocumentSnapshot

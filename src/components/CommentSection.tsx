@@ -38,6 +38,8 @@ export function CommentSection({
   const inputWrapperRef = useRef<HTMLDivElement | null>(null);
   const deleteTimerRef = useRef<number | null>(null);
   const focusTimerRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
+  const deletingIdsRef = useRef<Set<string>>(new Set());
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -149,7 +151,11 @@ export function CommentSection({
   }, [stickyInput]);
 
   useEffect(() => {
+    // Re-arm on each mount so StrictMode's setup→cleanup→setup cycle leaves
+    // the flag pointing at the live component.
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       if (deleteTimerRef.current) {
         window.clearTimeout(deleteTimerRef.current);
       }
@@ -246,25 +252,34 @@ export function CommentSection({
     if (!commentToDelete || !commentToDelete.id) return;
     if (commentToDelete.id.startsWith("local-")) return;
     const targetId = commentToDelete.id;
-    setRemovingId(targetId);
-    if (deleteTimerRef.current) {
-      window.clearTimeout(deleteTimerRef.current);
-    }
-    deleteTimerRef.current = window.setTimeout(() => {
-      setComments((prev) => prev.filter((item) => item.id !== targetId));
-      onCommentDeleted?.();
-      setRemovingId(null);
-      deleteTimerRef.current = null;
-    }, 200);
+    // Prevent deleting the same comment twice.
+    if (deletingIdsRef.current.has(targetId)) return;
+    deletingIdsRef.current.add(targetId);
     setCommentToDelete(null);
 
     try {
+      // Await the backend BEFORE removing from the UI so a failed delete
+      // never leaves the comment list / count out of sync with Firestore.
       await deleteComment(postId, targetId);
+      if (!mountedRef.current) return;
       showToast("Comment deleted", "success");
+      setRemovingId(targetId);
+      if (deleteTimerRef.current) {
+        window.clearTimeout(deleteTimerRef.current);
+      }
+      deleteTimerRef.current = window.setTimeout(() => {
+        setComments((prev) => prev.filter((item) => item.id !== targetId));
+        onCommentDeleted?.();
+        setRemovingId(null);
+        deleteTimerRef.current = null;
+      }, 200);
     } catch (err) {
+      if (!mountedRef.current) return;
       const message =
         err instanceof Error ? err.message : "Failed to delete comment";
       showToast(message, "error");
+    } finally {
+      deletingIdsRef.current.delete(targetId);
     }
   };
 
