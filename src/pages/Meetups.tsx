@@ -66,7 +66,6 @@ const formatTime = (value: unknown) => {
 
 const statusStyles: Record<string, string> = {
   upcoming: "bg-emerald-500 text-white",
-  ongoing: "bg-blue-500 text-white animate-pulse",
   completed: "bg-slate-300 text-slate-700",
   cancelled: "bg-red-500 text-white",
 };
@@ -149,7 +148,7 @@ export function Meetups() {
         // Update stale meetup statuses (e.g. upcoming → completed)
         const updated = await Promise.all(
           data.map((m) =>
-            m.status === "upcoming" || m.status === "ongoing"
+            m.status === "upcoming"
               ? checkAndUpdateMeetupStatus(m.id).then((result) => result ?? m)
               : Promise.resolve(m)
           )

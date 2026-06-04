@@ -420,9 +420,15 @@ export function CreateMeetup() {
                 setLocationCity(location.city || "");
                 setLocationState(location.state || "");
                 setLocationStatus("success");
-                void findNearbyPlace(location.lat, location.lng).then((data) => {
-                  setLocationPreview(data);
-                });
+                void findNearbyPlace(location.lat, location.lng)
+                  .then((data) => {
+                    setLocationPreview(data);
+                  })
+                  .catch(() => {
+                    // Preview is a best-effort dedupe hint; on failure just
+                    // clear it instead of leaving an unhandled rejection.
+                    setLocationPreview(null);
+                  });
               } else {
                 setLocationName("");
                 setLat(null);

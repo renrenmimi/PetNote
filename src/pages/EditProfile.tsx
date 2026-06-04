@@ -107,7 +107,7 @@ export function EditProfile() {
     setUsernameChecking(true);
     const timer = window.setTimeout(async () => {
       try {
-        const taken = await isUsernameTaken(normalized, user.uid);
+        const taken = await isUsernameTaken(normalized);
         if (!ignore) {
           setUsernameTaken(taken);
         }

@@ -21,7 +21,7 @@ import { getUserProfile } from "./users";
 import { getUserStats } from "./posts";
 import { getFollowingPets } from "./follow";
 
-export type MeetupStatus = "upcoming" | "ongoing" | "completed" | "cancelled";
+export type MeetupStatus = "upcoming" | "completed" | "cancelled";
 
 export type MeetupLocation = {
   name: string;
@@ -262,7 +262,7 @@ export async function getUpcomingMeetups(
 ): Promise<{ meetups: Meetup[]; lastDoc: QueryDocumentSnapshot | null; hasMore: boolean }> {
   const meetupsRef = collection(db, "meetups");
   const constraints: QueryConstraint[] = [
-    where("status", "in", ["upcoming", "ongoing"]),
+    where("status", "==", "upcoming"),
     orderBy("date", "asc"),
     limit(limitCount),
   ];
