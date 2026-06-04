@@ -230,8 +230,13 @@ export function Search() {
   useEffect(() => {
     let ignore = false;
     const loadTags = async () => {
-      const tags = await getTrendingTags(12);
-      if (!ignore) setTrendingTags(tags);
+      try {
+        const tags = await getTrendingTags(12);
+        if (!ignore) setTrendingTags(tags);
+      } catch {
+        // Trending tags are a non-critical discovery enhancement; on failure
+        // leave the section empty instead of surfacing an unhandled rejection.
+      }
     };
     void loadTags();
     return () => {

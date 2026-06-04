@@ -81,7 +81,6 @@ const durationLabel = (duration: number) => {
 
 const statusStyles: Record<string, string> = {
   upcoming: "bg-emerald-500 text-white",
-  ongoing: "bg-blue-500 text-white animate-pulse",
   completed: "bg-slate-300 text-slate-700",
   cancelled: "bg-red-500 text-white",
 };

@@ -723,7 +723,7 @@ export const autoCompleteMeetups = onSchedule("every 15 minutes", async () => {
   const nowTimestamp = admin.firestore.Timestamp.fromMillis(now);
   const snapshot = await db
     .collection("meetups")
-    .where("status", "in", ["upcoming", "ongoing"])
+    .where("status", "==", "upcoming")
     .where("date", "<=", nowTimestamp)
     .orderBy("date", "asc")
     .limit(200)

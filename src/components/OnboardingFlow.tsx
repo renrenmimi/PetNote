@@ -144,7 +144,7 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
     setUsernameChecking(true);
     const timer = window.setTimeout(async () => {
       try {
-        const taken = await isUsernameTaken(normalized, userId);
+        const taken = await isUsernameTaken(normalized);
         if (!ignore) {
           setUsernameTaken(taken);
         }
@@ -163,7 +163,7 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
       ignore = true;
       window.clearTimeout(timer);
     };
-  }, [initialUsername, userId, username, usernameValidation.valid]);
+  }, [initialUsername, username, usernameValidation.valid]);
 
   useEffect(() => {
     let ignore = false;

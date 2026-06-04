@@ -187,10 +187,8 @@ export function validateUsername(
 }
 
 export async function isUsernameTaken(
-  username: string,
-  excludeUserId?: string
+  username: string
 ): Promise<boolean> {
-  void excludeUserId;
   const normalized = username.trim();
   if (!normalized) {
     return false;
