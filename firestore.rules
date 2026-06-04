@@ -38,8 +38,14 @@ service cloud.firestore {
       // Positive token claim → confirmed banned, no fallback needed.
       // Negative/missing token claim → check Firestore in case a brand-new
       // ban hasn't propagated to the caller's id token yet.
+      // The `banned` custom claim is only ever set for actually-banned users
+      // (onAdminStateWritten sets {banned:true}, never false), so normal users
+      // have NO `banned` key on their token. We must tolerate the missing key
+      // explicitly — `request.auth.token.banned != true` on an absent claim
+      // does not behave as "not banned", which would wrongly deny every
+      // unbanned user (likes/bookmarks/settings/blockedUsers all rely on this).
       return isAuthenticated() &&
-        request.auth.token.banned != true &&
+        (!('banned' in request.auth.token) || request.auth.token.banned != true) &&
         (
           !exists(adminDoc) ||
           !('banned' in get(adminDoc).data) ||
