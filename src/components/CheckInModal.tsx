@@ -6,6 +6,7 @@ import {
 } from "../services/cloudinary";
 import { checkIn } from "../services/checkins";
 import { useToast } from "../contexts/ToastContext";
+import { useAuth } from "../hooks/useAuth";
 import Avatar from "./Avatar";
 
 interface CheckInModalProps {
@@ -38,6 +39,8 @@ export function CheckInModal({
   onSuccess,
 }: CheckInModalProps) {
   const { showToast } = useToast();
+  const { user } = useAuth();
+  const requiresEmailVerification = !!user && !user.emailVerified;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previewUrlRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
@@ -97,6 +100,10 @@ export function CheckInModal({
 
   const handleSubmit = async () => {
     if (!file || submitting) return;
+    if (requiresEmailVerification) {
+      showToast("Please verify your email before checking in.", "warning");
+      return;
+    }
     setSubmitting(true);
     const uploaded: UploadedAsset[] = [];
     try {
@@ -246,11 +253,15 @@ export function CheckInModal({
 
         <button
           type="button"
-          disabled={!file || submitting}
+          disabled={!file || submitting || requiresEmailVerification}
           onClick={handleSubmit}
           className="mt-4 w-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {submitting ? "Checking in..." : "Check In"}
+          {submitting
+            ? "Checking in..."
+            : requiresEmailVerification
+            ? "🔒 Verify Email to Check In"
+            : "Check In"}
         </button>
       </div>
     </div>

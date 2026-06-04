@@ -89,7 +89,7 @@ export function Login() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [notice, setNotice] = useState<LoginNotice | null>(null);
-  const isDisabled = loading || password.length < 8 || !email.trim();
+  const isDisabled = loading || !password || !email.trim();
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();

@@ -32,7 +32,7 @@ const genderSymbolClass = "text-lg font-bold";
 export function PetProfile() {
   const navigate = useNavigate();
   const { petId } = useParams();
-  const { user, profile } = useAuth();
+  const { user, profile, isAdmin } = useAuth();
   const { showToast } = useToast();
 
   const [pet, setPet] = useState<Pet | null>(null);
@@ -203,6 +203,14 @@ export function PetProfile() {
 
   const primaryOwnerId = pet.primaryOwnerId || pet.ownerId;
   const isPrimaryOwner = user?.uid === primaryOwnerId;
+  // Mirror updatePetCallable / deletePetCallable: only the (primary) owner or
+  // an admin may edit/delete. Regular family members can still invite, but
+  // showing them "Edit Pet" only led to a permission-denied on save.
+  const canManagePet = isPrimaryOwner || isAdmin;
+  // Edit + Delete are owner/admin actions; Invite is for any family member.
+  // The action row renders if either applies, so a non-family admin still
+  // sees Edit/Delete.
+  const petActionCount = (canManagePet ? 2 : 0) + (viewerIsFamilyMember ? 1 : 0);
 
   return (
     <div className="min-h-screen bg-white pb-10 dark:bg-slate-900">
@@ -303,27 +311,35 @@ export function PetProfile() {
             </div>
           </div>
 
-          {viewerIsFamilyMember ? (
+          {viewerIsFamilyMember || canManagePet ? (
             <div
               className={`grid gap-2 ${
-                isPrimaryOwner ? "grid-cols-3" : "grid-cols-2"
+                petActionCount >= 3
+                  ? "grid-cols-3"
+                  : petActionCount === 2
+                  ? "grid-cols-2"
+                  : "grid-cols-1"
               }`}
             >
-              <button
-                type="button"
-                onClick={() => navigate(`/edit-pet/${pet.id}`)}
-                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-all duration-200 hover:border-purple-300 hover:text-purple-600 dark:border-slate-700 dark:text-slate-200"
-              >
-                Edit Pet
-              </button>
-              <button
-                type="button"
-                onClick={() => setInviteOpen(true)}
-                className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white"
-              >
-                Invite Family
-              </button>
-              {isPrimaryOwner ? (
+              {canManagePet ? (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/edit-pet/${pet.id}`)}
+                  className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-all duration-200 hover:border-purple-300 hover:text-purple-600 dark:border-slate-700 dark:text-slate-200"
+                >
+                  Edit Pet
+                </button>
+              ) : null}
+              {viewerIsFamilyMember ? (
+                <button
+                  type="button"
+                  onClick={() => setInviteOpen(true)}
+                  className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white"
+                >
+                  Invite Family
+                </button>
+              ) : null}
+              {canManagePet ? (
                 <button
                   type="button"
                   onClick={() => setConfirmDelete(true)}

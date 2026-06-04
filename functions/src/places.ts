@@ -656,8 +656,12 @@ export const submitReviewCallable = onCall(async (request) => {
 });
 
 export const checkInCallable = onCall(async (request) => {
-  const callerUid = request.auth?.uid;
+  const callerAuth = request.auth;
+  const callerUid = callerAuth?.uid;
   if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+  if (callerAuth.token.email_verified !== true) {
+    throw new HttpsError("permission-denied", "Verify your email before checking in.");
+  }
 
   const caller = await getNotificationActor(callerUid);
   if (caller.banned === true) {

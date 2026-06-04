@@ -29,6 +29,7 @@ export type NotificationItem = {
   fromUserName: string;
   fromUserAvatar: string;
   postId?: string;
+  petId?: string;
   commentId?: string;
   postImage?: string;
   message: string;

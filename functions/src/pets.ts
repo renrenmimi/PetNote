@@ -402,15 +402,30 @@ export const followPetCallable = onCall(async (request) => {
 
   const petRef = db.doc(`pets/${petId}`);
   const followingRef = db.doc(`users/${callerUid}/followingPets/${petId}`);
+  const familyRef = db.doc(`pets/${petId}/family/${callerUid}`);
 
   await db.runTransaction(async (t) => {
-    const [petSnap, followingSnap] = await Promise.all([t.get(petRef), t.get(followingRef)]);
+    const [petSnap, followingSnap, familySnap] = await Promise.all([
+      t.get(petRef),
+      t.get(followingRef),
+      t.get(familyRef),
+    ]);
     if (!petSnap.exists) {
       throw new HttpsError("not-found", "Pet not found.");
     }
+    const petData = petSnap.data() ?? {};
+    // Can't follow a pet you own or co-parent — it would inflate
+    // followerCount / followingPetsCount. The UI hides the button; the
+    // callable enforces it.
+    if (
+      petData.ownerId === callerUid ||
+      petData.primaryOwnerId === callerUid ||
+      familySnap.exists
+    ) {
+      throw new HttpsError("failed-precondition", "You can't follow your own pet.");
+    }
     if (followingSnap.exists) return;
 
-    const petData = petSnap.data() ?? {};
     t.set(followingRef, {
       petId,
       petName:
