@@ -101,15 +101,6 @@ export type Review = {
   createdAt?: unknown;
 };
 
-export const buildLocationId = (lat: number, lng: number): string => {
-  const normalize = (value: number) =>
-    value
-      .toFixed(4)
-      .replace("-", "m")
-      .replace(".", "");
-  return `${normalize(lat)}_${normalize(lng)}`;
-};
-
 export async function getOrCreateLocation(data: {
   name: string;
   address: string;

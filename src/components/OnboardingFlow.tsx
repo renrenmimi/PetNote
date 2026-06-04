@@ -472,9 +472,9 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
             </div>
 
             <div className="space-y-1 text-left text-xs text-slate-500 dark:text-slate-400">
-              <p>3-20 characters</p>
-              <p>Only letters, numbers, and underscores</p>
-              <p>Must start with a letter</p>
+              <p>2-30 characters</p>
+              <p>Letters, numbers, and spaces are fine</p>
+              <p>Must be unique</p>
             </div>
 
             {normalizedUsername && !usernameValidation.valid ? (

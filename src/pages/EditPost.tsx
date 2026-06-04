@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { MediaCarousel } from "../components/MediaCarousel";
-import { getPetsByOwner, type Pet } from "../services/pets";
+import { getUserPets, type Pet } from "../services/pets";
 import { getPostById, updatePost, type Post } from "../services/posts";
 import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 import { getSpeciesMeta } from "../utils/petHelpers";
@@ -39,7 +39,7 @@ export function EditPost() {
       setLoading(true);
       const [postData, petList] = await Promise.all([
         getPostById(postId),
-        getPetsByOwner(user.uid),
+        getUserPets(user.uid),
       ]);
       if (ignore) return;
       if (!postData) {
@@ -61,20 +61,20 @@ export function EditPost() {
   }, [postId, user]);
 
   const handleTagCommit = (value: string) => {
-    const normalized = value
+    // Mirror the server normalizeTags: lowercase, strip a leading '#', drop
+    // empty / over-length tags, dedupe, and cap the total at 20.
+    const incoming = value
       .split(/[,\s]+/)
-      .map((tag) => tag.trim())
-      .filter(Boolean);
+      .map((tag) => tag.trim().toLowerCase().replace(/^#/, ""))
+      .filter((tag) => tag.length > 0 && tag.length <= 40);
 
-    if (normalized.length === 0) return;
+    if (incoming.length === 0) return;
 
     setTags((prev) => {
       const next = [...prev];
-      normalized.forEach((tag) => {
-        const trimmed = tag.slice(0, 30);
-        if (trimmed && !next.includes(trimmed)) {
-          next.push(trimmed);
-        }
+      incoming.forEach((tag) => {
+        if (next.length >= 20) return;
+        if (!next.includes(tag)) next.push(tag);
       });
       return next;
     });
@@ -94,15 +94,20 @@ export function EditPost() {
       showToast("You can only edit your own posts.", "error");
       return;
     }
+    const selectedPet = pets.find((petItem) => petItem.id === selectedPetId);
+    if (!selectedPet) {
+      // Posts must stay linked to a pet (the backend rejects petId:null too).
+      showToast("Posts must be linked to a pet.", "warning");
+      return;
+    }
     setSaving(true);
     try {
-      const selectedPet = pets.find((petItem) => petItem.id === selectedPetId);
       await updatePost(post.id, {
         text: caption.trim(),
         tags,
-        petId: selectedPet ? selectedPet.id : null,
-        petName: selectedPet?.name,
-        petAvatarUrl: selectedPet?.avatarUrl,
+        petId: selectedPet.id,
+        petName: selectedPet.name,
+        petAvatarUrl: selectedPet.avatarUrl,
       });
       navigate(`/post/${post.id}`, { replace: true });
     } catch (err) {
@@ -165,7 +170,7 @@ export function EditPost() {
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || !selectedPetId}
             className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-1.5 text-sm font-semibold text-white shadow-md transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
           >
             {saving ? "Saving..." : "Save"}
@@ -226,11 +231,7 @@ export function EditPost() {
                   <button
                     key={petItem.id}
                     type="button"
-                    onClick={() =>
-                      setSelectedPetId((prev) =>
-                        prev === petItem.id ? null : petItem.id
-                      )
-                    }
+                    onClick={() => setSelectedPetId(petItem.id)}
                     className="flex flex-col items-center text-xs text-slate-600 dark:text-slate-300"
                   >
                     <div

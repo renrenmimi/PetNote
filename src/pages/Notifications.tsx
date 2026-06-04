@@ -67,8 +67,12 @@ export function Notifications() {
 
             if (isWarning) {
               return (
-                <div
+                <button
                   key={item.id}
+                  type="button"
+                  onClick={() => {
+                    if (!item.read) void markAsRead(item.id);
+                  }}
                   className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left ${cardClass}`}
                 >
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white dark:bg-slate-800">
@@ -90,7 +94,7 @@ export function Notifications() {
                       {timeAgo(item.createdAt as Date)}
                     </p>
                   </div>
-                </div>
+                </button>
               );
             }
 
@@ -100,8 +104,14 @@ export function Notifications() {
                 type="button"
                 onClick={() => {
                   void markAsRead(item.id);
-                  if (item.type === "follow") {
-                    navigate(`/profile/${item.fromUserId}`);
+                  if (item.type === "pet_follow" || item.type === "follow") {
+                    // Prefer the pet page (backend now stamps petId); fall back
+                    // to the follower's profile for legacy notifications.
+                    navigate(
+                      item.petId
+                        ? `/pet/${item.petId}`
+                        : `/profile/${item.fromUserId}`
+                    );
                   } else if (item.postId) {
                     navigate(`/post/${item.postId}`);
                   } else {

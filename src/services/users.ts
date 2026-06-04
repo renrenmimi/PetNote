@@ -173,27 +173,15 @@ export async function createUserProfile(
 export function validateUsername(
   username: string
 ): { valid: boolean; error?: string } {
+  // Mirror the server displayName rule (normalizeDisplayName): 2-30 chars,
+  // any script — non-ASCII names are allowed. The old ASCII-only /
+  // letter-start rules rejected names the backend happily accepts.
   const normalized = username.trim();
-  if (normalized.length < 3) {
-    return { valid: false, error: "Username must be at least 3 characters" };
+  if (normalized.length < 2) {
+    return { valid: false, error: "Name must be at least 2 characters" };
   }
-  if (normalized.length > 20) {
-    return { valid: false, error: "Username must be under 20 characters" };
-  }
-  if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(normalized)) {
-    if (/^[0-9]/.test(normalized)) {
-      return { valid: false, error: "Username cannot start with a number" };
-    }
-    if (/^_/.test(normalized)) {
-      return {
-        valid: false,
-        error: "Username cannot start with an underscore",
-      };
-    }
-    return {
-      valid: false,
-      error: "Only letters, numbers, and underscores allowed",
-    };
+  if (normalized.length > 30) {
+    return { valid: false, error: "Name must be 30 characters or fewer" };
   }
   return { valid: true };
 }

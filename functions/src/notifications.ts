@@ -35,6 +35,7 @@ export type ServerNotificationPayload = {
   fromUserAvatar: string;
   message: string;
   postId?: string;
+  petId?: string;
   commentId?: string;
   postImage?: string;
   warningReason?: string;
@@ -186,6 +187,11 @@ export const onFollowingPetCreated = onDocumentCreated(
 
     if (!petSnap.exists) {
       if (event.data) {
+        // Mark not-counted before deleting so onFollowingPetDeleted won't
+        // decrement counts that were never incremented (we return before any).
+        await event.data.ref
+          .set({ counted: false }, { merge: true })
+          .catch(() => undefined);
         await event.data.ref.delete().catch(() => undefined);
       }
       return;
@@ -212,6 +218,13 @@ export const onFollowingPetCreated = onDocumentCreated(
         userAvatar: actor.fromUserAvatar || getDefaultAvatar(userId),
         followedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
+      // Stamp counted:true alongside the increments so onFollowingPetDeleted
+      // only decrements follows that were actually counted (legacy follows
+      // without the field are treated as counted; never-counted follows are
+      // explicitly marked counted:false above).
+      if (event.data) {
+        batch.set(event.data.ref, { counted: true }, { merge: true });
+      }
       hasWrites = true;
     }
 
@@ -235,6 +248,7 @@ export const onFollowingPetCreated = onDocumentCreated(
           fromUserId: actor.fromUserId,
           fromUserName: actor.fromUserName,
           fromUserAvatar: actor.fromUserAvatar,
+          petId,
           message: `started following ${petName}`,
         })
       )
@@ -249,31 +263,38 @@ export const onFollowingPetDeleted = onDocumentDeleted(
     const userRef = db.doc(`users/${userId}`);
     const petRef = db.doc(`pets/${petId}`);
     const followerMirrorRef = db.doc(`pets/${petId}/followers/${userId}`);
-    const [userSnap, petSnap] = await Promise.all([userRef.get(), petRef.get()]);
 
-    const batch = db.batch();
-    let hasWrites = false;
+    // Always remove the follower mirror. Only adjust counts if this follow was
+    // actually counted: onFollowingPetCreated stamps counted:true with the
+    // increments and counted:false on the never-counted path. Legacy follows
+    // (no field) are treated as counted. This prevents negative drift from a
+    // follow that was auto-cleaned before it was ever counted.
+    const wasCounted = event.data?.data()?.counted !== false;
 
-    if (userSnap.exists) {
-      batch.update(userRef, {
-        followingPetsCount: admin.firestore.FieldValue.increment(-1),
-      });
-      hasWrites = true;
-    }
+    await followerMirrorRef.delete().catch(() => undefined);
+    if (!wasCounted) return;
 
-    if (petSnap.exists) {
-      batch.update(petRef, {
-        followerCount: admin.firestore.FieldValue.increment(-1),
-      });
-      hasWrites = true;
-    }
-
-    batch.delete(followerMirrorRef);
-    hasWrites = true;
-
-    if (hasWrites) {
-      await batch.commit();
-    }
+    // Transactional clamped decrements so counts can never go negative.
+    await Promise.all([
+      db.runTransaction(async (t) => {
+        const snap = await t.get(userRef);
+        if (!snap.exists) return;
+        const prev =
+          typeof snap.data()?.followingPetsCount === "number"
+            ? (snap.data() as { followingPetsCount: number }).followingPetsCount
+            : 0;
+        t.update(userRef, { followingPetsCount: Math.max(0, prev - 1) });
+      }),
+      db.runTransaction(async (t) => {
+        const snap = await t.get(petRef);
+        if (!snap.exists) return;
+        const prev =
+          typeof snap.data()?.followerCount === "number"
+            ? (snap.data() as { followerCount: number }).followerCount
+            : 0;
+        t.update(petRef, { followerCount: Math.max(0, prev - 1) });
+      }),
+    ]);
   }
 );
 

@@ -68,7 +68,7 @@ const featureIcons: Record<string, string> = {
 };
 
 const sortOptions = [
-  { key: "nearby", label: "Nearby" },
+  { key: "nearby", label: "Nearby (recent)" },
   { key: "top_rated", label: "Top Rated" },
   { key: "most_reviewed", label: "Most Reviewed" },
   { key: "newest", label: "Newest" },

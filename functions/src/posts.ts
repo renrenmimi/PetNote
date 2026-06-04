@@ -257,9 +257,8 @@ export const updatePostCallable = onCall(async (request) => {
 
   if ("petId" in data) {
     if (data.petId === null || data.petId === "") {
-      updates.petId = admin.firestore.FieldValue.delete();
-      updates.petName = admin.firestore.FieldValue.delete();
-      updates.petAvatarUrl = admin.firestore.FieldValue.delete();
+      // Posts must stay linked to a pet — reject clearing the association.
+      throw new HttpsError("invalid-argument", "Posts must be linked to a pet.");
     } else if (typeof data.petId === "string") {
       const newPetId = requiredDocId(data.petId, "petId");
       const petData = await getAccessiblePet(newPetId, callerUid);

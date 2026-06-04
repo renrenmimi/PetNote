@@ -16,7 +16,7 @@ import {
   createMeetup,
   type MeetupRequirements,
 } from "../services/meetups";
-import { buildLocationId, getLocation, type Location } from "../services/locations";
+import { findNearbyPlace, type Location } from "../services/locations";
 import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 
 const durations = [
@@ -110,8 +110,9 @@ export function CreateMeetup() {
       setLocationState(state);
       setLocationStatus("success");
       if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
-        const locationId = buildLocationId(latitude, longitude);
-        const preview = await getLocation(locationId);
+        // Don't reconstruct the backend locationId on the client (precision +
+        // name-hash differ); look the place up by proximity instead.
+        const preview = await findNearbyPlace(latitude, longitude);
         setLocationPreview(preview);
       }
     } catch (err: unknown) {
@@ -419,8 +420,7 @@ export function CreateMeetup() {
                 setLocationCity(location.city || "");
                 setLocationState(location.state || "");
                 setLocationStatus("success");
-                const locationId = buildLocationId(location.lat, location.lng);
-                void getLocation(locationId).then((data) => {
+                void findNearbyPlace(location.lat, location.lng).then((data) => {
                   setLocationPreview(data);
                 });
               } else {

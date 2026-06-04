@@ -268,7 +268,7 @@ export function Create() {
       if (file.type.startsWith("image/")) {
         if (file.size > 10 * 1024 * 1024) {
           showToast(
-            "File too large. Images: max 10MB, Videos: max 50MB",
+            "File too large. Images: max 10MB, Videos: max 80MB",
             "warning"
           );
           continue;
@@ -276,9 +276,9 @@ export function Create() {
       }
 
       if (file.type.startsWith("video/")) {
-        if (file.size > 50 * 1024 * 1024) {
+        if (file.size > 80 * 1024 * 1024) {
           showToast(
-            "File too large. Images: max 10MB, Videos: max 50MB",
+            "File too large. Images: max 10MB, Videos: max 80MB",
             "warning"
           );
           continue;
@@ -349,20 +349,20 @@ export function Create() {
   };
 
   const handleTagCommit = (value: string) => {
-    const normalized = value
+    // Mirror the server normalizeTags: lowercase, strip a leading '#', drop
+    // empty / over-length tags, dedupe, and cap the total at 20.
+    const incoming = value
       .split(/[,\s]+/)
-      .map((tag) => tag.trim())
-      .filter(Boolean);
+      .map((tag) => tag.trim().toLowerCase().replace(/^#/, ""))
+      .filter((tag) => tag.length > 0 && tag.length <= 40);
 
-    if (normalized.length === 0) return;
+    if (incoming.length === 0) return;
 
     setTags((prev) => {
       const next = [...prev];
-      normalized.forEach((tag) => {
-        const trimmed = tag.slice(0, 30);
-        if (trimmed && !next.includes(trimmed)) {
-          next.push(trimmed);
-        }
+      incoming.forEach((tag) => {
+        if (next.length >= 20) return;
+        if (!next.includes(tag)) next.push(tag);
       });
       return next;
     });
