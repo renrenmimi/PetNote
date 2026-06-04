@@ -456,7 +456,7 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
                   value={username}
                   onChange={(event) => setUsername(event.target.value)}
                   placeholder={initialUsername || "HappyPanda42"}
-                  maxLength={20}
+                  maxLength={30}
                   className="w-full bg-transparent text-xl text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
                 />
                 {normalizedUsername ? (

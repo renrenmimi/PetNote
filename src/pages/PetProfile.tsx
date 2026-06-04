@@ -207,6 +207,10 @@ export function PetProfile() {
   // an admin may edit/delete. Regular family members can still invite, but
   // showing them "Edit Pet" only led to a permission-denied on save.
   const canManagePet = isPrimaryOwner || isAdmin;
+  // Edit + Delete are owner/admin actions; Invite is for any family member.
+  // The action row renders if either applies, so a non-family admin still
+  // sees Edit/Delete.
+  const petActionCount = (canManagePet ? 2 : 0) + (viewerIsFamilyMember ? 1 : 0);
 
   return (
     <div className="min-h-screen bg-white pb-10 dark:bg-slate-900">
@@ -307,10 +311,14 @@ export function PetProfile() {
             </div>
           </div>
 
-          {viewerIsFamilyMember ? (
+          {viewerIsFamilyMember || canManagePet ? (
             <div
               className={`grid gap-2 ${
-                canManagePet ? "grid-cols-3" : "grid-cols-1"
+                petActionCount >= 3
+                  ? "grid-cols-3"
+                  : petActionCount === 2
+                  ? "grid-cols-2"
+                  : "grid-cols-1"
               }`}
             >
               {canManagePet ? (
@@ -322,13 +330,15 @@ export function PetProfile() {
                   Edit Pet
                 </button>
               ) : null}
-              <button
-                type="button"
-                onClick={() => setInviteOpen(true)}
-                className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white"
-              >
-                Invite Family
-              </button>
+              {viewerIsFamilyMember ? (
+                <button
+                  type="button"
+                  onClick={() => setInviteOpen(true)}
+                  className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white"
+                >
+                  Invite Family
+                </button>
+              ) : null}
               {canManagePet ? (
                 <button
                   type="button"
