@@ -90,6 +90,34 @@ service cloud.firestore {
       );
     }
 
+    // ----- private per-user settings docs -----
+    // Two known documents live under users/{uid}/settings, both written from
+    // the client with setDoc(..., { merge: true }):
+    //   - 'preferences' : notification toggles + language (services/settings.ts)
+    //   - 'location'    : the user's private precise coordinates (services/location.ts)
+    // Any other settingId is rejected. Keys are whitelisted per doc; on create
+    // we check the whole document, on update only the changed keys (so a
+    // pre-existing doc carrying a legacy field can't be retro-locked, yet no
+    // new unknown key can be introduced). Each known field is type-checked.
+    function settingsKeysOk(settingId, affectedKeys) {
+      return (settingId == 'preferences' &&
+                affectedKeys.hasOnly(['likeNotifications', 'commentNotifications', 'followNotifications', 'language'])) ||
+             (settingId == 'location' &&
+                affectedKeys.hasOnly(['lat', 'lng', 'city', 'state', 'updatedAt']));
+    }
+
+    function settingsTypesOk(data) {
+      return (!('likeNotifications' in data) || data.likeNotifications is bool) &&
+        (!('commentNotifications' in data) || data.commentNotifications is bool) &&
+        (!('followNotifications' in data) || data.followNotifications is bool) &&
+        (!('language' in data) || data.language is string) &&
+        (!('lat' in data) || data.lat is number) &&
+        (!('lng' in data) || data.lng is number) &&
+        (!('city' in data) || data.city is string) &&
+        (!('state' in data) || data.state is string) &&
+        (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
     // ========= users =========
     match /users/{userId} {
       allow read: if true;
@@ -132,12 +160,31 @@ service cloud.firestore {
 
       match /blockedUsers/{blockedId} {
         allow read: if isOwner(userId);
-        allow write: if isOwner(userId);
+        // A block doc carries exactly one field: blockedAt (a server
+        // timestamp). Banned / mid-deletion users can't mutate their block
+        // list. Delete stays guarded too — the account-deletion cascade runs
+        // server-side via the Admin SDK, which bypasses these rules.
+        allow create: if isOwner(userId) && isNotBanned() && isNotDeleting() &&
+          request.resource.data.keys().hasOnly(['blockedAt']) &&
+          request.resource.data.blockedAt is timestamp;
+        allow update: if isOwner(userId) && isNotBanned() && isNotDeleting() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['blockedAt']) &&
+          request.resource.data.blockedAt is timestamp;
+        allow delete: if isOwner(userId) && isNotBanned() && isNotDeleting();
       }
 
       match /settings/{settingId} {
         allow read: if isOwner(userId);
-        allow write: if isOwner(userId);
+        allow create: if isOwner(userId) && isNotBanned() && isNotDeleting() &&
+          settingsKeysOk(settingId, request.resource.data.keys()) &&
+          settingsTypesOk(request.resource.data);
+        allow update: if isOwner(userId) && isNotBanned() && isNotDeleting() &&
+          settingsKeysOk(settingId, request.resource.data.diff(resource.data).affectedKeys()) &&
+          settingsTypesOk(request.resource.data);
+        // Keep delete owner-only (no banned/deleting gate): clearUserLocation
+        // deletes settings/location directly from the client and we don't want
+        // to wedge that path; the deletion cascade cleans the subtree server-side.
+        allow delete: if isOwner(userId);
       }
 
       match /admin/state {
