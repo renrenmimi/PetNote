@@ -24,7 +24,10 @@ service cloud.firestore {
     function isAdmin() {
       let adminDoc = /databases/$(database)/documents/users/$(request.auth.uid)/admin/state;
       return isAuthenticated() && (
-        request.auth.token.admin == true ||
+        // Guard the claim access: a token without the `admin` claim (i.e. every
+        // non-admin) must yield false here, not a failed expression — same
+        // missing-custom-claim footgun fixed for isNotBanned in #149.
+        ('admin' in request.auth.token && request.auth.token.admin == true) ||
         (
           exists(adminDoc) &&
           'role' in get(adminDoc).data &&
