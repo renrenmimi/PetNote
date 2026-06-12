@@ -1,210 +1,117 @@
 # PetNote
 
-PetNote is a pet-centered social app built with React, TypeScript, Firebase, and Cloudinary. Users can share posts, manage pet profiles, discover pet-friendly places, organize meetups, follow pets, and receive real-time notifications.
+A pet-centric social web app: feeds, pet profiles with shared family access, pet-friendly places with reviews and check-ins, and meetups — built on React 19 and a callable-first Firebase backend.
 
-## What the app does
+**Live demo:** https://petnote.vercel.app
 
-- Social feed with text, image, and video posts
-- Comments, replies, likes, bookmarks, and hashtag-based discovery
-- Pet profiles with birthdays, bios, pet family members, and invitation-based family access
-- Pet follow system and following feed
-- Pet-friendly places with ratings, tags, photos, and check-ins
-- Meetups with eligibility rules, participant management, and private-address support
-- Real-time notifications for likes, comments, replies, pet follows, meetup joins, meetup cancellations, and admin warnings
-- Admin tools for reports, moderation, warnings, and bans
-- Account settings, blocked users, password reset, and account deletion
+## Features
 
-## Current architecture
-
-PetNote uses a callable-first backend model for business writes.
-
-- Firestore Rules
-  - Mostly control read access
-  - Allow only a very small set of simple owner-only writes
-- Callable Functions
-  - Handle business writes that need identity checks, validation, or transactions
-  - Examples: create post, create comment, create pet, join meetup, submit review, check in, delete account
-- Trigger Functions
-  - Maintain counters and denormalized snapshots
-  - Fan out notifications
-  - Clean up related data after deletes
-
-This means the client no longer directly writes most sensitive business data.
+- Social feed with image/video posts, comments and replies, likes, bookmarks, and hashtag discovery
+- Pet profiles with multi-user "family" access granted through single-use invitation codes
+- Pet-friendly places with ratings, reviews, photos, and media check-ins
+- Meetups with capacity/eligibility checks and private-address handling
+- Real-time notifications fanned out server-side; admin moderation (reports, warnings, bans)
+- Full account lifecycle including server-orchestrated account deletion
 
 ## Tech stack
 
 | Layer | Technology |
 | --- | --- |
-| Frontend | React 19 + TypeScript 5.9 |
-| Build tool | Vite 7 |
-| Styling | Tailwind CSS 4 |
-| Routing | React Router 7 |
-| Backend | Firebase Auth + Firestore + Cloud Functions |
-| Security | Firestore Rules + callable-first writes |
-| Media | Cloudinary signed uploads |
-| Geocoding | Geoapify |
-| Images | heic2any for HEIC conversion, DiceBear for default avatars |
-| Deployment | Vercel for frontend, Firebase for rules and functions |
+| Frontend | React 19, TypeScript 5.9, Vite 7, Tailwind CSS 4, React Router 7 |
+| Backend | Firebase Auth, Firestore, Cloud Functions v2 (TypeScript, Node 22) |
+| Security | Firestore rules + callable-first writes, custom-claim roles, server-side rate limiting |
+| Media | Cloudinary, browser-direct uploads with server-issued signatures |
+| Geocoding | Geoapify, proxied through Cloud Functions (no client-side key) |
+| Quality | Vitest, ESLint, strict TypeScript |
+| Hosting | Vercel (web), Firebase (rules + 62 Cloud Functions) |
 
-## Core product areas
+## Architecture
 
-### Accounts and identity
+The client never writes business data directly. Firestore rules allow reads and a small set of schema-locked owner-only writes; every other write goes through callable Cloud Functions, and derived data (counters, notification fan-out, cleanup) is maintained by Firestore triggers and scheduled jobs.
 
-- Email/password sign-up and login
-- Google sign-in
-- Email verification
-- Password reset
-- Random username generation for new accounts
-- AuthProvider-based global auth/profile state
+```mermaid
+flowchart LR
+  UI["React SPA (Vercel)"]
+  Rules["Security rules"]
+  FS[("Firestore")]
+  CF["Callable functions
+(validation, transactions,
+identity checks)"]
+  TRG["Triggers
+(counters, fan-out, cleanup)"]
+  SCH["Scheduled jobs"]
+  AUTH["Firebase Auth"]
+  CDN["Cloudinary"]
+  GEO["Geoapify"]
 
-### Posts and feed
+  UI -- "reads + minimal owner-only writes" --> Rules --> FS
+  UI -- "business writes" --> CF --> FS
+  CF <--> AUTH
+  FS -- "onWrite events" --> TRG --> FS
+  SCH --> FS
+  UI -- "signed direct upload" --> CDN
+  CF -- "upload signatures" --> CDN
+  CF -- "server-side geocoding" --> GEO
+```
 
-- Create posts with text plus image/video media
-- Attach a post to a pet profile
-- Like posts
-- Comment and reply
-- Bookmark posts
-- Global feed and following feed
-- Post editing and deletion
+62 Cloud Functions across 11 domain modules ([functions/src](functions/src)): posts, comments, pets, family invitations, follows, places/reviews/check-ins, meetups, notifications, moderation, media, and account lifecycle.
 
-### Pets
+## Engineering highlights
 
-- Create, edit, and delete pets
-- Species, breed, birthday, gender, bio, and avatar
-- Invitation-based pet family membership
-- Primary and member family roles
-- Pet followers and follower counts
+### Idempotent account deletion with a tombstone guard
 
-### Places
+Deleting an account cascades across a dozen collections (posts, comments, likes, follows, check-ins, meetup participation, …) via collection-group queries backed by explicit field overrides in [firestore.indexes.json](firestore.indexes.json). Before touching any data, [`deleteUserAccount`](functions/src/users.ts) writes a TTL-expiring `userDeletionTombstones/{uid}` marker, and the profile-provisioning callables refuse to run while it exists — closing a race where a second signed-in tab could silently re-create ("resurrect") the profile mid-deletion. Cleanup steps are individually error-tracked: a partial failure is reported and the call is safe to re-run, and the Firebase Auth user is only deleted after Firestore cleanup succeeds, so a half-deleted account can always retry and never strands. On the client, [`AuthContext`](src/contexts/AuthContext.tsx) treats an observed deletion as a sign-out rather than a missing profile to repair.
 
-- Create a place
-- Add place photos
-- Submit reviews with rating, tags, and photos
-- Check in with media
-- Browse place details and recent check-ins
-- Private user location is used for nearby ranking without exposing exact coordinates publicly
+### Security rules that survive missing claims
 
-### Meetups
+Roles are Firebase custom claims (`admin`, `banned`) with a Firestore `admin/state` fallback so a ban applies even before the token refreshes ([firestore.rules](firestore.rules)). A subtle bug class was found and fixed here: `request.auth.token.banned != true` denies tokens that simply *lack* the claim — i.e. every normal user — so the guards explicitly tolerate absent claims (`!('banned' in request.auth.token) || …`). The writes that remain client-side are schema-locked with field whitelists (`keys().hasOnly()` on create, `diff().affectedKeys()` on update), branched per document where schemas differ (e.g. `settings/preferences` vs `settings/location`). Callables layer on ban checks, deletion-tombstone checks, and Firestore-backed rate limiting ([functions/src/shared.ts](functions/src/shared.ts)).
 
-- Create, edit, cancel, and join meetups
-- Private or public meetup address handling
-- Capacity and eligibility checks
-- Post-meetup review flow
-- Status changes such as upcoming, completed, and cancelled
+### Drift-free denormalized counters
 
-### Notifications and moderation
+Follower, post, and interaction counts are denormalized for cheap reads and maintained by triggers ([functions/src/notifications.ts](functions/src/notifications.ts), [posts.ts](functions/src/posts.ts), [places.ts](functions/src/places.ts)). Each increment stamps a `counted: true` marker on the source document so the matching delete trigger only decrements follows that were actually counted — a follow that was auto-cleaned before being counted can never drive a count negative. Decrements run in transactions and clamp at zero, and recompute callables (`recomputePetPostCount`, `recomputePostInteractionCounts`, `recomputeLocationReviewAggregates`) exist as repair paths.
 
-- Real-time notifications
-- Server-generated notification fan-out
-- Admin warning notifications
-- Report submission
-- Feedback submission
-- Admin moderation dashboard
+### Single-use invitation codes without trusting the client
 
-## Cloudinary upload model
+Family access to a pet is granted via 8-character codes generated server-side with `crypto.randomInt` over an unambiguous alphabet ([functions/src/invitations.ts](functions/src/invitations.ts)). Codes live in Firestore with a 48-hour expiry and an O(1) lookup collection (with a collection-group fallback that backfills the lookup). Redemption runs in a transaction that re-reads the invitation and re-checks `used`/expiry before granting membership, so two concurrent redemptions cannot both succeed. Rate limits and family-membership assertions are enforced server-side throughout.
 
-PetNote now uses signed uploads.
+## Documentation
 
-- Frontend uploads do not use an unsigned preset anymore
-- The browser first requests a short-lived upload signature from Firebase Functions
-- The browser then uploads directly to Cloudinary with that signature
-- Separate signed presets are used for images and videos:
-  - `petnote_image_signed`
-  - `petnote_video_signed`
+- [SECURITY_MODEL.md](SECURITY_MODEL.md) — ownership boundaries: what rules, callables, and triggers are each responsible for
+- [TECH_REPORT.md](TECH_REPORT.md) — full technical report (Chinese)
+- [QA_TESTING.md](QA_TESTING.md) — manual QA checklist
 
-## Local setup
+## Running locally
 
-### Prerequisites
-
-- Node.js 22 recommended
-- npm
-- A Firebase project with Auth, Firestore, and Cloud Functions enabled
-- A Cloudinary account with these signed upload presets:
-  - `petnote_image_signed`
-  - `petnote_video_signed`
-- A Geoapify API key stored as a Firebase Functions secret
-
-### Install dependencies
+Prerequisites: Node 22, npm, a Firebase project (Auth + Firestore + Functions), a Cloudinary account with signed upload presets, and a Geoapify API key.
 
 ```bash
 npm install
 npm --prefix functions install
+
+cp .env.example .env.local   # fill in your Firebase web config (public by design)
+
+npm run dev                  # web app at localhost:5173
+npm test                     # vitest
+npm run lint && npm run build
 ```
 
-### Frontend environment variables
-
-Create `.env.local` in the project root:
-
-```env
-VITE_FIREBASE_API_KEY=your_firebase_api_key
-VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=your_project_id
-VITE_FIREBASE_STORAGE_BUCKET=your_project.firebasestorage.app
-VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
-VITE_FIREBASE_APP_ID=your_app_id
-```
-
-Cloudinary and Geoapify no longer need frontend `VITE_*` variables because uploads and address lookup run through Firebase callable functions.
-
-### Firebase Functions secrets
-
-Set backend-only secrets before deploying functions:
+Backend secrets live in Secret Manager and never reach the client bundle:
 
 ```bash
-firebase functions:secrets:set CLOUDINARY_CLOUD_NAME
-firebase functions:secrets:set CLOUDINARY_API_KEY
-firebase functions:secrets:set CLOUDINARY_API_SECRET
-firebase functions:secrets:set GEOAPIFY_API_KEY
-```
-
-Restrict the Geoapify key in the Geoapify console before production rollout. Because requests now come from Cloud Functions, use provider-supported server-side restrictions instead of exposing the key to browsers.
-
-The app currently serves root-relative Open Graph image URLs from `public/og-image.png`, so social cards resolve correctly on production, preview, and local builds without a hardcoded deployment host.
-
-### Start the frontend
-
-```bash
-npm run dev
-```
-
-## Build and deployment
-
-### Verify locally
-
-```bash
-npm run build
-npm run lint
-npm --prefix functions run build
-```
-
-### Deploy Firebase rules and functions
-
-```bash
+firebase functions:secrets:set CLOUDINARY_CLOUD_NAME   # also: CLOUDINARY_API_KEY,
+                                                       # CLOUDINARY_API_SECRET, GEOAPIFY_API_KEY
 firebase deploy --only firestore:rules,functions
 ```
 
-### Deploy frontend
-
-The repo is configured for Vercel. You can either:
-
-- use GitHub-connected automatic deployments, or
-- deploy manually with:
-
-```bash
-vercel --prod
-```
-
-## Firestore layout
-
-This is the high-level structure the app uses today:
+## Data model (Firestore)
 
 ```text
 users/{userId}
   bookmarks/{postId}
   blockedUsers/{blockedUserId}
   followingPets/{petId}
-  settings/preferences
-  settings/location
+  settings/{preferences|location}
+  admin/state
 
 posts/{postId}
   likes/{userId}
@@ -227,40 +134,10 @@ notifications/{notificationId}
 hashtags/{tagName}
 reports/{reportId}
 feedback/{feedbackId}
+invitationCodes/{code}
+userDeletionTombstones/{uid}
 ```
 
-## Project structure
+---
 
-```text
-src/
-  components/   reusable UI building blocks
-  contexts/     auth, theme, and toast providers
-  hooks/        feed, notifications, auth, and UI hooks
-  pages/        route-level pages
-  services/     Firebase and third-party integrations
-  types/        local type declarations
-  utils/        formatting, upload, image, and validation helpers
-functions/
-  src/          Cloud Functions source
-firestore.rules Firestore security rules
-SECURITY_MODEL.md current security model and ownership boundaries
-TECH_REPORT.md technical overview of the current implementation
-QA_TESTING.md manual QA checklist
-```
-
-## Notes for maintainers
-
-- Public `users` documents should not contain exact location coordinates
-- Cloudinary uploads should remain signed
-- Most business writes should stay in callable functions, not in the client
-- Trigger functions are responsible for counters, notification fan-out, and cleanup
-
-## Admin setup
-
-To grant admin access, update the user document in Firestore:
-
-- collection: `users`
-- field: `role`
-- value: `"admin"`
-
-Admin users can access `/admin`.
+© 2026 Weiren Feng. All rights reserved. This code is provided for portfolio review only; no license is granted for reuse, modification, or distribution.

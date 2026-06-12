@@ -20,6 +20,10 @@ const projectId =
   process.env.FIREBASE_PROJECT_ID ||
   "petnote-a9dac";
 
+// These defaults are the Firebase CLI's own public "installed app" OAuth
+// client, shipped in the open-source firebase-tools package; they are not
+// project secrets (installed-app client secrets are non-confidential per
+// RFC 8252). The actual credential is the local CLI refresh token above.
 const FIREBASE_CLIENT_ID =
   process.env.FIREBASE_CLIENT_ID ||
   "563584335869-fgrhgmd47bqnekij5i8b5pr03ho849e6.apps.googleusercontent.com";
