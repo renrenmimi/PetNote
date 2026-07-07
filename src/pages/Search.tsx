@@ -384,7 +384,20 @@ export function Search() {
 
   const peopleResults = searchResults?.users ?? EMPTY_USERS;
   const petResults = searchResults?.pets ?? EMPTY_PETS;
-  const tagResults = searchResults?.tags ?? EMPTY_TAGS;
+  const rawTagResults = searchResults?.tags ?? EMPTY_TAGS;
+  // When the query IS a tag search (#poodle), that tag's posts are already
+  // on screen — listing #poodle again under "Tags" is redundant and
+  // re-clicking it did nothing. Only other (prefix-matching) tags remain.
+  const activeTagName = normalizedQuery.startsWith("#")
+    ? normalizedQuery.slice(1).toLowerCase()
+    : null;
+  const tagResults = useMemo(
+    () =>
+      activeTagName
+        ? rawTagResults.filter((tag) => tag.name !== activeTagName)
+        : rawTagResults,
+    [activeTagName, rawTagResults]
+  );
 
   useEffect(() => {
     let ignore = false;
