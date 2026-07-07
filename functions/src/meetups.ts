@@ -38,6 +38,15 @@ const allowedMeetupPetTypes = new Set([
   "other",
 ]);
 
+// Clamp to a sane range (5 min – 24 h): a negative or absurd duration keeps
+// the meetup permanently "upcoming" with date <= now, occupying the
+// autoCompleteMeetups scan window forever.
+function normalizeMeetupDuration(value: unknown): number {
+  const raw =
+    typeof value === "number" && Number.isFinite(value) ? value : 60;
+  return Math.min(1440, Math.max(5, Math.round(raw)));
+}
+
 function sanitizeMeetupLocation(value: unknown): {
   name: string;
   address: string;
@@ -229,10 +238,7 @@ export const createMeetupCallable = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "Meetup date must be in the future.");
   }
 
-  const duration =
-    typeof data.duration === "number" && Number.isFinite(data.duration)
-      ? data.duration
-      : 60;
+  const duration = normalizeMeetupDuration(data.duration);
   const locationVisibility =
     data.locationVisibility === "everyone" ? "everyone" : "participants_only";
   const location = sanitizeMeetupLocation(data.location);
@@ -273,7 +279,9 @@ export const createMeetupCallable = onCall(async (request) => {
     typeof data.organizerPetId === "string" &&
     data.organizerPetId.trim().length > 0
   ) {
-    const petId = data.organizerPetId.trim();
+    // requiredDocId keeps the slash-injection invariant every other pet
+    // path enforces (a "x/family/y" value would retarget petRef/familyRef).
+    const petId = requiredDocId(data.organizerPetId, "organizerPetId");
     const petRef = db.doc(`pets/${petId}`);
     const familyRef = db.doc(`pets/${petId}/family/${callerUid}`);
     const [petSnap, familySnap] = await Promise.all([
@@ -427,14 +435,13 @@ export const updateMeetupCallable = onCall(async (request) => {
 
   const dateMillis =
     typeof data.dateMillis === "number" ? data.dateMillis : Number.NaN;
-  if (!Number.isFinite(dateMillis)) {
-    throw new HttpsError("invalid-argument", "Meetup date is invalid.");
+  // Same rule as create: a past date would flip the meetup straight to
+  // "completed" on the next status check.
+  if (!Number.isFinite(dateMillis) || dateMillis <= Date.now()) {
+    throw new HttpsError("invalid-argument", "Meetup date must be in the future.");
   }
 
-  const duration =
-    typeof data.duration === "number" && Number.isFinite(data.duration)
-      ? data.duration
-      : 60;
+  const duration = normalizeMeetupDuration(data.duration);
   const locationVisibility =
     data.locationVisibility === "everyone" ? "everyone" : "participants_only";
   const location = sanitizeMeetupLocation(data.location);

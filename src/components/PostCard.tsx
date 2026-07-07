@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useLike } from "../hooks/useLike";
@@ -46,6 +47,8 @@ export function PostCard({
   const navigate = useNavigate();
   const { showToast } = useToast();
   const cardRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const touchStartPointRef = useRef<{ x: number; y: number } | null>(null);
   const longPressTimerRef = useRef<number | null>(null);
   const likeAnimationTimerRef = useRef<number | null>(null);
   const heartTimerRef = useRef<number | null>(null);
@@ -141,9 +144,15 @@ export function PostCard({
       return;
     }
     const loadPet = async () => {
-      const pet = await getPetById(post.petId as string);
-      if (!ignore) {
-        setIsBirthday(!!pet && isBirthdayToday(pet));
+      try {
+        const pet = await getPetById(post.petId as string);
+        if (!ignore) {
+          setIsBirthday(!!pet && isBirthdayToday(pet));
+        }
+      } catch {
+        // Birthday badge is decorative — a failed pet read must not surface
+        // as an unhandled rejection.
+        if (!ignore) setIsBirthday(false);
       }
     };
     void loadPet();
@@ -171,6 +180,18 @@ export function PostCard({
       longPressTriggered.current = false;
     }
   }, [quickMenuOpen]);
+
+  // Close the "⋯" dropdown when the user clicks/taps anywhere outside it.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [menuOpen]);
 
   useEffect(() => {
     return () => {
@@ -250,6 +271,7 @@ export function PostCard({
       window.clearTimeout(longPressTimerRef.current);
     }
     const touch = event.touches[0];
+    touchStartPointRef.current = { x: touch.clientX, y: touch.clientY };
     longPressTriggered.current = false;
     longPressTimerRef.current = window.setTimeout(() => {
       setQuickMenuPosition({ x: touch.clientX, y: touch.clientY });
@@ -258,6 +280,19 @@ export function PostCard({
       longPressTriggered.current = true;
       if (navigator.vibrate) navigator.vibrate(50);
     }, 500);
+  };
+
+  // A drag (slow scroll / carousel swipe) must not fire the long-press:
+  // cancel the timer once the finger moves past a small threshold.
+  const handleTouchMove = (event: React.TouchEvent) => {
+    if (!longPressTimerRef.current || !touchStartPointRef.current) return;
+    const touch = event.touches[0];
+    const dx = touch.clientX - touchStartPointRef.current.x;
+    const dy = touch.clientY - touchStartPointRef.current.y;
+    if (Math.hypot(dx, dy) > 10) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
   };
 
   const handleTouchEnd = () => {
@@ -426,12 +461,16 @@ export function PostCard({
     <div
       ref={cardRef}
       style={{ transitionDelay: `${delay}ms` }}
+      // No translate utility in the visible state: Tailwind v4's standalone
+      // `translate` property would otherwise make this wrapper the containing
+      // block for the fixed-position overlays below (CSS Transforms L2).
       className={`transition-all duration-500 ease-out ${
-        isVisible ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
+        isVisible ? "opacity-100" : "translate-y-4 opacity-0"
       }`}
     >
       <article
         onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         onTouchCancel={handleTouchEnd}
         onContextMenu={handleContextMenu}
@@ -505,7 +544,7 @@ export function PostCard({
                 {isFollowingPet ? "Following" : "Follow"}
               </button>
             ) : null}
-            <div className="relative">
+            <div className="relative" ref={menuRef}>
             <button
               type="button"
               onClick={() => setMenuOpen((prev) => !prev)}
@@ -667,7 +706,7 @@ export function PostCard({
           {commentTotal} comments
         </button>
 
-        <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">
+        <p className="mt-2 break-words text-sm text-slate-700 dark:text-slate-200">
           <span className="font-semibold text-slate-900 dark:text-white">
             {authorName}
           </span>{" "}
@@ -689,7 +728,11 @@ export function PostCard({
 
       </div>
 
+      {/* Confirm dialogs are portaled to <body>: the article carries hover/
+          long-press transforms, which would otherwise become the containing
+          block for these fixed overlays. */}
       {confirmOpen ? (
+        createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)] dark:bg-slate-800">
             <h3 className="text-base font-semibold text-slate-900 dark:text-white">
@@ -717,10 +760,13 @@ export function PostCard({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
+      )
       ) : null}
 
       {blockConfirmOpen ? (
+        createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)] dark:bg-slate-800">
             <h3 className="text-base font-semibold text-slate-900 dark:text-white">
@@ -748,7 +794,9 @@ export function PostCard({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
+      )
       ) : null}
 
         <ShareMenu

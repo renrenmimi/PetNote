@@ -17,7 +17,9 @@ export function BottomNav() {
 
   const requireAuth = (path: string) => {
     if (!user) {
-      navigate("/login");
+      // Pass the intended destination so Login can return the user there
+      // (matches RequireAuth's state contract).
+      navigate("/login", { state: { from: { pathname: path } } });
       return;
     }
     navigate(path);

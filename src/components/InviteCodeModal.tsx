@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { createInvitation, getActiveInvitation, type Invitation } from "../services/invitations";
 import { useToast } from "../contexts/ToastContext";
 
@@ -143,7 +144,8 @@ export function InviteCodeModal({
 
   if (!isOpen) return null;
 
-  return (
+  // Portal to <body> so transformed ancestors can't reposition this overlay.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div
         className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)] dark:bg-slate-800"
@@ -220,6 +222,7 @@ export function InviteCodeModal({
           Each code can only be used once.
         </p>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

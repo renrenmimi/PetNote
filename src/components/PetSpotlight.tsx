@@ -83,14 +83,21 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
 
     const load = async () => {
       setLoading(true);
-      const recent = await getPopularPosts(limitCount, 24);
-      if (!ignore && recent.length < limitCount) {
-        const fallback = await getPopularPosts(limitCount, 24 * 7);
-        if (!ignore) setPosts(fallback);
-      } else if (!ignore) {
-        setPosts(recent);
+      try {
+        const recent = await getPopularPosts(limitCount, 24);
+        if (!ignore && recent.length < limitCount) {
+          const fallback = await getPopularPosts(limitCount, 24 * 7);
+          if (!ignore) setPosts(fallback);
+        } else if (!ignore) {
+          setPosts(recent);
+        }
+      } catch {
+        // Spotlight is decorative — on failure show the empty state instead
+        // of leaving the skeleton pulsing forever.
+        if (!ignore) setPosts([]);
+      } finally {
+        if (!ignore) setLoading(false);
       }
-      if (!ignore) setLoading(false);
     };
 
     void load();
@@ -100,7 +107,6 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
   }, [limitCount]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSeenPosts(getSeenPosts());
   }, []);
 
@@ -166,7 +172,7 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
               >
                 <PawAvatar
                   src={mediaUrl ? optimizeCloudinaryUrl(mediaUrl, "spotlight") : mediaUrl}
-                  name={post.authorName || "Pet"}
+                  name={post.petName || post.authorName || "Pet"}
                   seen={isSeen}
                 />
                 <span
@@ -176,7 +182,10 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
                       : "text-gray-700 dark:text-gray-300"
                   }`}
                 >
-                  {truncate(post.authorName || "Pet")}
+                  {/* Section is "Popular Pets" — label with the pet, not the
+                      owner's username (legacy posts without petName fall
+                      back to the author). */}
+                  {truncate(post.petName || post.authorName || "Pet")}
                 </span>
               </button>
             );

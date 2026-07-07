@@ -305,11 +305,16 @@ export async function getThisWeekMeetups(): Promise<Meetup[]> {
   const now = new Date();
   const end = new Date();
   end.setDate(now.getDate() + 7);
+  // status filter (uses the existing status+date composite index): cancelled
+  // meetups used to appear only under the "This Week" tab. Bounded like the
+  // other list queries.
   const meetupQuery = query(
     meetupsRef,
+    where("status", "==", "upcoming"),
     where("date", ">=", Timestamp.fromDate(now)),
     where("date", "<=", Timestamp.fromDate(end)),
-    orderBy("date", "asc")
+    orderBy("date", "asc"),
+    limit(50)
   );
   const snapshot = await getDocs(meetupQuery);
   return snapshot.docs.map((docSnap) => ({

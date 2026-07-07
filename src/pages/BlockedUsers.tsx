@@ -16,11 +16,17 @@ export function BlockedUsers() {
     if (!user) return;
     const load = async () => {
       setLoading(true);
-      const { ids } = await getBlockedUsers(user.uid);
-      const profiles = await getUsersByIds(ids);
-      if (!ignore) {
-        setUsers(profiles);
-        setLoading(false);
+      try {
+        const { ids } = await getBlockedUsers(user.uid);
+        const profiles = await getUsersByIds(ids);
+        if (!ignore) {
+          setUsers(profiles);
+        }
+      } catch {
+        // Without this, a failed fetch left "Loading blocked users..."
+        // on screen forever.
+      } finally {
+        if (!ignore) setLoading(false);
       }
     };
     void load();
@@ -85,10 +91,14 @@ export function BlockedUsers() {
               <button
                 type="button"
                 onClick={async () => {
-                  await unblockUser(user.uid, profile.id);
-                  setUsers((prev) =>
-                    prev.filter((item) => item.id !== profile.id)
-                  );
+                  try {
+                    await unblockUser(user.uid, profile.id);
+                    setUsers((prev) =>
+                      prev.filter((item) => item.id !== profile.id)
+                    );
+                  } catch {
+                    // Keep the row so the user can retry.
+                  }
                 }}
                 className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-all duration-200 hover:border-purple-300 hover:text-purple-600 dark:border-slate-700 dark:text-slate-300"
               >

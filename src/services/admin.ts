@@ -1,9 +1,6 @@
 import {
   collection,
-  collectionGroup,
-  deleteField,
   doc,
-  documentId,
   getDoc,
   getDocs,
   limit,
@@ -169,24 +166,16 @@ export async function getReportTargetUser(
     }
 
     if (report.targetType === "comment") {
-      if (report.postId) {
-        const commentSnap = await getDoc(
-          doc(db, "posts", report.postId, "comments", report.targetId)
-        );
-        if (commentSnap.exists()) {
-          const commentData = commentSnap.data() as { authorId?: string };
-          return commentData.authorId ?? null;
-        }
-      }
-
-      const fallbackQuery = query(
-        collectionGroup(db, "comments"),
-        where(documentId(), "==", report.targetId),
-        limit(1)
+      // Without a postId the comment can't be located. (The old fallback —
+      // collectionGroup("comments") filtered by a bare documentId() — is an
+      // invalid Firestore query and always threw: collection-group
+      // documentId() filters require a full document path.)
+      if (!report.postId) return null;
+      const commentSnap = await getDoc(
+        doc(db, "posts", report.postId, "comments", report.targetId)
       );
-      const fallbackSnapshot = await getDocs(fallbackQuery);
-      if (fallbackSnapshot.empty) return null;
-      const commentData = fallbackSnapshot.docs[0].data() as { authorId?: string };
+      if (!commentSnap.exists()) return null;
+      const commentData = commentSnap.data() as { authorId?: string };
       return commentData.authorId ?? null;
     }
 
@@ -217,9 +206,7 @@ export async function deleteContentAndWarn(params: {
   const { report, targetUserId, warningReason, additionalDetails } = params;
   const safeReason = warningReason.trim() || DEFAULT_WARNING_REASON;
   const safeDetails = additionalDetails?.trim() || "";
-  const message = safeDetails
-    ? `Your content was removed for: ${safeReason}`
-    : `Your content was removed for: ${safeReason}`;
+  const message = `Your content was removed for: ${safeReason}`;
 
   if (report.targetType === "post") {
     await deletePost(report.targetId);
@@ -258,60 +245,8 @@ export async function blockUserByAdmin(
   });
 }
 
-export async function getBannedUsers(options?: {
-  limitCount?: number;
-  lastDoc?: QueryDocumentSnapshot;
-}): Promise<{
-  users: Array<{ id: string } & Record<string, unknown>>;
-  lastDoc: QueryDocumentSnapshot | null;
-  hasMore: boolean;
-}> {
-  const limitCount = options?.limitCount ?? 50;
-  const constraints: QueryConstraint[] = [
-    where(documentId(), "==", "state"),
-    where("banned", "==", true),
-    limit(limitCount),
-  ];
-  if (options?.lastDoc) {
-    constraints.push(startAfter(options.lastDoc));
-  }
-  const adminStateSnapshot = await getDocs(
-    query(collectionGroup(db, "admin"), ...constraints)
-  );
-
-  const users = (
-    await Promise.all(
-      adminStateSnapshot.docs.map(async (docSnap) => {
-        const userId = docSnap.ref.parent.parent?.id;
-        if (!userId) return null;
-        const userSnap = await getDoc(doc(db, "users", userId));
-        const userData = userSnap.exists()
-          ? (userSnap.data() as Record<string, unknown>)
-          : {};
-        return {
-          id: userId,
-          ...userData,
-          ...(docSnap.data() as Record<string, unknown>),
-        };
-      })
-    )
-  ).filter((entry): entry is { id: string } & Record<string, unknown> => !!entry);
-
-  const nextLast =
-    (adminStateSnapshot.docs[adminStateSnapshot.docs.length - 1] as
-      | QueryDocumentSnapshot
-      | undefined) ?? null;
-  return {
-    users,
-    lastDoc: nextLast,
-    hasMore: adminStateSnapshot.docs.length === limitCount,
-  };
-}
-
-export async function unbanUser(userId: string): Promise<void> {
-  await setAdminState(userId, {
-    banned: false,
-    bannedReason: deleteField(),
-    bannedAt: deleteField(),
-  });
-}
+// `getBannedUsers`/`unbanUser` were removed — they had no callers, and
+// getBannedUsers was doubly broken: a collection-group query can't filter by
+// a bare documentId() ("state" is not a full doc path, the SDK throws), and
+// firestore.rules exposes no collection-group read on `admin` anyway. If a
+// ban-management surface is ever added, build it through an admin callable.

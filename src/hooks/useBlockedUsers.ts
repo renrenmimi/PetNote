@@ -20,10 +20,18 @@ export function useBlockedUsers(userId: string | null): UseBlockedUsersResult {
     }
     setLoading(true);
     const blockedRef = collection(db, "users", userId, "blockedUsers");
-    const unsubscribe = onSnapshot(blockedRef, (snapshot) => {
-      setBlockedUserIds(snapshot.docs.map((docSnap) => docSnap.id));
-      setLoading(false);
-    });
+    const unsubscribe = onSnapshot(
+      blockedRef,
+      (snapshot) => {
+        setBlockedUserIds(snapshot.docs.map((docSnap) => docSnap.id));
+        setLoading(false);
+      },
+      (error) => {
+        // A failed subscription must not leave `loading` stuck at true.
+        console.warn("Failed to subscribe to blocked users:", error);
+        setLoading(false);
+      }
+    );
     return () => unsubscribe();
   }, [userId]);
 

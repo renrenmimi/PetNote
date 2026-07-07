@@ -22,6 +22,7 @@ import {
 } from "../services/pets";
 import { getUserProfile } from "../services/users";
 import { useLanguage } from "../hooks/useLanguage";
+import { useToast } from "../contexts/ToastContext";
 import { getVideoThumbnail } from "../utils/cloudinaryUrl";
 import { getSpeciesMeta } from "../utils/petHelpers";
 import { timeAgo } from "../utils/timeAgo";
@@ -31,6 +32,7 @@ const genderSymbolClass = "text-base font-bold";
 export function Profile() {
   const navigate = useNavigate();
   const { locale, t } = useLanguage();
+  const { showToast } = useToast();
   const { user, profile: authProfile } = useAuth();
   const { isAdmin } = useAdmin();
 
@@ -248,7 +250,9 @@ export function Profile() {
               </div>
               <button
                 type="button"
+                disabled={followingPetsLoading}
                 onClick={async () => {
+                  if (followingPetsLoading) return;
                   setFollowingPetsLoading(true);
                   try {
                     const { followingPets: items } = await getFollowingPets(
@@ -256,6 +260,8 @@ export function Profile() {
                     );
                     setFollowingPets(items);
                     setFollowingModalOpen(true);
+                  } catch {
+                    showToast(t("profile.loadFollowingFailed"), "error");
                   } finally {
                     setFollowingPetsLoading(false);
                   }
@@ -597,10 +603,14 @@ export function Profile() {
                     <button
                       type="button"
                       onClick={async () => {
-                        await unfollowPet(user.uid, pet.petId);
-                        setFollowingPets((prev) =>
-                          prev.filter((item) => item.petId !== pet.petId)
-                        );
+                        try {
+                          await unfollowPet(user.uid, pet.petId);
+                          setFollowingPets((prev) =>
+                            prev.filter((item) => item.petId !== pet.petId)
+                          );
+                        } catch {
+                          showToast(t("profile.unfollowFailed"), "error");
+                        }
                       }}
                       className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-500 transition-all duration-200 hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:text-slate-300"
                     >

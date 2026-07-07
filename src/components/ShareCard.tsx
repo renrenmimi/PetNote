@@ -21,24 +21,51 @@ const drawWrappedText = (
   lineHeight: number,
   maxLines = 3
 ) => {
-  const words = text.split(/\s+/);
-  let line = "";
-  let lines = 0;
-
-  for (let i = 0; i < words.length; i += 1) {
-    const testLine = line ? `${line} ${words[i]}` : words[i];
-    const { width } = ctx.measureText(testLine);
-    if (width > maxWidth && line) {
-      ctx.fillText(line, x, y);
-      line = words[i];
-      y += lineHeight;
-      lines += 1;
-      if (lines >= maxLines - 1) break;
+  // Tokenize into space-separated words, but split any word wider than the
+  // line into single characters — CJK captions contain no spaces and used
+  // to render as one unclipped line overflowing the canvas.
+  const tokens: Array<{ text: string; glue: boolean }> = [];
+  for (const word of text.split(/\s+/)) {
+    if (!word) continue;
+    if (ctx.measureText(word).width <= maxWidth) {
+      tokens.push({ text: word, glue: false });
     } else {
-      line = testLine;
+      Array.from(word).forEach((char, charIndex) => {
+        tokens.push({ text: char, glue: charIndex > 0 });
+      });
     }
   }
-  if (line && lines < maxLines) {
+
+  let line = "";
+  let lines = 0;
+  for (const token of tokens) {
+    const candidate = line
+      ? token.glue
+        ? line + token.text
+        : `${line} ${token.text}`
+      : token.text;
+    if (ctx.measureText(candidate).width > maxWidth && line) {
+      if (lines === maxLines - 1) {
+        // Last permitted line and more content remains — ellipsize.
+        let truncated = line;
+        while (
+          truncated &&
+          ctx.measureText(`${truncated}…`).width > maxWidth
+        ) {
+          truncated = truncated.slice(0, -1);
+        }
+        ctx.fillText(`${truncated}…`, x, y);
+        return;
+      }
+      ctx.fillText(line, x, y);
+      y += lineHeight;
+      lines += 1;
+      line = token.text;
+    } else {
+      line = candidate;
+    }
+  }
+  if (line) {
     ctx.fillText(line, x, y);
   }
 };
@@ -61,7 +88,11 @@ export async function generateShareCard(post: Post): Promise<Blob> {
   );
   const heroImage = await loadImage(mediaUrl);
   if (heroImage) {
-    ctx.drawImage(heroImage, 0, 0, 400, 400);
+    // Cover-crop from the centre instead of stretching non-square photos.
+    const side = Math.min(heroImage.width, heroImage.height);
+    const sx = (heroImage.width - side) / 2;
+    const sy = (heroImage.height - side) / 2;
+    ctx.drawImage(heroImage, sx, sy, side, side, 0, 0, 400, 400);
   } else {
     ctx.fillStyle = "#f1f5f9";
     ctx.fillRect(0, 0, 400, 400);

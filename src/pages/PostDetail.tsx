@@ -12,6 +12,7 @@ import { useLike } from "../hooks/useLike";
 import { deletePost, getPostById, type Post } from "../services/posts";
 import { getCachedUser } from "../hooks/useUserCache";
 import { timeAgo } from "../utils/timeAgo";
+import { useToast } from "../contexts/ToastContext";
 
 // Module-scoped icon components. Defining them inside PostDetail tripped
 // react-hooks/static-components and reset the SVG defs on every render —
@@ -82,6 +83,7 @@ export function PostDetail() {
   const navigate = useNavigate();
   const { postId = "" } = useParams();
   const { user, isBanned } = useAuth();
+  const { showToast } = useToast();
   const [post, setPost] = useState<Post | null>(null);
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -102,7 +104,11 @@ export function PostDetail() {
     postId,
     user?.uid ?? null
   );
-  const { isFollowing, toggleFollow } = useFollowPet(post?.petId ?? "");
+  const { isFollowing, toggleFollow } = useFollowPet(post?.petId ?? "", {
+    // The detail page never renders the follower count — skip the extra
+    // getPetById read the hook would otherwise issue per view.
+    fetchFollowerCount: false,
+  });
 
   useEffect(() => {
     let ignore = false;
@@ -176,6 +182,8 @@ export function PostDetail() {
     } catch {
       setDeleting(false);
       setConfirmOpen(false);
+      // Closing the dialog with zero feedback looked like a silent success.
+      showToast("Failed to delete post", "error");
     }
   };
 
@@ -187,7 +195,11 @@ export function PostDetail() {
     if (isBanned) {
       return;
     }
-    await toggleLike();
+    try {
+      await toggleLike();
+    } catch {
+      showToast("Failed to update like", "error");
+    }
   };
 
   const handleBookmark = async () => {
@@ -195,7 +207,11 @@ export function PostDetail() {
       navigate("/login");
       return;
     }
-    await toggleBookmark();
+    try {
+      await toggleBookmark();
+    } catch {
+      showToast("Failed to update bookmark", "error");
+    }
   };
 
   const heartGradientId = `heart-detail-${post?.id ?? "post"}`;

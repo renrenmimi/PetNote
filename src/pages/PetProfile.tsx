@@ -280,12 +280,16 @@ export function PetProfile() {
           <div className="grid grid-cols-3 divide-x divide-slate-200 text-center dark:divide-slate-700">
             <button
               type="button"
+              disabled={followersLoading}
               onClick={async () => {
+                if (followersLoading) return;
                 setFollowersLoading(true);
                 try {
                   const { followers: data } = await getPetFollowers(pet.id);
                   setFollowers(data);
                   setFollowersOpen(true);
+                } catch {
+                  showToast("Failed to load followers.", "error");
                 } finally {
                   setFollowersLoading(false);
                 }
@@ -293,7 +297,11 @@ export function PetProfile() {
               className="px-2 py-2"
             >
               <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                {pet.followerCount ?? followerCount}
+                {/* The hook's count is the live one — toggleFollow updates it,
+                    while pet.followerCount is a static snapshot that would
+                    mask every increment/decrement. Both start from the same
+                    cached pet doc. */}
+                {followerCount}
               </p>
               <p className="text-xs text-slate-400 dark:text-slate-500">Followers</p>
             </button>

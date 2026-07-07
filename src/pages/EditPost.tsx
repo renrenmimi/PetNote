@@ -37,27 +37,38 @@ export function EditPost() {
     if (!postId || !user) return;
     const load = async () => {
       setLoading(true);
-      const [postData, petList] = await Promise.all([
-        getPostById(postId),
-        getUserPets(user.uid),
-      ]);
-      if (ignore) return;
-      if (!postData) {
-        setLoading(false);
-        return;
+      try {
+        const [postData, petList] = await Promise.all([
+          getPostById(postId),
+          getUserPets(user.uid),
+        ]);
+        if (ignore || !postData) return;
+        setPost(postData);
+        setCaption(postData.text || "");
+        setTags(postData.tags || []);
+        setSelectedPetId(postData.petId || null);
+        setPets(petList);
+      } catch (err) {
+        // Without this catch a network/permission failure left the page on
+        // "Loading post..." forever (same fix as PostDetail/PetProfile).
+        if (!ignore) {
+          showToast(
+            err instanceof Error ? err.message : "Failed to load post.",
+            "error"
+          );
+        }
+      } finally {
+        if (!ignore) setLoading(false);
       }
-      setPost(postData);
-      setCaption(postData.text || "");
-      setTags(postData.tags || []);
-      setSelectedPetId(postData.petId || null);
-      setPets(petList);
-      setLoading(false);
     };
 
     void load();
     return () => {
       ignore = true;
     };
+    // showToast comes from a stable context value; the effect should
+    // re-run only when postId or user change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [postId, user]);
 
   const handleTagCommit = (value: string) => {

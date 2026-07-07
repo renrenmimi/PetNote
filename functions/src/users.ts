@@ -176,6 +176,17 @@ export const onUserUpdated = onDocumentWritten(
     if (nameChanged) familyFields.userName = after.displayName;
     if (avatarChanged) familyFields.userAvatar = after.avatarUrl;
 
+    // pets/*/followers mirrors and location check-ins carry the same
+    // denormalized identity pair; without these two tasks a renamed user
+    // kept their old name/avatar there indefinitely.
+    const followerMirrorFields: Record<string, string> = {};
+    if (nameChanged) followerMirrorFields.userName = after.displayName;
+    if (avatarChanged) followerMirrorFields.userAvatar = after.avatarUrl;
+
+    const checkinFields: Record<string, string> = {};
+    if (nameChanged) checkinFields.userName = after.displayName;
+    if (avatarChanged) checkinFields.userAvatar = after.avatarUrl;
+
     const syncTasks: Array<[string, () => Promise<void>]> = [
       ["posts", () => syncCollection(db.collection("posts").where("authorId", "==", userId), postFields)],
       ["comments", () => syncCollection(db.collectionGroup("comments").where("authorId", "==", userId), commentFields)],
@@ -183,6 +194,8 @@ export const onUserUpdated = onDocumentWritten(
       ["participants", () => syncCollection(db.collectionGroup("participants").where("userId", "==", userId), partFields)],
       ["reviews", () => syncCollection(db.collectionGroup("reviews").where("userId", "==", userId), reviewFields)],
       ["family", () => syncCollection(db.collectionGroup("family").where("userId", "==", userId), familyFields)],
+      ["followers", () => syncCollection(db.collectionGroup("followers").where("userId", "==", userId), followerMirrorFields)],
+      ["checkins", () => syncCollection(db.collectionGroup("checkins").where("userId", "==", userId), checkinFields)],
     ];
 
     const syncFailures = await Promise.all(
@@ -553,6 +566,8 @@ export const deleteUserAccount = onCall({ timeoutSeconds: 540 }, async (request)
     ["following", () => deleteCollectionPath(`users/${userId}/following`)],
     ["blockedUsers", () => deleteCollectionPath(`users/${userId}/blockedUsers`)],
     ["settings", () => deleteCollectionPath(`users/${userId}/settings`)],
+    // Ban/role state must not dangle under a deleted user forever.
+    ["adminState", () => deleteCollectionPath(`users/${userId}/admin`)],
   ];
   await Promise.all(crossRefSteps.map(([label, task]) => runStep(label, task)));
 

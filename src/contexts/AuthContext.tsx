@@ -163,6 +163,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ...data,
       });
       setProfileLoading(false);
+    },
+    (error) => {
+      // Without an error handler a denied/failed subscription silently
+      // detached and left profileLoading stuck at true (which suppresses
+      // onboarding gating in Feed forever).
+      console.warn("Failed to subscribe to user profile:", error);
+      setProfileLoading(false);
     });
     return () => unsubscribe();
   }, [user]);

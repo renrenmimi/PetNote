@@ -132,7 +132,9 @@ export function ContactUs() {
                   remainingSubject < 20 ? "text-orange-500" : "text-slate-400"
                 }`}
                 >
-                  {remainingSubject}/100
+                  {/* typed/limit — matches every other counter in the app;
+                      "97/100" for 3 typed chars read backwards. */}
+                  {subject.length}/100
                 </p>
               </div>
             </section>
@@ -154,7 +156,7 @@ export function ContactUs() {
                   remainingMessage < 200 ? "text-orange-500" : "text-slate-400"
                 }`}
                 >
-                  {remainingMessage}/1000
+                  {message.length}/1000
                 </p>
               </div>
             </section>

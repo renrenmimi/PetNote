@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useToast } from "../contexts/ToastContext";
 import { submitReview } from "../services/locations";
 import { useAuth } from "../hooks/useAuth";
@@ -177,9 +178,13 @@ export function LocationRatingModal({
     setPhotos((prev) => prev.filter((_, idx) => idx !== index));
   };
 
-  return (
+  // Portal to <body> (fixed-position containing-block safety) and cap the
+  // sheet height: header + stars + 3 sub-ratings + tag chips + photos +
+  // textarea exceed short phone viewports, and items-end would clip the
+  // overall-rating header off the top with no way to scroll.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-4 pb-6">
-      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl dark:bg-slate-800">
+      <div className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-xl dark:bg-slate-800">
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
             Rate this location 📍
@@ -340,6 +345,7 @@ export function LocationRatingModal({
           {submitting ? "Submitting..." : "Submit Review"}
         </button>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

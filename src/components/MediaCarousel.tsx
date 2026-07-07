@@ -63,6 +63,10 @@ export function MediaCarousel({
       if (idx !== index) {
         video.pause();
         setVideoPlaying((prev) => ({ ...prev, [idx]: false }));
+      } else if (video.paused) {
+        // The autoPlay attribute only applies at load time; a video swiped
+        // into view later must be started explicitly.
+        video.play().catch(() => undefined);
       }
     });
   }, [index]);
@@ -78,8 +82,16 @@ export function MediaCarousel({
 
   const handleTouchMove = (event: TouchEvent<HTMLDivElement>) => {
     if (!dragging) return;
-    const currentX = event.touches[0].clientX;
-    setDragX(currentX - startXRef.current);
+    const touch = event.touches[0];
+    const deltaX = touch.clientX - startXRef.current;
+    const deltaY = touch.clientY - startYRef.current;
+    // Only track horizontal drags. A vertical feed scroll that crosses the
+    // carousel must not jiggle the strip sideways or flip slides.
+    if (Math.abs(deltaY) > Math.abs(deltaX)) {
+      setDragX(0);
+      return;
+    }
+    setDragX(deltaX);
   };
 
   const handleTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
@@ -87,8 +99,9 @@ export function MediaCarousel({
     const deltaX = touch.clientX - startXRef.current;
     const deltaY = touch.clientY - startYRef.current;
     const moved = Math.hypot(deltaX, deltaY);
+    const horizontal = Math.abs(deltaX) > Math.abs(deltaY);
 
-    if (dragging) {
+    if (dragging && horizontal) {
       if (dragX > 50 && index > 0) {
         setIndex((prev) => prev - 1);
       } else if (dragX < -50 && index < items.length - 1) {
@@ -157,7 +170,10 @@ export function MediaCarousel({
         {items.map((item, idx) => {
           const isVideo = item.type === "video";
           const isActive = idx === index;
-          const playing = videoPlaying[idx] ?? true;
+          const isNearby = Math.abs(idx - index) <= 1;
+          // Untouched videos are only (auto)playing when they're the active
+          // slide; `?? true` used to show a pause icon on paused slides.
+          const playing = videoPlaying[idx] ?? isActive;
           return (
             <div
               key={`${item.url}-${idx}`}
@@ -165,6 +181,11 @@ export function MediaCarousel({
               onDoubleClick={onDoubleTap}
             >
               {isVideo ? (
+                !isNearby ? (
+                  // Same adjacency gating as images so a multi-video post
+                  // doesn't fetch every video up front.
+                  <div className="max-h-[500px] w-full bg-slate-200 dark:bg-slate-700" />
+                ) : (
                 <div className="relative w-full">
                   <video
                     ref={(node) => {
@@ -207,13 +228,18 @@ export function MediaCarousel({
                     </span>
                   ) : null}
                 </div>
+                )
               ) : (
-                Math.abs(idx - index) <= 1 ? (
+                isNearby ? (
                   <LazyImage
                     src={item.url}
                     alt="Post media"
                     className="max-h-[500px] w-full"
-                    imgClassName="object-contain"
+                    // The max-height must live on the <img> itself: the
+                    // wrapper has no definite height, so the img's h-full
+                    // resolves to auto and a tall portrait photo was being
+                    // clipped by the wrapper instead of letterboxed.
+                    imgClassName="max-h-[500px] object-contain"
                     cloudinarySize={imageSize}
                   />
                 ) : (

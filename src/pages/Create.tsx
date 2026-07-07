@@ -68,6 +68,7 @@ export function Create() {
   // and create a duplicate post.
   const submitLockedRef = useRef(false);
   const [pets, setPets] = useState<Pet[]>([]);
+  const [petsReady, setPetsReady] = useState(false);
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [draft, setDraft] = useState<PostDraft | null>(null);
   const [showDraftBanner, setShowDraftBanner] = useState(false);
@@ -87,13 +88,19 @@ export function Create() {
     let ignore = false;
     if (!user) return;
     const load = async () => {
-      const [profileData, petList] = await Promise.all([
-        getUserProfile(user.uid),
-        getUserPets(user.uid),
-      ]);
-      if (!ignore) {
-        setProfile(profileData);
-        setPets(petList);
+      try {
+        const [profileData, petList] = await Promise.all([
+          getUserProfile(user.uid),
+          getUserPets(user.uid),
+        ]);
+        if (!ignore) {
+          setProfile(profileData);
+          setPets(petList);
+        }
+      } finally {
+        // Gate the "add a pet first" empty state on this flag so users who
+        // DO have pets don't see it flash while the fetch is in flight.
+        if (!ignore) setPetsReady(true);
       }
     };
     void load();
@@ -515,20 +522,17 @@ export function Create() {
   };
 
   const handleRemove = (id: string) => {
-    setFiles((prev) => {
-      const index = prev.findIndex((item) => item.id === id);
-      const target = prev[index];
-      if (target) {
-        URL.revokeObjectURL(target.previewUrl);
-      }
-      const next = prev.filter((item) => item.id !== id);
-      setSelectedIndex((current) => {
-        if (index === -1) return current;
-        if (current > index) return current - 1;
-        if (current === index) return Math.max(0, current - 1);
-        return current;
-      });
-      return next;
+    // Compute the index and revoke the URL OUTSIDE the updaters: nesting a
+    // dispatch (or revoking) inside setFiles is an impure updater that
+    // StrictMode double-invokes, decrementing the selection twice in dev.
+    const index = files.findIndex((item) => item.id === id);
+    if (index === -1) return;
+    URL.revokeObjectURL(files[index].previewUrl);
+    setFiles((prev) => prev.filter((item) => item.id !== id));
+    setSelectedIndex((current) => {
+      if (current > index) return current - 1;
+      if (current === index) return Math.max(0, current - 1);
+      return current;
     });
     setFiltersById((prev) => {
       const next = { ...prev };
@@ -710,6 +714,11 @@ export function Create() {
             >
               {sendingVerification ? "Sending..." : "Resend Verification Email"}
             </button>
+          </section>
+        ) : !petsReady ? (
+          <section className="space-y-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 dark:border-slate-700 dark:bg-slate-800">
+            <div className="h-5 w-2/3 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
+            <div className="h-4 w-1/2 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
           </section>
         ) : pets.length === 0 ? (
           <section className="space-y-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center dark:border-slate-700 dark:bg-slate-800">

@@ -70,7 +70,7 @@ export const onPostWritten = onDocumentWritten("posts/{postId}", async (event) =
 
   const tasks: Array<Promise<unknown>> = [];
 
-  if (added.length > 0 || removed.length > 0) {
+  if (added.length > 0) {
     const batch = db.batch();
     for (const tag of added) {
       const tagRef = db.doc(`hashtags/${tag}`);
@@ -80,14 +80,38 @@ export const onPostWritten = onDocumentWritten("posts/{postId}", async (event) =
         lastUsed: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
     }
-    for (const tag of removed) {
-      const tagRef = db.doc(`hashtags/${tag}`);
-      batch.set(tagRef, {
-        postCount: admin.firestore.FieldValue.increment(-1),
-        lastUsed: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true });
-    }
     tasks.push(batch.commit());
+  }
+  // Decrements run as clamped transactions: the old merge-set with
+  // increment(-1) resurrected already-deleted tag docs as nameless
+  // {postCount: -1} stubs and let counts drift negative on double delivery.
+  for (const tag of removed) {
+    const tagRef = db.doc(`hashtags/${tag}`);
+    tasks.push(
+      db
+        .runTransaction(async (t) => {
+          const snap = await t.get(tagRef);
+          if (!snap.exists) return;
+          const current =
+            typeof snap.data()?.postCount === "number"
+              ? (snap.data() as { postCount: number }).postCount
+              : 0;
+          const next = current - 1;
+          if (next <= 0) {
+            // Drop the doc entirely so trending/search never surface a
+            // zero-post tag.
+            t.delete(tagRef);
+          } else {
+            t.update(tagRef, {
+              postCount: next,
+              lastUsed: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+        })
+        .catch((error) => {
+          console.error("Failed to decrement hashtag count", { tag, error });
+        })
+    );
   }
 
   const petDeltas = new Map<string, number>();

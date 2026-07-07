@@ -35,6 +35,10 @@ export function Feed() {
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const startYRef = useRef(0);
+  // Armed only when the gesture BEGAN at the top of the page — otherwise a
+  // flick that scrolls to the top mid-gesture measures against a stale
+  // start point and fires an unintended refresh.
+  const pullingRef = useRef(false);
   const lastErrorRef = useRef<string | null>(null);
   const [pullDistance, setPullDistance] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
@@ -56,7 +60,12 @@ export function Feed() {
   }, [posts]);
 
   useEffect(() => {
-    if (!error) return;
+    if (!error) {
+      // Reset once the error clears so the same failure message can toast
+      // again on the next failed refresh instead of being swallowed.
+      lastErrorRef.current = null;
+      return;
+    }
     if (lastErrorRef.current === error) return;
     lastErrorRef.current = error;
     showToast(error, "error");
@@ -83,8 +92,12 @@ export function Feed() {
     let ignore = false;
     if (!user || activeTab !== "following") return;
     const loadFollowing = async () => {
-      const { followingPets } = await getFollowingPets(user.uid);
-      if (!ignore) setFollowingCount(followingPets.length);
+      try {
+        const { followingPets } = await getFollowingPets(user.uid);
+        if (!ignore) setFollowingCount(followingPets.length);
+      } catch {
+        // Count only drives the empty-state variant — degrade silently.
+      }
     };
     void loadFollowing();
     return () => {
@@ -181,6 +194,23 @@ export function Feed() {
           : Promise.resolve(new Set<string>()),
       ]);
       if (!ignore) {
+        // Ids the user toggled while this batch was in flight were added to
+        // the checked refs by handleLikeChanged/handleBookmarkChanged/
+        // handlePetFollowChanged. The batch result predates those taps, so
+        // it must not overwrite them (a fresh like would visibly un-fill).
+        const likeOverrides = new Set(
+          uncheckedLikeIds.filter((id) => checkedLikePostIdsRef.current.has(id))
+        );
+        const bookmarkOverrides = new Set(
+          uncheckedBookmarkIds.filter((id) =>
+            checkedBookmarkPostIdsRef.current.has(id)
+          )
+        );
+        const followOverrides = new Set(
+          uncheckedFollowPetIds.filter((id) =>
+            checkedFollowPetIdsRef.current.has(id)
+          )
+        );
         uncheckedLikeIds.forEach((id) => checkedLikePostIdsRef.current.add(id));
         uncheckedBookmarkIds.forEach((id) =>
           checkedBookmarkPostIdsRef.current.add(id)
@@ -190,20 +220,32 @@ export function Feed() {
         );
         setLikedPosts((prev) => {
           const next = new Set(prev);
-          uncheckedLikeIds.forEach((id) => next.delete(id));
-          likedSet.forEach((id) => next.add(id));
+          uncheckedLikeIds.forEach((id) => {
+            if (!likeOverrides.has(id)) next.delete(id);
+          });
+          likedSet.forEach((id) => {
+            if (!likeOverrides.has(id)) next.add(id);
+          });
           return next;
         });
         setBookmarkedPosts((prev) => {
           const next = new Set(prev);
-          uncheckedBookmarkIds.forEach((id) => next.delete(id));
-          bookmarkedSet.forEach((id) => next.add(id));
+          uncheckedBookmarkIds.forEach((id) => {
+            if (!bookmarkOverrides.has(id)) next.delete(id);
+          });
+          bookmarkedSet.forEach((id) => {
+            if (!bookmarkOverrides.has(id)) next.add(id);
+          });
           return next;
         });
         setFollowedPetIds((prev) => {
           const next = new Set(prev);
-          uncheckedFollowPetIds.forEach((id) => next.delete(id));
-          followedSet.forEach((id) => next.add(id));
+          uncheckedFollowPetIds.forEach((id) => {
+            if (!followOverrides.has(id)) next.delete(id);
+          });
+          followedSet.forEach((id) => {
+            if (!followOverrides.has(id)) next.add(id);
+          });
           return next;
         });
       }
@@ -303,23 +345,29 @@ export function Feed() {
       <main
         className="mx-auto w-full max-w-md space-y-4 px-4 py-4"
         onTouchStart={(event) => {
-          if (window.scrollY > 0) return;
+          pullingRef.current = window.scrollY <= 0;
+          if (!pullingRef.current) return;
           startYRef.current = event.touches[0].clientY;
         }}
         onTouchMove={(event) => {
-          if (window.scrollY > 0) return;
+          if (!pullingRef.current || window.scrollY > 0) return;
           const distance = event.touches[0].clientY - startYRef.current;
           if (distance > 0) {
             setPullDistance(Math.min(distance, 80));
           }
         }}
         onTouchEnd={async () => {
-          if (pullDistance > 60) {
-            setRefreshing(true);
-            await refresh();
-            setRefreshing(false);
-          }
+          const shouldRefresh = pullingRef.current && pullDistance > 60;
+          pullingRef.current = false;
           setPullDistance(0);
+          if (shouldRefresh) {
+            setRefreshing(true);
+            try {
+              await refresh();
+            } finally {
+              setRefreshing(false);
+            }
+          }
         }}
       >
         <div className="sticky top-[56px] z-10 -mx-4 bg-slate-50 px-4 pb-2 pt-1 dark:bg-slate-900">
@@ -421,7 +469,7 @@ export function Feed() {
             key={post.id}
             fallback={
               <div className="rounded-2xl bg-white p-4 text-center text-xs text-slate-400 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-500">
-                This post couldn&apos;t be displayed.
+                {t("feed.postUnavailable")}
               </div>
             }
           >

@@ -35,7 +35,12 @@ export function Notifications() {
           </h1>
           <button
             type="button"
-            onClick={markAllAsRead}
+            onClick={() => {
+              // The hook rolls the optimistic update back on failure; swallow
+              // the re-thrown error so it doesn't become an unhandled
+              // rejection.
+              void markAllAsRead().catch(() => undefined);
+            }}
             className="text-xs font-semibold text-purple-600 transition-all duration-200 hover:scale-105"
           >
             {t("notifications.markAllRead")}
@@ -71,7 +76,9 @@ export function Notifications() {
                   key={item.id}
                   type="button"
                   onClick={() => {
-                    if (!item.read) void markAsRead(item.id);
+                    if (!item.read) {
+                      void markAsRead(item.id).catch(() => undefined);
+                    }
                   }}
                   className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left ${cardClass}`}
                 >
@@ -103,7 +110,11 @@ export function Notifications() {
                 key={item.id}
                 type="button"
                 onClick={() => {
-                  void markAsRead(item.id);
+                  // Skip already-read items (pointless updateDoc per click)
+                  // and swallow failures — the hook rolls back optimistics.
+                  if (!item.read) {
+                    void markAsRead(item.id).catch(() => undefined);
+                  }
                   if (item.type === "pet_follow" || item.type === "follow") {
                     // Prefer the pet page (backend now stamps petId); fall back
                     // to the follower's profile for legacy notifications.

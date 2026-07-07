@@ -118,6 +118,7 @@ export function AddPet() {
   const [joinRelationship, setJoinRelationship] = useState<PetFamilyRelationship | null>(null);
   const [joinCustomRelationship, setJoinCustomRelationship] = useState("");
   const [loading, setLoading] = useState(false);
+  const [petNotFound, setPetNotFound] = useState(false);
   const [saving, setSaving] = useState(false);
   const [validatingInvite, setValidatingInvite] = useState(false);
   const [joiningFamily, setJoiningFamily] = useState(false);
@@ -152,51 +153,82 @@ export function AddPet() {
 
   useEffect(() => {
     let ignore = false;
-    if (!petId) return;
-    const load = async () => {
-      setLoading(true);
-      const pet = await getPetById(petId);
-      if (ignore) return;
-      if (!pet) {
-        setLoading(false);
-        return;
-      }
-      setName(pet.name);
-      setSpecies(pet.species);
-      setBreed(pet.breed || "");
-      setGender(pet.gender);
-      setBio(pet.bio || "");
+    if (!petId) {
+      // The same component serves /add-pet and /edit-pet/:petId. Navigating
+      // from edit straight to add must not leave the form prefilled with the
+      // previously edited pet (saving would create a duplicate).
+      setName("");
+      setSpecies("");
+      setBreed("");
+      setGender("unknown");
+      setBirthday("");
+      setBio("");
       setAvatarFile(null);
       revokeAvatarObjectUrl();
-      setAvatarUrl(pet.avatarUrl || "");
-      if (pet.birthday) {
-        const date =
-          pet.birthday instanceof Date
-            ? pet.birthday
-            : typeof pet.birthday === "object" &&
-              pet.birthday !== null &&
-              "toDate" in pet.birthday &&
-              typeof (pet.birthday as { toDate: () => Date }).toDate ===
-                "function"
-            ? (pet.birthday as { toDate: () => Date }).toDate()
-            : null;
-        if (date) {
-          // Use local date fields so the value round-trips: we wrote local
-           // midnight on the picked day, and `toISOString()` would shift it
-           // back to UTC and lose a day for negative-UTC viewers.
-          const yyyy = date.getFullYear();
-          const mm = String(date.getMonth() + 1).padStart(2, "0");
-          const dd = String(date.getDate()).padStart(2, "0");
-          setBirthday(`${yyyy}-${mm}-${dd}`);
-        }
-      }
+      setAvatarUrl("");
+      setPetNotFound(false);
       setLoading(false);
+      return;
+    }
+    const load = async () => {
+      setLoading(true);
+      setPetNotFound(false);
+      try {
+        const pet = await getPetById(petId);
+        if (ignore) return;
+        if (!pet) {
+          // A silently empty edit form would let Save target a nonexistent
+          // doc; surface the missing pet instead.
+          setPetNotFound(true);
+          return;
+        }
+        setName(pet.name);
+        setSpecies(pet.species);
+        setBreed(pet.breed || "");
+        setGender(pet.gender);
+        setBio(pet.bio || "");
+        setAvatarFile(null);
+        revokeAvatarObjectUrl();
+        setAvatarUrl(pet.avatarUrl || "");
+        if (pet.birthday) {
+          const date =
+            pet.birthday instanceof Date
+              ? pet.birthday
+              : typeof pet.birthday === "object" &&
+                pet.birthday !== null &&
+                "toDate" in pet.birthday &&
+                typeof (pet.birthday as { toDate: () => Date }).toDate ===
+                  "function"
+              ? (pet.birthday as { toDate: () => Date }).toDate()
+              : null;
+          if (date) {
+            // Use local date fields so the value round-trips: we wrote local
+             // midnight on the picked day, and `toISOString()` would shift it
+             // back to UTC and lose a day for negative-UTC viewers.
+            const yyyy = date.getFullYear();
+            const mm = String(date.getMonth() + 1).padStart(2, "0");
+            const dd = String(date.getDate()).padStart(2, "0");
+            setBirthday(`${yyyy}-${mm}-${dd}`);
+          }
+        }
+      } catch (error) {
+        if (!ignore) {
+          showToast(
+            error instanceof Error ? error.message : "Failed to load pet.",
+            "error"
+          );
+        }
+      } finally {
+        if (!ignore) setLoading(false);
+      }
     };
 
     void load();
     return () => {
       ignore = true;
     };
+    // showToast comes from a stable context value.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [petId, revokeAvatarObjectUrl]);
 
   if (!user) {
@@ -420,7 +452,13 @@ export function AddPet() {
           </div>
         ) : null}
 
-        {isEdit || mode === "new" ? (
+        {petNotFound ? (
+          <div className="rounded-2xl bg-slate-50 p-6 text-center text-sm text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+            Pet not found. It may have been deleted.
+          </div>
+        ) : null}
+
+        {!petNotFound && (isEdit || mode === "new") ? (
           <>
             <section className="rounded-3xl bg-white p-6 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
               <div className="flex flex-col items-center text-center">

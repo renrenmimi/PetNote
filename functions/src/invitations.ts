@@ -5,10 +5,12 @@ import { assertActorNotDeleting, getNotificationActor } from "./notifications";
 import {
   assertRateLimit,
   getDefaultAvatar,
+  optionalTrimmedString,
   RATE_LIMITS,
   requestData,
   requiredDocId,
   stripUndefined,
+  VALIDATION_LIMITS,
 } from "./shared";
 
 type ActiveInvitation = {
@@ -394,11 +396,16 @@ export const redeemInvitationCallable = onCall(async (request) => {
         userName: caller.fromUserName,
         userAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
         relationship,
+        // Length-capped like every other customRelationship write path —
+        // this was the one place a direct call could stuff an unbounded
+        // string into the family doc.
         customRelationship:
-          relationship === "other" &&
-          typeof data.customRelationship === "string" &&
-          data.customRelationship.trim().length > 0
-            ? data.customRelationship.trim()
+          relationship === "other"
+            ? optionalTrimmedString(
+                data.customRelationship,
+                VALIDATION_LIMITS.petCustomRelationship,
+                "Custom relationship"
+              )
             : undefined,
         role: "member",
         invitationCode: normalizedCode,

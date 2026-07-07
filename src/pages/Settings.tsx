@@ -171,7 +171,10 @@ export function Settings() {
     return () => {
       ignore = true;
     };
-  }, [showToast, t, user]);
+    // `t` would re-run this fetch (and flash the loading card) on every
+    // language switch; showToast is a stable context value.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   if (!user) return null;
 
@@ -233,8 +236,18 @@ export function Settings() {
       setShowConfirmPassword(false);
       setExpandedPassword(false);
     } catch (error) {
+      // Map the common re-auth failures to friendly localized copy instead
+      // of leaking "Firebase: Error (auth/invalid-credential)." verbatim.
+      const code =
+        error && typeof error === "object" && "code" in error
+          ? String((error as { code?: string }).code)
+          : "";
       const message =
-        error instanceof Error ? error.message : t("settings.passwordUpdateFailed");
+        code.includes("invalid-credential") || code.includes("wrong-password")
+          ? t("settings.currentPasswordIncorrect")
+          : code.includes("too-many-requests")
+            ? t("settings.tooManyAttempts")
+            : t("settings.passwordUpdateFailed");
       showToast(message, "error");
     } finally {
       setSavingPassword(false);
@@ -533,7 +546,10 @@ export function Settings() {
           <div className="overflow-hidden rounded-2xl border border-red-200 bg-white dark:border-red-500/40 dark:bg-slate-900">
             <SettingRow
               label={t("settings.deleteAccount")}
-              onClick={() => setDeleteOpen(true)}
+              onClick={() => {
+                setDeleteInput("");
+                setDeleteOpen(true);
+              }}
               danger
               border={false}
             />
@@ -654,7 +670,12 @@ export function Settings() {
             <div className="mt-4 flex items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setDeleteOpen(false)}
+                onClick={() => {
+                  setDeleteOpen(false);
+                  // Reset so re-opening the dialog never starts with the
+                  // DELETE keyword pre-satisfied from a previous attempt.
+                  setDeleteInput("");
+                }}
                 className="rounded-full px-4 py-2 text-sm font-semibold text-slate-600 transition-all duration-200 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700"
               >
                 {t("common.cancel")}

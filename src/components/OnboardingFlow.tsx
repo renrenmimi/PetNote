@@ -44,9 +44,12 @@ const formatInviteCode = (value: string): string => {
 };
 
 export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
+  // Namespaced per user: a previous account abandoning onboarding at step 3
+  // on this browser must not make the next new account skip the early steps.
+  const stepStorageKey = `onboardingStep:${userId}`;
   const [step, setStep] = useState(() => {
     if (typeof window === "undefined") return 0;
-    const saved = window.localStorage.getItem("onboardingStep");
+    const saved = window.localStorage.getItem(stepStorageKey);
     const value = saved ? Number(saved) : 0;
     return Number.isFinite(value)
       ? Math.max(0, Math.min(value, stepCount - 1))
@@ -80,14 +83,15 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
   const [suggestedPets, setSuggestedPets] = useState<Array<Pet & { postCount: number }>>([]);
   const [suggestedLoading, setSuggestedLoading] = useState(false);
   const [followedIds, setFollowedIds] = useState<Set<string>>(new Set());
+  const [finishing, setFinishing] = useState(false);
   const touchStartRef = useRef(0);
   const touchStartYRef = useRef(0);
   const { showToast } = useToast();
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    window.localStorage.setItem("onboardingStep", String(step));
-  }, [step]);
+    window.localStorage.setItem(stepStorageKey, String(step));
+  }, [step, stepStorageKey]);
 
   useEffect(() => {
     return () => {
@@ -202,9 +206,21 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
   const handleBack = () => setStep((prev) => Math.max(prev - 1, 0));
 
   const handleFinish = async () => {
-    await completeOnboarding(userId);
-    localStorage.removeItem("onboardingStep");
-    onComplete();
+    if (finishing) return;
+    setFinishing(true);
+    try {
+      await completeOnboarding(userId);
+      localStorage.removeItem(stepStorageKey);
+      // Clean up the legacy non-namespaced key from older sessions too.
+      localStorage.removeItem("onboardingStep");
+      onComplete();
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "Failed to finish onboarding.",
+        "error"
+      );
+      setFinishing(false);
+    }
   };
 
   const ensureUserProfile = async () => {
@@ -383,7 +399,11 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col items-center justify-between bg-white px-6 py-10 text-center dark:bg-slate-900"
+      // overflow-y-auto: step 2 (species + relationship grid) and step 4
+      // (up to 8 suggested pets) exceed short phone viewports; without a
+      // scrollable container the final "Start Exploring" button was
+      // unreachable and onboarding could not be completed.
+      className="fixed inset-0 z-50 flex flex-col items-center justify-between overflow-y-auto bg-white px-6 py-10 text-center dark:bg-slate-900"
       onTouchStart={(event) => {
         touchStartRef.current = event.touches[0].clientX;
         touchStartYRef.current = event.touches[0].clientY;
@@ -811,9 +831,10 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
             <button
               type="button"
               onClick={handleFinish}
-              className="w-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-6 py-3 text-sm font-semibold text-white transition-all duration-200 hover:brightness-110"
+              disabled={finishing}
+              className="w-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-6 py-3 text-sm font-semibold text-white transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
             >
-              Start Exploring
+              {finishing ? "Finishing..." : "Start Exploring"}
             </button>
           </>
         ) : null}

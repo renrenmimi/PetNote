@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   deleteCloudinaryAssets,
   uploadMedia,
@@ -133,7 +134,9 @@ export function CheckInModal({
     }
   };
 
-  return (
+  // Portal to <body> so transformed ancestors (page transition, card hover)
+  // can't become the containing block for this fixed overlay.
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       onClick={onClose}
@@ -264,6 +267,7 @@ export function CheckInModal({
             : "Check In"}
         </button>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

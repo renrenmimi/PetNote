@@ -99,8 +99,12 @@ export function toPost(id: string, data: DocumentData): Post {
     id,
     tags: Array.isArray(raw.tags) ? (raw.tags as string[]) : [],
     media: Array.isArray(raw.media) ? (raw.media as MediaItem[]) : undefined,
-    likeCount: typeof raw.likeCount === "number" ? raw.likeCount : 0,
-    commentCount: typeof raw.commentCount === "number" ? raw.commentCount : 0,
+    // Clamp at 0: trigger races (create→delete inside trigger latency) can
+    // briefly drive the denormalized counters negative; never render that.
+    likeCount:
+      typeof raw.likeCount === "number" ? Math.max(0, raw.likeCount) : 0,
+    commentCount:
+      typeof raw.commentCount === "number" ? Math.max(0, raw.commentCount) : 0,
   };
 }
 

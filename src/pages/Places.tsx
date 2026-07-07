@@ -150,7 +150,11 @@ export function Places() {
   }, [user]);
 
   const loadPlaces = async (reset = false) => {
-    if (loadingMore || (!reset && loading)) return;
+    // A reset (filter/category switch) must never be blocked by an in-flight
+    // "load more": the reset effect has already cleared places/lastDoc, and
+    // bumping requestIdRef below invalidates the stale page so it can't be
+    // appended to the emptied list under the new filter.
+    if (!reset && (loadingMore || loading)) return;
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
     setLoadingMore(!reset);
@@ -225,11 +229,19 @@ export function Places() {
     if (!searchQuery.trim() || searchCenter) return;
     let ignore = false;
     const handle = window.setTimeout(async () => {
-      const results = await searchPlaces(searchQuery);
-      if (!ignore) {
-        setPlaces(results);
-        setSearchMode("text");
-        setHasMore(false);
+      try {
+        const results = await searchPlaces(searchQuery);
+        if (!ignore) {
+          setPlaces(results);
+          setSearchMode("text");
+          setHasMore(false);
+        }
+      } catch {
+        if (!ignore) {
+          setPlaces([]);
+          setSearchMode("text");
+          setHasMore(false);
+        }
       }
     }, 300);
     return () => {

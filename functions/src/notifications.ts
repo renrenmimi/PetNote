@@ -113,7 +113,13 @@ async function shouldSendNotification(
 }
 
 export async function createNotificationIfAllowed(
-  payload: ServerNotificationPayload
+  payload: ServerNotificationPayload,
+  options?: {
+    // Deterministic doc id. Used to dedupe fan-outs that an attacker (or an
+    // eager finger) can re-trigger cheaply — e.g. like/unlike toggling used
+    // to send the pet's whole family a fresh notification per toggle.
+    dedupeId?: string;
+  }
 ): Promise<string> {
   if (!(await shouldSendNotification(payload.userId, payload.type))) {
     return "";
@@ -130,6 +136,20 @@ export async function createNotificationIfAllowed(
       delete docData[key];
     }
   });
+
+  if (options?.dedupeId) {
+    const ref = db.collection("notifications").doc(options.dedupeId);
+    try {
+      await ref.create(docData);
+      return ref.id;
+    } catch (error) {
+      const code = (error as { code?: number | string }).code;
+      if (code === 6 /* ALREADY_EXISTS */) {
+        return ref.id;
+      }
+      throw error;
+    }
+  }
 
   const result = await db.collection("notifications").add(docData);
   return result.id;
@@ -183,7 +203,7 @@ export const onFollowingPetCreated = onDocumentCreated(
     const userRef = db.doc(`users/${userId}`);
     const petRef = db.doc(`pets/${petId}`);
     const followerMirrorRef = db.doc(`pets/${petId}/followers/${userId}`);
-    const [userSnap, petSnap] = await Promise.all([userRef.get(), petRef.get()]);
+    const petSnap = await petRef.get();
 
     if (!petSnap.exists) {
       if (event.data) {
@@ -197,22 +217,33 @@ export const onFollowingPetCreated = onDocumentCreated(
       return;
     }
 
-    const batch = db.batch();
-    let hasWrites = false;
     const actor = await getNotificationActor(userId);
+    const followRef = event.data?.ref ?? null;
 
-    if (userSnap.exists) {
-      batch.update(userRef, {
-        followingPetsCount: admin.firestore.FieldValue.increment(1),
-      });
-      hasWrites = true;
-    }
-
-    if (petSnap.exists) {
-      batch.update(petRef, {
+    // All counting runs in one transaction that re-reads the follow doc and
+    // aborts if it's already gone. The previous batch used set(...,{merge})
+    // on the trigger's own doc, which RESURRECTED a follow that was deleted
+    // before the trigger ran — re-firing onDocumentCreated, double-counting
+    // followers, and leaving a ghost follow the user couldn't see.
+    const counted = await db.runTransaction(async (t) => {
+      if (followRef) {
+        const followSnap = await t.get(followRef);
+        if (!followSnap.exists) return false;
+      }
+      const [userTxnSnap, petTxnSnap] = await Promise.all([
+        t.get(userRef),
+        t.get(petRef),
+      ]);
+      if (!petTxnSnap.exists) return false;
+      if (userTxnSnap.exists) {
+        t.update(userRef, {
+          followingPetsCount: admin.firestore.FieldValue.increment(1),
+        });
+      }
+      t.update(petRef, {
         followerCount: admin.firestore.FieldValue.increment(1),
       });
-      batch.set(followerMirrorRef, {
+      t.set(followerMirrorRef, {
         userId,
         userName: actor.fromUserName,
         userAvatar: actor.fromUserAvatar || getDefaultAvatar(userId),
@@ -221,16 +252,15 @@ export const onFollowingPetCreated = onDocumentCreated(
       // Stamp counted:true alongside the increments so onFollowingPetDeleted
       // only decrements follows that were actually counted (legacy follows
       // without the field are treated as counted; never-counted follows are
-      // explicitly marked counted:false above).
-      if (event.data) {
-        batch.set(event.data.ref, { counted: true }, { merge: true });
+      // explicitly marked counted:false above). update() — never set() —
+      // so a concurrently deleted follow doc aborts the transaction instead
+      // of being recreated.
+      if (followRef) {
+        t.update(followRef, { counted: true });
       }
-      hasWrites = true;
-    }
-
-    if (hasWrites) {
-      await batch.commit();
-    }
+      return true;
+    });
+    if (!counted) return;
 
     const petData = petSnap.data() ?? {};
     const petName =
@@ -322,32 +352,41 @@ export const onLikeCreated = onDocumentCreated(
       const petName = postData.petName || "this pet";
       await Promise.all(
         recipients.map((recipientId) =>
-          createNotificationIfAllowed({
-            userId: recipientId,
-            type: "like",
-            fromUserId: actor.fromUserId,
-            fromUserName: actor.fromUserName,
-            fromUserAvatar: actor.fromUserAvatar,
-            postId,
-            postImage: postData.mediaUrl,
-            message: `${actor.fromUserName} liked ${petName}'s post`,
-          })
+          createNotificationIfAllowed(
+            {
+              userId: recipientId,
+              type: "like",
+              fromUserId: actor.fromUserId,
+              fromUserName: actor.fromUserName,
+              fromUserAvatar: actor.fromUserAvatar,
+              postId,
+              postImage: postData.mediaUrl,
+              message: `${actor.fromUserName} liked ${petName}'s post`,
+            },
+            // Deterministic per (recipient, liker, post): like/unlike
+            // toggling no longer floods the family with duplicates — likes
+            // are the one mutation with no rate limit.
+            { dedupeId: `like_${recipientId}_${likeId}_${postId}` }
+          )
         )
       );
       return;
     }
 
     if (postData.authorId && postData.authorId !== likeId) {
-      await createNotificationIfAllowed({
-        userId: postData.authorId,
-        type: "like",
-        fromUserId: actor.fromUserId,
-        fromUserName: actor.fromUserName,
-        fromUserAvatar: actor.fromUserAvatar,
-        postId,
-        postImage: postData.mediaUrl,
-        message: "liked your post",
-      });
+      await createNotificationIfAllowed(
+        {
+          userId: postData.authorId,
+          type: "like",
+          fromUserId: actor.fromUserId,
+          fromUserName: actor.fromUserName,
+          fromUserAvatar: actor.fromUserAvatar,
+          postId,
+          postImage: postData.mediaUrl,
+          message: "liked your post",
+        },
+        { dedupeId: `like_${postData.authorId}_${likeId}_${postId}` }
+      );
     }
   }
 );
@@ -373,10 +412,16 @@ export const onCommentCreated = onDocumentCreated(
     if (rawComment?.authorId) {
       const actor = await getNotificationActor(rawComment.authorId as string);
       const commentRef = db.doc(`posts/${postId}/comments/${commentId}`);
-      await commentRef.update({
-        authorName: actor.fromUserName,
-        authorAvatar: actor.fromUserAvatar,
-      });
+      // Cosmetic denormalization only — must never kill the handler. If the
+      // comment was deleted within trigger latency, letting this NOT_FOUND
+      // propagate skipped the commentCount increment below while
+      // onCommentDeleted still decremented, driving the count negative.
+      await commentRef
+        .update({
+          authorName: actor.fromUserName,
+          authorAvatar: actor.fromUserAvatar,
+        })
+        .catch(() => undefined);
     }
 
     const postRef = db.doc(`posts/${postId}`);

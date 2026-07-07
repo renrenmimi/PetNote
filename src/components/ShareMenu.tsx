@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useToast } from "../contexts/ToastContext";
 import type { Post } from "../services/posts";
 import { generateShareCard } from "./ShareCard";
@@ -104,7 +105,9 @@ export function ShareMenu({ open, onClose, postId, shareUrl, text, post }: Share
     }
   };
 
-  return (
+  // Portal to <body> so transformed ancestors (PostCard hover lift, page
+  // transition) can't become the containing block for this fixed sheet.
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/50"
       onClick={onClose}
@@ -153,6 +156,7 @@ export function ShareMenu({ open, onClose, postId, shareUrl, text, post }: Share
         </button>
       </div>
 
-    </div>
+    </div>,
+    document.body
   );
 }

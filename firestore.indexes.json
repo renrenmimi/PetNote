@@ -569,8 +569,8 @@
       ]
     },
     {
-      "collectionGroup": "admin",
-      "fieldPath": "banned",
+      "collectionGroup": "followers",
+      "fieldPath": "userId",
       "ttl": false,
       "indexes": [
         {

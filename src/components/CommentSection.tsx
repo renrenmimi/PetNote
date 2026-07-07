@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import type { QueryDocumentSnapshot } from "firebase/firestore";
 import { useAuth } from "../hooks/useAuth";
@@ -232,6 +233,13 @@ export function CommentSection({
             item.id === optimisticId ? { ...item, id: createdId } : item
           )
         );
+        // If the user already picked the optimistic comment as a reply
+        // target, remap it to the real id so the server can resolve it.
+        setReplyTarget((prev) =>
+          prev && prev.commentId === optimisticId
+            ? { ...prev, commentId: createdId }
+            : prev
+        );
       }
       showToast("Comment posted", "success");
     } catch (err) {
@@ -304,7 +312,7 @@ export function CommentSection({
                     {comment.authorName}
                   </span>
 
-                  <p className="mt-1 text-left text-xs text-slate-600 dark:text-slate-300">
+                  <p className="mt-1 break-words text-left text-xs text-slate-600 dark:text-slate-300">
                     {comment.replyTo ? (
                       <span className="mr-1 text-purple-600">
                         @{comment.replyTo.authorName}
@@ -323,7 +331,12 @@ export function CommentSection({
                           navigate("/login");
                           return;
                         }
-                        if (!comment.id) return;
+                        // An optimistic comment still carries its local-*
+                        // placeholder id — the server would reject a reply
+                        // targeting it ("Reply target not found").
+                        if (!comment.id || comment.id.startsWith("local-")) {
+                          return;
+                        }
                         setReplyTarget({
                           commentId: comment.id,
                           authorName: comment.authorName,
@@ -456,6 +469,9 @@ export function CommentSection({
             onChange={(event) => setText(event.target.value)}
             maxLength={500}
             onKeyDown={(event) => {
+              // The Enter that commits an IME (pinyin) composition must not
+              // submit the half-composed text.
+              if (event.nativeEvent.isComposing) return;
               if (event.key === "Enter") {
                 event.preventDefault();
                 void handleSend();
@@ -477,6 +493,7 @@ export function CommentSection({
       </div>
 
       {commentToDelete ? (
+        createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)] dark:bg-slate-800">
             <h3 className="text-base font-semibold text-slate-900 dark:text-white">
@@ -504,7 +521,9 @@ export function CommentSection({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
+      )
       ) : null}
     </section>
   );

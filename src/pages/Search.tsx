@@ -30,9 +30,27 @@ import { type Meetup } from "../services/meetups";
 import { useFollowPet } from "../hooks/useFollow";
 import { batchCheckFollowingPets } from "../hooks/useBatchFollowingPets";
 import { getVideoThumbnail } from "../utils/cloudinaryUrl";
-import { timeAgo } from "../utils/timeAgo";
 
 type PopularPet = Pet & { postCount: number };
+
+// Upcoming meetups carry FUTURE dates — timeAgo() on those always yields
+// "just now" (negative diff). Show the calendar date instead.
+const formatMeetupDate = (value: unknown): string => {
+  const date =
+    value instanceof Date
+      ? value
+      : typeof value === "object" &&
+          value !== null &&
+          "toDate" in value &&
+          typeof (value as { toDate: () => Date }).toDate === "function"
+        ? (value as { toDate: () => Date }).toDate()
+        : null;
+  if (!date) return "";
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+};
 
 type SearchResults = {
   users: UserProfile[];
@@ -210,20 +228,23 @@ export function Search() {
   }, [searchParams]);
 
   useEffect(() => {
+    // replace:true — these are effect-driven URL syncs, not navigations.
+    // Pushing per keystroke polluted history (Back needed N presses) and the
+    // mount-time run also strips+re-adds an incoming ?tag= deep link.
     if (!normalizedQuery) {
-      setSearchParams({});
+      setSearchParams({}, { replace: true });
       return;
     }
 
     if (normalizedQuery.startsWith("#")) {
       const tagName = normalizedQuery.replace(/^#/, "");
       if (tagName) {
-        setSearchParams({ tag: tagName });
+        setSearchParams({ tag: tagName }, { replace: true });
       } else {
-        setSearchParams({});
+        setSearchParams({}, { replace: true });
       }
     } else {
-      setSearchParams({});
+      setSearchParams({}, { replace: true });
     }
   }, [normalizedQuery, setSearchParams]);
 
@@ -628,7 +649,7 @@ export function Search() {
                         {meetup.title}
                       </p>
                       <p className="text-xs text-slate-400 dark:text-slate-500">
-                        {timeAgo(meetup.date as unknown as Date)} · {meetup.location?.name || "Meetup"}
+                        {formatMeetupDate(meetup.date)} · {meetup.location?.name || "Meetup"}
                       </p>
                     </button>
                   ))}

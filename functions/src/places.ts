@@ -301,10 +301,15 @@ export const onReviewCreated = onDocumentCreated(
     if (reviewData?.userId) {
       const actor = await getNotificationActor(reviewData.userId);
       const reviewRef = db.doc(`locations/${event.params.locationId}/reviews/${event.params.reviewId}`);
-      await reviewRef.update({
-        userName: actor.fromUserName,
-        userAvatar: actor.fromUserAvatar,
-      });
+      // Cosmetic denormalization — a review deleted within trigger latency
+      // must not kill the handler before the aggregation delta applies
+      // (onReviewDeleted would still subtract, skewing the aggregates).
+      await reviewRef
+        .update({
+          userName: actor.fromUserName,
+          userAvatar: actor.fromUserAvatar,
+        })
+        .catch(() => undefined);
     }
     const rating = typeof reviewData.rating === "number" ? reviewData.rating : 0;
     const tagList = readReviewTags(reviewData);
@@ -394,10 +399,14 @@ export const onCheckinCreated = onDocumentCreated(
     if (checkinData?.userId) {
       const actor = await getNotificationActor(checkinData.userId);
       const checkinRef = db.doc(`locations/${locationId}/checkins/${event.params.checkinId}`);
-      await checkinRef.update({
-        userName: actor.fromUserName,
-        userAvatar: actor.fromUserAvatar,
-      });
+      // Cosmetic — a check-in deleted within trigger latency must not kill
+      // the handler before the totalCheckins increment below.
+      await checkinRef
+        .update({
+          userName: actor.fromUserName,
+          userAvatar: actor.fromUserAvatar,
+        })
+        .catch(() => undefined);
     }
 
     // Transaction-based +1 instead of counting every check-in on the
@@ -631,7 +640,24 @@ export const submitReviewCallable = onCall(async (request) => {
         ? data.tags
             .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
             .slice(0, 12)
-            .map((tag) => optionalTrimmedString(tag, VALIDATION_LIMITS.tag, "Review tag"))
+            .map((tag) => {
+              const normalized = optionalTrimmedString(
+                tag,
+                VALIDATION_LIMITS.tag,
+                "Review tag"
+              );
+              // Tags are interpolated into `tagCounts.${tag}` update paths by
+              // the aggregation trigger; the Admin SDK rejects * ~ / [ ] and
+              // splits on ".", so a crafted tag would crash the trigger (the
+              // review then silently never counts) or write nested garbage.
+              if (normalized && /[.*~/[\]]/.test(normalized)) {
+                throw new HttpsError(
+                  "invalid-argument",
+                  "Review tags cannot contain . * ~ / [ ] characters."
+                );
+              }
+              return normalized;
+            })
         : [],
       petFriendly: {
         space: petFriendlySpace,

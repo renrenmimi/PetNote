@@ -17,8 +17,13 @@ export function BirthdayCelebration({ ownerId }: BirthdayCelebrationProps) {
     let ignore = false;
     if (!ownerId) return;
     const load = async () => {
-      const list = await getBirthdayPets(ownerId);
-      if (!ignore) setPets(list);
+      try {
+        const list = await getBirthdayPets(ownerId);
+        if (!ignore) setPets(list);
+      } catch {
+        // Banner is decorative — never surface an unhandled rejection.
+        if (!ignore) setPets([]);
+      }
     };
     void load();
     return () => {

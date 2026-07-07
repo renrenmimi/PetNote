@@ -83,6 +83,14 @@ export function Login() {
     typeof (location.state as { email?: unknown } | null)?.email === "string"
       ? String((location.state as { email: string }).email)
       : "";
+  // RequireAuth (and BottomNav) pass the page the user was trying to reach;
+  // without consuming it here every login dumped deep links onto the feed.
+  const fromLocation = (
+    location.state as { from?: { pathname?: string; search?: string } } | null
+  )?.from;
+  const redirectTo = fromLocation?.pathname
+    ? `${fromLocation.pathname}${fromLocation.search ?? ""}`
+    : "/";
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -99,7 +107,7 @@ export function Login() {
 
     try {
       await signIn(normalizedEmail, password);
-      navigate("/", { replace: true });
+      navigate(redirectTo, { replace: true });
     } catch (err) {
       const code =
         err && typeof err === "object" && "code" in err
@@ -146,7 +154,7 @@ export function Login() {
     setNotice(null);
     try {
       await signInWithGoogle();
-      navigate("/", { replace: true });
+      navigate(redirectTo, { replace: true });
     } catch (err) {
       setNotice({
         title: t("auth.genericErrorTitle"),

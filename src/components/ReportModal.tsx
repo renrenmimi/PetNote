@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useAuth } from "../hooks/useAuth";
 import { reportContent, type ReportTargetType } from "../services/report";
 import { useToast } from "../contexts/ToastContext";
@@ -77,7 +78,9 @@ export function ReportModal({
     }
   };
 
-  return (
+  // Portal to <body> so ancestors carrying transforms (e.g. PostCard's
+  // hover lift) can't become the containing block for this fixed overlay.
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       onClick={onClose}
@@ -144,6 +147,7 @@ export function ReportModal({
               type="button"
               onClick={handleSubmit}
               disabled={
+                submitting ||
                 !selected ||
                 (selected === "Other" && (!customReason || customReason.length > 500))
               }
@@ -154,6 +158,7 @@ export function ReportModal({
           </div>
         </>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

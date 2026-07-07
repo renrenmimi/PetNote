@@ -36,6 +36,7 @@ export function EditMeetup() {
   const { user } = useAuth();
   const { showToast } = useToast();
   const [meetup, setMeetup] = useState<Meetup | null>(null);
+  const [notFound, setNotFound] = useState(false);
   const [participantsCount, setParticipantsCount] = useState(0);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -100,7 +101,13 @@ export function EditMeetup() {
         }
         return;
       }
-      if (!data || ignore) return;
+      if (ignore) return;
+      if (!data) {
+        // Deleted/unknown meetup — without this flag the page showed
+        // "Loading meetup..." forever.
+        setNotFound(true);
+        return;
+      }
       setMeetup(data);
       setTitle(data.title);
       setDescription(data.description);
@@ -242,6 +249,12 @@ export function EditMeetup() {
       showToast("Invalid date/time.", "error");
       return;
     }
+    // Same rule as CreateMeetup: a past date would auto-flip the meetup to
+    // "completed" on the next view, closing joins and opening ratings.
+    if (start.getTime() <= Date.now()) {
+      showToast("Please pick a future date and time.", "error");
+      return;
+    }
 
     setSaving(true);
     const uploaded: UploadedAsset[] = [];
@@ -302,7 +315,7 @@ export function EditMeetup() {
       <div className="min-h-screen bg-white pb-10 dark:bg-slate-900">
         <main className="mx-auto w-full max-w-md px-4 py-6">
           <div className="rounded-2xl bg-slate-50 p-6 text-center text-sm text-slate-500 dark:bg-slate-800 dark:text-slate-300">
-            Loading meetup...
+            {notFound ? "Meetup not found." : "Loading meetup..."}
           </div>
         </main>
       </div>

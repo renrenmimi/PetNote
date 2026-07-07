@@ -126,6 +126,7 @@ const en = {
   "feed.createPost": "Create Post",
   "feed.exploreOthers": "Or explore what others are sharing",
   "feed.endOfFeed": "You've seen all posts 🐾",
+  "feed.postUnavailable": "This post couldn't be displayed.",
 
   "notifications.title": "Notifications",
   "notifications.markAllRead": "Mark all as read",
@@ -165,6 +166,8 @@ const en = {
   "profile.followingPetsTitle": "Following Pets",
   "profile.noFollowingPets": "No followed pets yet",
   "profile.unfollow": "Unfollow",
+  "profile.unfollowFailed": "Failed to unfollow. Please try again.",
+  "profile.loadFollowingFailed": "Failed to load followed pets.",
   "profile.checkInImageAlt": "Check-in",
 
   "settings.title": "Settings",
@@ -201,6 +204,8 @@ const en = {
   "settings.passwordRequirements": "Password does not meet requirements.",
   "settings.passwordUpdated": "Password updated",
   "settings.passwordUpdateFailed": "Failed to update password",
+  "settings.currentPasswordIncorrect": "Current password is incorrect.",
+  "settings.tooManyAttempts": "Too many attempts. Please try again later.",
   "settings.deleteKeywordHint": "Please type DELETE to confirm.",
   "settings.deleteAccountFailed": "Failed to delete account.",
   "settings.locationNeedInfo":
@@ -350,6 +355,7 @@ const zh = {
   "feed.createPost": "发布帖子",
   "feed.exploreOthers": "或者先看看别人都在分享什么",
   "feed.endOfFeed": "已经看到全部帖子啦 🐾",
+  "feed.postUnavailable": "这条帖子无法显示。",
 
   "notifications.title": "通知",
   "notifications.markAllRead": "全部标为已读",
@@ -387,6 +393,8 @@ const zh = {
   "profile.followingPetsTitle": "正在关注的宠物",
   "profile.noFollowingPets": "还没有关注任何宠物",
   "profile.unfollow": "取消关注",
+  "profile.unfollowFailed": "取消关注失败，请重试。",
+  "profile.loadFollowingFailed": "加载关注的宠物失败。",
   "profile.checkInImageAlt": "打卡图片",
 
   "settings.title": "设置",
@@ -423,6 +431,8 @@ const zh = {
   "settings.passwordRequirements": "密码不符合要求。",
   "settings.passwordUpdated": "密码已更新",
   "settings.passwordUpdateFailed": "更新密码失败",
+  "settings.currentPasswordIncorrect": "当前密码不正确。",
+  "settings.tooManyAttempts": "尝试次数过多，请稍后再试。",
   "settings.deleteKeywordHint": "请输入 DELETE 以确认。",
   "settings.deleteAccountFailed": "删除账号失败。",
   "settings.locationNeedInfo": "PetNote 需要使用你的位置来显示附近的聚会。",

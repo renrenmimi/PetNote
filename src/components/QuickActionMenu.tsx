@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import type { Post } from "../services/posts";
 
@@ -57,7 +58,10 @@ export function QuickActionMenu({
 
   if (!isOpen) return null;
 
-  return (
+  // Portal to <body>: the long-pressed card is scaled (scale-95), which
+  // would otherwise make it the containing block for this fixed overlay and
+  // shift the touch-point coordinates completely off target.
+  return createPortal(
     <div
       className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm"
       onClick={onClose}
@@ -136,6 +140,7 @@ export function QuickActionMenu({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

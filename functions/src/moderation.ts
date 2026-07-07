@@ -26,6 +26,7 @@ export const reportContentCallable = onCall(async (request) => {
   const data = requestData(request.data) as {
     targetType?: "post" | "comment" | "user";
     targetId?: string;
+    postId?: string;
     reason?: string;
     description?: string;
   };
@@ -38,6 +39,28 @@ export const reportContentCallable = onCall(async (request) => {
   // "abc/likes/xyz" would write to reports/abc/likes/xyz instead of
   // reports/{callerUid}_{type}_abc/likes/xyz.
   const targetId = requiredDocId(data.targetId, "targetId");
+
+  // Comment reports must carry their parent postId: every admin resolution
+  // path (preview, delete-and-warn, target-user lookup) locates the comment
+  // at posts/{postId}/comments/{targetId}. Verify the comment actually
+  // exists there so a forged postId can't point moderation at unrelated
+  // content.
+  let commentPostId: string | undefined;
+  if (data.targetType === "comment") {
+    if (data.postId === undefined) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Comment reports require the parent postId."
+      );
+    }
+    commentPostId = requiredDocId(data.postId, "postId");
+    const commentSnap = await db
+      .doc(`posts/${commentPostId}/comments/${targetId}`)
+      .get();
+    if (!commentSnap.exists) {
+      throw new HttpsError("not-found", "Reported comment not found.");
+    }
+  }
   const reason = requiredTrimmedString(
     data.reason,
     VALIDATION_LIMITS.reportReason,
@@ -63,6 +86,7 @@ export const reportContentCallable = onCall(async (request) => {
       reporterAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
       targetType: data.targetType,
       targetId,
+      ...(commentPostId ? { postId: commentPostId } : {}),
       reason,
       description,
       status: "pending",

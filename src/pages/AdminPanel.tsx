@@ -1,13 +1,4 @@
-import {
-  collectionGroup,
-  doc,
-  documentId,
-  getDoc,
-  getDocs,
-  limit,
-  query,
-  where,
-} from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Avatar from "../components/Avatar";
@@ -170,6 +161,8 @@ export function AdminPanel() {
   const [blockModal, setBlockModal] = useState<BlockModalState | null>(null);
   const [feedbackDeleteTarget, setFeedbackDeleteTarget] =
     useState<FeedbackDeleteTarget>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -185,6 +178,10 @@ export function AdminPanel() {
           (a, b) => toMillis(b.createdAt) - toMillis(a.createdAt)
         );
         setReports(merged);
+      } catch (error) {
+        // Otherwise a failed load silently rendered "No pending reports".
+        console.error("Failed to load reports:", error);
+        if (active) setLoadError(true);
       } finally {
         if (active) setReportsLoading(false);
       }
@@ -204,6 +201,9 @@ export function AdminPanel() {
         if (active) {
           setFeedback(entries);
         }
+      } catch (error) {
+        console.error("Failed to load feedback:", error);
+        if (active) setLoadError(true);
       } finally {
         if (active) setFeedbackLoading(false);
       }
@@ -290,28 +290,13 @@ export function AdminPanel() {
           }
         }
 
-        const commentQuery = query(
-          collectionGroup(db, "comments"),
-          where(documentId(), "==", report.targetId),
-          limit(1)
-        );
-        const commentSnapshot = await getDocs(commentQuery);
-        if (commentSnapshot.empty) {
-          setReportContentMap((prev) => ({
-            ...prev,
-            [report.id]: { kind: "deleted" },
-          }));
-          return;
-        }
-
-        const commentDoc = commentSnapshot.docs[0];
-        const commentData = commentDoc.data() as Omit<CommentPreviewData, "id">;
+        // No postId on the report → the comment can't be located. (The old
+        // fallback — collectionGroup("comments") filtered by a bare
+        // documentId() — is an invalid Firestore query and always threw:
+        // collection-group documentId() filters require a full doc path.)
         setReportContentMap((prev) => ({
           ...prev,
-          [report.id]: {
-            kind: "comment",
-            data: { id: commentDoc.id, ...commentData },
-          },
+          [report.id]: { kind: "unavailable" },
         }));
         return;
       }
@@ -385,11 +370,21 @@ export function AdminPanel() {
     void loadReportedContent(report);
   };
 
+  // Shared failure surface for the mutation handlers below — without it a
+  // failed write silently re-enabled the button with no explanation.
+  const reportActionError = (error: unknown, fallback: string) => {
+    console.error(fallback, error);
+    setActionError(error instanceof Error ? error.message : fallback);
+  };
+
   const handleDismissReport = async (report: ReportItem) => {
+    setActionError(null);
     setReportActionLoadingId(`dismiss-${report.id}`);
     try {
       await resolveReport(report.id, "dismiss", report);
       markReportResolvedLocally(report.id);
+    } catch (error) {
+      reportActionError(error, "Failed to dismiss report.");
     } finally {
       setReportActionLoadingId(null);
     }
@@ -401,6 +396,7 @@ export function AdminPanel() {
     if (!reason) return;
 
     const { report, targetUser } = warningModal;
+    setActionError(null);
     setReportActionLoadingId(`warn-${report.id}`);
     try {
       await deleteContentAndWarn({
@@ -415,6 +411,8 @@ export function AdminPanel() {
         [report.id]: { kind: "deleted" },
       }));
       setWarningModal(null);
+    } catch (error) {
+      reportActionError(error, "Failed to send warning.");
     } finally {
       setReportActionLoadingId(null);
     }
@@ -423,18 +421,22 @@ export function AdminPanel() {
   const handleConfirmBlock = async () => {
     if (!blockModal || !blockModal.targetUser) return;
     const { report, targetUser } = blockModal;
+    setActionError(null);
     setReportActionLoadingId(`block-${report.id}`);
     try {
       await blockUserByAdmin(targetUser.userId, blockModal.reason.trim());
       await resolveReport(report.id, "dismiss", report);
       markReportResolvedLocally(report.id);
       setBlockModal(null);
+    } catch (error) {
+      reportActionError(error, "Failed to block user.");
     } finally {
       setReportActionLoadingId(null);
     }
   };
 
   const handleResolveFeedback = async (entry: Feedback) => {
+    setActionError(null);
     setFeedbackActionLoadingId(`resolve-${entry.id}`);
     try {
       await updateFeedbackStatus(entry.id, "resolved");
@@ -443,12 +445,15 @@ export function AdminPanel() {
           item.id === entry.id ? { ...item, status: "resolved" } : item
         )
       );
+    } catch (error) {
+      reportActionError(error, "Failed to resolve feedback.");
     } finally {
       setFeedbackActionLoadingId(null);
     }
   };
 
   const handleDeleteFeedback = async (entry: Feedback) => {
+    setActionError(null);
     setFeedbackActionLoadingId(`delete-${entry.id}`);
     try {
       await deleteFeedback(entry.id);
@@ -457,6 +462,8 @@ export function AdminPanel() {
         setExpandedFeedbackId(null);
       }
       setFeedbackDeleteTarget(null);
+    } catch (error) {
+      reportActionError(error, "Failed to delete feedback.");
     } finally {
       setFeedbackActionLoadingId(null);
     }
@@ -611,7 +618,7 @@ export function AdminPanel() {
     if (reports.length === 0) {
       return (
         <div className="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
-          No pending reports
+          {loadError ? "Failed to load reports. Reload to retry." : "No reports"}
         </div>
       );
     }
@@ -722,7 +729,7 @@ export function AdminPanel() {
     if (feedback.length === 0) {
       return (
         <div className="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
-          No new feedback
+          {loadError ? "Failed to load feedback. Reload to retry." : "No new feedback"}
         </div>
       );
     }
@@ -772,8 +779,11 @@ export function AdminPanel() {
                 </p>
 
                 <div
-                  className={`mt-3 overflow-hidden transition-[max-height] duration-300 ${
-                    expanded ? "max-h-96" : "max-h-16"
+                  // overflow-y-auto when expanded: a 1000-char message can
+                  // exceed max-h-96 on narrow screens and its tail was
+                  // unreadable under overflow-hidden.
+                  className={`mt-3 transition-[max-height] duration-300 ${
+                    expanded ? "max-h-96 overflow-y-auto" : "max-h-16 overflow-hidden"
                   }`}
                 >
                   <p
@@ -879,6 +889,18 @@ export function AdminPanel() {
         </div>
 
         <div className="mt-4">
+          {actionError ? (
+            <div className="mb-3 flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300">
+              <span>{actionError}</span>
+              <button
+                type="button"
+                onClick={() => setActionError(null)}
+                aria-label="Dismiss error"
+              >
+                ✕
+              </button>
+            </div>
+          ) : null}
           {activeTab === "reports" ? renderReports() : renderFeedback()}
         </div>
       </div>
@@ -962,11 +984,14 @@ export function AdminPanel() {
                 disabled={
                   warningModal.loadingTarget ||
                   !warningModal.targetUser ||
-                  !warningModal.selectedReason.trim()
+                  !warningModal.selectedReason.trim() ||
+                  reportActionLoadingId === `warn-${warningModal.report.id}`
                 }
                 className="text-xs font-medium text-red-500 transition-colors hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Send Warning
+                {reportActionLoadingId === `warn-${warningModal.report.id}`
+                  ? "Sending..."
+                  : "Send Warning"}
               </button>
             </div>
           </div>
@@ -1029,10 +1054,16 @@ export function AdminPanel() {
               <button
                 type="button"
                 onClick={() => void handleConfirmBlock()}
-                disabled={blockModal.loadingTarget || !blockModal.targetUser}
+                disabled={
+                  blockModal.loadingTarget ||
+                  !blockModal.targetUser ||
+                  reportActionLoadingId === `block-${blockModal.report.id}`
+                }
                 className="text-xs font-medium text-red-500 transition-colors hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Block User
+                {reportActionLoadingId === `block-${blockModal.report.id}`
+                  ? "Blocking..."
+                  : "Block User"}
               </button>
             </div>
           </div>
@@ -1056,9 +1087,14 @@ export function AdminPanel() {
               <button
                 type="button"
                 onClick={() => void handleDeleteFeedback(feedbackDeleteTarget)}
-                className="text-xs font-medium text-red-500 transition-colors hover:text-red-600"
+                disabled={
+                  feedbackActionLoadingId === `delete-${feedbackDeleteTarget.id}`
+                }
+                className="text-xs font-medium text-red-500 transition-colors hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Delete
+                {feedbackActionLoadingId === `delete-${feedbackDeleteTarget.id}`
+                  ? "Deleting..."
+                  : "Delete"}
               </button>
             </div>
           </div>

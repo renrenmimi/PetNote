@@ -9,6 +9,10 @@ export type ReportInput = {
   reporterAvatar?: string;
   targetType: ReportTargetType;
   targetId: string;
+  // Parent post of a reported comment. Required for comment reports to be
+  // actionable: every admin resolution path locates the comment via
+  // posts/{postId}/comments/{targetId}.
+  postId?: string;
   reason: string;
   description?: string;
 };
@@ -25,6 +29,7 @@ export async function reportContent(data: ReportInput): Promise<void> {
     {
       targetType: ReportTargetType;
       targetId: string;
+      postId?: string;
       reason: string;
       description?: string;
     },
@@ -32,6 +37,9 @@ export async function reportContent(data: ReportInput): Promise<void> {
   >(functions, "reportContentCallable")({
     targetType: data.targetType,
     targetId: data.targetId,
+    ...(data.targetType === "comment" && data.postId
+      ? { postId: data.postId }
+      : {}),
     reason: data.reason,
     description: data.description,
   });

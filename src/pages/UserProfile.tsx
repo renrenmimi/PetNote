@@ -14,6 +14,7 @@ import {
 } from "../services/pets";
 import { getUserProfile, type UserProfile } from "../services/users";
 import { getSpeciesMeta } from "../utils/petHelpers";
+import { useToast } from "../contexts/ToastContext";
 
 // initialFollowing skips the per-card checkIfFollowingPet getDoc inside
 // useFollowPet, so the parent's batched lookup becomes the single source
@@ -53,6 +54,7 @@ export function UserProfile() {
   const navigate = useNavigate();
   const { userId } = useParams();
   const { user } = useAuth();
+  const { showToast } = useToast();
   const { isBlocked } = useBlockedUsers(user?.uid ?? null);
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -65,6 +67,12 @@ export function UserProfile() {
   useEffect(() => {
     let ignore = false;
     if (!userId) return;
+    // Clear the previous profile's data immediately so navigating
+    // /profile/a → /profile/b never shows A's name/avatar/pets under B's URL
+    // while B's fetch is in flight.
+    setProfile(null);
+    setPets([]);
+    setFollowingPets([]);
 
     const load = async () => {
       setLoading(true);
@@ -84,6 +92,9 @@ export function UserProfile() {
         setProfile(profileData);
         setPets(petList);
         setFollowingPets(followingResult.followingPets);
+      } catch {
+        // finally already clears loading; swallow so the failure doesn't
+        // surface as an unhandled rejection.
       } finally {
         if (!ignore) {
           setLoading(false);
@@ -179,7 +190,11 @@ export function UserProfile() {
               type="button"
               onClick={async () => {
                 if (!user) return;
-                await unblockUser(user.uid, userId);
+                try {
+                  await unblockUser(user.uid, userId);
+                } catch {
+                  showToast("Failed to unblock user.", "error");
+                }
               }}
               className="mt-4 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-all duration-200 hover:scale-105 hover:border-purple-300 hover:text-purple-600 dark:border-slate-700 dark:text-slate-200"
             >
@@ -229,16 +244,28 @@ export function UserProfile() {
                 </p>
                 <p className="text-xs text-slate-500 dark:text-slate-400">Pets</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setFollowingModalOpen(true)}
-                className="px-2 py-2"
-              >
-                <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                  {profile?.followingPetsCount ?? followingPets.length}
-                </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Following</p>
-              </button>
+              {user?.uid === userId ? (
+                <button
+                  type="button"
+                  onClick={() => setFollowingModalOpen(true)}
+                  className="px-2 py-2"
+                >
+                  <p className="text-lg font-semibold text-slate-900 dark:text-white">
+                    {profile?.followingPetsCount ?? followingPets.length}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Following</p>
+                </button>
+              ) : (
+                // Other users' followingPets subcollection is owner-only per
+                // Firestore rules — the modal would always be empty, so the
+                // stat is display-only here.
+                <div className="px-2 py-2">
+                  <p className="text-lg font-semibold text-slate-900 dark:text-white">
+                    {profile?.followingPetsCount ?? 0}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Following</p>
+                </div>
+              )}
             </div>
 
             <p className="text-center text-xs text-slate-400 dark:text-slate-500">

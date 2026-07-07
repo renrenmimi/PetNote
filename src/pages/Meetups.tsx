@@ -145,13 +145,31 @@ export function Meetups() {
             return true;
           });
         }
-        // Update stale meetup statuses (e.g. upcoming → completed)
+        // Update stale meetup statuses (e.g. upcoming → completed). Compute
+        // end-time locally from the data we already fetched and only
+        // round-trip for meetups that have actually ended — the previous
+        // unconditional checkAndUpdateMeetupStatus re-read every upcoming
+        // meetup doc (N+1 per filter switch).
+        const now = Date.now();
         const updated = await Promise.all(
-          data.map((m) =>
-            m.status === "upcoming"
-              ? checkAndUpdateMeetupStatus(m.id).then((result) => result ?? m)
-              : Promise.resolve(m)
-          )
+          data.map((m) => {
+            if (m.status !== "upcoming") return Promise.resolve(m);
+            const rawDate: unknown = m.date;
+            const dateValue =
+              rawDate instanceof Date
+                ? rawDate
+                : typeof rawDate === "object" &&
+                    rawDate !== null &&
+                    "toDate" in rawDate &&
+                    typeof (rawDate as { toDate: () => Date }).toDate ===
+                      "function"
+                  ? (rawDate as { toDate: () => Date }).toDate()
+                  : null;
+            if (!dateValue) return Promise.resolve(m);
+            const endTime = dateValue.getTime() + (m.duration || 0) * 60 * 1000;
+            if (now < endTime) return Promise.resolve(m);
+            return checkAndUpdateMeetupStatus(m.id).then((result) => result ?? m);
+          })
         );
         if (!ignore) {
           setMeetups(updated);
@@ -258,7 +276,13 @@ export function Meetups() {
         ) : meetups.length === 0 ? (
           <EmptyState
             icon="📍"
-            title="No meetups nearby"
+            title={
+              activeFilter === "mine"
+                ? "No meetups of yours yet"
+                : activeFilter === "week"
+                  ? "No meetups this week"
+                  : "No meetups nearby"
+            }
             description="Be the first to organize one!"
             actionText="Create Meetup"
             onAction={() => navigate("/create-meetup")}

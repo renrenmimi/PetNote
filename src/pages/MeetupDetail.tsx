@@ -138,11 +138,18 @@ export function MeetupDetail() {
     if (!meetupId) return;
     const load = async () => {
       setLoading(true);
-      const updated = await checkAndUpdateMeetupStatus(meetupId);
-      const data = updated ?? (await getMeetupById(meetupId));
-      if (!ignore) {
-        setMeetup(data);
-        setLoading(false);
+      try {
+        const updated = await checkAndUpdateMeetupStatus(meetupId);
+        const data = updated ?? (await getMeetupById(meetupId));
+        if (!ignore) {
+          setMeetup(data);
+        }
+      } catch (error) {
+        // Without this catch a transient read failure left the page on
+        // "Loading meetup..." forever (same fix as EditMeetup/LocationDetail).
+        console.error("Failed to load meetup:", error);
+      } finally {
+        if (!ignore) setLoading(false);
       }
     };
     void load();
@@ -156,10 +163,15 @@ export function MeetupDetail() {
     if (!meetupId) return;
     const loadParticipants = async () => {
       setParticipantsLoading(true);
-      const data = await getParticipants(meetupId);
-      if (!ignore) {
-        setParticipants(data);
-        setParticipantsLoading(false);
+      try {
+        const data = await getParticipants(meetupId);
+        if (!ignore) {
+          setParticipants(data);
+        }
+      } catch (error) {
+        console.error("Failed to load participants:", error);
+      } finally {
+        if (!ignore) setParticipantsLoading(false);
       }
     };
     void loadParticipants();
@@ -231,24 +243,30 @@ export function MeetupDetail() {
       return;
     }
     const load = async () => {
+      const matchesType = (pet: Pet) => {
+        if (meetup.requirements.petType === "dog") return pet.species === "dog";
+        if (meetup.requirements.petType === "cat") return pet.species === "cat";
+        if (meetup.requirements.petType === "any_dog") return pet.species === "dog";
+        if (meetup.requirements.petType === "any_cat") return pet.species === "cat";
+        if (meetup.requirements.petType === "other") {
+          return pet.species !== "dog" && pet.species !== "cat";
+        }
+        return true;
+      };
+      // Pass a real owned-pet species (preferring one that satisfies the
+      // type requirement). Hardcoding `undefined` made every
+      // "must have a pet profile" meetup unjoinable for everyone —
+      // checkRequirements flags mustHavePetProfile whenever species is
+      // missing, even for users with several pets.
+      const representativePet = pets.find(matchesType) ?? pets[0];
       const base = await checkRequirements(
         user.uid,
-        undefined,
+        representativePet?.species,
         meetup.requirements,
         meetup
       );
       const hasMatchingPet =
-        meetup.requirements.petType === "any" ||
-        pets.some((pet) => {
-          if (meetup.requirements.petType === "dog") return pet.species === "dog";
-          if (meetup.requirements.petType === "cat") return pet.species === "cat";
-          if (meetup.requirements.petType === "any_dog") return pet.species === "dog";
-          if (meetup.requirements.petType === "any_cat") return pet.species === "cat";
-          if (meetup.requirements.petType === "other") {
-            return pet.species !== "dog" && pet.species !== "cat";
-          }
-          return true;
-        });
+        meetup.requirements.petType === "any" || pets.some(matchesType);
 
       const reasons = [...base.reasons];
       if (!hasMatchingPet && pets.length > 0) {
@@ -269,8 +287,16 @@ export function MeetupDetail() {
     let ignore = false;
     if (!meetup) return;
     const loadLocation = async () => {
-      // Private meetups don't have a public locationId — skip location loading
+      // Private meetups don't have a public locationId — clear any state a
+      // previously viewed meetup left behind (stale rating link / modal
+      // target) before bailing out.
       if (!meetup.locationId) {
+        if (!ignore) {
+          setResolvedLocationId(null);
+          setLocationInfo(null);
+          setHasReviewed(false);
+          setUserReviewRating(null);
+        }
         return;
       }
       if (!ignore) {
@@ -713,7 +739,11 @@ export function MeetupDetail() {
                   </p>
                 </div>
               ))}
-              {maxPets > 0 && meetup.participantCount < maxPets && !isJoined ? (
+              {maxPets > 0 &&
+              meetup.participantCount < maxPets &&
+              !isJoined &&
+              !isCancelled &&
+              !isCompleted ? (
                 <button
                   type="button"
                   onClick={() => {
@@ -845,7 +875,7 @@ export function MeetupDetail() {
 
       {petPickerOpen ? (
         <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 px-4 pb-6">
-          <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow-xl dark:bg-slate-800">
+          <div className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-xl dark:bg-slate-800">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold text-slate-900 dark:text-white">
                 Which pet are you bringing?
@@ -894,7 +924,7 @@ export function MeetupDetail() {
                       onClick={() => setSelectedPetId(pet.id)}
                       className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2 text-left transition-all duration-200 ${
                         selectedPetId === pet.id
-                          ? "border-purple-400 bg-purple-50"
+                          ? "border-purple-400 bg-purple-50 dark:border-purple-400 dark:bg-purple-500/10"
                           : "border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700/40"
                       } ${
                         !petMatchesType
