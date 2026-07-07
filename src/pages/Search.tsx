@@ -209,8 +209,13 @@ export function Search() {
   };
 
   const handleTagClick = (tag: string) => {
+    const nextQuery = `#${tag}`;
+    // Re-clicking the tag that's already being searched must be a no-op:
+    // clearing the results without a query change leaves the search effect
+    // (keyed on normalizedQuery) dormant, stranding the page on "No results".
+    if (normalizedQuery === nextQuery) return;
     setSearchResults(null);
-    setQuery(`#${tag}`);
+    setQuery(nextQuery);
     setSearchParams({ tag });
   };
 
@@ -405,6 +410,10 @@ export function Search() {
     petResults.length > 0 ||
     tagResults.length > 0 ||
     filteredSearchPosts.length > 0;
+  // "No results" is only meaningful after a search actually completed —
+  // searchResults is null while the 300ms debounce hasn't fired yet, and
+  // showing the empty state in that window flashes a false negative.
+  const searchCompleted = searchResults !== null;
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20 dark:bg-slate-900">
@@ -667,7 +676,7 @@ export function Search() {
               </div>
             ) : null}
 
-            {!searching && !hasAnyResult ? (
+            {!searching && searchCompleted && !hasAnyResult ? (
               <EmptyState
                 icon="🔍"
                 title={`No results for "${normalizedQuery}"`}
