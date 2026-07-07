@@ -75,7 +75,10 @@ export function PetProfile() {
         const [petPosts, family, totalLikes, petCheckins] = await Promise.all([
           getPostsByPet(petId),
           getPetFamily(petId),
-          getPetTotalLikes(petId),
+          // Decorative stat — an aggregate failure (e.g. index still
+          // building) must not take the whole profile down to "Pet not
+          // found".
+          getPetTotalLikes(petId).catch(() => 0),
           getCheckinsByPet(petId, { limitCount: 100 }),
         ]);
 
