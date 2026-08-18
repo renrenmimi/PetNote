@@ -144,4 +144,5 @@ userDeletionTombstones/{uid}
 
 ---
 
-© 2026 Weiren Feng. All rights reserved. This code is provided for portfolio review only; no license is granted for reuse, modification, or distribution.
+© 2026 Weiren Feng. All rights reserved. Published for reading and portfolio purposes; not
+licensed for reuse, modification, or redistribution.
