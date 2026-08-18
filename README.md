@@ -4,6 +4,10 @@ A pet-centric social web app: feeds, pet profiles with shared family access, pet
 
 **Live demo:** https://petnote.vercel.app
 
+![The feed — posts, pets, and the check-in tabs](docs/screenshot.jpg)
+
+*The feed — posts, pets, and the check-in tabs*
+
 ## Features
 
 - Social feed with image/video posts, comments and replies, likes, bookmarks, and hashtag discovery
