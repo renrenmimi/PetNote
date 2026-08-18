@@ -60,7 +60,7 @@ identity checks)"]
 
 62 Cloud Functions across 11 domain modules ([functions/src](functions/src)): posts, comments, pets, family invitations, follows, places/reviews/check-ins, meetups, notifications, moderation, media, and account lifecycle.
 
-## Engineering highlights
+## Implementation notes
 
 ### Idempotent account deletion with a tombstone guard
 
@@ -68,9 +68,9 @@ Deleting an account cascades across a dozen collections (posts, comments, likes,
 
 ### Security rules that survive missing claims
 
-Roles are Firebase custom claims (`admin`, `banned`) with a Firestore `admin/state` fallback so a ban applies even before the token refreshes ([firestore.rules](firestore.rules)). A subtle bug class was found and fixed here: `request.auth.token.banned != true` denies tokens that simply *lack* the claim — i.e. every normal user — so the guards explicitly tolerate absent claims (`!('banned' in request.auth.token) || …`). The writes that remain client-side are schema-locked with field whitelists (`keys().hasOnly()` on create, `diff().affectedKeys()` on update), branched per document where schemas differ (e.g. `settings/preferences` vs `settings/location`). Callables layer on ban checks, deletion-tombstone checks, and Firestore-backed rate limiting ([functions/src/shared.ts](functions/src/shared.ts)).
+Roles are Firebase custom claims (`admin`, `banned`) with a Firestore `admin/state` fallback so a ban applies even before the token refreshes ([firestore.rules](firestore.rules)). One bug class here: `request.auth.token.banned != true` denies tokens that simply *lack* the claim — i.e. every normal user — so the guards explicitly tolerate absent claims (`!('banned' in request.auth.token) || …`). The writes that remain client-side are schema-locked with field whitelists (`keys().hasOnly()` on create, `diff().affectedKeys()` on update), branched per document where schemas differ (e.g. `settings/preferences` vs `settings/location`). Callables layer on ban checks, deletion-tombstone checks, and Firestore-backed rate limiting ([functions/src/shared.ts](functions/src/shared.ts)).
 
-### Drift-free denormalized counters
+### Denormalized counters
 
 Follower, post, and interaction counts are denormalized for cheap reads and maintained by triggers ([functions/src/notifications.ts](functions/src/notifications.ts), [posts.ts](functions/src/posts.ts), [places.ts](functions/src/places.ts)). Each increment stamps a `counted: true` marker on the source document so the matching delete trigger only decrements follows that were actually counted — a follow that was auto-cleaned before being counted can never drive a count negative. Decrements run in transactions and clamp at zero, and recompute callables (`recomputePetPostCount`, `recomputePostInteractionCounts`, `recomputeLocationReviewAggregates`) exist as repair paths.
 
