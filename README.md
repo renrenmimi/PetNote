@@ -1,5 +1,7 @@
 # PetNote
 
+[![ci](https://github.com/renrenmimi/PetNote/actions/workflows/ci.yml/badge.svg)](https://github.com/renrenmimi/PetNote/actions/workflows/ci.yml)
+
 A pet-focused social web application with posts, shared pet profiles, place reviews and check-ins, meetups, notifications, and moderation tools.
 
 **Live demo:** https://petnote.vercel.app
@@ -19,13 +21,13 @@ A pet-focused social web application with posts, shared pet profiles, place revi
 
 The React client reads through Firestore security rules. Most business writes go through callable Cloud Functions, where validation, identity checks, transactions, and rate limits are applied. Firestore triggers maintain derived counters and notification fan-out.
 
-| Layer | Technology |
-| --- | --- |
-| Frontend | React 19, TypeScript, Vite, Tailwind CSS, React Router |
-| Backend | Firebase Auth, Firestore, Cloud Functions v2 |
-| Media | Cloudinary signed uploads |
-| Geocoding | Geoapify through Cloud Functions |
-| Quality | Vitest, ESLint, strict TypeScript |
+| Layer     | Technology                                             |
+| --------- | ------------------------------------------------------ |
+| Frontend  | React 19, TypeScript, Vite, Tailwind CSS, React Router |
+| Backend   | Firebase Auth, Firestore, Cloud Functions v2           |
+| Media     | Cloudinary signed uploads                              |
+| Geocoding | Geoapify through Cloud Functions                       |
+| Quality   | Vitest, ESLint, strict TypeScript                      |
 
 ## Security notes
 
@@ -51,4 +53,3 @@ npm run build
 ```
 
 Backend secrets are stored with Firebase Secret Manager and are not included in the client bundle.
-
