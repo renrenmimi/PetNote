@@ -115,7 +115,10 @@ export function PrivacyPolicy() {
               • Your data is stored on Firebase (Google Cloud) servers in the
               United States.
             </li>
-            <li>• Passwords are encrypted and never stored in plain text.</li>
+            <li>
+              • Passwords are handled entirely by Firebase Authentication.
+              PetNote never sees or stores your password.
+            </li>
             <li>• We use Firestore security rules to protect your data.</li>
             <li>• We use HTTPS for all data transmission.</li>
           </ul>
