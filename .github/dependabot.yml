@@ -1,0 +1,39 @@
+# Dependabot alerts are enabled on the repository, which reports known
+# vulnerabilities but never opens a PR for anything else. These weekly version
+# updates are the other half: they keep both npm trees moving so a fix is a
+# small bump rather than a major upgrade under launch pressure.
+#
+# Both package-lock.json files are scanned separately — the frontend and the
+# Cloud Functions have independent dependency trees.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # One PR per week for routine bumps; security fixes still arrive
+      # separately and immediately via Dependabot security updates.
+      dev-dependencies:
+        dependency-type: development
+      production-dependencies:
+        dependency-type: production
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /functions
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      dev-dependencies:
+        dependency-type: development
+      production-dependencies:
+        dependency-type: production
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
