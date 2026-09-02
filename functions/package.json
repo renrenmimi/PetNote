@@ -6,7 +6,10 @@
     "lint": "eslint .",
     "migrate:admin-state": "node scripts/migrate-admin-state.js",
     "serve": "npm run build && firebase emulators:start --only functions",
-    "deploy": "firebase deploy --only functions"
+    "deploy": "firebase deploy --only functions",
+    "test": "vitest run",
+    "test:emulator": "firebase emulators:exec --only firestore --project petnote-test \"npm test\"",
+    "typecheck:test": "tsc -p tsconfig.test.json"
   },
   "engines": {
     "node": "22"
@@ -28,7 +31,8 @@
     "eslint": "^9.39.1",
     "globals": "^16.5.0",
     "typescript": "^5.9.0",
-    "typescript-eslint": "^8.46.4"
+    "typescript-eslint": "^8.46.4",
+    "vitest": "^3.2.7"
   },
   "private": true
 }

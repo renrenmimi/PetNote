@@ -11,6 +11,7 @@ import {
   RATE_LIMITS,
   requestData,
   requiredDocId,
+  runEventOnce,
   stripUndefined,
   TRUSTED_MEDIA_URL_HOSTS,
   VALIDATION_LIMITS,
@@ -37,25 +38,24 @@ function getPostPetId(data: admin.firestore.DocumentData | undefined): string | 
     : null;
 }
 
-async function applyPetPostCountDelta(
-  petId: string,
+// Applies a pet's post-count change to an already-read snapshot. Firestore
+// forbids reads after writes inside a transaction, so the caller reads every
+// pet up front and only then stages the updates; doing the read inside this
+// helper broke as soon as a post moved between two pets.
+//
+// The clamp keeps the count off negative numbers. It never made the change
+// idempotent, which is why the caller wraps the whole thing in runEventOnce.
+function stagePetPostCountDelta(
+  t: admin.firestore.Transaction,
+  petSnap: admin.firestore.DocumentSnapshot,
   delta: number
-): Promise<void> {
-  if (!petId || delta === 0) return;
-  const petRef = db.doc(`pets/${petId}`);
-  try {
-    await db.runTransaction(async (transaction) => {
-      const petSnap = await transaction.get(petRef);
-      if (!petSnap.exists) return;
-      const current = petSnap.data()?.postCount;
-      const currentCount = typeof current === "number" ? current : 0;
-      transaction.update(petRef, {
-        postCount: Math.max(0, currentCount + delta),
-      });
-    });
-  } catch (error) {
-    console.error("Failed to update pet post count", { petId, delta, error });
-  }
+): void {
+  if (delta === 0 || !petSnap.exists) return;
+  const current = petSnap.data()?.postCount;
+  const currentCount = typeof current === "number" ? current : 0;
+  t.update(petSnap.ref, {
+    postCount: Math.max(0, currentCount + delta),
+  });
 }
 
 export const onPostWritten = onDocumentWritten("posts/{postId}", async (event) => {
@@ -68,52 +68,6 @@ export const onPostWritten = onDocumentWritten("posts/{postId}", async (event) =
   const added = newTags.filter((t) => !oldTags.includes(t));
   const removed = oldTags.filter((t) => !newTags.includes(t));
 
-  const tasks: Array<Promise<unknown>> = [];
-
-  if (added.length > 0) {
-    const batch = db.batch();
-    for (const tag of added) {
-      const tagRef = db.doc(`hashtags/${tag}`);
-      batch.set(tagRef, {
-        name: tag,
-        postCount: admin.firestore.FieldValue.increment(1),
-        lastUsed: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true });
-    }
-    tasks.push(batch.commit());
-  }
-  // Decrements run as clamped transactions: the old merge-set with
-  // increment(-1) resurrected already-deleted tag docs as nameless
-  // {postCount: -1} stubs and let counts drift negative on double delivery.
-  for (const tag of removed) {
-    const tagRef = db.doc(`hashtags/${tag}`);
-    tasks.push(
-      db
-        .runTransaction(async (t) => {
-          const snap = await t.get(tagRef);
-          if (!snap.exists) return;
-          const current =
-            typeof snap.data()?.postCount === "number"
-              ? (snap.data() as { postCount: number }).postCount
-              : 0;
-          const next = current - 1;
-          if (next <= 0) {
-            // Drop the doc entirely so trending/search never surface a
-            // zero-post tag.
-            t.delete(tagRef);
-          } else {
-            t.update(tagRef, {
-              postCount: next,
-              lastUsed: admin.firestore.FieldValue.serverTimestamp(),
-            });
-          }
-        })
-        .catch((error) => {
-          console.error("Failed to decrement hashtag count", { tag, error });
-        })
-    );
-  }
-
   const petDeltas = new Map<string, number>();
   const previousPetId = getPostPetId(before);
   const nextPetId = getPostPetId(after);
@@ -123,13 +77,64 @@ export const onPostWritten = onDocumentWritten("posts/{postId}", async (event) =
   if (nextPetId) {
     petDeltas.set(nextPetId, (petDeltas.get(nextPetId) ?? 0) + 1);
   }
-  petDeltas.forEach((delta, petId) => {
-    if (delta !== 0) {
-      tasks.push(applyPetPostCountDelta(petId, delta));
-    }
-  });
 
-  await Promise.all(tasks);
+  if (added.length === 0 && removed.length === 0 && petDeltas.size === 0) return;
+
+  // Every count below is a delta against the previous state, so a redelivered
+  // write applies the same delta twice: a tag gains a phantom post, a pet's
+  // postCount drifts up. They all move together in one transaction alongside
+  // the processed-event marker, so a replay is a no-op rather than a partial
+  // reapplication. Bounded by VALIDATION_LIMITS.maxTags (20) added plus 20
+  // removed plus at most two pets, well inside the transaction limit.
+  await runEventOnce(event.id, async (t) => {
+    // Every read first — Firestore rejects a read that follows a write in the
+    // same transaction, and a post moving from one pet to another needs two.
+    const petIds = [...petDeltas.keys()].filter((id) => petDeltas.get(id) !== 0);
+    const [removedSnaps, petSnaps] = await Promise.all([
+      Promise.all(removed.map((tag) => t.get(db.doc(`hashtags/${tag}`)))),
+      Promise.all(petIds.map((petId) => t.get(db.doc(`pets/${petId}`)))),
+    ]);
+
+    petSnaps.forEach((petSnap, i) => {
+      stagePetPostCountDelta(t, petSnap, petDeltas.get(petIds[i]) ?? 0);
+    });
+
+    for (const tag of added) {
+      t.set(
+        db.doc(`hashtags/${tag}`),
+        {
+          name: tag,
+          postCount: admin.firestore.FieldValue.increment(1),
+          lastUsed: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+
+    // Decrements stay clamped reads rather than increment(-1): the old
+    // merge-set with increment(-1) resurrected already-deleted tag docs as
+    // nameless {postCount: -1} stubs.
+    removedSnaps.forEach((snap) => {
+      if (!snap.exists) return;
+      const current =
+        typeof snap.data()?.postCount === "number"
+          ? (snap.data() as { postCount: number }).postCount
+          : 0;
+      const next = current - 1;
+      if (next <= 0) {
+        // Drop the doc entirely so trending/search never surface a
+        // zero-post tag.
+        t.delete(snap.ref);
+      } else {
+        t.update(snap.ref, {
+          postCount: next,
+          lastUsed: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+    });
+
+    return true;
+  });
 });
 
 export const createPostCallable = onCall(async (request) => {
@@ -444,6 +449,10 @@ export const createCommentCallable = onCall(async (request) => {
     authorAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
     text,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    // onCommentCreated flips this to true in the same transaction as the
+    // commentCount increment. Until then the comment is not counted, so a
+    // delete that overtakes the create knows to leave the count alone.
+    counted: false,
     ...(replyTo ? { replyTo } : {}),
   });
 

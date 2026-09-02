@@ -221,10 +221,18 @@ service cloud.firestore {
           request.auth.uid == likeId &&
           isNotBanned() &&
           isNotDeleting() &&
-          request.resource.data.keys().hasOnly(['userId', 'postId', 'createdAt']) &&
+          request.resource.data.keys().hasOnly(['userId', 'postId', 'createdAt', 'counted']) &&
           request.resource.data.userId == request.auth.uid &&
           request.resource.data.postId == postId &&
           request.resource.data.createdAt is timestamp &&
+          // onLikeCreated flips `counted` to true with the likeCount
+          // increment. A client that could write it true and then unlike
+          // would make onLikeDeleted subtract a like that was never added,
+          // driving another user's likeCount down on repeat. Absent is
+          // allowed so clients running cached JS from before this shipped
+          // keep working; absent is read as a pre-existing like.
+          (!('counted' in request.resource.data) ||
+            request.resource.data.counted == false) &&
           exists(/databases/$(database)/documents/posts/$(postId));
         // Allow delete during deletion so cleanup paths work even when the
         // user is being torn down.
@@ -300,6 +308,18 @@ service cloud.firestore {
     // deleteUserAccount; profile create/update callables check them to block
     // resurrection of a deleted account. Never client-readable or writable.
     match /userDeletionTombstones/{docId} {
+      allow read: if false;
+      allow write: if false;
+    }
+
+    // Backend-only ledger of trigger events that have already been applied.
+    // Firestore delivers events at least once, so counter triggers write the
+    // event id here inside the same transaction as the count; a redelivered
+    // event finds the marker and does nothing. A client that could write here
+    // could suppress a counter update, and one that could read it could
+    // enumerate activity, so both are closed. Requires a TTL policy on
+    // expiresAt — without one this collection grows forever.
+    match /processedEvents/{eventId} {
       allow read: if false;
       allow write: if false;
     }

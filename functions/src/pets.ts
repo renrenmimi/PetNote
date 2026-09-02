@@ -437,6 +437,10 @@ export const followPetCallable = onCall(async (request) => {
           ? petData.avatarUrl
           : getDefaultAvatar(petId),
       followedAt: admin.firestore.FieldValue.serverTimestamp(),
+      // onFollowingPetCreated flips this to true in the same transaction as
+      // the followerCount / followingPetsCount increments, so an unfollow that
+      // overtakes the follow knows there is nothing to subtract.
+      counted: false,
     });
   });
 

@@ -14,8 +14,10 @@ import {
   requestData,
   requiredDocId,
   requiredTrimmedString,
+  runEventOnce,
   TRUSTED_AVATAR_URL_HOSTS,
   VALIDATION_LIMITS,
+  wasCountedAtCreate,
 } from "./shared";
 
 export type ServerNotificationType =
@@ -225,10 +227,16 @@ export const onFollowingPetCreated = onDocumentCreated(
     // on the trigger's own doc, which RESURRECTED a follow that was deleted
     // before the trigger ran — re-firing onDocumentCreated, double-counting
     // followers, and leaving a ghost follow the user couldn't see.
-    const counted = await db.runTransaction(async (t) => {
+    // runEventOnce wraps the transaction: re-reading the follow doc stops a
+    // delete that beat this trigger from being counted, but on its own it does
+    // NOT stop a redelivery of the same create event — the follow doc still
+    // exists the second time, so the increments ran again. The ledger closes
+    // that half.
+    const counted = await runEventOnce(event.id, async (t) => {
       if (followRef) {
         const followSnap = await t.get(followRef);
         if (!followSnap.exists) return false;
+        if (followSnap.data()?.counted === true) return false;
       }
       const [userTxnSnap, petTxnSnap] = await Promise.all([
         t.get(userRef),
@@ -295,36 +303,40 @@ export const onFollowingPetDeleted = onDocumentDeleted(
     const followerMirrorRef = db.doc(`pets/${petId}/followers/${userId}`);
 
     // Always remove the follower mirror. Only adjust counts if this follow was
-    // actually counted: onFollowingPetCreated stamps counted:true with the
-    // increments and counted:false on the never-counted path. Legacy follows
-    // (no field) are treated as counted. This prevents negative drift from a
-    // follow that was auto-cleaned before it was ever counted.
-    const wasCounted = event.data?.data()?.counted !== false;
+    // actually counted — followPetCallable writes counted:false and
+    // onFollowingPetCreated flips it to true with the increments. See
+    // wasCountedAtCreate for what an absent field means.
+    const wasCounted = wasCountedAtCreate(event.data?.data());
 
     await followerMirrorRef.delete().catch(() => undefined);
     if (!wasCounted) return;
 
-    // Transactional clamped decrements so counts can never go negative.
-    await Promise.all([
-      db.runTransaction(async (t) => {
-        const snap = await t.get(userRef);
-        if (!snap.exists) return;
+    // One transaction for both decrements, wrapped in runEventOnce. These used
+    // to be two independent clamped transactions: clamping stops the count
+    // going negative but does not stop a redelivered delete subtracting twice
+    // from a count that had room to spare, and splitting them meant a
+    // redelivery could apply one side and not the other.
+    await runEventOnce(event.id, async (t) => {
+      const userSnap = await t.get(userRef);
+      const petSnap = await t.get(petRef);
+      if (!userSnap.exists && !petSnap.exists) return false;
+
+      if (userSnap.exists) {
         const prev =
-          typeof snap.data()?.followingPetsCount === "number"
-            ? (snap.data() as { followingPetsCount: number }).followingPetsCount
+          typeof userSnap.data()?.followingPetsCount === "number"
+            ? (userSnap.data() as { followingPetsCount: number }).followingPetsCount
             : 0;
         t.update(userRef, { followingPetsCount: Math.max(0, prev - 1) });
-      }),
-      db.runTransaction(async (t) => {
-        const snap = await t.get(petRef);
-        if (!snap.exists) return;
+      }
+      if (petSnap.exists) {
         const prev =
-          typeof snap.data()?.followerCount === "number"
-            ? (snap.data() as { followerCount: number }).followerCount
+          typeof petSnap.data()?.followerCount === "number"
+            ? (petSnap.data() as { followerCount: number }).followerCount
             : 0;
         t.update(petRef, { followerCount: Math.max(0, prev - 1) });
-      }),
-    ]);
+      }
+      return true;
+    });
   }
 );
 
@@ -333,10 +345,27 @@ export const onLikeCreated = onDocumentCreated(
   async (event) => {
     const { postId, likeId } = event.params;
     const postRef = db.doc(`posts/${postId}`);
+    const likeRef = event.data?.ref ?? db.doc(`posts/${postId}/likes/${likeId}`);
     const postSnap = await postRef.get();
     if (!postSnap.exists) return;
 
-    await postRef.update({ likeCount: admin.firestore.FieldValue.increment(1) });
+    // The count runs inside runEventOnce so a redelivered event cannot apply
+    // it twice, and re-reads the like doc so a like that was already deleted
+    // is never counted. update() — never set() — on the like doc, so a
+    // concurrent delete aborts the transaction rather than resurrecting the
+    // like, which is the failure onFollowingPetCreated records above.
+    await runEventOnce(event.id, async (t) => {
+      const likeSnap = await t.get(likeRef);
+      const postTxnSnap = await t.get(postRef);
+      if (!likeSnap.exists || !postTxnSnap.exists) return false;
+      // Belt and braces for a redelivery that arrives after the ledger entry
+      // has aged out: the stamp on the like doc outlives the ledger.
+      if (likeSnap.data()?.counted === true) return false;
+
+      t.update(postRef, { likeCount: admin.firestore.FieldValue.increment(1) });
+      t.update(likeRef, { counted: true });
+      return true;
+    });
 
     const postData = postSnap.data() as {
       authorId?: string;
@@ -395,10 +424,19 @@ export const onLikeDeleted = onDocumentDeleted(
   "posts/{postId}/likes/{likeId}",
   async (event) => {
     const postRef = db.doc(`posts/${event.params.postId}`);
-    const postSnap = await postRef.get();
-    if (!postSnap.exists) return;
-    await postRef.update({
-      likeCount: admin.firestore.FieldValue.increment(-1),
+    // Only undo a like that onLikeCreated actually counted. Firestore may
+    // deliver this delete before the create it undoes; decrementing anyway
+    // drives likeCount below the truth, and clamping at zero hides that
+    // instead of fixing it.
+    if (!wasCountedAtCreate(event.data?.data())) return;
+
+    await runEventOnce(event.id, async (t) => {
+      const postTxnSnap = await t.get(postRef);
+      if (!postTxnSnap.exists) return false;
+      t.update(postRef, {
+        likeCount: admin.firestore.FieldValue.increment(-1),
+      });
+      return true;
     });
   }
 );
@@ -425,7 +463,23 @@ export const onCommentCreated = onDocumentCreated(
     }
 
     const postRef = db.doc(`posts/${postId}`);
-    await postRef.update({ commentCount: admin.firestore.FieldValue.increment(1) });
+    const commentDocRef = event.data?.ref ?? db.doc(`posts/${postId}/comments/${commentId}`);
+
+    // Same shape as onLikeCreated: dedupe on the event id, re-read the source
+    // document, and stamp it so onCommentDeleted knows this comment was
+    // counted.
+    await runEventOnce(event.id, async (t) => {
+      const commentSnap = await t.get(commentDocRef);
+      const postTxnSnap = await t.get(postRef);
+      if (!commentSnap.exists || !postTxnSnap.exists) return false;
+      if (commentSnap.data()?.counted === true) return false;
+
+      t.update(postRef, {
+        commentCount: admin.firestore.FieldValue.increment(1),
+      });
+      t.update(commentDocRef, { counted: true });
+      return true;
+    });
 
     const commentData = event.data?.data() as {
       authorId?: string;
@@ -511,10 +565,15 @@ export const onCommentDeleted = onDocumentDeleted(
   "posts/{postId}/comments/{commentId}",
   async (event) => {
     const postRef = db.doc(`posts/${event.params.postId}`);
-    const postSnap = await postRef.get();
-    if (!postSnap.exists) return;
-    await postRef.update({
-      commentCount: admin.firestore.FieldValue.increment(-1),
+    if (!wasCountedAtCreate(event.data?.data())) return;
+
+    await runEventOnce(event.id, async (t) => {
+      const postTxnSnap = await t.get(postRef);
+      if (!postTxnSnap.exists) return false;
+      t.update(postRef, {
+        commentCount: admin.firestore.FieldValue.increment(-1),
+      });
+      return true;
     });
   }
 );

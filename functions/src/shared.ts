@@ -243,6 +243,104 @@ export async function batchChunked(
   }
 }
 
+// How long a processed-event marker is kept. Firestore retries a failed
+// trigger for up to 7 days, so the ledger has to outlive that window or a very
+// late redelivery slips through and double-counts. 30 days leaves room for TTL
+// deletion to lag, which it is allowed to do by up to 24 hours.
+export const PROCESSED_EVENT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+
+/**
+ * Firestore document ids may not contain "/" and may not be "." or "..".
+ * CloudEvent ids are normally safe, but the ledger key must never be able to
+ * escape the collection it is written to.
+ */
+function eventLedgerId(eventId: string): string {
+  const safe = eventId.replace(/[/.]/g, "_").slice(0, 400);
+  return safe.length > 0 ? safe : "unknown";
+}
+
+/**
+ * Runs `body` at most once per trigger event.
+ *
+ * Firestore delivers events at least once and out of order, so a handler that
+ * blind-increments a counter double-counts on redelivery. `body` stages its
+ * writes on the transaction it is handed, and the event id is written into
+ * processedEvents/{eventId} in that same transaction — so the count and the
+ * record of having counted either both land or neither does. A redelivery
+ * finds the marker and does nothing.
+ *
+ * `body` returns whether it actually applied anything. When it declines (the
+ * source document is gone, the target document is gone, the event was already
+ * accounted for) nothing is recorded, so a later redelivery is free to try
+ * again and reach the same conclusion.
+ *
+ * The ledger is read before `body` runs because Firestore forbids reads after
+ * writes inside a transaction and `body` writes.
+ *
+ * Requires a TTL policy on processedEvents.expiresAt, or the collection grows
+ * without bound.
+ */
+export async function runEventOnce(
+  eventId: string | undefined,
+  body: (t: admin.firestore.Transaction) => Promise<boolean>
+): Promise<boolean> {
+  if (!eventId) {
+    // v2 triggers always carry an id, so this is a should-not-happen path.
+    // Applying the effect beats dropping it: at-least-once is the contract we
+    // are already living with, never-once is a new failure.
+    console.warn("runEventOnce: no event id, deduplication skipped");
+    return db.runTransaction((t) => body(t));
+  }
+
+  const ledgerRef = db.doc(`processedEvents/${eventLedgerId(eventId)}`);
+  return db.runTransaction(async (t) => {
+    const seen = await t.get(ledgerRef);
+    if (seen.exists) return false;
+
+    const applied = await body(t);
+    if (!applied) return false;
+
+    t.set(ledgerRef, {
+      eventId,
+      processedAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: admin.firestore.Timestamp.fromMillis(
+        Date.now() + PROCESSED_EVENT_RETENTION_MS
+      ),
+    });
+    return true;
+  });
+}
+
+/**
+ * Whether a deleted document's count had already been applied, read from the
+ * snapshot the delete event carries.
+ *
+ * A delete must not undo a count that was never applied — Firestore can
+ * deliver a delete before the create it undoes, and subtracting anyway drives
+ * the aggregate below the truth. Clamping at zero hides that rather than
+ * fixing it. So every document that feeds a counter is written with
+ * `counted: false` and flipped to `true` by the counting transaction, giving
+ * three unambiguous states:
+ *
+ *   true      the count was applied; undo it
+ *   false     the document exists but its create trigger has not counted it
+ *             yet, so there is nothing to undo
+ *   absent    written before this scheme shipped, by code that counted
+ *             unconditionally, so it was counted; undo it
+ *
+ * The absent case is what makes this safe to deploy without a backfill, and
+ * why old clients that do not send the field keep working. There is no date
+ * involved and nothing to reconfigure at deploy time.
+ */
+export function wasCountedAtCreate(
+  data: admin.firestore.DocumentData | undefined
+): boolean {
+  if (!data) return false;
+  if (typeof data.counted === "boolean") return data.counted;
+  return true;
+}
+
 export async function assertRateLimit(
   callerUid: string,
   action: string,
@@ -410,84 +508,92 @@ function readTagCounts(value: unknown): Record<string, number> {
 // Apply a per-review delta to location aggregation counters in a single
 // transaction. Avoids re-reading every review on the location on every
 // write, which previously scaled O(totalReviews) per create/delete.
+/**
+ * Stages one review's contribution to a location's aggregates on a caller-
+ * supplied transaction. The transaction belongs to the caller so the review
+ * counter and the processed-event marker commit together — a delta that lands
+ * without its marker would be reapplied on the next redelivery.
+ *
+ * Returns false when the location is gone and nothing was staged.
+ */
 export async function applyReviewAggregationDelta(
+  t: admin.firestore.Transaction,
   locationId: string,
   delta: ReviewAggregationDelta
-): Promise<void> {
+): Promise<boolean> {
   const locationRef = db.doc(`locations/${locationId}`);
-  await db.runTransaction(async (t) => {
-    const snap = await t.get(locationRef);
-    if (!snap.exists) return;
-    const data = snap.data() ?? {};
+  const snap = await t.get(locationRef);
+  if (!snap.exists) return false;
+  const data = snap.data() ?? {};
 
-    const prevCount = typeof data.totalRatings === "number" ? data.totalRatings : 0;
-    const prevAverage =
-      typeof data.averageRating === "number" ? data.averageRating : 0;
-    // sumRating may not exist on legacy docs; reconstruct from average×count.
-    const prevSum =
-      typeof data.sumRating === "number"
-        ? data.sumRating
-        : prevAverage * prevCount;
+  const prevCount = typeof data.totalRatings === "number" ? data.totalRatings : 0;
+  const prevAverage =
+    typeof data.averageRating === "number" ? data.averageRating : 0;
+  // sumRating may not exist on legacy docs; reconstruct from average×count.
+  const prevSum =
+    typeof data.sumRating === "number"
+      ? data.sumRating
+      : prevAverage * prevCount;
 
-    const newCount = Math.max(0, prevCount + delta.count);
-    const newSum = Math.max(0, prevSum + delta.ratingSum);
-    const averageRating = newCount === 0 ? 0 : Number((newSum / newCount).toFixed(2));
+  const newCount = Math.max(0, prevCount + delta.count);
+  const newSum = Math.max(0, prevSum + delta.ratingSum);
+  const averageRating = newCount === 0 ? 0 : Number((newSum / newCount).toFixed(2));
 
-    const update: Record<string, unknown> = {
-      sumRating: newSum,
-      totalRatings: newCount,
-      averageRating,
+  const update: Record<string, unknown> = {
+    sumRating: newSum,
+    totalRatings: newCount,
+    averageRating,
+  };
+  if (delta.tagsToAdd && delta.tagsToAdd.length > 0) {
+    update.tags = admin.firestore.FieldValue.arrayUnion(...delta.tagsToAdd);
+  }
+  if (delta.photosToAdd && delta.photosToAdd.length > 0) {
+    update.photos = mergeCappedStrings(
+      data.photos,
+      delta.photosToAdd,
+      LOCATION_PHOTO_PREVIEW_LIMIT
+    );
+  }
+
+  if (delta.petFriendlySumDelta) {
+    const prevPfSum = readSubscores(data.petFriendlySum);
+    const newPfSum: PetFriendlySubscores = {
+      space: Math.max(0, prevPfSum.space + delta.petFriendlySumDelta.space),
+      safety: Math.max(0, prevPfSum.safety + delta.petFriendlySumDelta.safety),
+      cleanliness: Math.max(
+        0,
+        prevPfSum.cleanliness + delta.petFriendlySumDelta.cleanliness
+      ),
     };
-    if (delta.tagsToAdd && delta.tagsToAdd.length > 0) {
-      update.tags = admin.firestore.FieldValue.arrayUnion(...delta.tagsToAdd);
-    }
-    if (delta.photosToAdd && delta.photosToAdd.length > 0) {
-      update.photos = mergeCappedStrings(
-        data.photos,
-        delta.photosToAdd,
-        LOCATION_PHOTO_PREVIEW_LIMIT
-      );
-    }
+    update.petFriendlySum = newPfSum;
+    update.petFriendlyAvg = divideSubscores(newPfSum, newCount);
+  }
 
-    if (delta.petFriendlySumDelta) {
-      const prevPfSum = readSubscores(data.petFriendlySum);
-      const newPfSum: PetFriendlySubscores = {
-        space: Math.max(0, prevPfSum.space + delta.petFriendlySumDelta.space),
-        safety: Math.max(0, prevPfSum.safety + delta.petFriendlySumDelta.safety),
-        cleanliness: Math.max(
-          0,
-          prevPfSum.cleanliness + delta.petFriendlySumDelta.cleanliness
-        ),
-      };
-      update.petFriendlySum = newPfSum;
-      update.petFriendlyAvg = divideSubscores(newPfSum, newCount);
-    }
-
-    if (delta.tagCountsDelta && Object.keys(delta.tagCountsDelta).length > 0) {
-      const prevCounts = readTagCounts(data.tagCounts);
-      for (const [tag, change] of Object.entries(delta.tagCountsDelta)) {
-        const next = (prevCounts[tag] ?? 0) + change;
-        if (next <= 0) {
-          // Drop the key entirely so the map doesn't accumulate dead tags.
-          delete prevCounts[tag];
-          update[`tagCounts.${tag}`] = admin.firestore.FieldValue.delete();
-        } else {
-          prevCounts[tag] = next;
-          update[`tagCounts.${tag}`] = next;
-        }
+  if (delta.tagCountsDelta && Object.keys(delta.tagCountsDelta).length > 0) {
+    const prevCounts = readTagCounts(data.tagCounts);
+    for (const [tag, change] of Object.entries(delta.tagCountsDelta)) {
+      const next = (prevCounts[tag] ?? 0) + change;
+      if (next <= 0) {
+        // Drop the key entirely so the map doesn't accumulate dead tags.
+        delete prevCounts[tag];
+        update[`tagCounts.${tag}`] = admin.firestore.FieldValue.delete();
+      } else {
+        prevCounts[tag] = next;
+        update[`tagCounts.${tag}`] = next;
       }
-      // topTags: highest-count tags up to TOP_TAGS_LIMIT, alphabetical
-      // tiebreak. Pre-computed so the UI doesn't need the full histogram
-      // for the common chips display.
-      const topTags = Object.entries(prevCounts)
-        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-        .slice(0, TOP_TAGS_LIMIT)
-        .map(([tag]) => tag);
-      update.topTags = topTags;
     }
+    // topTags: highest-count tags up to TOP_TAGS_LIMIT, alphabetical
+    // tiebreak. Pre-computed so the UI doesn't need the full histogram
+    // for the common chips display.
+    const topTags = Object.entries(prevCounts)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, TOP_TAGS_LIMIT)
+      .map(([tag]) => tag);
+    update.topTags = topTags;
+  }
 
-    t.update(locationRef, update);
-  });
+  t.update(locationRef, update);
+  return true;
 }
 
 // Recompute every aggregate field from the location's review subcollection.
