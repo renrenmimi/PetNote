@@ -15,11 +15,11 @@
     "typecheck:tests": "tsc -p tsconfig.tests.json"
   },
   "dependencies": {
-    "firebase": "^12.8.0",
+    "firebase": "^12.18.0",
     "heic2any": "^0.0.4",
     "lucide-react": "^0.563.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.3"
   },
   "devDependencies": {
@@ -27,8 +27,8 @@
     "@firebase/rules-unit-testing": "^5.0.2",
     "@tailwindcss/vite": "^4.1.18",
     "@types/node": "^24.10.1",
-    "@types/react": "^19.2.5",
-    "@types/react-dom": "^19.2.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^5.1.1",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
