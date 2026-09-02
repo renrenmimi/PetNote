@@ -1,0 +1,14 @@
+{
+  // The one-off scripts in ./scripts are run with ts-node from this directory,
+  // because this is where firebase-admin is installed. Nothing type-checked
+  // them until now, so a script could ship broken and only fail once it was
+  // pointed at production.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "noUnusedLocals": false,
+    "allowJs": false
+  },
+  "include": ["scripts/**/*.ts"],
+  "exclude": ["lib", "node_modules"]
+}

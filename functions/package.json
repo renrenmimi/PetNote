@@ -9,7 +9,8 @@
     "deploy": "firebase deploy --only functions",
     "test": "vitest run",
     "test:emulator": "firebase emulators:exec --only firestore,auth --project petnote-test \"npm test\"",
-    "typecheck:test": "tsc -p tsconfig.test.json"
+    "typecheck:test": "tsc -p tsconfig.test.json",
+    "typecheck:scripts": "tsc -p tsconfig.scripts.json"
   },
   "engines": {
     "node": "22"

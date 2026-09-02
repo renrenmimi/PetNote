@@ -42,6 +42,10 @@ jobs:
       # the build tsconfig so test code never lands in lib/, which is what gets
       # deployed.
       - run: npm run typecheck:test
+      # The one-off scripts are excluded from the build tsconfig, so nothing
+      # checked them until now. A broken one only fails when it is already
+      # pointed at production.
+      - run: npm run typecheck:scripts
 
   # The idempotency tests drive real trigger handlers against the Firestore
   # emulator, so they need a JDK (the emulator refuses to start below 21) and
