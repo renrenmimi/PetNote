@@ -18,10 +18,12 @@ import {
   requiredDocId,
   requiredTrimmedString,
   requiredTrustedHttpsUrl,
+  runEventOnce,
   TRUSTED_MEDIA_URL_HOSTS,
   validateCoordinateRange,
   validateRatingScore,
   VALIDATION_LIMITS,
+  wasCountedAtCreate,
 } from "./shared";
 import { getAccessiblePet } from "./pets";
 
@@ -323,15 +325,35 @@ export const onReviewCreated = onDocumentCreated(
     for (const tag of tagList) {
       tagCountsDelta[tag] = (tagCountsDelta[tag] ?? 0) + 1;
     }
+    const reviewRef =
+      event.data?.ref ??
+      db.doc(`locations/${event.params.locationId}/reviews/${event.params.reviewId}`);
+
     await Promise.all([
-      applyReviewAggregationDelta(event.params.locationId, {
-        ratingSum: rating,
-        count: 1,
-        tagsToAdd: tagList,
-        photosToAdd,
-        petFriendlySumDelta: subscores,
-        tagCountsDelta,
+      // The rating aggregate is a delta, so a redelivered event adds the same
+      // review's stars a second time and quietly moves averageRating. The
+      // ledger write shares the transaction with the delta, and the review is
+      // stamped so onReviewDeleted knows this rating was folded in.
+      runEventOnce(event.id, async (t) => {
+        const reviewSnap = await t.get(reviewRef);
+        if (!reviewSnap.exists) return false;
+        if (reviewSnap.data()?.counted === true) return false;
+
+        const applied = await applyReviewAggregationDelta(t, event.params.locationId, {
+          ratingSum: rating,
+          count: 1,
+          tagsToAdd: tagList,
+          photosToAdd,
+          petFriendlySumDelta: subscores,
+          tagCountsDelta,
+        });
+        if (!applied) return false;
+
+        t.update(reviewRef, { counted: true });
+        return true;
       }),
+      // Photo entries key off a hash of the URL and merge, so replaying them
+      // is already harmless.
       writeLocationPhotoEntries(
         event.params.locationId,
         photosToAdd,
@@ -357,37 +379,45 @@ export const onReviewDeleted = onDocumentDeleted(
     // arrayRemove on delete would drop tags other remaining reviews still
     // reference, so we only update the histogram (tagCounts / topTags).
     // The recompute callable refreshes both whenever it runs.
-    await applyReviewAggregationDelta(event.params.locationId, {
-      ratingSum: -rating,
-      count: -1,
-      petFriendlySumDelta: {
-        space: -subscores.space,
-        safety: -subscores.safety,
-        cleanliness: -subscores.cleanliness,
-      },
-      tagCountsDelta,
-    });
+    if (!wasCountedAtCreate(reviewData)) return;
+
+    await runEventOnce(event.id, (t) =>
+      applyReviewAggregationDelta(t, event.params.locationId, {
+        ratingSum: -rating,
+        count: -1,
+        petFriendlySumDelta: {
+          space: -subscores.space,
+          safety: -subscores.safety,
+          cleanliness: -subscores.cleanliness,
+        },
+        tagCountsDelta,
+      })
+    );
   }
 );
 
+// Stages the check-in count change on the caller's transaction so it commits
+// with the processed-event marker. The Math.max(0, ...) clamp stops the total
+// going negative; it was never idempotency, because a redelivered check-in
+// still adds a second time and can tip verifiedByCheckins over its threshold.
 async function adjustLocationCheckinCount(
+  t: admin.firestore.Transaction,
   locationId: string,
   delta: 1 | -1
-): Promise<void> {
+): Promise<boolean> {
   const locationRef = db.doc(`locations/${locationId}`);
-  await db.runTransaction(async (t) => {
-    const snap = await t.get(locationRef);
-    if (!snap.exists) return;
-    const prev =
-      typeof snap.data()?.totalCheckins === "number"
-        ? (snap.data() as { totalCheckins: number }).totalCheckins
-        : 0;
-    const next = Math.max(0, prev + delta);
-    t.update(locationRef, {
-      totalCheckins: next,
-      verifiedByCheckins: next >= 3,
-    });
+  const snap = await t.get(locationRef);
+  if (!snap.exists) return false;
+  const prev =
+    typeof snap.data()?.totalCheckins === "number"
+      ? (snap.data() as { totalCheckins: number }).totalCheckins
+      : 0;
+  const next = Math.max(0, prev + delta);
+  t.update(locationRef, {
+    totalCheckins: next,
+    verifiedByCheckins: next >= 3,
   });
+  return true;
 }
 
 export const onCheckinCreated = onDocumentCreated(
@@ -409,16 +439,30 @@ export const onCheckinCreated = onDocumentCreated(
         .catch(() => undefined);
     }
 
-    // Transaction-based +1 instead of counting every check-in on the
-    // location. Keeps verifiedByCheckins consistent with the stored total.
-    await adjustLocationCheckinCount(locationId, 1);
+    const checkinDocRef = db.doc(
+      `locations/${locationId}/checkins/${event.params.checkinId}`
+    );
+    await runEventOnce(event.id, async (t) => {
+      const checkinSnap = await t.get(checkinDocRef);
+      if (!checkinSnap.exists) return false;
+      if (checkinSnap.data()?.counted === true) return false;
+
+      const applied = await adjustLocationCheckinCount(t, locationId, 1);
+      if (!applied) return false;
+
+      t.update(checkinDocRef, { counted: true });
+      return true;
+    });
   }
 );
 
 export const onCheckinDeleted = onDocumentDeleted(
   "locations/{locationId}/checkins/{checkinId}",
   async (event) => {
-    await adjustLocationCheckinCount(event.params.locationId, -1);
+    if (!wasCountedAtCreate(event.data?.data())) return;
+    await runEventOnce(event.id, (t) =>
+      adjustLocationCheckinCount(t, event.params.locationId, -1)
+    );
   }
 );
 
@@ -625,6 +669,9 @@ export const submitReviewCallable = onCall(async (request) => {
   // second call with ALREADY_EXISTS.
   try {
     await reviewRef.create({
+      // onReviewCreated flips this to true in the same transaction that folds
+      // the rating into the location aggregates.
+      counted: false,
       userId: callerUid,
       userName: caller.fromUserName,
       userAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
@@ -744,6 +791,9 @@ export const checkInCallable = onCall(async (request) => {
   // overwrite each other.
   try {
     await checkinRef.create({
+      // onCheckinCreated flips this to true in the same transaction as the
+      // totalCheckins increment.
+      counted: false,
       userId: callerUid,
       userName: caller.fromUserName,
       userAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),

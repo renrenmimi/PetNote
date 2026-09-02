@@ -13,10 +13,12 @@ import {
   requestData,
   requiredDocId,
   requiredTrimmedString,
+  runEventOnce,
   stripUndefined,
   TRUSTED_MEDIA_URL_HOSTS,
   validateCoordinateRange,
   VALIDATION_LIMITS,
+  wasCountedAtCreate,
 } from "./shared";
 import { getOrCreatePublicMeetupLocation } from "./places";
 
@@ -181,10 +183,18 @@ export const onParticipantDeleted = onDocumentDeleted(
   "meetups/{meetupId}/participants/{participantId}",
   async (event) => {
     const meetupRef = db.doc(`meetups/${event.params.meetupId}`);
-    const meetupSnap = await meetupRef.get();
-    if (!meetupSnap.exists) return;
-    await meetupRef.update({
-      participantCount: admin.firestore.FieldValue.increment(-1),
+    // participantCount is incremented by the callable that writes the
+    // participant, inside the same transaction, so every participant that code
+    // created is stamped counted:true and there is nothing to reconcile here.
+    if (!wasCountedAtCreate(event.data?.data())) return;
+
+    await runEventOnce(event.id, async (t) => {
+      const meetupSnap = await t.get(meetupRef);
+      if (!meetupSnap.exists) return false;
+      t.update(meetupRef, {
+        participantCount: admin.firestore.FieldValue.increment(-1),
+      });
+      return true;
     });
   }
 );
@@ -373,6 +383,10 @@ export const createMeetupCallable = onCall(async (request) => {
       petAvatar: organizerPetAvatar,
       joinedAt: admin.firestore.FieldValue.serverTimestamp(),
       status: "confirmed",
+      // participantCount is seeded to 1 for this organizer in the same batch,
+      // so the count is already applied. Stamping it lets onParticipantDeleted
+      // tell an accounted-for participant from one it must not subtract.
+      counted: true,
     }
   );
 
@@ -711,6 +725,9 @@ export const joinMeetupCallable = onCall(async (request) => {
       petAvatar: participantPetAvatar,
       joinedAt: admin.firestore.FieldValue.serverTimestamp(),
       status: "confirmed",
+      // Written in the same transaction as the increment below, so the stamp
+      // and the count can never disagree.
+      counted: true,
     });
     t.update(meetupRef, {
       participantCount: admin.firestore.FieldValue.increment(1),

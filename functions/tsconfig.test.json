@@ -1,0 +1,15 @@
+{
+  // The build tsconfig excludes src/__tests__ so test code never reaches lib/,
+  // which is the directory that gets deployed. This one type-checks the tests
+  // without emitting. vitest's types reach into vite, which needs the newer
+  // resolver, hence the moduleResolution override.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": ["vitest/globals", "node"]
+  },
+  "include": ["src", "vitest.config.ts"],
+  "exclude": ["lib", "node_modules"]
+}

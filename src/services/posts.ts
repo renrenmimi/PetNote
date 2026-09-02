@@ -300,6 +300,13 @@ export async function likePost(postId: string, userId: string): Promise<void> {
       userId,
       postId,
       createdAt: serverTimestamp(),
+      // onLikeCreated flips this to true in the same transaction as the
+      // likeCount increment. Writing it false here is what lets onLikeDeleted
+      // tell "already counted, undo it" from "the create trigger has not run
+      // yet, leave the count alone" when Firestore delivers the two events out
+      // of order. Rules pin it to false so a client cannot claim a like was
+      // counted and then unlike to drive someone's likeCount down.
+      counted: false,
     });
     didLike = true;
   });

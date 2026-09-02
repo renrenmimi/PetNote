@@ -36,3 +36,33 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run build
+      # The trigger tests type-check separately: src/__tests__ is excluded from
+      # the build tsconfig so test code never lands in lib/, which is what gets
+      # deployed.
+      - run: npm run typecheck:test
+
+  # The idempotency tests drive real trigger handlers against the Firestore
+  # emulator, so they need a JDK (the emulator refuses to start below 21) and
+  # the Firebase CLI. Kept as its own job so a red emulator run is
+  # distinguishable from a red compile.
+  triggers:
+    name: trigger idempotency
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: functions
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: npm ci
+      - run: npm run build
+      - run: npm install -g firebase-tools
+      - run: npm run test:emulator

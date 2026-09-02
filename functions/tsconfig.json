@@ -9,5 +9,12 @@
     "target": "es2017"
   },
   "compileOnSave": true,
-  "include": ["src"]
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "src/__tests__",
+    "lib",
+    "node_modules"
+  ]
 }
