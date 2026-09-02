@@ -30,9 +30,21 @@
 
 ## 2. Test Cases & Checklists
 
-### 2.1 Full Regression Test Suite (90 test cases)
+### 2.1 Manual Regression Checklist (90 checklist items)
 
-A comprehensive test checklist was created and executed covering all major flows:
+> **These are manual checklist items, not automated tests.** They were written
+> and walked through by hand; nothing here runs in CI. Read as a record of what
+> was exercised before a release, not as coverage.
+>
+> Automated coverage lives elsewhere and is enforced by CI:
+>
+> | Suite | What it covers | Command |
+> |---|---|---|
+> | `src/utils/__tests__` | pure utility functions | `npm test` |
+> | `tests/rules` | firestore.rules against the emulator | `npm run test:rules:emulator` |
+> | `functions/src/__tests__` | trigger idempotency against the emulator | `npm run test:emulator` (in `functions/`) |
+
+A comprehensive manual test checklist was created and executed covering all major flows:
 
 **Round 1: Registration & Onboarding (Steps 1–7)**
 

@@ -19,6 +19,8 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+      # tsconfig.app.json covers src only, so the rules tests are checked here.
+      - run: npm run typecheck:tests
 
   functions:
     name: functions
@@ -66,3 +68,22 @@ jobs:
       - run: npm run build
       - run: npm install -g firebase-tools
       - run: npm run test:emulator
+
+  # Firestore rules tests run the real firestore.rules against the emulator.
+  # A rules mistake is a data breach, so this is the job that must stay green.
+  rules:
+    name: firestore rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: npm ci
+      - run: npm install -g firebase-tools
+      - run: npm run test:rules:emulator
