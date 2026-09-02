@@ -79,6 +79,7 @@ id to a handler twice, or deliver a delete before its create.
 
 Run them with `npm run test:emulator` in `functions/` (needs JDK 21+ — the
 Firestore emulator refuses to start below that). CI runs them as the
-`trigger idempotency` job.
+`trigger idempotency` job, alongside `flows.test.ts` and
+`invitations.test.ts`, which cover the callable layer the same way.
 
 Against the code as it stood before this was written, 16 of these tests fail.

@@ -93,3 +93,60 @@ export async function clearEventLedger(): Promise<void> {
 export const serverTime = () => admin.firestore.FieldValue.serverTimestamp();
 export const timestampAt = (iso: string) =>
   admin.firestore.Timestamp.fromMillis(Date.parse(iso));
+
+/**
+ * Invokes a callable's real handler through the .run() hook, with a fabricated
+ * auth context. Building the token by hand is deliberate: several callables
+ * branch on token.email_verified, and a test needs to sit on both sides of that
+ * without minting real ID tokens.
+ */
+// The handlers are typed against firebase-functions' CallableRequest, which
+// carries an Express request and streaming plumbing no handler here reads.
+// Res is supplied by the caller because the declared return types are
+// Promise-wrapped and vary per callable.
+type AnyCallable = { run: (request: never) => unknown };
+
+export function callAs<Res>(
+  fn: AnyCallable,
+  uid: string | null,
+  data: unknown,
+  { emailVerified = true }: { emailVerified?: boolean } = {}
+): Promise<Res> {
+  const request = {
+    data,
+    auth: uid
+      ? {
+          uid,
+          token: {
+            uid,
+            sub: uid,
+            email: `${uid}@example.com`,
+            email_verified: emailVerified,
+            firebase: { sign_in_provider: "password", identities: {} },
+          },
+        }
+      : undefined,
+    rawRequest: {},
+    acceptsStreaming: false,
+  };
+  return Promise.resolve(
+    (fn as unknown as { run: (r: unknown) => Res | Promise<Res> }).run(request)
+  );
+}
+
+/** Runs `fn` and returns the HttpsError code it threw, or null if it resolved. */
+export async function errorCodeOf(fn: () => unknown): Promise<string | null> {
+  try {
+    await fn();
+    return null;
+  } catch (error) {
+    const code = (error as { code?: string })?.code;
+    return typeof code === "string" ? code : String(error);
+  }
+}
+
+/** Clears the per-uid rate-limit buckets so repeated calls in one file do not trip them. */
+export async function clearRateLimits(): Promise<void> {
+  const snap = await db.collection("callableRateLimits").get();
+  await Promise.all(snap.docs.map((d) => d.ref.delete()));
+}
