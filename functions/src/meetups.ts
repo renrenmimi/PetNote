@@ -89,6 +89,32 @@ function sanitizeMeetupLocation(value: unknown): {
   return { name, address, lat, lng, city, state };
 }
 
+/**
+ * The name to store on the PUBLIC document of a participants_only meetup.
+ *
+ * address, lat and lng were already blanked for a private meetup; name was not.
+ * But name is not a venue label in the general case — geo.ts resolves it as
+ * `props.name || props.street || formatted`, and a residential address has no
+ * POI name, so it lands on the street ("123 Beacon St") or the whole formatted
+ * address. meetups/{id} is `allow read: if true`, which put the organiser's
+ * street on a document any unauthenticated stranger could fetch, next to the
+ * time and — participants being world-readable too — the guest list.
+ *
+ * The real name still goes to private/address, which is gated on organiser /
+ * confirmed participant / admin, and MeetupDetail already prefers that copy.
+ */
+function publicMeetupLocationName(location: {
+  city?: string;
+  state?: string;
+}): string {
+  const city = (location.city ?? "").trim();
+  const state = (location.state ?? "").trim();
+  if (city && state) return `Meetup near ${city}, ${state}`;
+  if (city) return `Meetup near ${city}`;
+  if (state) return `Meetup in ${state}`;
+  return "Private meetup";
+}
+
 function toStoredMeetupLocation(location: {
   name: string;
   address: string;
@@ -266,7 +292,7 @@ export const createMeetupCallable = onCall(async (request) => {
 
   const publicLocation = isPrivate
     ? toStoredMeetupLocation({
-        name: location.name,
+        name: publicMeetupLocationName(location),
         address: "",
         lat: 0,
         lng: 0,
@@ -474,7 +500,7 @@ export const updateMeetupCallable = onCall(async (request) => {
 
   const publicLocation = isPrivate
     ? toStoredMeetupLocation({
-        name: location.name,
+        name: publicMeetupLocationName(location),
         address: "",
         lat: 0,
         lng: 0,
