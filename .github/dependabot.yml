@@ -5,6 +5,12 @@
 #
 # Both package-lock.json files are scanned separately — the frontend and the
 # Cloud Functions have independent dependency trees.
+#
+# On the `ignore` blocks below: an ignore condition suppresses the *pull
+# request*, not the alert. Dependabot alerts still fire for an ignored package,
+# so a vulnerability in one of these is still visible on the Security tab — it
+# just has to be actioned by hand. Both blocks are scoped to semver-major only,
+# so patch and minor security fixes keep arriving automatically.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -20,6 +26,22 @@ updates:
       production-dependencies:
         dependency-type: production
         update-types: [minor, patch]
+    ignore:
+      # typescript is pinned to `~5.9.3` in package.json — a tilde, where every
+      # other dependency uses a caret. The major is locked on purpose:
+      # typescript-eslint's peer range trails each TypeScript major by months,
+      # and `npm ci` hard-fails with ERESOLVE the moment they disagree.
+      #
+      # #171 is what this rule is for. It moved typescript 5.9.3 → 7.0.2 (while
+      # dutifully keeping the tilde, `~7.0.2`) and took `web`, `firestore rules`
+      # and the Vercel build down at `npm ci`, before a line was compiled. The
+      # other 11 packages in that group were never evaluated as a result.
+      #
+      # Minor and patch bumps are still wanted; only the major is ignored.
+      # Revisit by hand once typescript-eslint declares support for the next
+      # TypeScript major, then raise the pin in one deliberate PR.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: npm
     directory: /functions
@@ -32,6 +54,28 @@ updates:
       production-dependencies:
         dependency-type: production
         update-types: [minor, patch]
+    ignore:
+      # Same wall, second tree: functions/package.json carries its own
+      # typescript + typescript-eslint pair, so #174 failed with the identical
+      # ERESOLVE (typescript 7.0.2 vs typescript-eslint@8's peer range) even
+      # though the root pin had nothing to do with it.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
+      # firebase-admin's major is not ours to choose — firebase-functions
+      # declares it as a peer and only widens the range in its own releases.
+      # firebase-functions@7.2.5 accepts `^11 || ^12 || ^13`, so #170
+      # (firebase-admin 13 → 14) could not install at all:
+      #
+      #   npm error While resolving: firebase-functions@7.2.5
+      #   npm error Found: firebase-admin@14.3.0
+      #   npm error peer firebase-admin@"^11.10.0 || ^12.0.0 || ^13.0.0"
+      #
+      # The ordering is fixed: firebase-functions has to move first (7.3.2 is
+      # the release that adds `^14.0.0` to that range), and only then can
+      # firebase-admin follow. A standalone firebase-admin major PR is
+      # unmergeable by construction, so it should not be opened.
+      - dependency-name: firebase-admin
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: github-actions
     directory: /
