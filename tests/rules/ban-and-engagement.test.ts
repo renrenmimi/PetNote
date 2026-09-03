@@ -227,6 +227,125 @@ describe("bookmarks", () => {
   });
 });
 
+describe("an account whose deletion cascade has already finished", () => {
+  // The mid-cascade state is covered above via DELETING's deletionPending
+  // flag. This is the state AFTER the cascade: user doc gone, admin/state
+  // gone, tombstone written, Auth record deleted last — and an id token issued
+  // before all that, still inside its hour.
+  //
+  // Rules check a JWT's signature and expiry, not whether the Auth user still
+  // exists, so the token keeps authenticating. Without the tombstone check,
+  // `!exists(userDoc)` read as "not deleting" and a missing admin/state read
+  // as "not banned", so every isNotBanned() && isNotDeleting() gate opened.
+  const GHOST = "ghost-user";
+
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      // Exactly what deleteUserAccount leaves behind.
+      await setDoc(doc(db, `userDeletionTombstones/${GHOST}`), {
+        userId: GHOST,
+        reason: "account_deleted",
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      });
+    });
+  });
+
+  it("cannot rebuild its own user document", async () => {
+    // completeOnboarding is a setDoc(..., {merge:true}); with the doc deleted
+    // that is a create, and onboardingComplete is an allowlisted field. This
+    // was the resurrection path — and the rebuilt doc is world-readable.
+    const db = plainUser(env, GHOST).firestore();
+    await assertFails(
+      setDoc(doc(db, "users", GHOST), { onboardingComplete: true }, { merge: true })
+    );
+  });
+
+  it("cannot like other people's posts", async () => {
+    // Each like would fire onLikeCreated and increment likeCount for a uid
+    // that no longer exists, with no cleanup pass left to undo it.
+    const db = plainUser(env, GHOST).firestore();
+    await assertFails(
+      setDoc(doc(db, `posts/${POST}/likes/${GHOST}`), {
+        userId: GHOST,
+        postId: POST,
+        createdAt: serverTimestamp(),
+        counted: false,
+      })
+    );
+  });
+
+  it("cannot create bookmarks", async () => {
+    const db = plainUser(env, GHOST).firestore();
+    await assertFails(
+      setDoc(doc(db, `users/${GHOST}/bookmarks/${POST}`), {
+        createdAt: serverTimestamp(),
+      })
+    );
+  });
+
+  it("cannot block anyone or write settings", async () => {
+    const db = plainUser(env, GHOST).firestore();
+    await assertFails(
+      setDoc(doc(db, `users/${GHOST}/blockedUsers/${ALICE}`), {
+        blockedAt: serverTimestamp(),
+      })
+    );
+    await assertFails(
+      setDoc(
+        doc(db, `users/${GHOST}/settings/preferences`),
+        { language: "en" },
+        { merge: true }
+      )
+    );
+  });
+
+  it("can still delete its own leftovers, so cleanup paths keep working", async () => {
+    // Same reasoning as the banned/mid-deletion cases: delete must stay open
+    // or a client tearing itself down strands rows the cascade already missed.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, `posts/${POST}/likes/${GHOST}`), {
+        userId: GHOST,
+        postId: POST,
+        createdAt: new Date(),
+      });
+      await setDoc(doc(db, `users/${GHOST}/bookmarks/${POST}`), {
+        createdAt: new Date(),
+      });
+    });
+    const db = plainUser(env, GHOST).firestore();
+    await assertSucceeds(deleteDoc(doc(db, `posts/${POST}/likes/${GHOST}`)));
+    await assertSucceeds(deleteDoc(doc(db, `users/${GHOST}/bookmarks/${POST}`)));
+  });
+});
+
+describe("a brand-new signup is not mistaken for a deleted one", () => {
+  // The guard against fixing the above by breaking onboarding: a fresh uid has
+  // no tombstone AND no user doc, and both must read as "not deleting".
+  const FRESH = "fresh-user";
+
+  it("can create its own user document", async () => {
+    const db = plainUser(env, FRESH).firestore();
+    await assertSucceeds(
+      setDoc(doc(db, "users", FRESH), { onboardingComplete: true })
+    );
+  });
+
+  it("can like a post", async () => {
+    const db = plainUser(env, FRESH).firestore();
+    await assertSucceeds(
+      setDoc(doc(db, `posts/${POST}/likes/${FRESH}`), {
+        userId: FRESH,
+        postId: POST,
+        createdAt: serverTimestamp(),
+        counted: false,
+      })
+    );
+  });
+});
+
 describe("callable-only collections reject direct client writes", () => {
   it("refuses creating a post, comment, pet or meetup from a client", async () => {
     const db = plainUser(env, ALICE).firestore();
