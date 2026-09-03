@@ -222,17 +222,28 @@ service cloud.firestore {
           isNotBanned() &&
           isNotDeleting() &&
           request.resource.data.keys().hasOnly(['userId', 'postId', 'createdAt', 'counted']) &&
+          request.resource.data.keys().hasAll(['counted']) &&
           request.resource.data.userId == request.auth.uid &&
           request.resource.data.postId == postId &&
           request.resource.data.createdAt is timestamp &&
           // onLikeCreated flips `counted` to true with the likeCount
-          // increment. A client that could write it true and then unlike
-          // would make onLikeDeleted subtract a like that was never added,
-          // driving another user's likeCount down on repeat. Absent is
-          // allowed so clients running cached JS from before this shipped
-          // keep working; absent is read as a pre-existing like.
-          (!('counted' in request.resource.data) ||
-            request.resource.data.counted == false) &&
+          // increment, so a like the client writes must always say false.
+          //
+          // `counted` is REQUIRED, not just constrained. It used to be
+          // optional — absent was allowed so clients running cached JS from
+          // before the field shipped kept working — but shared.ts reads an
+          // absent field as *already counted* (that reading is what lets the
+          // scheme deploy without a backfill). The two halves together were
+          // exploitable: write a like with no `counted`, delete it before
+          // onLikeCreated runs, and onLikeDeleted sees the field missing,
+          // concludes the like was counted, and applies increment(-1). The
+          // create trigger then arrives, finds the doc gone and declines, so
+          // nothing is ever added. Net -1 on someone else's post, repeatable
+          // — likes have no rate limit and onLikeDeleted has no clamp.
+          //
+          // This governs new writes only, so the absent-means-counted reading
+          // still protects likes written before this rule.
+          request.resource.data.counted == false &&
           exists(/databases/$(database)/documents/posts/$(postId));
         // Allow delete during deletion so cleanup paths work even when the
         // user is being torn down.
