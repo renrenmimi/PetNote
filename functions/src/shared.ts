@@ -329,9 +329,22 @@ export async function runEventOnce(
  *   absent    written before this scheme shipped, by code that counted
  *             unconditionally, so it was counted; undo it
  *
- * The absent case is what makes this safe to deploy without a backfill, and
- * why old clients that do not send the field keep working. There is no date
- * involved and nothing to reconfigure at deploy time.
+ * The absent case is what makes this safe to deploy without a backfill: it
+ * needs no date and nothing reconfigured at deploy time.
+ *
+ * It is also, on its own, a way to forge "already counted" — so nothing may
+ * be able to write a counter-feeding document without the field. Every
+ * collection here but one is written by a callable that stamps `counted:
+ * false` server-side. The exception is `likes`, the only collection a client
+ * writes to Firestore directly, and firestore.rules therefore REQUIRES
+ * `counted == false` on a like create. It used to merely permit absence, for
+ * the sake of clients running pre-`counted` JS, and that combined with the
+ * reading below into a live exploit: create a like with no `counted`, delete
+ * it before onLikeCreated runs, and onLikeDeleted subtracts a like that was
+ * never added. See the comment on that rule.
+ *
+ * Do not relax `counted` to optional in any client-writable path without
+ * changing this function too.
  */
 export function wasCountedAtCreate(
   data: admin.firestore.DocumentData | undefined

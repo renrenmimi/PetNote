@@ -101,15 +101,52 @@ describe("likes", () => {
     );
   });
 
-  it("still accepts a like from a client that does not send counted", async () => {
-    // Clients running JS cached from before the stamp shipped must keep
-    // working; an absent field is read as a pre-existing like.
+  it("refuses a like that omits counted entirely", async () => {
+    // This used to be allowed, on the reasoning that clients running JS from
+    // before the stamp shipped had to keep working. It was exploitable, and
+    // the exemption is what made it exploitable:
+    //
+    //   1. write a like with no `counted` — the old rule permitted it
+    //   2. delete it before onLikeCreated runs — delete is permitted too
+    //   3. onLikeDeleted calls wasCountedAtCreate(), which reads an ABSENT
+    //      field as *already counted* (functions/src/shared.ts:341 — that
+    //      reading is deliberate, it is what lets the scheme deploy without a
+    //      backfill), so it applies increment(-1)
+    //   4. the create trigger arrives late, finds the doc gone, declines, and
+    //      never adds the 1 that was just subtracted
+    //
+    // Net -1 on any post the attacker chooses, repeatable: likes are the one
+    // mutation with no rate limit and onLikeDeleted has no clamp, so
+    // likeCount goes negative without limit.
+    //
+    // Neither half was wrong on its own — an optional field in the rules, and
+    // absent-means-counted on the server. Only together.
+    //
+    // The stale-client cost that justified the exemption is bounded: there is
+    // no service worker in this repo, and Vercel serves index.html with
+    // `max-age=0, must-revalidate` in front of hash-named bundles, so a stale
+    // client stops being stale on its next page load.
+    const db = plainUser(env, ALICE).firestore();
+    await assertFails(
+      setDoc(doc(db, likeDoc(ALICE)), {
+        userId: ALICE,
+        postId: POST,
+        createdAt: serverTimestamp(),
+      })
+    );
+  });
+
+  it("still accepts a like that sends counted: false, which every current client does", async () => {
+    // The other side of the change: requiring the field must not break the
+    // shipped client. src/services/posts.ts:309 writes counted: false
+    // unconditionally, so this is what a real like looks like today.
     const db = plainUser(env, ALICE).firestore();
     await assertSucceeds(
       setDoc(doc(db, likeDoc(ALICE)), {
         userId: ALICE,
         postId: POST,
         createdAt: serverTimestamp(),
+        counted: false,
       })
     );
   });
