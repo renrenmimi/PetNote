@@ -133,7 +133,6 @@ describe("users/{uid}/admin/state", () => {
     const db = adminUser(env, ADMIN).firestore();
     await assertSucceeds(
       setDoc(doc(db, `users/${BOB}/admin/state`), {
-        role: "user",
         banned: true,
         bannedReason: "spam",
         bannedAt: new Date(),
@@ -143,6 +142,42 @@ describe("users/{uid}/admin/state", () => {
       setDoc(doc(db, `users/${BOB}/admin/state`), {
         banned: true,
         somethingElse: true,
+      })
+    );
+  });
+
+  it("refuses to let even a real admin write role from the client", async () => {
+    // Promotion is an owner operation via the console or the Admin SDK, both
+    // of which bypass rules. No client path has ever needed it, so keeping it
+    // unreachable costs nothing and means one compromised admin session cannot
+    // mint more admins.
+    const db = adminUser(env, ADMIN).firestore();
+    await assertFails(
+      setDoc(doc(db, `users/${BOB}/admin/state`), { role: "admin" })
+    );
+    await assertFails(
+      setDoc(doc(db, `users/${BOB}/admin/state`), {
+        role: "user",
+        banned: true,
+      })
+    );
+  });
+
+  it("still lets an admin ban a user whose doc already carries a role", async () => {
+    // The reason `role` stays in isAllowedAdminStateWrite's key allowlist.
+    // request.resource.data on an update is the whole post-write document, so
+    // removing role from hasOnly would not have blocked writing role — it
+    // would have blocked banning anyone the Admin SDK had given one.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `users/${BOB}/admin/state`), {
+        role: "user",
+      });
+    });
+    const db = adminUser(env, ADMIN).firestore();
+    await assertSucceeds(
+      updateDoc(doc(db, `users/${BOB}/admin/state`), {
+        banned: true,
+        bannedReason: "spam",
       })
     );
   });
@@ -187,5 +222,62 @@ describe("users/{uid}/admin/state", () => {
     await assertFails(
       setDoc(doc(db, `users/${ALICE}/admin/state`), { role: "admin" })
     );
+  });
+});
+
+describe("an admin custom claim is not sufficient on its own", () => {
+  // isAdmin() used to return true on a positive `admin` claim alone. Nothing
+  // revokes an already-issued ID token on demotion, and rules only check a
+  // JWT's signature and expiry — not whether the claim inside it is still
+  // true. These tests pin that the admin/state document is now the authority.
+
+  it("grants nothing to a token claiming admin with no admin/state doc", async () => {
+    // ALICE is seeded with a user doc but no admin/state — the shape of a
+    // demoted admin whose doc was deleted, or a forged/stale token.
+    const db = adminUser(env, ALICE).firestore();
+    await assertFails(
+      setDoc(doc(db, `users/${BOB}/admin/state`), { banned: true })
+    );
+    await assertFails(getDoc(doc(db, `users/${BOB}/admin/state`)));
+  });
+
+  it("does not let a demoted admin re-promote themselves on the stale claim", async () => {
+    // The exploit, end to end. The owner demotes ALICE in the console; her ID
+    // token keeps saying admin:true for up to an hour. Previously she could
+    // write role:'admin' back to her own admin/state, and
+    // onAdminStateWritten would re-issue the claim for real — making the
+    // demotion permanently reversible by the person demoted.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `users/${ALICE}/admin/state`), {
+        role: "user",
+      });
+    });
+    const db = adminUser(env, ALICE).firestore();
+    await assertFails(
+      updateDoc(doc(db, `users/${ALICE}/admin/state`), { role: "admin" })
+    );
+    await assertFails(
+      setDoc(
+        doc(db, `users/${ALICE}/admin/state`),
+        { role: "admin" },
+        { merge: true }
+      )
+    );
+    // And the rest of what the stale claim used to buy is gone too.
+    await assertFails(
+      setDoc(doc(db, `users/${BOB}/admin/state`), { banned: true })
+    );
+  });
+
+  it("recognises a real admin whose token carries no claim at all", async () => {
+    // The other direction, which is why the document is read rather than
+    // ANDed with the claim: a freshly promoted admin must not have to wait
+    // out their old token. ADMIN holds role:'admin' in Firestore (seeded in
+    // beforeEach) and plainUser gives a token with no custom claims.
+    const db = plainUser(env, ADMIN).firestore();
+    await assertSucceeds(
+      setDoc(doc(db, `users/${BOB}/admin/state`), { banned: true })
+    );
+    await assertSucceeds(getDoc(doc(db, `users/${BOB}/admin/state`)));
   });
 });

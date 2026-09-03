@@ -218,14 +218,29 @@ export const onUserUpdated = onDocumentWritten(
   }
 );
 
-// Sync admin/banned to Auth custom claims so firestore.rules can short-
-// circuit cheap token-claim checks (admin == true, banned == true) ahead
-// of the existing get(/admin/state) reads. Custom claims are eventually
-// consistent — they only land on the user's NEXT id token, up to 1h
-// later — so callables continue to read Firestore directly via
-// getNotificationActor for time-critical authorization. Rules combine
-// both: positive token claim trusted, negative/missing falls back to
-// Firestore.
+// Sync admin/banned to Auth custom claims. Custom claims are eventually
+// consistent — they only land on the user's NEXT id token, up to 1h later —
+// so callables read Firestore directly via getNotificationActor for
+// time-critical authorization.
+//
+// What rules do with each claim is NOT symmetric, and the asymmetry is the
+// point:
+//
+//   `banned`  is trusted positively by isNotBanned(), as a cheap path ahead
+//             of the get(/admin/state) fallback. A stale banned claim keeps
+//             someone banned slightly too long, which fails safe.
+//   `admin`   is NOT trusted by isAdmin() any more. Nothing revokes an
+//             already-issued id token when this trigger clears the claim on
+//             demotion, and rules cannot tell a stale claim from a live one,
+//             so trusting it positively meant a demoted admin kept admin
+//             power for the rest of that token's life. isAdmin() reads this
+//             document instead. The claim is still set here — it costs
+//             nothing and other backends may want it — but do not
+//             reintroduce a rule that grants anything on the claim alone.
+//
+// Revoking refresh tokens here would not have fixed it: revocation stops the
+// client getting a NEW id token, but Firestore rules validate only a JWT's
+// signature and expiry, so the current one keeps working until it expires.
 export const onAdminStateWritten = onDocumentWritten(
   "users/{userId}/admin/state",
   async (event) => {

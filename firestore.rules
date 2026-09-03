@@ -12,28 +12,41 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Admin and banned status are mirrored to Auth custom claims by the
-    // onAdminStateWritten trigger (functions/src/users.ts). Rules trust a
-    // POSITIVE token claim (cheap, no Firestore read) and fall back to
-    // the admin/state doc when the token doesn't carry the claim — covers
-    // freshly issued tokens that haven't picked up a recent change yet.
+    // Admin status is decided by the admin/state document, never by the token.
     //
-    // CALLABLES still read admin/state directly (via getNotificationActor)
-    // because custom claims have up-to-1h propagation lag, and we don't
-    // want a banned user to keep mutating until their token refreshes.
+    // This used to trust a POSITIVE `admin` custom claim on its own, as a cheap
+    // path with no Firestore read, falling back to the document only when the
+    // token didn't carry the claim. That was unsound in one direction, and the
+    // direction matters:
+    //
+    //   isNotBanned() trusts a positive `banned` claim → a STALE claim keeps
+    //     someone banned slightly too long. Fails safe.
+    //   isAdmin() trusting a positive `admin` claim → a STALE claim keeps
+    //     someone an admin for the rest of that token's life. Fails open.
+    //
+    // onAdminStateWritten clears the claim on demotion but nothing revokes the
+    // already-issued ID token, and rules only verify a JWT's signature and
+    // expiry — not that the claim inside it is still true, nor even that the
+    // Auth user still exists. So a demoted admin kept full admin power for up
+    // to an hour, and `role` being writable with it made that permanent: write
+    // {role:'admin'} back to your own admin/state on the stale claim, and the
+    // trigger re-issues the claim for real.
+    //
+    // Reading the document is what the callables have always done
+    // (getNotificationActor), so this makes the two layers agree. Cost is one
+    // document read wherever isAdmin() is actually reached; it sits behind a
+    // short-circuit on every hot path (see the `|| isAdmin()` shapes below).
+    //
+    // exists() must come first so this returns FALSE rather than raising an
+    // evaluation error for a user with no admin/state doc — an error would
+    // propagate through `isAdmin() || (own record)` and lock ordinary users out
+    // of their own reports and feedback. That is #150, pinned by a test.
     function isAdmin() {
       let adminDoc = /databases/$(database)/documents/users/$(request.auth.uid)/admin/state;
-      return isAuthenticated() && (
-        // Guard the claim access: a token without the `admin` claim (i.e. every
-        // non-admin) must yield false here, not a failed expression — same
-        // missing-custom-claim footgun fixed for isNotBanned in #149.
-        ('admin' in request.auth.token && request.auth.token.admin == true) ||
-        (
-          exists(adminDoc) &&
-          'role' in get(adminDoc).data &&
-          get(adminDoc).data.role == 'admin'
-        )
-      );
+      return isAuthenticated() &&
+        exists(adminDoc) &&
+        'role' in get(adminDoc).data &&
+        get(adminDoc).data.role == 'admin';
     }
 
     function isNotBanned() {
@@ -85,6 +98,16 @@ service cloud.firestore {
         hasSafePublicLocation(request.resource.data);
     }
 
+    // Which keys may EXIST on an admin/state document. `role` stays in this
+    // list deliberately: it is written by the Admin SDK (console, or
+    // functions/scripts/migrate-admin-state.js), which bypasses rules, so a
+    // real document legitimately carries it. Dropping it here would not stop
+    // a client writing role — it would stop a client banning anyone whose
+    // document already has one, because request.resource.data on an update is
+    // the whole POST-WRITE document, not the changed keys. That is the same
+    // trap hasSafePublicLocation fell into; see the audit note on it.
+    //
+    // Whether a client may write `role` is enforced per-operation below.
     function isAllowedAdminStateWrite() {
       let allowed = ['role', 'banned', 'bannedReason', 'bannedAt'];
       return request.resource.data.keys().hasOnly(allowed);
@@ -198,8 +221,20 @@ service cloud.firestore {
 
       match /admin/state {
         allow read: if isOwner(userId) || isAdmin();
-        allow create: if isAdmin() && isAllowedAdminStateWrite();
-        allow update: if isAdmin() && isAllowedAdminStateWrite();
+        // No client write may introduce or change `role`, not even an admin's.
+        // Promotion is an owner operation through the console or the Admin SDK,
+        // which bypass these rules; the app has never written role (the only
+        // caller, blockUserByAdmin in src/services/admin.ts, writes the three
+        // ban fields). Keeping it out of reach means one compromised admin
+        // session cannot mint more admins, and — with isAdmin() now reading
+        // this document rather than the token — closes the loop where a demoted
+        // admin re-promoted themselves on a stale claim.
+        allow create: if isAdmin() &&
+          isAllowedAdminStateWrite() &&
+          !('role' in request.resource.data);
+        allow update: if isAdmin() &&
+          isAllowedAdminStateWrite() &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']);
         allow delete: if false;
       }
     }
