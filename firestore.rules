@@ -69,17 +69,42 @@ service cloud.firestore {
         );
     }
 
-    // Block direct client writes while the account is mid-deletion. The
-    // deleteUserAccount callable sets users/{uid}.deletionPending = true at
-    // the start of its cascade; without this check the user could keep
-    // creating new likes / bookmarks faster than the cleanup deletes them.
+    // Block direct client writes for an account that is being, or has been,
+    // deleted. Two signals, because one document cannot cover both halves:
+    //
+    //   users/{uid}.deletionPending  covers the cascade WHILE IT RUNS, so the
+    //     user cannot create likes / bookmarks faster than cleanup removes
+    //     them.
+    //   userDeletionTombstones/{uid} covers AFTER it finishes. The cascade
+    //     deletes the user doc itself (and admin/state) and only then deletes
+    //     the Auth record, deliberately — Auth is the last bridge burned so a
+    //     partial failure is still retryable. But that leaves a window where
+    //     the deletionPending check reads `!exists(userDoc)` as "fine", and
+    //     isNotBanned() likewise reads a missing admin/state as "not banned".
+    //     Rules validate only a JWT's signature and expiry, not that the Auth
+    //     user still exists, so a token issued before deletion kept working
+    //     for the rest of its life: re-create the world-readable user doc via
+    //     completeOnboarding, then like and bookmark other people's posts,
+    //     incrementing likeCount for a uid that no longer exists and that no
+    //     cleanup pass will ever revisit.
+    //
+    // The tombstone is written BEFORE the user doc is removed
+    // (functions/src/users.ts) and carries a 24h TTL, which comfortably
+    // outlives the 1h id token it exists to outlive. Rules-internal exists()
+    // is not governed by the collection's own `allow read: if false`.
+    //
+    // updateUserProfileCallable and ensureUserProfileCallable already check
+    // this tombstone; the gap was only ever the paths governed by rules.
     function isNotDeleting() {
       let userDoc = /databases/$(database)/documents/users/$(request.auth.uid);
-      return isAuthenticated() && (
-        !exists(userDoc) ||
-        !('deletionPending' in get(userDoc).data) ||
-        get(userDoc).data.deletionPending != true
-      );
+      let tombstone = /databases/$(database)/documents/userDeletionTombstones/$(request.auth.uid);
+      return isAuthenticated() &&
+        !exists(tombstone) &&
+        (
+          !exists(userDoc) ||
+          !('deletionPending' in get(userDoc).data) ||
+          get(userDoc).data.deletionPending != true
+        );
     }
 
     function isAllowedUserUpdate() {
@@ -153,9 +178,19 @@ service cloud.firestore {
     // ========= users =========
     match /users/{userId} {
       allow read: if true;
-      // Owner can only create with safe fields — no role, banned, email
-      allow create: if isOwner(userId) && isAllowedUserCreate();
-      allow update: if (isOwner(userId) && isAllowedUserUpdate()) || isAdmin();
+      // Owner can only create with safe fields — no role, banned, email.
+      //
+      // isNotDeleting() is what stops resurrection. The cascade removes this
+      // document, so completeOnboarding's setDoc(..., {merge:true}) becomes a
+      // CREATE, and onboardingComplete is an allowlisted field — a deleted
+      // account could rebuild its own world-readable profile on a token that
+      // had not expired yet. A brand-new signup is unaffected: no tombstone
+      // and no user doc both read as "not deleting".
+      allow create: if isOwner(userId) &&
+        isNotDeleting() &&
+        isAllowedUserCreate();
+      allow update: if (isOwner(userId) && isNotDeleting() && isAllowedUserUpdate()) ||
+        isAdmin();
       // User deletion is handled exclusively by backend account-deletion logic.
       allow delete: if false;
 
