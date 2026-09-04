@@ -112,7 +112,7 @@ service cloud.firestore {
       // so displayName uniqueness is enforced through /usernames reservations.
       let allowed = ['location', 'onboardingComplete'];
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed) &&
-        hasSafePublicLocation(request.resource.data);
+        hasSafeLocationChange();
     }
 
     // Safe fields allowed during user document creation.
@@ -138,12 +138,58 @@ service cloud.firestore {
       return request.resource.data.keys().hasOnly(allowed);
     }
 
+    // CREATE path only. On a create the post-write document IS the write, so
+    // checking the whole thing is exactly right: a new user document may not
+    // carry coordinates at all.
     function hasSafePublicLocation(userData) {
       return !('location' in userData) || (
         userData.location is map &&
         userData.location.keys().hasOnly(['city', 'state', 'updatedAt']) &&
         (!('city' in userData.location) || userData.location.city is string) &&
         (!('state' in userData.location) || userData.location.state is string)
+      );
+    }
+
+    // UPDATE path. The create-shaped check above was being used here too, and
+    // on an update `request.resource.data` is the whole POST-WRITE document,
+    // not the changed keys — so a `location` map that already contained
+    // lat/lng failed `hasOnly(['city','state','updatedAt'])` no matter what
+    // the write actually touched.
+    //
+    // That was live breakage, not just a stale guard. Documents written before
+    // the private-location split still carry precise coordinates, and
+    // saveUserLocation writes with setDoc(..., {merge:true}), which DEEP-merges
+    // nested maps — so the old lat/lng survived the write, failed the check,
+    // and the update was denied. `.catch(() => undefined)` in getUserLocation
+    // swallowed it, and AuthContext retried it on every sign-in, forever.
+    // Worse, it blocked EVERY allowed write to those documents: even
+    // {onboardingComplete: true} was rejected, so "Update location" in Settings
+    // failed silently for those users and onboarding could not complete.
+    // Confirmed against the emulator before this change.
+    //
+    // The rule this expresses: a client may never introduce or change lat/lng.
+    // It may drop them, and it may leave inherited ones untouched — which is
+    // what lets these documents be written again at all. The residual
+    // coordinates are a privacy problem that only a migration can fix; this is
+    // the half that stops the bleeding.
+    function hasSafeLocationChange() {
+      let after = request.resource.data;
+      let before = resource.data;
+      return !('location' in after) || (
+        after.location is map &&
+        after.location.keys().hasOnly(['city', 'state', 'updatedAt', 'lat', 'lng']) &&
+        (!('city' in after.location) || after.location.city is string) &&
+        (!('state' in after.location) || after.location.state is string) &&
+        (!('lat' in after.location) || (
+          'location' in before &&
+          'lat' in before.location &&
+          after.location.lat == before.location.lat
+        )) &&
+        (!('lng' in after.location) || (
+          'location' in before &&
+          'lng' in before.location &&
+          after.location.lng == before.location.lng
+        ))
       );
     }
 
@@ -163,6 +209,19 @@ service cloud.firestore {
                 affectedKeys.hasOnly(['lat', 'lng', 'city', 'state', 'updatedAt']));
     }
 
+    // Type checks only, each guarded by `in`. There is DELIBERATELY no
+    // keys().hasOnly(...) here, and it is not an oversight to tidy up.
+    //
+    // This receives the whole post-write document, so an allowlist would
+    // constrain fields the write never touched — and a legacy key on an old
+    // settings document would then block every future write to it. That is
+    // exactly the trap hasSafePublicLocation fell into on users/{uid}, where
+    // it broke Settings for real users until it was fixed above. The key
+    // allowlist belongs on settingsKeysOk, which is handed
+    // diff(...).affectedKeys() on update and the full key set on create.
+    //
+    // If you are here to "finish" this function with a hasOnly, read
+    // hasSafeLocationChange first.
     function settingsTypesOk(data) {
       return (!('likeNotifications' in data) || data.likeNotifications is bool) &&
         (!('commentNotifications' in data) || data.commentNotifications is bool) &&

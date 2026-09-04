@@ -1,10 +1,17 @@
-import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   assertFails,
   assertSucceeds,
   type RulesTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import { doc, getDoc, setDoc, updateDoc, deleteDoc } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 import { adminUser, bannedUser, makeTestEnv, plainUser } from "./env";
 
 // The rules are the last line of defence on user documents: everything that
@@ -279,5 +286,89 @@ describe("an admin custom claim is not sufficient on its own", () => {
       setDoc(doc(db, `users/${BOB}/admin/state`), { banned: true })
     );
     await assertSucceeds(getDoc(doc(db, `users/${BOB}/admin/state`)));
+  });
+});
+
+describe("a user document carrying legacy precise coordinates", () => {
+  // Documents written before the private-location split still hold
+  // location.lat/lng in the world-readable user doc. saveUserLocation writes
+  // with setDoc(..., {merge:true}), which DEEP-merges nested maps, so those
+  // coordinates survive the write. The old check ran hasOnly(city/state/
+  // updatedAt) against the whole post-write document, so it failed — and
+  // because it was applied to every update, it blocked writes that had
+  // nothing to do with location at all.
+  const LEGACY = "legacy-coords-user";
+  const COORDS = { city: "Boston", state: "MA", lat: 42.3601, lng: -71.0589 };
+
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "users", LEGACY), {
+        displayName: LEGACY,
+        location: { ...COORDS, updatedAt: new Date() },
+      });
+    });
+  });
+
+  it("can still be written to at all", async () => {
+    // The live breakage. onboardingComplete has nothing to do with location,
+    // and was rejected purely because the stale map failed the allowlist.
+    const db = plainUser(env, LEGACY).firestore();
+    await assertSucceeds(
+      setDoc(doc(db, "users", LEGACY), { onboardingComplete: true }, { merge: true })
+    );
+  });
+
+  it("accepts the city/state write Settings actually sends", async () => {
+    // Exactly src/services/location.ts saveUserLocation: a merge that carries
+    // only the safe keys. The inherited lat/lng survive the merge; that is the
+    // privacy problem the migration fixes, not a reason to deny the write.
+    const db = plainUser(env, LEGACY).firestore();
+    await assertSucceeds(
+      setDoc(
+        doc(db, "users", LEGACY),
+        { location: { city: "Cambridge", state: "MA", updatedAt: serverTimestamp() } },
+        { merge: true }
+      )
+    );
+  });
+
+  it("still refuses a write that CHANGES the inherited coordinates", async () => {
+    const db = plainUser(env, LEGACY).firestore();
+    await assertFails(
+      updateDoc(doc(db, "users", LEGACY), {
+        location: { ...COORDS, lat: 1.234 },
+      })
+    );
+  });
+
+  it("lets a whole-map write drop the coordinates", async () => {
+    // The shape the migration script uses, and the only way a client can
+    // clean itself up. Removing lat/lng must not be mistaken for changing it.
+    const db = plainUser(env, LEGACY).firestore();
+    await assertSucceeds(
+      updateDoc(doc(db, "users", LEGACY), {
+        location: { city: "Boston", state: "MA" },
+      })
+    );
+  });
+
+  it("is still world-readable, which is what the migration has to fix", async () => {
+    // Pinning the exposure rather than implying this change closed it. The
+    // rules half stops the breakage; the coordinates are still there.
+    const db = env.unauthenticatedContext().firestore();
+    const snap = await assertSucceeds(getDoc(doc(db, "users", LEGACY)));
+    expect(snap.data()?.location.lat).toBe(COORDS.lat);
+  });
+});
+
+describe("a user document with no legacy coordinates", () => {
+  it("still cannot have coordinates introduced", async () => {
+    // The guard that must not be lost while unblocking the legacy documents.
+    const db = plainUser(env, ALICE).firestore();
+    await assertFails(
+      updateDoc(doc(db, "users", ALICE), {
+        location: { city: "Boston", state: "MA", lat: 42.36, lng: -71.06 },
+      })
+    );
   });
 });
