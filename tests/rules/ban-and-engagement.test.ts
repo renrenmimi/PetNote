@@ -4,7 +4,18 @@ import {
   assertSucceeds,
   type RulesTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import { doc, deleteDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import {
+  collection,
+  collectionGroup,
+  doc,
+  deleteDoc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  where,
+} from "firebase/firestore";
 import { bannedUser, makeTestEnv, plainUser } from "./env";
 
 // Everything a client may write directly runs through isNotBanned() and
@@ -387,6 +398,73 @@ describe("backend-only collections are closed to clients", () => {
       setDoc(doc(plainUser(env, ALICE).firestore(), "processedEvents", "evt-1"), {
         eventId: "evt-1",
       })
+    );
+  });
+});
+
+describe("the likes collection group is scoped to the requesting user", () => {
+  // posts/{postId}/likes is world-readable and stays that way — a post's
+  // likers are public. The collection group answers a different question:
+  // "every like matching a filter, across all posts". Left open, that turned
+  // any uid into a complete, queryable like history for an unauthenticated
+  // caller. No UI has ever exposed that aggregate.
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      for (const uid of [ALICE, BANNED]) {
+        await setDoc(doc(db, `posts/${POST}/likes/${uid}`), {
+          userId: uid,
+          postId: POST,
+          createdAt: new Date(),
+          counted: true,
+        });
+      }
+    });
+  });
+
+  it("still lets anyone read a single post's likes", async () => {
+    // The public half. An unauthenticated visitor sees who liked a post.
+    const db = env.unauthenticatedContext().firestore();
+    await assertSucceeds(getDoc(doc(db, `posts/${POST}/likes/${ALICE}`)));
+    await assertSucceeds(getDocs(collection(db, `posts/${POST}/likes`)));
+  });
+
+  it("refuses an unauthenticated cross-post query for one person's likes", async () => {
+    const db = env.unauthenticatedContext().firestore();
+    await assertFails(
+      getDocs(
+        query(collectionGroup(db, "likes"), where("userId", "==", ALICE))
+      )
+    );
+  });
+
+  it("refuses a signed-in user querying someone else's like history", async () => {
+    const db = plainUser(env, BANNED).firestore();
+    await assertFails(
+      getDocs(
+        query(collectionGroup(db, "likes"), where("userId", "==", ALICE))
+      )
+    );
+  });
+
+  it("refuses an unfiltered collection-group scan", async () => {
+    const db = plainUser(env, ALICE).firestore();
+    await assertFails(getDocs(collectionGroup(db, "likes")));
+  });
+
+  it("still serves the batched own-likes query the feed depends on", async () => {
+    // useBatchLikeStatus: where(userId == me) + where(postId in [...]).
+    // This is the only collection-group likes query in the client, and it
+    // must keep working or every feed card loses its like state.
+    const db = plainUser(env, ALICE).firestore();
+    await assertSucceeds(
+      getDocs(
+        query(
+          collectionGroup(db, "likes"),
+          where("userId", "==", ALICE),
+          where("postId", "in", [POST])
+        )
+      )
     );
   });
 });
