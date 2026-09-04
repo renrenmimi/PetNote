@@ -515,8 +515,23 @@ service cloud.firestore {
       allow read: if true;
     }
 
+    // Scoped to the requesting user, unlike the per-post rule above.
+    //
+    // posts/{postId}/likes stays world-readable on purpose — a post's like
+    // count and its likers are public, and that is the only shape any UI
+    // needs. This collection-group rule is a different question: it answers
+    // "give me every like matching a filter, across all posts", and the only
+    // client that uses it (useBatchLikeStatus) already filters by the signed-in
+    // user's own uid.
+    //
+    // Left open, `collectionGroup('likes').where('userId','==',victim)` returned
+    // anyone's complete like history to an unauthenticated caller — every post
+    // they have ever liked, in one query, keyed to a person. Per-post likes
+    // being public does not make that aggregate public: no UI has ever exposed
+    // it, and it is a different fact about someone than "these 40 accounts
+    // liked this photo".
     match /{path=**}/likes/{likeId} {
-      allow read: if true;
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
     }
 
     match /{path=**}/comments/{commentId} {
