@@ -1,6 +1,6 @@
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { admin, db } from "./platform";
+import { admin, db, CLOUDINARY_CLOUD_NAME } from "./platform";
 import { cascadeDeletePost, deleteQueryDocs } from "./cleanup";
 import { assertActorNotDeleting, getNotificationActor } from "./notifications";
 import {
@@ -137,7 +137,12 @@ export const onPostWritten = onDocumentWritten("posts/{postId}", async (event) =
   });
 });
 
-export const createPostCallable = onCall(async (request) => {
+export const createPostCallable = onCall(
+  // Binds the cloud name so validateTrustedHttpsUrl can confirm a
+  // res.cloudinary.com url is OUR asset and not a free account someone
+  // else controls. Without it the validator throws rather than degrade.
+  { secrets: [CLOUDINARY_CLOUD_NAME] },
+  async (request) => {
   const callerAuth = request.auth;
   const callerUid = callerAuth?.uid;
   if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
