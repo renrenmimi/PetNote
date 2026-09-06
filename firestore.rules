@@ -570,8 +570,36 @@ service cloud.firestore {
     }
 
     // ========= Collection Group queries =========
+    // Scoped to the requesting user's own check-ins.
+    //
+    // Open, this collection group answered "every check-in matching a filter,
+    // across all locations", and the (userId, createdAt) and (petId, createdAt)
+    // collection-group indexes both exist, so it was servable. That turned any
+    // uid into a movement timeline — every place a person has physically been,
+    // with timestamps — for an unauthenticated caller, with no rate limit.
+    //
+    // Scoping by userId closes BOTH harvesting paths, not just the obvious one.
+    // A petId-filtered collection-group query can return documents belonging to
+    // other people, so Firestore refuses it under this rule — which matters,
+    // because pets/{petId} is world-readable and carries ownerId, putting the
+    // same timeline one hop away. The pet profile now reads its history through
+    // getPetCheckinsCallable instead, which stays public but is capped and rate
+    // limited.
+    //
+    // Reading your OWN history stays a direct query: Profile's check-ins tab
+    // does exactly that (src/services/checkins.ts getUserCheckins, called with
+    // the signed-in uid), and there is no reason to route a user's own data
+    // through a callable.
+    //
+    // A location's check-ins are still world-readable through
+    // locations/{locationId}/checkins above. That is the per-place view, not a
+    // per-person one, and it is unchanged.
+    //
+    // The exposure was never that check-ins are visible — the user published
+    // them and the pet page has always shown them. It is that they could be
+    // harvested in bulk, by anyone, with no login and no ceiling.
     match /{path=**}/checkins/{checkinId} {
-      allow read: if true;
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
     }
 
     // Scoped to the requesting user, unlike the per-post rule above.

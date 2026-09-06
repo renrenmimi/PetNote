@@ -37,6 +37,7 @@ export {
   addLocationPhotosCallable,
   addPlaceCallable,
   checkInCallable,
+  getPetCheckinsCallable,
   onCheckinCreated,
   onCheckinDeleted,
   onLocationDeleted,

@@ -8,7 +8,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../contexts/ToastContext";
 import { useFollowPet } from "../hooks/useFollow";
 import { getPetFollowers, type PetFollower } from "../services/follow";
-import { getCheckinsByPet, type Checkin } from "../services/checkins";
+import { getCheckinsByPet, type PetCheckin } from "../services/checkins";
 import { batchGetLocations, type Location } from "../services/locations";
 import {
   deletePet,
@@ -42,7 +42,7 @@ export function PetProfile() {
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [viewerIsFamilyMember, setViewerIsFamilyMember] = useState(false);
 
-  const [checkins, setCheckins] = useState<Checkin[]>([]);
+  const [checkins, setCheckins] = useState<PetCheckin[]>([]);
   const [checkinLocations, setCheckinLocations] = useState<Record<string, Location | null>>(
     {}
   );

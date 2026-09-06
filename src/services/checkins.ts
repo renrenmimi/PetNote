@@ -124,43 +124,63 @@ export async function getUserCheckins(
   };
 }
 
+/** What getPetCheckinsCallable returns. Deliberately no user identity. */
+export type PetCheckin = {
+  id: string;
+  locationId: string;
+  petId: string;
+  petName: string;
+  photoUrl: string;
+  caption: string;
+  createdAt: Date | null;
+};
+
+/**
+ * A pet's check-in history, through a callable rather than a direct query.
+ *
+ * This used to be a collection-group query filtered by petId. That query is no
+ * longer permitted: the checkins collection group is scoped to the requesting
+ * user's own check-ins, because left open it let anyone harvest a person's
+ * whole movement timeline — by userId directly, or by petId via the
+ * world-readable pets/{petId}.ownerId, which is why closing only the userId
+ * path would have been pointless.
+ *
+ * Still public, no login required. The callable caps the row count and applies
+ * the usual rate limit, and returns no userId / userName / userAvatar, none of
+ * which this page ever rendered.
+ */
 export async function getCheckinsByPet(
   petId: string,
-  options?: { limitCount?: number; lastDoc?: QueryDocumentSnapshot }
-): Promise<{
-  checkins: Checkin[];
-  lastDoc: QueryDocumentSnapshot | null;
-  hasMore: boolean;
-}> {
-  if (!petId) return { checkins: [], lastDoc: null, hasMore: false };
-  const limitCount = options?.limitCount ?? 50;
-  // Order on the server with a (petId ASC, createdAt DESC) collection-group
-  // index so we get the *latest* N rather than an unordered slice that we
-  // then sort locally. Without orderBy, `.limit(50)` could return any 50
-  // matching docs and miss recent check-ins for prolific pets.
-  const constraints: QueryConstraint[] = [
-    where("petId", "==", petId),
-    orderBy("createdAt", "desc"),
-    limit(limitCount),
-  ];
-  if (options?.lastDoc) {
-    constraints.push(startAfter(options.lastDoc));
-  }
-  const snapshot = await getDocs(
-    query(collectionGroup(db, "checkins"), ...constraints)
-  );
-  const checkins = snapshot.docs.map((docSnap) => ({
-    id: docSnap.id,
-    locationId: docSnap.ref.parent.parent?.id || "",
-    ...(docSnap.data() as Omit<Checkin, "id" | "locationId">),
-  }));
-  const nextLast =
-    (snapshot.docs[snapshot.docs.length - 1] as
-      | QueryDocumentSnapshot
-      | undefined) ?? null;
+  options?: { limitCount?: number }
+): Promise<{ checkins: PetCheckin[] }> {
+  if (!petId) return { checkins: [] };
+
+  const getPetCheckins = httpsCallable<
+    { petId: string; limitCount?: number },
+    {
+      checkins: Array<{
+        id: string;
+        locationId: string;
+        petId: string;
+        petName: string;
+        photoUrl: string;
+        caption: string;
+        createdAtMillis: number | null;
+      }>;
+    }
+  >(functions, "getPetCheckinsCallable");
+
+  const { data } = await getPetCheckins({
+    petId,
+    ...(options?.limitCount ? { limitCount: options.limitCount } : {}),
+  });
+
   return {
-    checkins,
-    lastDoc: nextLast,
-    hasMore: snapshot.docs.length === limitCount,
+    checkins: (data.checkins ?? []).map((item) => ({
+      ...item,
+      // Timestamps do not survive the callable boundary, so the server sends
+      // millis and the Date is rebuilt here.
+      createdAt: item.createdAtMillis ? new Date(item.createdAtMillis) : null,
+    })),
   };
 }
