@@ -21,23 +21,37 @@ function signCloudinaryParams(params: Record<string, string>, apiSecret: string)
     .digest("hex");
 }
 
-// Advisory only. These feed the size check in src/services/cloudinary.ts so a
-// user gets a clear error before a doomed upload starts, and they are returned
-// to the client for exactly that.
+// These two numbers are a CLIENT-SIDE hint, mirroring a ceiling we do not
+// control. They are returned to the client so src/services/cloudinary.ts can
+// reject an oversized file with a clear message before starting a doomed
+// upload. That is their only job here.
 //
-// They are NOT a server-side ceiling. The comment that used to sit here said
-// they were "enforced on the signature itself", and that claim is what led to
-// max_file_size being added to the signed parameter set — which broke every
-// upload. Cloudinary signs only the upload parameters it recognises and
-// silently drops the rest, so signing a fourth parameter it never verifies
-// produced a signature that could not match. Its own error proved it: the
-// String to sign Cloudinary echoed back listed folder, timestamp and
-// upload_preset, and nothing else.
+// Where the real ceiling lives, checked against the Cloudinary console rather
+// than assumed:
 //
-// The real server-side ceiling is whatever the petnote_image_signed and
-// petnote_video_signed upload presets have configured in the Cloudinary
-// console. If a hard limit matters, it has to be set there — it cannot be
-// enforced from this file.
+//   Account plan.  Cloudinary enforces a per-file limit by plan, and rejects
+//                  anything over it whatever we send. On the free tier that is
+//                  10 MB for images and 100 MB for video. These constants were
+//                  chosen to match — the image number is the plan limit, and
+//                  the video number is deliberately stricter than it.
+//   Upload preset. Nothing. A preset has no max-file-size setting at all; all
+//                  six of its tabs were checked. This is exactly why the
+//                  parameter below was ignored.
+//   Signature.     Nothing, and this is the part that bit us.
+//
+// The comment that used to sit here claimed the limit was "enforced on the
+// signature itself so a leaked signature can't be reused to upload a bigger
+// file than we allow". That guarantee does not exist, and believing it is what
+// put max_file_size into the signed parameter set and broke every upload in
+// production. Cloudinary signs only the upload parameters it recognises and
+// silently drops the rest, so a fourth parameter it never verifies produced a
+// signature that could not match. Its own error said so: the String to sign it
+// echoed back listed folder, timestamp and upload_preset, and nothing else.
+//
+// So: do not add parameters to the signature to enforce anything. The
+// signature proves the request came from us; it cannot constrain the upload.
+// If a tighter limit than the plan's is ever needed, it has to be enforced
+// after the fact — inspect the uploaded asset and delete it — not before.
 const CLOUDINARY_MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
 const CLOUDINARY_MAX_VIDEO_BYTES = 80 * 1024 * 1024; // 80 MB
 
