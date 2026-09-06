@@ -1,6 +1,6 @@
 import "./setup";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { admin, db } from "../platform";
+import { CLOUDINARY_CLOUD_NAME, admin, db } from "../platform";
 import { ensureUserProfileCallable, deleteUserAccount } from "../users";
 import { createPostCallable, createCommentCallable } from "../posts";
 import { createPetCallable } from "../pets";
@@ -324,7 +324,7 @@ describe("cloudinary upload signature", () => {
       .digest("hex");
 
     expect(res.signature).toBe(expected);
-    expect(res.cloudName).toBe(process.env.CLOUDINARY_CLOUD_NAME);
+    expect(res.cloudName).toBe(CLOUDINARY_CLOUD_NAME);
     expect(res.apiKey).toBe(process.env.CLOUDINARY_API_KEY);
   });
 
