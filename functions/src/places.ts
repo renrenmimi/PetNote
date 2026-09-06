@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { onDocumentCreated, onDocumentDeleted } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { admin, db } from "./platform";
+import { admin, db, CLOUDINARY_CLOUD_NAME } from "./platform";
 import { assertActorNotDeleting, getNotificationActor } from "./notifications";
 import { deleteCollectionPath } from "./cleanup";
 import {
@@ -478,7 +478,12 @@ export const onLocationDeleted = onDocumentDeleted(
   }
 );
 
-export const addPlaceCallable = onCall(async (request) => {
+export const addPlaceCallable = onCall(
+  // Binds the cloud name so validateTrustedHttpsUrl can confirm a
+  // res.cloudinary.com url is OUR asset and not a free account someone
+  // else controls. Without it the validator throws rather than degrade.
+  { secrets: [CLOUDINARY_CLOUD_NAME] },
+  async (request) => {
   const callerAuth = request.auth;
   const callerUid = callerAuth?.uid;
   if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
@@ -542,7 +547,12 @@ export const addPlaceCallable = onCall(async (request) => {
   return { locationId, alreadyExisted };
 });
 
-export const addLocationPhotosCallable = onCall(async (request) => {
+export const addLocationPhotosCallable = onCall(
+  // Binds the cloud name so validateTrustedHttpsUrl can confirm a
+  // res.cloudinary.com url is OUR asset and not a free account someone
+  // else controls. Without it the validator throws rather than degrade.
+  { secrets: [CLOUDINARY_CLOUD_NAME] },
+  async (request) => {
   const callerAuth = request.auth;
   const callerUid = callerAuth?.uid;
   if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
@@ -585,7 +595,12 @@ export const addLocationPhotosCallable = onCall(async (request) => {
   return { success: true };
 });
 
-export const submitReviewCallable = onCall(async (request) => {
+export const submitReviewCallable = onCall(
+  // Binds the cloud name so validateTrustedHttpsUrl can confirm a
+  // res.cloudinary.com url is OUR asset and not a free account someone
+  // else controls. Without it the validator throws rather than degrade.
+  { secrets: [CLOUDINARY_CLOUD_NAME] },
+  async (request) => {
   const callerAuth = request.auth;
   const callerUid = callerAuth?.uid;
   if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
@@ -728,7 +743,12 @@ export const submitReviewCallable = onCall(async (request) => {
   return { id: reviewId };
 });
 
-export const checkInCallable = onCall(async (request) => {
+export const checkInCallable = onCall(
+  // Binds the cloud name so validateTrustedHttpsUrl can confirm a
+  // res.cloudinary.com url is OUR asset and not a free account someone
+  // else controls. Without it the validator throws rather than degrade.
+  { secrets: [CLOUDINARY_CLOUD_NAME] },
+  async (request) => {
   const callerAuth = request.auth;
   const callerUid = callerAuth?.uid;
   if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
