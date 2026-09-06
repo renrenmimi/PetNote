@@ -1,5 +1,5 @@
 import { HttpsError } from "firebase-functions/v2/https";
-import { admin, db } from "./platform";
+import { admin, db, CLOUDINARY_FOLDER } from "./platform";
 
 export const FIRESTORE_BATCH_LIMIT = 450;
 export const LOCATION_PHOTO_PREVIEW_LIMIT = 30;
@@ -155,6 +155,56 @@ export function validateRatingScore(
   return value;
 }
 
+export const CLOUDINARY_HOST = "res.cloudinary.com";
+
+/**
+ * Rejects a res.cloudinary.com URL that is not one of OUR assets.
+ *
+ * The hostname alone proves nothing. Anyone can register a free Cloudinary
+ * account in under a minute, and `https://res.cloudinary.com/<their-cloud>/...`
+ * passes a host allowlist unchanged. That let a client skip the upload
+ * pipeline entirely — the size caps, the per-user folder, the signature rate
+ * limit — by never asking for a signature at all.
+ *
+ * The worse half is ownership. An asset in someone else's cloud stays under
+ * their control, so anything that passed a moderation pass could be swapped
+ * for something else afterwards, at the same URL, on every post, avatar, cover
+ * image and check-in that referenced it.
+ *
+ * Two checks: the cloud name (this is our bucket) and the folder (this is an
+ * asset our signing callable created — see userFolder() in media.ts, which
+ * puts everything under petnote/users/{uid}/).
+ *
+ * Deliberately NOT checking that the folder's uid matches the caller. Family
+ * members co-edit a pet's avatar, so the uploader and the writer are not
+ * always the same person, and cross-user reuse inside our own bucket is a much
+ * smaller problem than a foreign bucket.
+ */
+function assertOwnCloudinaryAsset(parsed: URL, fieldName: string): void {
+  // Read from the environment rather than CLOUDINARY_CLOUD_NAME.value() so
+  // this module does not have to import a secret param that every caller
+  // would then need to bind; a bound secret IS an env var at runtime.
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  if (!cloudName) {
+    // Loud, not lenient. A callable that validates media URLs without the
+    // cloud name available is a deploy misconfiguration, and quietly falling
+    // back to host-only checking would reopen the hole without anyone seeing.
+    throw new HttpsError(
+      "internal",
+      "Media URL validation is misconfigured on the server."
+    );
+  }
+  if (
+    !parsed.pathname.startsWith(`/${cloudName}/`) ||
+    !parsed.pathname.includes(`/${CLOUDINARY_FOLDER}/`)
+  ) {
+    throw new HttpsError(
+      "invalid-argument",
+      `${fieldName} must point at an asset uploaded through PetNote.`
+    );
+  }
+}
+
 export function validateTrustedHttpsUrl(
   value: string,
   fieldName: string,
@@ -172,9 +222,25 @@ export function validateTrustedHttpsUrl(
       `${fieldName} must use a trusted HTTPS host.`
     );
   }
+  // Only Cloudinary needs this. The other allowed hosts (dicebear, Google
+  // profile photos) serve generated or third-party avatars we do not own and
+  // cannot fingerprint by path.
+  if (parsed.hostname === CLOUDINARY_HOST) {
+    assertOwnCloudinaryAsset(parsed, fieldName);
+  }
   return value;
 }
 
+/**
+ * Read-path variant: decides whether a STORED url is still safe to hand back.
+ *
+ * Intentionally host-only, unlike validateTrustedHttpsUrl above. This runs in
+ * getNotificationActor, on triggers as well as callables, where the cloud name
+ * is not bound — and it is not an authorization decision, it only chooses
+ * between a stored avatar and a generated default. Ownership is enforced when
+ * the url is WRITTEN. Urls stored before that enforcement existed are not
+ * re-checked here; that would need a backfill, not a read-path change.
+ */
 export function isTrustedHttpsUrl(
   value: unknown,
   allowedHosts: readonly string[]

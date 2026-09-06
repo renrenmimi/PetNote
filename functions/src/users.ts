@@ -1,7 +1,7 @@
 import { createHash, randomInt } from "node:crypto";
 import { onDocumentCreated, onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { admin, db } from "./platform";
+import { admin, db, CLOUDINARY_CLOUD_NAME } from "./platform";
 import {
   cascadeDeleteMeetup,
   cascadeDeletePet,
@@ -283,7 +283,12 @@ export const onFamilyCreated = onDocumentCreated(
   }
 );
 
-export const ensureUserProfileCallable = onCall(async (request) => {
+export const ensureUserProfileCallable = onCall(
+  // Binds the cloud name so validateTrustedHttpsUrl can confirm a
+  // res.cloudinary.com url is OUR asset and not a free account someone
+  // else controls. Without it the validator throws rather than degrade.
+  { secrets: [CLOUDINARY_CLOUD_NAME] },
+  async (request) => {
   const callerUid = request.auth?.uid;
   if (!callerUid) {
     throw new HttpsError("unauthenticated", "Must be logged in.");
@@ -393,7 +398,12 @@ export const checkDisplayNameAvailabilityCallable = onCall(async (request) => {
   return { available: !taken, taken };
 });
 
-export const updateUserProfileCallable = onCall(async (request) => {
+export const updateUserProfileCallable = onCall(
+  // Binds the cloud name so validateTrustedHttpsUrl can confirm a
+  // res.cloudinary.com url is OUR asset and not a free account someone
+  // else controls. Without it the validator throws rather than degrade.
+  { secrets: [CLOUDINARY_CLOUD_NAME] },
+  async (request) => {
   const callerUid = request.auth?.uid;
   if (!callerUid) {
     throw new HttpsError("unauthenticated", "Must be logged in.");
