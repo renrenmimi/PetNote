@@ -296,9 +296,19 @@ describe("cloudinary upload signature", () => {
     expect(res.folder).toBe(`petnote/users/${ALICE}`);
   });
 
-  it("signs exactly the parameters it returns", async () => {
+  it("signs exactly the three parameters Cloudinary verifies", async () => {
     // Recomputed independently here. If the handler ever signs a different set
-    // of params than it hands back, Cloudinary rejects every upload.
+    // of params than Cloudinary verifies, Cloudinary rejects every upload.
+    //
+    // That comment was already here and it was right — but the test recomputed
+    // the same wrong set the handler used, so it passed while every real
+    // upload failed. max_file_size was in both sides of the comparison and in
+    // neither side of Cloudinary's. A test that mirrors the implementation
+    // cannot catch the implementation being wrong about a third party.
+    //
+    // The list below is now the contract with Cloudinary, not a copy of what
+    // the handler happens to do: folder, timestamp, upload_preset. Do not add
+    // a parameter here without confirming Cloudinary signs it.
     const res = await callAs<{
       signature: string; timestamp: number; uploadPreset: string;
       folder: string; maxFileSize: number; cloudName: string; apiKey: string;
@@ -306,7 +316,6 @@ describe("cloudinary upload signature", () => {
 
     const toSign = [
       `folder=${res.folder}`,
-      `max_file_size=${res.maxFileSize}`,
       `timestamp=${res.timestamp}`,
       `upload_preset=${res.uploadPreset}`,
     ].join("&");
@@ -319,9 +328,11 @@ describe("cloudinary upload signature", () => {
     expect(res.apiKey).toBe(process.env.CLOUDINARY_API_KEY);
   });
 
-  it("binds the size limit into the signature, per resource type", async () => {
-    // The limit is signed so a leaked signature cannot be replayed to upload
-    // something larger than allowed.
+  it("returns the advisory size limit and preset, per resource type", async () => {
+    // These are returned so the client can reject an oversized file before
+    // starting a doomed upload. They are NOT enforced by the signature — that
+    // was the belief that broke uploads. The enforceable ceiling, if there is
+    // one, is configured on the upload preset in the Cloudinary console.
     const image = await callAs<{ maxFileSize: number; uploadPreset: string }>(
       getCloudinaryUploadSignature, ALICE, { resourceType: "image" }
     );

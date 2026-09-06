@@ -69,9 +69,10 @@ async function uploadToCloudinary(
   formData.append("signature", data.signature);
   formData.append("upload_preset", data.uploadPreset);
   formData.append("folder", data.folder);
-  if (data.maxFileSize) {
-    formData.append("max_file_size", String(data.maxFileSize));
-  }
+  // No max_file_size here. Cloudinary ignores it on upload, so sending it
+  // achieved nothing except tempting the server to sign it — which is what
+  // broke uploads. The size check above is where the limit is applied, and it
+  // is advisory; the enforceable ceiling lives in the upload preset.
 
   // 90s covers a max-size video on a sluggish uplink while still killing
   // pathological hangs that used to leave the upload spinner stuck
