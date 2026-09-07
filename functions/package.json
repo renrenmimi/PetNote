@@ -6,7 +6,7 @@
     "lint": "eslint .",
     "migrate:admin-state": "node scripts/migrate-admin-state.js",
     "serve": "npm run build && firebase emulators:start --only functions",
-    "deploy": "firebase deploy --only functions",
+    "deploy": "node scripts/deploy-functions.mjs",
     "test": "vitest run",
     "test:emulator": "firebase emulators:exec --only firestore,auth --project petnote-test \"npm test\"",
     "typecheck:test": "tsc -p tsconfig.test.json",
