@@ -1,6 +1,6 @@
 import "./setup";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { admin, db } from "../platform";
+import { admin, db, CLOUDINARY_CLOUD_NAME } from "../platform";
 import { createPostCallable } from "../posts";
 import { updatePetCallable } from "../pets";
 import { callAs, clearRateLimits, errorCodeOf } from "./helpers";
@@ -13,17 +13,18 @@ import { callAs, clearRateLimits, errorCodeOf } from "./helpers";
 // asset, so anything that survives moderation can be swapped afterwards at the
 // same URL.
 //
-// setup.ts sets CLOUDINARY_CLOUD_NAME=test-cloud, so "test-cloud" is ours.
+// The cloud name is a plain constant in platform.ts, so these tests exercise
+// the exact value production uses rather than an environment stand-in.
 
 const OWNER = "media-owner";
 const PET = "media-pet";
+const CLOUD = CLOUDINARY_CLOUD_NAME;
 
 const ours = (p = "petnote/users/media-owner/photo.jpg") =>
-  `https://res.cloudinary.com/test-cloud/image/upload/v1700000000/${p}`;
+  `https://res.cloudinary.com/${CLOUD}/image/upload/v1700000000/${p}`;
 const foreignCloud =
   "https://res.cloudinary.com/attacker-cloud/image/upload/v1700000000/petnote/users/media-owner/photo.jpg";
-const ourCloudOutsideFolder =
-  "https://res.cloudinary.com/test-cloud/image/upload/v1700000000/somewhere-else/photo.jpg";
+const ourCloudOutsideFolder = `https://res.cloudinary.com/${CLOUD}/image/upload/v1700000000/somewhere-else/photo.jpg`;
 
 async function wipe() {
   for (const c of ["users", "pets", "posts", "callableRateLimits", "notifications"]) {

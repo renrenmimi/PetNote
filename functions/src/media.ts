@@ -64,7 +64,7 @@ function userFolder(callerUid: string): string {
 
 export const getCloudinaryUploadSignature = onCall(
   {
-    secrets: [CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET],
+    secrets: [CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET],
   },
   async (request) => {
     const callerUid = request.auth?.uid;
@@ -90,11 +90,12 @@ export const getCloudinaryUploadSignature = onCall(
       throw new HttpsError("invalid-argument", "resourceType must be 'image' or 'video'.");
     }
 
-    const cloudName = CLOUDINARY_CLOUD_NAME.value();
+    const cloudName = CLOUDINARY_CLOUD_NAME;
     const apiKey = CLOUDINARY_API_KEY.value();
     const apiSecret = CLOUDINARY_API_SECRET.value();
 
-    if (!cloudName || !apiKey || !apiSecret) {
+    // cloudName is a constant now, so only the two real secrets can be missing.
+    if (!apiKey || !apiSecret) {
       throw new HttpsError("failed-precondition", "Cloudinary secrets are not configured.");
     }
 
@@ -140,7 +141,7 @@ export const getCloudinaryUploadSignature = onCall(
 // destroyed because the prefix won't match.
 export const deleteCloudinaryAssetsCallable = onCall(
   {
-    secrets: [CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET],
+    secrets: [CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET],
   },
   async (request) => {
     const callerUid = request.auth?.uid;
@@ -191,10 +192,11 @@ export const deleteCloudinaryAssetsCallable = onCall(
       validated.push({ publicId, resourceType });
     }
 
-    const cloudName = CLOUDINARY_CLOUD_NAME.value();
+    const cloudName = CLOUDINARY_CLOUD_NAME;
     const apiKey = CLOUDINARY_API_KEY.value();
     const apiSecret = CLOUDINARY_API_SECRET.value();
-    if (!cloudName || !apiKey || !apiSecret) {
+    // cloudName is a constant now, so only the two real secrets can be missing.
+    if (!apiKey || !apiSecret) {
       throw new HttpsError("failed-precondition", "Cloudinary secrets are not configured.");
     }
 

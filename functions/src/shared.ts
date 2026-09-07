@@ -1,5 +1,10 @@
 import { HttpsError } from "firebase-functions/v2/https";
-import { admin, db, CLOUDINARY_FOLDER } from "./platform";
+import {
+  admin,
+  db,
+  CLOUDINARY_CLOUD_NAME,
+  CLOUDINARY_FOLDER,
+} from "./platform";
 
 export const FIRESTORE_BATCH_LIMIT = 450;
 export const LOCATION_PHOTO_PREVIEW_LIMIT = 30;
@@ -181,19 +186,11 @@ export const CLOUDINARY_HOST = "res.cloudinary.com";
  * smaller problem than a foreign bucket.
  */
 function assertOwnCloudinaryAsset(parsed: URL, fieldName: string): void {
-  // Read from the environment rather than CLOUDINARY_CLOUD_NAME.value() so
-  // this module does not have to import a secret param that every caller
-  // would then need to bind; a bound secret IS an env var at runtime.
-  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-  if (!cloudName) {
-    // Loud, not lenient. A callable that validates media URLs without the
-    // cloud name available is a deploy misconfiguration, and quietly falling
-    // back to host-only checking would reopen the hole without anyone seeing.
-    throw new HttpsError(
-      "internal",
-      "Media URL validation is misconfigured on the server."
-    );
-  }
+  // A plain constant now, not a secret param read out of the environment.
+  // There is no longer a way for a caller to reach this function without the
+  // cloud name available, so the "misconfigured" branch that used to guard
+  // that case is gone with it.
+  const cloudName = CLOUDINARY_CLOUD_NAME;
   if (
     !parsed.pathname.startsWith(`/${cloudName}/`) ||
     !parsed.pathname.includes(`/${CLOUDINARY_FOLDER}/`)

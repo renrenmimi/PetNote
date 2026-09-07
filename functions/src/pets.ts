@@ -1,5 +1,5 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { admin, db, CLOUDINARY_CLOUD_NAME } from "./platform";
+import { admin, db } from "./platform";
 import { cascadeDeletePet } from "./cleanup";
 import { assertActorNotDeleting, getNotificationActor } from "./notifications";
 import {
@@ -188,12 +188,7 @@ export async function getAccessiblePet(
   return canAccess ? petData : null;
 }
 
-export const createPetCallable = onCall(
-  // Binds the cloud name so validateTrustedHttpsUrl can confirm a
-  // res.cloudinary.com url is OUR asset and not a free account someone
-  // else controls. Without it the validator throws rather than degrade.
-  { secrets: [CLOUDINARY_CLOUD_NAME] },
-  async (request) => {
+export const createPetCallable = onCall(async (request) => {
   const callerUid = request.auth?.uid;
   if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
 
@@ -252,12 +247,7 @@ export const createPetCallable = onCall(
   return { id: petRef.id };
 });
 
-export const updatePetCallable = onCall(
-  // Binds the cloud name so validateTrustedHttpsUrl can confirm a
-  // res.cloudinary.com url is OUR asset and not a free account someone
-  // else controls. Without it the validator throws rather than degrade.
-  { secrets: [CLOUDINARY_CLOUD_NAME] },
-  async (request) => {
+export const updatePetCallable = onCall(async (request) => {
   const callerUid = request.auth?.uid;
   if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
 
