@@ -468,3 +468,86 @@ describe("the likes collection group is scoped to the requesting user", () => {
     );
   });
 });
+
+describe("the checkins collection group is scoped to the requesting user", () => {
+  // Open, this collection group answered "every check-in matching a filter,
+  // across all locations" — a movement timeline for any uid, to anyone, with
+  // no rate limit. The (userId, createdAt) and (petId, createdAt) indexes both
+  // exist, so it was servable, not theoretical.
+  const PLACE = "location-1";
+  const OTHER = "other-user";
+
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, "locations", PLACE), { name: "Dog Park" });
+      await setDoc(doc(db, `locations/${PLACE}/checkins/${ALICE}_2026-09-06`), {
+        userId: ALICE,
+        petId: "alice-pet",
+        photoUrl: "https://res.cloudinary.com/c/image/upload/petnote/x.jpg",
+        createdAt: new Date(),
+      });
+      await setDoc(doc(db, `locations/${PLACE}/checkins/${OTHER}_2026-09-06`), {
+        userId: OTHER,
+        petId: "other-pet",
+        photoUrl: "https://res.cloudinary.com/c/image/upload/petnote/y.jpg",
+        createdAt: new Date(),
+      });
+    });
+  });
+
+  it("still lets anyone read one location's check-ins", async () => {
+    // The per-place view, unchanged. This is what the location page shows.
+    const db = env.unauthenticatedContext().firestore();
+    await assertSucceeds(getDocs(collection(db, `locations/${PLACE}/checkins`)));
+  });
+
+  it("lets a signed-in user query their own history", async () => {
+    // Profile's check-ins tab does exactly this, with the signed-in uid.
+    // Routing a user's own data through a callable would be pointless.
+    const db = plainUser(env, ALICE).firestore();
+    await assertSucceeds(
+      getDocs(
+        query(collectionGroup(db, "checkins"), where("userId", "==", ALICE))
+      )
+    );
+  });
+
+  it("refuses a query for someone else's history", async () => {
+    const db = plainUser(env, ALICE).firestore();
+    await assertFails(
+      getDocs(
+        query(collectionGroup(db, "checkins"), where("userId", "==", OTHER))
+      )
+    );
+  });
+
+  it("refuses an unauthenticated query for anyone's history", async () => {
+    const db = env.unauthenticatedContext().firestore();
+    await assertFails(
+      getDocs(
+        query(collectionGroup(db, "checkins"), where("userId", "==", ALICE))
+      )
+    );
+  });
+
+  it("refuses the petId route, which is the same leak one hop away", async () => {
+    // pets/{petId} is world-readable and carries ownerId, so filtering by
+    // petId reconstructs a person's timeline just as well. Scoping by userId
+    // closes this too: a petId-filtered collection-group query can return
+    // documents belonging to other people, so Firestore refuses it outright.
+    // Even the pet's own owner is refused — the sanctioned route is
+    // getPetCheckinsCallable, which is capped and rate limited.
+    const db = plainUser(env, ALICE).firestore();
+    await assertFails(
+      getDocs(
+        query(collectionGroup(db, "checkins"), where("petId", "==", "alice-pet"))
+      )
+    );
+  });
+
+  it("refuses an unfiltered collection-group scan", async () => {
+    const db = plainUser(env, ALICE).firestore();
+    await assertFails(getDocs(collectionGroup(db, "checkins")));
+  });
+});

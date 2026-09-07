@@ -39,6 +39,11 @@ const allowedPlaceCategories = new Set([
   "other",
 ]);
 
+// Pet-profile check-in history. The page asks for 100; the ceiling is what
+// stops a caller turning one rate-limited call into an unbounded dump.
+const PET_CHECKIN_PAGE_SIZE = 50;
+const PET_CHECKIN_MAX_PAGE_SIZE = 100;
+
 const allowedPlaceFeatures = new Set([
   "off_leash",
   "fenced",
@@ -842,6 +847,83 @@ export const checkInCallable = onCall(
   }
 
   return { id: checkinId };
+});
+
+// Public read of one pet's check-in history, for the pet profile.
+//
+// This exists because the checkins collection group had to be closed. Left
+// open it answered "every check-in matching a filter, across all locations",
+// which turned any uid into a movement timeline — every place a person has
+// physically been, with timestamps — to an unauthenticated caller with no
+// rate limit. The (userId, createdAt) and (petId, createdAt) collection-group
+// indexes both exist, so the query was servable.
+//
+// Closing only the userId path would have been theatre: pets/{petId} is
+// world-readable and carries ownerId, so the same timeline was one hop away
+// through petId. Both are closed; this callable is the sanctioned way back in.
+//
+// Still public — no login. Check-ins are content the user chose to publish,
+// and the pet profile has always shown them. What changes is that harvesting
+// now costs a rate-limited callable per pet instead of one unbounded query,
+// and the response carries no user identity at all: the pet page never
+// rendered userId / userName / userAvatar, so they are not returned.
+export const getPetCheckinsCallable = onCall(async (request) => {
+  const data = requestData(request.data) as {
+    petId?: string;
+    limitCount?: number;
+  };
+  const petId = requiredDocId(data.petId, "petId");
+
+  // Hard cap regardless of what the client asks for.
+  const requested =
+    typeof data.limitCount === "number" && Number.isFinite(data.limitCount)
+      ? Math.floor(data.limitCount)
+      : PET_CHECKIN_PAGE_SIZE;
+  const limitCount = Math.min(
+    PET_CHECKIN_MAX_PAGE_SIZE,
+    Math.max(1, requested)
+  );
+
+  // Signed-in callers are bucketed by uid; anonymous ones by client IP, so an
+  // unauthenticated scraper cannot get an unlimited budget just by not
+  // logging in. assertRateLimit only needs a stable string for the bucket.
+  const callerUid = request.auth?.uid;
+  const forwardedFor = request.rawRequest?.headers?.["x-forwarded-for"];
+  const rawIp =
+    (Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor)
+      ?.split(",")[0]
+      ?.trim() ||
+    request.rawRequest?.ip ||
+    "unknown";
+  const bucket = callerUid ?? `anon_${rawIp.replace(/[^A-Za-z0-9_.:-]/g, "_")}`;
+  await assertRateLimit(bucket, "getPetCheckins", RATE_LIMITS.read);
+
+  const snap = await db
+    .collectionGroup("checkins")
+    .where("petId", "==", petId)
+    .orderBy("createdAt", "desc")
+    .limit(limitCount)
+    .get();
+
+  return {
+    checkins: snap.docs.map((docSnap) => {
+      const checkin = docSnap.data() ?? {};
+      const createdAt = checkin.createdAt;
+      return {
+        id: docSnap.id,
+        locationId: docSnap.ref.parent.parent?.id ?? "",
+        petId: typeof checkin.petId === "string" ? checkin.petId : "",
+        petName: typeof checkin.petName === "string" ? checkin.petName : "",
+        photoUrl: typeof checkin.photoUrl === "string" ? checkin.photoUrl : "",
+        caption: typeof checkin.caption === "string" ? checkin.caption : "",
+        // Timestamps do not survive the callable boundary as Timestamps.
+        createdAtMillis:
+          createdAt && typeof createdAt.toMillis === "function"
+            ? createdAt.toMillis()
+            : null,
+      };
+    }),
+  };
 });
 
 // Admin-only backfill: rebuilds petFriendlySum / petFriendlyAvg /
