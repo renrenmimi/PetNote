@@ -2,7 +2,8 @@ import { onDocumentDeleted } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { admin, db } from "./platform";
-import { assertActorNotDeleting, getNotificationActor } from "./notifications";
+import { assertNoBlockBetween } from "./blocking";
+import { assertCallerAccountActive, getNotificationActor } from "./notifications";
 import {
   assertRateLimit,
   batchChunked,
@@ -237,7 +238,7 @@ export const createMeetupCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot create meetups.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "createMeetup", RATE_LIMITS.strictWrite);
 
   const data = requestData(request.data) as {
@@ -429,7 +430,7 @@ export const updateMeetupCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot edit meetups.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "updateMeetup", RATE_LIMITS.write);
 
   const data = requestData(request.data) as {
@@ -567,7 +568,7 @@ export const cancelMeetupCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot cancel meetups.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "cancelMeetup", RATE_LIMITS.write);
 
   const { meetupId: rawCancelMeetupId } = requestData(request.data) as {
@@ -602,7 +603,7 @@ export const joinMeetupCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot join meetups.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "joinMeetup", RATE_LIMITS.write);
 
   const { meetupId: rawMeetupId, petId: rawPetId } = requestData(request.data) as {
@@ -619,6 +620,22 @@ export const joinMeetupCallable = onCall(async (request) => {
 
   const meetupRef = db.doc(`meetups/${meetupId}`);
   const participantRef = db.doc(`meetups/${meetupId}/participants/${callerUid}`);
+
+  // Admission check, before the transaction. Joining is not just a roster
+  // entry: for a participants_only meetup it is what grants read access to
+  // meetups/{id}/private/address, i.e. where the organizer will physically
+  // be. An organizer who has blocked someone must not be findable that way.
+  //
+  // It reads the meetup one extra time rather than folding the blocklist read
+  // into the transaction, which keeps the transaction body about the part
+  // that has to be atomic (capacity and roster) — a block is not something
+  // the join itself races against, and organizerId never changes.
+  const admissionSnap = await meetupRef.get();
+  if (!admissionSnap.exists) throw new HttpsError("not-found", "Meetup not found.");
+  const admissionOrganizerId = admissionSnap.data()?.organizerId;
+  if (typeof admissionOrganizerId === "string" && admissionOrganizerId) {
+    await assertNoBlockBetween(callerUid, admissionOrganizerId, "Joining this meetup");
+  }
 
   return await db.runTransaction(async (t) => {
     const meetupSnap = await t.get(meetupRef);

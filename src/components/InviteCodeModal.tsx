@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { createInvitation, getActiveInvitation, type Invitation } from "../services/invitations";
+import {
+  createInvitation,
+  getActiveInvitation,
+  revokeInvitation,
+  type Invitation,
+} from "../services/invitations";
 import { useToast } from "../contexts/ToastContext";
 
 type InviteCodeModalProps = {
@@ -37,6 +42,7 @@ export function InviteCodeModal({
   const [activeInvitation, setActiveInvitation] = useState<Invitation | null>(null);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [revoking, setRevoking] = useState(false);
   const mountedRef = useRef(true);
   const openRef = useRef(isOpen);
   const { showToast } = useToast();
@@ -51,6 +57,7 @@ export function InviteCodeModal({
     if (!isOpen) {
       setLoading(false);
       setGenerating(false);
+      setRevoking(false);
     }
   }, [isOpen]);
 
@@ -107,6 +114,30 @@ export function InviteCodeModal({
     } finally {
       if (mountedRef.current && openRef.current) {
         setGenerating(false);
+      }
+    }
+  };
+
+  // The code is a live grant of write access to this pet for 48 hours. Being
+  // able to take it back is the missing half of being able to hand it out —
+  // without it, a code shown to the wrong person, or posted somewhere it
+  // shouldn't have been, stayed usable and there was nothing to do about it.
+  const handleRevoke = async () => {
+    if (revoking || !activeInvitation?.code) return;
+    setRevoking(true);
+    try {
+      await revokeInvitation(petId, activeInvitation.code);
+      if (!mountedRef.current || !openRef.current) return;
+      setActiveInvitation(null);
+      showToast("Invitation code revoked.", "success");
+    } catch (error) {
+      if (!mountedRef.current || !openRef.current) return;
+      const message =
+        error instanceof Error ? error.message : "Could not revoke the code.";
+      showToast(message, "error");
+    } finally {
+      if (mountedRef.current && openRef.current) {
+        setRevoking(false);
       }
     }
   };
@@ -214,12 +245,21 @@ export function InviteCodeModal({
               >
                 Share
               </button>
+              <button
+                type="button"
+                onClick={handleRevoke}
+                disabled={revoking}
+                className="w-full rounded-full border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-600 transition-all duration-200 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-500/40 dark:text-rose-300 dark:hover:bg-rose-500/10"
+              >
+                {revoking ? "Revoking..." : "Revoke Code"}
+              </button>
             </>
           )}
         </div>
 
         <p className="mt-3 text-center text-xs text-slate-400 dark:text-slate-500">
-          Each code can only be used once.
+          Each code can only be used once, and stops working if you revoke it
+          or leave {petName}&apos;s family.
         </p>
       </div>
     </div>,

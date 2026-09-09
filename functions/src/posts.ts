@@ -1,8 +1,9 @@
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
+import { assertNoBlockBetween } from "./blocking";
 import { cascadeDeletePost, deleteQueryDocs } from "./cleanup";
-import { assertActorNotDeleting, getNotificationActor } from "./notifications";
+import { assertCallerAccountActive, getNotificationActor } from "./notifications";
 import {
   assertRateLimit,
   getDefaultAvatar,
@@ -149,7 +150,7 @@ export const createPostCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot create posts.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "createPost", RATE_LIMITS.write);
 
   const data = requestData(request.data) as {
@@ -246,7 +247,7 @@ export const updatePostCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot edit posts.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "updatePost", RATE_LIMITS.write);
   const data = requestData(request.data) as {
     postId?: string;
@@ -324,7 +325,7 @@ export const setPinnedPostCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot pin posts.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "setPinnedPost", RATE_LIMITS.write);
 
   const { postId } = requestData(request.data) as { postId?: string | null };
@@ -362,7 +363,7 @@ export const deletePostCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot delete posts.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "deletePost", RATE_LIMITS.write);
 
   const { postId: rawDeletePostId } = requestData(request.data) as {
@@ -397,7 +398,7 @@ export const createCommentCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot comment.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "createComment", RATE_LIMITS.write);
 
   const data = requestData(request.data) as {
@@ -412,6 +413,15 @@ export const createCommentCallable = onCall(async (request) => {
   const postSnap = await postRef.get();
   if (!postSnap.exists) {
     throw new HttpsError("not-found", "Post not found.");
+  }
+
+  // Commenting is an interaction with the post's author, so a block between
+  // the two of them stops it here rather than only in the reader's own feed
+  // filter. See ./blocking.ts for why the pair is the two humans and not the
+  // pet's whole family.
+  const postAuthorId = postSnap.data()?.authorId;
+  if (typeof postAuthorId === "string" && postAuthorId) {
+    await assertNoBlockBetween(callerUid, postAuthorId, "Commenting");
   }
 
   let replyTo:
@@ -432,6 +442,11 @@ export const createCommentCallable = onCall(async (request) => {
       throw new HttpsError("not-found", "Reply target not found.");
     }
     const replyData = replySnap.data() ?? {};
+    // A reply notifies the comment's author directly, which makes it the same
+    // kind of interaction as commenting on their post.
+    if (typeof replyData.authorId === "string" && replyData.authorId) {
+      await assertNoBlockBetween(callerUid, replyData.authorId, "Replying");
+    }
     replyTo = {
       commentId: replyToCommentId,
       authorName:
@@ -481,7 +496,7 @@ export const deleteCommentCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot delete comments.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "deleteComment", RATE_LIMITS.write);
 
   const { postId: rawCommentPostId, commentId: rawCommentId } = requestData(

@@ -9,7 +9,7 @@ import {
   deleteCollectionPath,
   deleteQueryDocs,
 } from "./cleanup";
-import { assertActorNotDeleting, getNotificationActor } from "./notifications";
+import { assertCallerAccountActive, getNotificationActor } from "./notifications";
 import {
   assertRateLimit,
   batchChunked,
@@ -403,8 +403,12 @@ export const updateUserProfileCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot update profiles.");
   }
-  assertActorNotDeleting(caller);
-  await assertUserNotDeletionTombstoned(callerUid);
+  // assertCallerAccountActive covers the tombstone now, so the local
+  // assertUserNotDeletionTombstoned call that used to sit here is gone —
+  // it would just re-read the same document. ensureUserProfileCallable
+  // still uses the local one: it is the deliberate exception that has to
+  // run before a profile exists, so it cannot take the shared helper.
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "updateUserProfile", RATE_LIMITS.write);
 
   const data = requestData(request.data);

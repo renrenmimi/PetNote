@@ -4,6 +4,7 @@ export {
   getActiveInvitationCallable,
   redeemInvitationCallable,
   removeFamilyMemberCallable,
+  revokeInvitationCallable,
   validateInvitationCallable,
 } from "./invitations";
 export {

@@ -1,7 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
 import { cascadeDeletePet } from "./cleanup";
-import { assertActorNotDeleting, getNotificationActor } from "./notifications";
+import { assertCallerAccountActive, getNotificationActor } from "./notifications";
 import {
   assertRateLimit,
   getDefaultAvatar,
@@ -196,7 +196,7 @@ export const createPetCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot create pets.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "createPet", RATE_LIMITS.strictWrite);
 
   const data = requestData(request.data);
@@ -255,7 +255,7 @@ export const updatePetCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot update pets.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "updatePet", RATE_LIMITS.write);
 
   const { petId: rawUpdatePetId, ...rawUpdates } = requestData(
@@ -358,7 +358,7 @@ export const deletePetCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot delete pets.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "deletePet", RATE_LIMITS.write);
 
   const { petId: rawDeletePetId } = requestData(request.data) as {
@@ -392,7 +392,7 @@ export const followPetCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot follow pets.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "followPet", RATE_LIMITS.write);
 
   const { petId: rawFollowPetId } = requestData(request.data) as {
@@ -455,7 +455,7 @@ export const unfollowPetCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot unfollow pets.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "unfollowPet", RATE_LIMITS.write);
 
   const { petId: rawUnfollowPetId } = requestData(request.data) as {

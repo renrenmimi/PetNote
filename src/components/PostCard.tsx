@@ -772,9 +772,16 @@ export function PostCard({
             <h3 className="text-base font-semibold text-slate-900 dark:text-white">
               Block @{authorName}?
             </h3>
+            {/* Says what blocking actually does. The previous copy promised
+                "they won't be able to see your posts", which was never true:
+                posts are public and readable while logged out, so no block
+                could hide them. What a block does do is stop the interaction
+                — enforced on the server since the block-enforcement change,
+                not just filtered in this client. */}
             <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-              They won&apos;t be able to see your posts, and you won&apos;t see
-              theirs.
+              They won&apos;t be able to comment on your posts or join your
+              meetups, and you won&apos;t see their posts. Your posts stay
+              public, so they can still be viewed by anyone.
             </p>
             <div className="mt-5 flex items-center justify-end gap-3">
               <button

@@ -1,7 +1,7 @@
 import { randomInt } from "node:crypto";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
-import { assertActorNotDeleting, getNotificationActor } from "./notifications";
+import { assertCallerAccountActive, getNotificationActor } from "./notifications";
 import {
   assertRateLimit,
   getDefaultAvatar,
@@ -64,8 +64,76 @@ function isActiveInvitationData(
 ): boolean {
   return (
     invitation?.used !== true &&
+    invitation?.revoked !== true &&
     getInvitationExpiresAtMillis(invitation) > Date.now()
   );
+}
+
+/**
+ * Revoking sets `used: true` as well as the `revoked` audit fields.
+ *
+ * That is on purpose. `used == false` is the first clause of the composite
+ * index behind getLatestActiveInvitationForPet, so flipping it is what removes
+ * the code from every lookup path without adding a third field to the index
+ * (and without a migration for the invitations already in Firestore). The
+ * `revoked` fields carry the reason so the redeem path can say "revoked"
+ * rather than the misleading "already used", and so a support question about a
+ * dead code is answerable.
+ */
+function revokedInvitationFields(
+  revokedBy: string,
+  reason: string
+): Record<string, unknown> {
+  return {
+    used: true,
+    revoked: true,
+    revokedBy,
+    revokedReason: reason,
+    revokedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+}
+
+/**
+ * Marks every still-live invitation on `petId` that `createdBy` minted as
+ * revoked, in both the pet subcollection and the top-level code lookup.
+ *
+ * Called when that person stops being a family member. An invitation is a
+ * standing grant of write access to someone else's pet: it has to stop being
+ * worth anything the moment the authority behind it goes away, not 48 hours
+ * later when it happens to expire.
+ */
+async function revokeInvitationsCreatedBy(
+  petId: string,
+  createdBy: string,
+  revokedBy: string,
+  reason: string
+): Promise<number> {
+  // One equality filter only, and the used/expiry test happens in memory. A
+  // second clause would need a composite index deployed before this code, and
+  // the collection it scans is tiny: createInvitationCallable hands back the
+  // existing active code instead of minting a new one, so a single person
+  // accumulates at most one invitation per 48 hours on a given pet.
+  const invitationsSnap = await db
+    .collection(`pets/${petId}/invitations`)
+    .where("createdBy", "==", createdBy)
+    .get();
+  const live = invitationsSnap.docs.filter((docSnap) =>
+    isActiveInvitationData(docSnap.data())
+  );
+  if (live.length === 0) {
+    return 0;
+  }
+  const fields = revokedInvitationFields(revokedBy, reason);
+  const batch = db.batch();
+  for (const docSnap of live) {
+    batch.update(docSnap.ref, fields);
+    // The lookup doc is what redeemInvitationCallable resolves a typed code
+    // through, so it has to be revoked too — otherwise validateInvitation
+    // would keep reporting the code as valid until the subcollection read.
+    batch.set(invitationLookupRef(docSnap.id), fields, { merge: true });
+  }
+  await batch.commit();
+  return live.length;
 }
 
 function pickLatestActiveInvitation(
@@ -185,7 +253,7 @@ export const createInvitationCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot create invitations.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "createInvitation", RATE_LIMITS.write);
 
   const { petId: rawInvitePetId } = requestData(request.data) as {
@@ -318,7 +386,7 @@ export const redeemInvitationCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot redeem invitations.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "redeemInvitation", RATE_LIMITS.strictWrite);
 
   const data = requestData(request.data) as {
@@ -354,6 +422,13 @@ export const redeemInvitationCallable = onCall(async (request) => {
 
   const invitationMatch = await getLatestActiveInvitationByCode(normalizedCode);
   if (!invitationMatch) {
+    // A revoked code is a different situation from a mistyped one, and the
+    // person holding it deserves to be told which. Reading the lookup doc for
+    // the reason costs one get on a path that is already failing.
+    const lookupSnap = await invitationLookupRef(normalizedCode).get();
+    if (lookupSnap.exists && lookupSnap.data()?.revoked === true) {
+      throw new HttpsError("failed-precondition", "This invitation was revoked.");
+    }
     throw new HttpsError("not-found", "Invalid or expired invitation code.");
   }
   const petId = invitationMatch.invitation.petId;
@@ -385,8 +460,35 @@ export const redeemInvitationCallable = onCall(async (request) => {
       invitation.expiresAt instanceof admin.firestore.Timestamp
         ? invitation.expiresAt.toMillis()
         : 0;
+    if (invitation.revoked === true) {
+      throw new HttpsError("failed-precondition", "This invitation was revoked.");
+    }
     if (invitation.used === true || expiresAt <= Date.now()) {
       throw new HttpsError("failed-precondition", "Invitation is no longer valid.");
+    }
+
+    // An invitation is only ever as good as the authority of the person who
+    // minted it. Usage and expiry were rechecked here, but not that — so a
+    // family member could mint a code, be removed by the owner, and walk back
+    // in with the code they had already saved, for the rest of its 48 hours.
+    //
+    // removeFamilyMemberCallable revokes outstanding codes eagerly; this read
+    // is the transactional half of the same rule, and it is the half that
+    // holds when removal and redemption race, or when a code was minted
+    // before revocation existed.
+    const inviterUid =
+      typeof invitation.createdBy === "string" ? invitation.createdBy : "";
+    if (!inviterUid) {
+      throw new HttpsError("failed-precondition", "Invitation is no longer valid.");
+    }
+    const inviterFamilySnap = await transaction.get(
+      db.doc(`pets/${petId}/family/${inviterUid}`)
+    );
+    if (!inviterFamilySnap.exists) {
+      throw new HttpsError(
+        "failed-precondition",
+        "The person who sent this invitation is no longer part of this pet's family."
+      );
     }
 
     transaction.set(
@@ -455,7 +557,7 @@ export const removeFamilyMemberCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot remove family members.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "removeFamilyMember", RATE_LIMITS.write);
 
   const { petId: rawRemovePetId, targetUserId: rawTargetUserId } = requestData(
@@ -495,5 +597,64 @@ export const removeFamilyMemberCallable = onCall(async (request) => {
   }
 
   await targetFamilyRef.delete();
-  return { success: true };
+  // Outstanding codes this person minted die with their membership. Doing it
+  // here (rather than relying only on the check inside the redeem
+  // transaction) means the code also stops validating and stops being handed
+  // back by getActiveInvitation, so nobody is left staring at a code that
+  // looks live and fails at the last step.
+  const revokedCount = await revokeInvitationsCreatedBy(
+    petId,
+    targetUserId,
+    callerUid,
+    callerUid === targetUserId ? "member_left" : "member_removed"
+  );
+  return { success: true, revokedInvitations: revokedCount };
+});
+
+/**
+ * Lets a family member kill the pet's outstanding invitation code without
+ * removing anybody — the control the family screen was missing. A code was
+ * previously live for its full 48 hours with no way to take it back, which is
+ * the wrong default for something that grants write access to a shared pet.
+ */
+export const revokeInvitationCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Must be logged in.");
+  }
+
+  const caller = await getNotificationActor(callerUid);
+  if (caller.banned === true) {
+    throw new HttpsError("permission-denied", "Banned users cannot revoke invitations.");
+  }
+  await assertCallerAccountActive(callerUid, caller);
+  await assertRateLimit(callerUid, "revokeInvitation", RATE_LIMITS.write);
+
+  const data = requestData(request.data) as { petId?: string; code?: unknown };
+  const petId = requiredDocId(data.petId, "petId");
+  await assertPetFamilyMember(petId, callerUid);
+
+  const normalizedCode = normalizeInvitationCode(data.code);
+  if (normalizedCode.length !== 8) {
+    throw new HttpsError("invalid-argument", "Invitation code must be 8 characters.");
+  }
+
+  const invitationRef = db.doc(`pets/${petId}/invitations/${normalizedCode}`);
+  const invitationSnap = await invitationRef.get();
+  if (!invitationSnap.exists) {
+    throw new HttpsError("not-found", "Invitation not found for this pet.");
+  }
+  if (!isActiveInvitationData(invitationSnap.data())) {
+    // Already used, revoked or expired. Nothing to do, and saying "not found"
+    // would be a lie — the caller's intent is already satisfied.
+    return { success: true, alreadyInactive: true };
+  }
+
+  const fields = revokedInvitationFields(callerUid, "revoked_by_family");
+  const batch = db.batch();
+  batch.update(invitationRef, fields);
+  batch.set(invitationLookupRef(normalizedCode), fields, { merge: true });
+  await batch.commit();
+
+  return { success: true, alreadyInactive: false };
 });

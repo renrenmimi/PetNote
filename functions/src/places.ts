@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { onDocumentCreated, onDocumentDeleted } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
-import { assertActorNotDeleting, getNotificationActor } from "./notifications";
+import { assertCallerAccountActive, getNotificationActor } from "./notifications";
 import { deleteCollectionPath } from "./cleanup";
 import {
   applyReviewAggregationDelta,
@@ -19,6 +19,7 @@ import {
   requiredTrimmedString,
   requiredTrustedHttpsUrl,
   runEventOnce,
+  stripUndefined,
   TRUSTED_MEDIA_URL_HOSTS,
   validateCoordinateRange,
   validateRatingScore,
@@ -495,7 +496,7 @@ export const addPlaceCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot create places.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "addPlace", RATE_LIMITS.strictWrite);
 
   const place = sanitizePlaceDraft(requestData(request.data));
@@ -559,7 +560,7 @@ export const addLocationPhotosCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot add place photos.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "addLocationPhotos", RATE_LIMITS.write);
 
   const data = requestData(request.data) as {
@@ -602,7 +603,7 @@ export const submitReviewCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot review locations.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "submitReview", RATE_LIMITS.write);
 
   const data = requestData(request.data) as {
@@ -664,6 +665,25 @@ export const submitReviewCallable = onCall(async (request) => {
     if (meetupData.status !== "completed" || meetupData.isRatingOpen !== true) {
       throw new HttpsError("permission-denied", "Meetup reviews open only after the meetup is completed.");
     }
+    // The meetup has to have happened at the place being rated. Participation
+    // and completion were checked, but not the association, so a completed
+    // meetup at place A was a reusable licence to rate place B — one extra
+    // rating per meetup, on any location in the database.
+    //
+    // Requiring the id to be present as well as equal is deliberate: a
+    // participants_only meetup has no public locationId at all
+    // (createMeetupCallable only mints one for `everyone` visibility), and the
+    // client only ever opens the rating modal with meetup.locationId, so there
+    // is no legitimate caller that arrives here without one.
+    if (
+      typeof meetupData.locationId !== "string" ||
+      meetupData.locationId !== locationId
+    ) {
+      throw new HttpsError(
+        "permission-denied",
+        "This meetup did not take place at this location."
+      );
+    }
   }
 
   const reviewId = meetupIdValue ? `${callerUid}_${meetupIdValue}` : callerUid;
@@ -673,7 +693,13 @@ export const submitReviewCallable = onCall(async (request) => {
   // existence check and overwrite each other; Firestore rejects the
   // second call with ALREADY_EXISTS.
   try {
-    await reviewRef.create({
+    // stripUndefined is what keeps an ordinary place review working: a review
+    // that is not attached to a meetup leaves meetupIdValue undefined, and the
+    // Admin SDK rejects the whole write rather than dropping the key
+    // ("Cannot use \"undefined\" as a Firestore value"). Omitting the field is
+    // also what the readers expect — src/services/locations.ts only ever
+    // queries `where("meetupId", "==", <an id>)`, never against null.
+    await reviewRef.create(stripUndefined({
       // onReviewCreated flips this to true in the same transaction that folds
       // the rating into the location aggregates.
       counted: false,
@@ -717,7 +743,7 @@ export const submitReviewCallable = onCall(async (request) => {
         cleanliness: petFriendlyCleanliness,
       },
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    }));
   } catch (error) {
     if (
       typeof error === "object" &&
@@ -745,7 +771,7 @@ export const checkInCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot check in.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "checkIn", RATE_LIMITS.write);
 
   const data = requestData(request.data) as {
@@ -795,7 +821,10 @@ export const checkInCallable = onCall(async (request) => {
   // rapid-fire submissions can't both pass an existence check and then
   // overwrite each other.
   try {
-    await checkinRef.create({
+    // Same reason as submitReviewCallable: the pet is optional on a check-in,
+    // so checkinPetId and petName are undefined for a person checking in
+    // without a pet, and the Admin SDK rejects undefined values outright.
+    await checkinRef.create(stripUndefined({
       // onCheckinCreated flips this to true in the same transaction as the
       // totalCheckins increment.
       counted: false,
@@ -813,7 +842,7 @@ export const checkInCallable = onCall(async (request) => {
       locationId,
       dayKey,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    }));
   } catch (error) {
     if (
       typeof error === "object" &&

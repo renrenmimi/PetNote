@@ -4,6 +4,7 @@ import { admin, db } from "../platform";
 import {
   createInvitationCallable,
   redeemInvitationCallable,
+  revokeInvitationCallable,
   validateInvitationCallable,
   removeFamilyMemberCallable,
 } from "../invitations";
@@ -244,5 +245,185 @@ describe("removing a family member", () => {
       )
     ).toBeTruthy();
     expect((await db.doc(`pets/${petId}/family/${FRIEND}`).get()).exists).toBe(true);
+  });
+});
+
+/**
+ * An invitation is a standing grant of write access to somebody else's pet. It
+ * used to be worth its full 48 hours no matter what happened to the person who
+ * minted it, and there was no way to take one back: a member could mint a
+ * code, be removed by the owner, and walk straight back in with the code they
+ * had already saved.
+ *
+ * Two halves are tested here. Revocation is the eager half — removal kills the
+ * codes, so the code also stops validating and stops being handed back. The
+ * creator-authority check inside the redeem transaction is the half that holds
+ * when removal and redemption race, and for any code that predates revocation.
+ */
+describe("an invitation outliving its author's authority", () => {
+  it("stops working once the member who minted it is removed", async () => {
+    const ownerInvite = await mint();
+    await callAs(redeemInvitationCallable, FRIEND, {
+      code: ownerInvite.code,
+      relationship: "brother",
+    });
+
+    // FRIEND, now a member, mints their own code and keeps it.
+    const friendInvite = await callAs<Invitation>(createInvitationCallable, FRIEND, {
+      petId,
+    });
+
+    await callAs(removeFamilyMemberCallable, OWNER, { petId, targetUserId: FRIEND });
+
+    const code = await errorCodeOf(() =>
+      callAs(redeemInvitationCallable, FRIEND, {
+        code: friendInvite.code,
+        relationship: "brother",
+      })
+    );
+    expect(code).toBe("failed-precondition");
+    expect((await db.doc(`pets/${petId}/family/${FRIEND}`).get()).exists).toBe(false);
+  });
+
+  it("stops a third party redeeming the removed member's code too", async () => {
+    const ownerInvite = await mint();
+    await callAs(redeemInvitationCallable, FRIEND, {
+      code: ownerInvite.code,
+      relationship: "brother",
+    });
+    const friendInvite = await callAs<Invitation>(createInvitationCallable, FRIEND, {
+      petId,
+    });
+    await callAs(removeFamilyMemberCallable, OWNER, { petId, targetUserId: FRIEND });
+
+    // The point is the grant, not the person: the code is dead for anyone.
+    const code = await errorCodeOf(() =>
+      callAs(redeemInvitationCallable, STRANGER, {
+        code: friendInvite.code,
+        relationship: "best_friend",
+      })
+    );
+    expect(code).toBe("failed-precondition");
+    expect((await db.doc(`pets/${petId}/family/${STRANGER}`).get()).exists).toBe(
+      false
+    );
+  });
+
+  it("reports a revoked code as invalid before anyone types it in", async () => {
+    const ownerInvite = await mint();
+    await callAs(redeemInvitationCallable, FRIEND, {
+      code: ownerInvite.code,
+      relationship: "brother",
+    });
+    const friendInvite = await callAs<Invitation>(createInvitationCallable, FRIEND, {
+      petId,
+    });
+    await callAs(removeFamilyMemberCallable, OWNER, { petId, targetUserId: FRIEND });
+
+    const res = await callAs<{ valid: boolean }>(validateInvitationCallable, STRANGER, {
+      code: friendInvite.code,
+    });
+    expect(res.valid).toBe(false);
+  });
+
+  it("refuses redemption when the author's membership vanished without revocation", async () => {
+    // The transactional half, and the one that covers codes minted before
+    // revocation existed: delete the family doc directly, leaving the
+    // invitation itself untouched and still marked unused.
+    const ownerInvite = await mint();
+    await callAs(redeemInvitationCallable, FRIEND, {
+      code: ownerInvite.code,
+      relationship: "brother",
+    });
+    const friendInvite = await callAs<Invitation>(createInvitationCallable, FRIEND, {
+      petId,
+    });
+    await db.doc(`pets/${petId}/family/${FRIEND}`).delete();
+
+    const invitation = await db
+      .doc(`pets/${petId}/invitations/${friendInvite.code}`)
+      .get();
+    expect(invitation.data()?.used).toBe(false);
+
+    const code = await errorCodeOf(() =>
+      callAs(redeemInvitationCallable, STRANGER, {
+        code: friendInvite.code,
+        relationship: "best_friend",
+      })
+    );
+    expect(code).toBe("failed-precondition");
+  });
+
+  it("leaves the primary owner's own code alone when someone else is removed", async () => {
+    const ownerInvite = await mint();
+    await callAs(redeemInvitationCallable, FRIEND, {
+      code: ownerInvite.code,
+      relationship: "brother",
+    });
+    // A fresh owner-minted code, then FRIEND is removed.
+    await db.doc(`pets/${petId}/invitations/${ownerInvite.code}`).set(
+      { used: false, usedBy: admin.firestore.FieldValue.delete() },
+      { merge: true }
+    );
+    await callAs(removeFamilyMemberCallable, OWNER, { petId, targetUserId: FRIEND });
+
+    const res = await callAs<{ valid: boolean }>(validateInvitationCallable, STRANGER, {
+      code: ownerInvite.code,
+    });
+    expect(res.valid).toBe(true);
+  });
+});
+
+describe("revoking a code on purpose", () => {
+  it("lets a family member kill the pet's outstanding code", async () => {
+    const inv = await mint();
+
+    await callAs(revokeInvitationCallable, OWNER, { petId, code: inv.code });
+
+    expect(
+      await errorCodeOf(() =>
+        callAs(redeemInvitationCallable, STRANGER, {
+          code: inv.code,
+          relationship: "best_friend",
+        })
+      )
+    ).toBe("failed-precondition");
+  });
+
+  it("frees the pet to mint a new code afterwards", async () => {
+    const first = await mint();
+    await callAs(revokeInvitationCallable, OWNER, { petId, code: first.code });
+
+    const second = await mint();
+    expect(second.code).not.toBe(first.code);
+    const res = await callAs<{ valid: boolean }>(validateInvitationCallable, FRIEND, {
+      code: second.code,
+    });
+    expect(res.valid).toBe(true);
+  });
+
+  it("refuses a stranger revoking someone else's pet's code", async () => {
+    const inv = await mint();
+    expect(
+      await errorCodeOf(() =>
+        callAs(revokeInvitationCallable, STRANGER, { petId, code: inv.code })
+      )
+    ).toBe("permission-denied");
+    const res = await callAs<{ valid: boolean }>(validateInvitationCallable, FRIEND, {
+      code: inv.code,
+    });
+    expect(res.valid).toBe(true);
+  });
+
+  it("is idempotent", async () => {
+    const inv = await mint();
+    await callAs(revokeInvitationCallable, OWNER, { petId, code: inv.code });
+    const again = await callAs<{ success: boolean; alreadyInactive: boolean }>(
+      revokeInvitationCallable,
+      OWNER,
+      { petId, code: inv.code }
+    );
+    expect(again.success).toBe(true);
+    expect(again.alreadyInactive).toBe(true);
   });
 });

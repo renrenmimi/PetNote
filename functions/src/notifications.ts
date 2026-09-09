@@ -94,6 +94,43 @@ export function assertActorNotDeleting(actor: NotificationActor): void {
   }
 }
 
+/**
+ * The authorization check a mutating callable owes its caller's account state.
+ *
+ * assertActorNotDeleting only covers the *middle* of a deletion: it reads
+ * `deletionPending` off users/{uid}, and the cascade deletes that document on
+ * its way out. Once it is gone, getNotificationActor happily manufactures a
+ * default actor ("PetNote User" + generated avatar) for a uid with no profile,
+ * `deletionPending` reads as undefined, and every mutating callable let the
+ * deleted account back in — a non-expired ID token stayed good for its
+ * remaining hour, and Firestore rules don't check whether the Auth user still
+ * exists.
+ *
+ * userDeletionTombstones/{uid} is the record that survives the cascade, so
+ * that is what closes the window. It was already consulted by the two profile
+ * callables; this makes it the shared rule rather than something each callable
+ * has to remember.
+ *
+ * Deliberately NOT checked here: whether users/{uid} exists. A brand-new
+ * signed-in user has no profile document until ensureUserProfileCallable
+ * writes one, and requiring existence in this helper would break first
+ * signup. Absent profile + present tombstone is the deleted case, and the
+ * tombstone is the half that is authoritative.
+ */
+export async function assertCallerAccountActive(
+  uid: string,
+  actor: NotificationActor
+): Promise<void> {
+  assertActorNotDeleting(actor);
+  const tombstoneSnap = await db.doc(`userDeletionTombstones/${uid}`).get();
+  if (tombstoneSnap.exists) {
+    throw new HttpsError(
+      "failed-precondition",
+      "This account has been deleted."
+    );
+  }
+}
+
 async function shouldSendNotification(
   recipientId: string,
   type: ServerNotificationType
@@ -114,6 +151,43 @@ async function shouldSendNotification(
   return true;
 }
 
+/**
+ * A notification is a message. Somebody the recipient has blocked should not
+ * be able to send one, and neither should somebody the recipient blocked be
+ * kept informed of the recipient's activity.
+ *
+ * This is the third leg of block enforcement, alongside comment creation and
+ * meetup admission (see ./blocking.ts). It matters for the interactions that
+ * are *not* gated by a callable — a like is written straight to
+ * posts/{id}/likes/{uid} under a Firestore rule, so the trigger fan-out is the
+ * only place a block can stop the resulting "X liked your post" from landing.
+ *
+ * Two types are deliberately exempt, in BLOCK_EXEMPT_NOTIFICATIONS below:
+ *
+ * - `warning` is an admin moderation decision, not a peer interaction.
+ * - `meetup_cancelled` is logistics about something the recipient already
+ *   committed to attending. Somebody who joined a meetup and later blocked the
+ *   organizer still needs to be told the meetup is off — withholding that is a
+ *   worse outcome than the unwanted contact, because it ends with them
+ *   standing in a park.
+ */
+const BLOCK_EXEMPT_NOTIFICATIONS = new Set<ServerNotificationType>([
+  "warning",
+  "meetup_cancelled",
+]);
+
+async function isBlockedInteraction(
+  recipientId: string,
+  senderId: string | undefined
+): Promise<boolean> {
+  if (!senderId || !recipientId || senderId === recipientId) return false;
+  const [recipientBlockedSender, senderBlockedRecipient] = await Promise.all([
+    db.doc(`users/${recipientId}/blockedUsers/${senderId}`).get(),
+    db.doc(`users/${senderId}/blockedUsers/${recipientId}`).get(),
+  ]);
+  return recipientBlockedSender.exists || senderBlockedRecipient.exists;
+}
+
 export async function createNotificationIfAllowed(
   payload: ServerNotificationPayload,
   options?: {
@@ -124,6 +198,12 @@ export async function createNotificationIfAllowed(
   }
 ): Promise<string> {
   if (!(await shouldSendNotification(payload.userId, payload.type))) {
+    return "";
+  }
+  if (
+    !BLOCK_EXEMPT_NOTIFICATIONS.has(payload.type) &&
+    (await isBlockedInteraction(payload.userId, payload.fromUserId))
+  ) {
     return "";
   }
 
@@ -656,7 +736,7 @@ export const sendNotification = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot send notifications.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "sendNotification", RATE_LIMITS.write);
 
   if (caller.role !== "admin") {
