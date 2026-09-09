@@ -25,6 +25,9 @@ import {
  * write it. An explicit `allow read, write: if false` block would be tidier
  * and is worth adding next time the rules are deployed; it is not added here
  * because this round does not touch or deploy rules.
+ *
+ * No TTL policy should be configured for it: see the write in
+ * deletePetCallable for why an expiry would destroy the recovery evidence.
  */
 const PET_DELETION_TASKS = "petDeletionTasks";
 
@@ -565,12 +568,19 @@ export const deletePetCallable = onCall(async (request) => {
       requestedBy: callerUid,
       requestedByAdmin: isAdmin,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      // TTL field, for a Firestore TTL policy to reap records whose cleanup
-      // somehow never completes. Not required for correctness — the scheduled
-      // sweeper finishes them — but it stops the collection growing forever.
-      expiresAt: admin.firestore.Timestamp.fromMillis(
-        Date.now() + 30 * 24 * 60 * 60 * 1000
-      ),
+      // Deliberately no `expiresAt`, and no TTL policy should be configured
+      // for this collection.
+      //
+      // An earlier version carried one "so the collection cannot grow
+      // forever". That is the wrong trade here: this record is the only
+      // remaining evidence of who asked for a deletion and that its cleanup is
+      // unfinished. A TTL would silently delete exactly the records that keep
+      // failing — the ones that most need attention — and take the
+      // authorisation to resume with them.
+      //
+      // Records are removed when the cleanup completes (runPetCascade), which
+      // is the only condition under which they are safe to drop. One that
+      // survives repeated sweeper attempts is a signal, not litter.
     });
     return "delete";
   });

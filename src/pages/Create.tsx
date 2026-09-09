@@ -2,11 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { sendEmailVerification } from "firebase/auth";
 import { useAuth } from "../hooks/useAuth";
-import {
-  deleteCloudinaryAssets,
-  uploadMedia,
-  type UploadedAsset,
-} from "../services/cloudinary";
+import { uploadMedia, type UploadedAsset } from "../services/cloudinary";
 import {
   createPost,
   getPublishStatus,
@@ -67,6 +63,15 @@ interface PostDraft {
    * selection, discarding the draft, or coming back to an expired one all
    * deleted media that a committed post might already reference.
    */
+  /**
+   * @deprecated Never written any more, and ignored when read.
+   *
+   * Kept in the shape only so a draft persisted by an earlier build parses.
+   * It recorded whether the media had reached the publish call, and it could
+   * be stale: the write that set it to true happens immediately before
+   * publishing and can fail while publishing continues. See
+   * utils/mediaReclaim.ts.
+   */
   handedOff?: boolean;
 }
 
@@ -110,32 +115,29 @@ export function Create() {
   // media that already made it to Cloudinary.
   const operationIdRef = useRef<string | null>(null);
   const uploadedAssetsRef = useRef<UploadedAsset[]>([]);
-  // Mirrors PostDraft.handedOff so the reclaim exits below can see it without
-  // waiting for a draft round trip. `undefined` means "not recorded", which is
-  // treated as handed off — a missing marker is not evidence of a safe delete.
-  const handedOffRef = useRef<boolean | undefined>(false);
 
   /**
-   * The one place that decides whether uploaded media may be deleted.
+   * Finishes with an attempt's uploaded media, locally.
    *
-   * Every exit goes through it: the policy is in utils/mediaReclaim.ts and it
-   * refuses to delete anything whose publish outcome is not known to have
-   * failed, checking with the server by operationId when it can.
+   * **Automatic CDN reclaim from this screen is suspended.** There is no call
+   * to deleteCloudinaryAssets here, and the policy in utils/mediaReclaim.ts has
+   * no `reclaim: true` variant, so reintroducing one has to get past the
+   * compiler rather than past a reviewer.
+   *
+   * Why: every exit below runs at a moment when the composer cannot prove the
+   * post was not published. The last thing it relied on was the draft's own
+   * record of whether it had handed the media over, and that record can be
+   * stale — the update to it happens just before publishing and can fail while
+   * publishing goes ahead anyway. Deleting on a stale record breaks a live
+   * post's images irreversibly.
+   *
+   * The cost is orphaned assets on Cloudinary. That is recorded, bounded, and
+   * collectable later; the alternative is not.
    */
-  const reclaimAssets = async (
+  const releaseAttemptAssets = (
     assets: UploadedAsset[],
-    options: { handedOff: boolean | undefined; operationId: string | null }
-  ) => {
-    const decision = decideAssetReclaim({
-      assets,
-      handedOff: options.handedOff,
-      operationId: options.operationId,
-    });
-    if (decision.reclaim) {
-      await deleteCloudinaryAssets(decision.assets).catch(() => undefined);
-    }
-    return decision;
-  };
+    options: { operationId: string | null }
+  ) => decideAssetReclaim({ assets, operationId: options.operationId });
   const [duplicateSkipped, setDuplicateSkipped] = useState(0);
   const [dragActive, setDragActive] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -210,12 +212,10 @@ export function Create() {
         const parsed: PostDraft = JSON.parse(saved);
         if (Date.now() - parsed.savedAt > 24 * 60 * 60 * 1000) {
           sessionStorage.removeItem(draftKeyFor(user.uid));
-          // An abandoned attempt's uploads are usually unreferenced, but not
-          // always: the attempt may have committed and lost its response. Ask
-          // before deleting, and keep them if the answer is not "no post".
+          // The draft is dropped; its uploads are left on the CDN. See
+          // releaseAttemptAssets for why nothing is deleted here.
           if (parsed.uploadedAssets?.length) {
-            void reclaimAssets(parsed.uploadedAssets, {
-              handedOff: parsed.handedOff,
+            releaseAttemptAssets(parsed.uploadedAssets, {
               operationId: parsed.operationId ?? null,
             });
           }
@@ -251,30 +251,28 @@ export function Create() {
     if (uploadedAssetsRef.current.length === 0) return;
     const stale = uploadedAssetsRef.current;
     const staleOperationId = operationIdRef.current;
-    const staleHandedOff = handedOffRef.current;
     // The assets no longer line up with the selection either way, so this
     // attempt is over. Whether they can be *deleted* is a different question,
     // and the server answers it.
     uploadedAssetsRef.current = [];
     operationIdRef.current = null;
-    handedOffRef.current = false;
     setPhase({ kind: "idle" });
-    void reclaimAssets(stale, {
-      handedOff: staleHandedOff,
-      operationId: staleOperationId,
-    }).then(async (decision) => {
-      if (decision.reclaim || !staleOperationId) return;
-      // The photos are kept either way. The lookup is only used to say
-      // something true about what happened — it does not authorise deleting
-      // anything, because "no post yet" is not "no post ever".
-      const status = await getPublishStatus(staleOperationId).catch(() => null);
-      if (status?.published) {
-        showToast(
-          "Your earlier post did go through — those photos are still in use.",
-          "info"
-        );
-      }
-    });
+    releaseAttemptAssets(stale, { operationId: staleOperationId });
+    if (staleOperationId) {
+      // Nothing is deleted either way. The lookup is only used to say
+      // something true about what happened — a `false` answer means "not
+      // visible yet", not "never published".
+      void getPublishStatus(staleOperationId)
+        .then((status) => {
+          if (status.published) {
+            showToast(
+              "Your earlier post did go through — those photos are still in use.",
+              "info"
+            );
+          }
+        })
+        .catch(() => undefined);
+    }
     // showToast comes from a memoized context value and reclaimAssets is
     // recreated every render by design (it closes over nothing that changes
     // the decision); the effect must fire only when the selection changes.
@@ -296,14 +294,9 @@ export function Create() {
             ? { operationId: operationIdRef.current }
             : {}),
           ...(hasUploaded ? { uploadedAssets: uploadedAssetsRef.current } : {}),
-          // Written explicitly when known, including when false — leaving the
-          // field out would make a later read say "unrecorded". But an
-          // *already* unrecorded state must stay unrecorded: writing false
-          // there would upgrade "we don't know" into "safe to delete", which
-          // is the exact inversion this policy exists to prevent.
-          ...(handedOffRef.current === undefined
-            ? {}
-            : { handedOff: handedOffRef.current }),
+          // handedOff is deliberately not written any more. Nothing may act on
+          // it — a persisted false can be stale in the one direction that
+          // matters — so writing it would only invite somebody to trust it.
         };
         sessionStorage.setItem(key, JSON.stringify(payload));
       } else {
@@ -540,28 +533,23 @@ export function Create() {
     // re-upload bytes that are already on the CDN.
     operationIdRef.current = draft.operationId ?? null;
     uploadedAssetsRef.current = draft.uploadedAssets ?? [];
-    // Absent means unrecorded, not false. Kept as undefined so the policy
-    // errs towards keeping the media.
-    handedOffRef.current = draft.handedOff;
     setShowDraftBanner(false);
     setDraft(null);
   };
 
   const handleDiscardDraft = () => {
     if (user) sessionStorage.removeItem(draftKeyFor(user.uid));
-    // "I don't want this draft" is not the same as "no post exists". If the
-    // attempt committed and lost its response, its images are in use and
-    // deleting them here would break a real post.
+    // Discarding the draft clears it locally, as it should. It does not delete
+    // the uploaded photos: "I don't want this draft" is not evidence that no
+    // post references them.
     const orphans = draft?.uploadedAssets ?? uploadedAssetsRef.current;
     if (orphans.length > 0) {
-      void reclaimAssets(orphans, {
-        handedOff: draft ? draft.handedOff : handedOffRef.current,
+      releaseAttemptAssets(orphans, {
         operationId: draft?.operationId ?? operationIdRef.current,
       });
     }
     operationIdRef.current = null;
     uploadedAssetsRef.current = [];
-    handedOffRef.current = false;
     setShowDraftBanner(false);
     setDraft(null);
   };
@@ -670,10 +658,10 @@ export function Create() {
 
       setPhase({ kind: "publishing" });
       handedOff = true;
-      // Durable before the call, not after: if this attempt commits and the
-      // response is lost, every later exit has to know the outcome is
-      // uncertain — including one that happens after a reload.
-      handedOffRef.current = true;
+      // The draft is saved before the call so a reload can resume the text,
+      // tags and already-uploaded media. It no longer records a handoff flag:
+      // that write can fail while publishing goes ahead regardless, leaving a
+      // stale value behind, and nothing acts on it now anyway.
       try {
         sessionStorage.setItem(
           draftKeyFor(user.uid),
@@ -684,12 +672,11 @@ export function Create() {
             savedAt: Date.now(),
             operationId,
             uploadedAssets: uploadedAssetsRef.current,
-            handedOff: true,
           } satisfies PostDraft)
         );
       } catch {
-        // Storage full or blocked. The in-memory flag still guards this
-        // session's exits; only a reload loses the protection.
+        // Storage full or blocked. Publishing continues; only draft resumption
+        // after a reload is lost, and no cleanup decision depends on it.
       }
       const { deduplicated } = await createPost({
         authorId: user.uid,
@@ -711,7 +698,6 @@ export function Create() {
       sessionStorage.removeItem(draftKeyFor(user.uid));
       operationIdRef.current = null;
       uploadedAssetsRef.current = [];
-      handedOffRef.current = false;
       setPhase({ kind: "idle" });
       showToast(
         deduplicated

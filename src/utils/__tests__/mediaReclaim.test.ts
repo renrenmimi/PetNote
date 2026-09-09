@@ -37,7 +37,7 @@ describe("an attempt that reached the publish call", () => {
     // case with one rule instead of two guesses.
     expect(decideAssetReclaim(attempt())).toEqual({
       reclaim: false,
-      reason: "outcome-unknown",
+      reason: "automatic-reclaim-disabled",
     });
   });
 
@@ -48,13 +48,13 @@ describe("an attempt that reached the publish call", () => {
     // which is why the decision no longer consults it.
     expect(
       decideAssetReclaim(attempt({ operationId: "op-still-in-flight-1" }))
-    ).toEqual({ reclaim: false, reason: "outcome-unknown" });
+    ).toEqual({ reclaim: false, reason: "automatic-reclaim-disabled" });
   });
 
   it("keeps its media when there is no operation id at all", () => {
     expect(decideAssetReclaim(attempt({ operationId: null }))).toEqual({
       reclaim: false,
-      reason: "outcome-unknown",
+      reason: "automatic-reclaim-disabled",
     });
   });
 });
@@ -66,23 +66,32 @@ describe("an attempt whose handoff was never recorded", () => {
     // as false — asserting something the data does not say.
     expect(decideAssetReclaim(attempt({ handedOff: undefined }))).toEqual({
       reclaim: false,
-      reason: "outcome-unknown",
+      reason: "automatic-reclaim-disabled",
     });
   });
 });
 
-describe("an attempt that is known never to have been handed off", () => {
-  it("is the only case where media is reclaimed", () => {
-    // The upload phase failed before any publish call, and the composer wrote
-    // that down explicitly rather than leaving the field out.
+describe("an attempt recorded as never handed off", () => {
+  it("still does not reclaim, because the record itself can be stale", () => {
+    // The path this closes: assets are saved into the draft with an explicit
+    // `handedOff: false`, then the update to `true` fails — sessionStorage
+    // full or blocked — and publishing continues anyway and commits. After a
+    // reload the restored draft still says false, and a policy that trusts it
+    // deletes the images of a published post.
+    //
+    // Three-state handling fixed "the field is missing". It cannot fix "the
+    // field is present and out of date": an in-memory true does not correct a
+    // false already written to the browser. Since the composer cannot
+    // guarantee it recorded the handoff before publishing, no persisted value
+    // can license a deletion.
     const assets = [
       asset("petnote/users/alice/one"),
       asset("petnote/users/alice/two"),
     ];
 
     expect(decideAssetReclaim(attempt({ handedOff: false, assets }))).toEqual({
-      reclaim: true,
-      assets,
+      reclaim: false,
+      reason: "automatic-reclaim-disabled",
     });
   });
 
@@ -90,5 +99,20 @@ describe("an attempt that is known never to have been handed off", () => {
     expect(
       decideAssetReclaim(attempt({ handedOff: false, assets: [] }))
     ).toEqual({ reclaim: false, reason: "no-assets" });
+  });
+
+  it("never reclaims, whatever the attempt looks like", () => {
+    // The invariant the composer now depends on. Enumerated rather than
+    // reasoned about, so that re-opening automatic reclaim has to come past a
+    // test that says it is closed.
+    const assets = [asset("petnote/users/alice/one")];
+    for (const handedOff of [true, false, undefined]) {
+      for (const operationId of ["op-abcdef123456", null]) {
+        expect(
+          decideAssetReclaim({ handedOff, operationId, assets }).reclaim,
+          `handedOff=${String(handedOff)} operationId=${String(operationId)}`
+        ).toBe(false);
+      }
+    }
   });
 });

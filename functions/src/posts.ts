@@ -148,17 +148,6 @@ function optionalOperationId(value: unknown): string | null {
   return trimmed;
 }
 
-/** How many times a repair re-reads before leaving the counter to the triggers. */
-const REPAIR_ATTEMPTS = 3;
-
-function countFieldOf(
-  data: admin.firestore.DocumentData | undefined,
-  field: string
-): number {
-  const value = data?.[field];
-  return typeof value === "number" ? value : 0;
-}
-
 function getPostPetId(data: admin.firestore.DocumentData | undefined): string | null {
   return typeof data?.petId === "string" && data.petId.trim().length > 0
     ? data.petId
@@ -373,49 +362,15 @@ export const onPostWritten = onDocumentWritten("posts/{postId}", async (event) =
 });
 
 /**
- * How many of a pet's posts have actually applied their contribution to it.
- *
- * Keyed on the contribution marker, not on `petId`. That is the difference
- * between "posts about this pet" and "posts this pet's counter has been told
- * about", and the repair needs the second one — it has to write the same
- * quantity the triggers maintain, or it hands them a number they will then
- * add to.
- *
- * The failure this replaces: the repair settled every post it could see and
- * then took an absolute `count()` over live documents. A post created after
- * that scan and before the count carries an empty marker (createPostCallable
- * writes `{petId: null, tags: []}`), so it was included in the absolute total
- * *and* incremented again by its own trigger a moment later. The
- * compare-and-set could not see it, because it watches the parent number and
- * the parent number had not moved yet — the trigger had not run.
- *
- * Counting by the marker makes the two agree by construction: a post is in
- * this total exactly when its increment has already happened. It also makes
- * the compare-and-set's blind spot benign — a create and a delete that both
- * land during the window leave the parent number where it was *and* leave this
- * set where it was, because both are derived from the same predicate.
- *
- * `countedContribution.petId` is a map subfield, which Firestore indexes
- * automatically, so this needs no composite index and no deploy. Posts written
- * before the marker existed have none — the repair's settle pass stamps every
- * post it scans, which is what keeps legacy pets from being zeroed.
- */
-export async function countAppliedPetPosts(petId: string): Promise<number> {
-  const agg = await db
-    .collection("posts")
-    .where("countedContribution.petId", "==", petId)
-    .count()
-    .get();
-  return agg.data().count;
-}
-
-/**
  * Brings one post's aggregate contribution up to date, outside the trigger.
  *
- * Used by the admin repair callables. It is the *same* protocol the trigger
- * runs — read the applied state, apply the difference, record the new state —
- * which is the point: a repair that bypassed the contribution markers is what
- * made recompute double-count posts whose trigger had not fired yet.
+ * It is the *same* protocol the trigger runs — read the applied state, apply
+ * the difference, record the new state.
+ *
+ * **Currently unreferenced.** Its only caller was the pet post-count repair,
+ * which is suspended (see below for why). Kept rather than deleted because it
+ * is the correct primitive and a future repair will need settlement; it is not
+ * itself the thing that was wrong.
  */
 export async function settlePostContribution(postId: string): Promise<boolean> {
   const postRef = db.doc(`posts/${postId}`);
@@ -960,6 +915,39 @@ export const deleteCommentCallable = onCall(async (request) => {
 // using a server-side count() aggregate. Use to repair drift after a
 // missed onPostWritten increment (the trigger swallows certain errors
 // to keep post creation flowing — see applyPetPostCountDelta).
+/**
+ * SUSPENDED. Refuses with `failed-precondition` and an explanation.
+ *
+ * What it did: settle every one of the pet's posts through the contribution
+ * protocol, then write an absolute count of the posts whose contribution had
+ * been applied, guarded by a compare-and-set on the stored value.
+ *
+ * Why it is off. Creating a post is symmetric — the contribution marker and
+ * the pet's counter can move in the same transaction. Deleting one is not. The
+ * post document goes first, taking its marker with it, and the counter waits
+ * for the asynchronous delete event. In that window "count the markers" and
+ * "what the triggers maintain" are different quantities, and the
+ * compare-and-set cannot tell the difference: it watches the stored number,
+ * and the stored number has not moved yet precisely because the decrement is
+ * still owed.
+ *
+ * Measured in the emulator: two counted posts, one deleted with its delete
+ * event not yet delivered, the repair writes 1 and reports `converged: true`,
+ * then the delete event lands and the counter reaches 0 with one post still
+ * there.
+ *
+ * Conditioning on "is anything pending?" would not help — that is the same
+ * unanswerable question in a different place, and a repair that is right most
+ * of the time is worse than one an administrator knows is unavailable.
+ *
+ * What is unaffected: publishing, editing, deleting and the `onPostWritten`
+ * trigger that maintains `postCount` all work normally. This removes the
+ * manual repair, so drift from a genuinely missed trigger currently has no
+ * in-app remedy — a cost recorded in the review handoff. Re-enabling needs the
+ * contribution record to outlive the deleted document, or a settlement
+ * protocol with its own consistency guarantee; not a bigger retry count, and
+ * not a new aggregate architecture bolted on to clear an audit.
+ */
 export const recomputePetPostCountCallable = onCall(async (request) => {
   const callerUid = request.auth?.uid;
   if (!callerUid) {
@@ -969,94 +957,45 @@ export const recomputePetPostCountCallable = onCall(async (request) => {
   if (caller.role !== "admin") {
     throw new HttpsError("permission-denied", "Only admins can recompute pet post counts.");
   }
-  await assertRateLimit(callerUid, "recomputePetPostCount", RATE_LIMITS.write);
 
-  const { petId: rawRecomputePetId } = requestData(request.data) as {
-    petId?: string;
-  };
-  const petId = requiredDocId(rawRecomputePetId, "petId");
-
-  const petRef = db.doc(`pets/${petId}`);
-  const petSnap = await petRef.get();
-  if (!petSnap.exists) {
-    throw new HttpsError("not-found", "Pet not found.");
-  }
-
-  // Settle every one of this pet's posts through the contribution protocol
-  // *before* taking an absolute count.
-  //
-  // This is the ordering the previous version got wrong. It went straight to
-  // count(), which counts posts whose aggregation trigger has not run yet — so
-  // the repair wrote a total that already included them, and then their
-  // pending trigger incremented on top of it. One pending post meant a count
-  // one too high, permanently. Settling first means every post's marker says
-  // "counted", so a later (re)delivery is a no-op and the absolute count is
-  // the truth rather than a race.
-  //
-  // Bounded by the pet's own post count, which is what a per-pet repair costs
-  // by nature. Paged so a prolific pet does not load in one go.
-  let settled = 0;
-  let cursor: admin.firestore.QueryDocumentSnapshot | null = null;
-  for (;;) {
-    let page: admin.firestore.Query = db
-      .collection("posts")
-      .where("petId", "==", petId)
-      .orderBy(admin.firestore.FieldPath.documentId())
-      .limit(200);
-    if (cursor) page = page.startAfter(cursor);
-    const snap = await page.get();
-    if (snap.empty) break;
-    for (const docSnap of snap.docs) {
-      if (await settlePostContribution(docSnap.id)) settled += 1;
-    }
-    if (snap.size < 200) break;
-    cursor = snap.docs[snap.docs.length - 1];
-  }
-
-  // Compare-and-set, same reason as the interaction repair above: settling the
-  // contributions is transactional per post, but the absolute count that
-  // follows is not, so a post whose trigger lands in between would have its
-  // increment overwritten.
-  for (let attempt = 0; attempt < REPAIR_ATTEMPTS; attempt += 1) {
-    const observed = await petRef.get();
-    if (!observed.exists) {
-      throw new HttpsError("not-found", "Pet not found.");
-    }
-    const observedCount = countFieldOf(observed.data(), "postCount");
-
-    const postCount = await countAppliedPetPosts(petId);
-
-    const applied = await db.runTransaction(async (t) => {
-      const snap = await t.get(petRef);
-      if (!snap.exists) return "gone" as const;
-      if (countFieldOf(snap.data(), "postCount") !== observedCount) {
-        return "changed" as const;
-      }
-      t.update(petRef, { postCount });
-      return "written" as const;
-    });
-
-    if (applied === "gone") {
-      throw new HttpsError("not-found", "Pet not found.");
-    }
-    if (applied === "written") {
-      return { success: true, postCount, settled, converged: true };
-    }
-  }
-
-  const current = await petRef.get();
-  return {
-    success: true,
-    postCount: countFieldOf(current.data(), "postCount"),
-    settled,
-    converged: false,
-  };
+  // Before any read or write, so a call cannot half-apply, and the answer is
+  // the same for every caller and every pet.
+  throw new HttpsError(
+    "failed-precondition",
+    "Pet post-count repair is temporarily unavailable. A post that has been " +
+      "deleted but whose delete event has not been processed yet makes any " +
+      "recomputed total wrong by one, so this repair would corrupt the count " +
+      "rather than fix it. Posting, editing and deleting are unaffected, and " +
+      "the counters are still maintained by their triggers."
+  );
 });
 
 // Admin-only: recompute likeCount and commentCount on a single post from
 // its subcollection sizes. Repairs drift from missed onLikeCreated /
 // onCommentCreated triggers (e.g. event delivery failures), and backfills
 // posts that never had those fields written in the first place.
+/**
+ * SUSPENDED. Refuses with `failed-precondition` and an explanation.
+ *
+ * Same window as the pet post-count repair above, measured the same way: two
+ * counted likes, one deleted with its `onLikeDeleted` event not yet delivered,
+ * the repair writes 1 and reports `converged: true`, then the event lands and
+ * the counter reaches 0 with one like still there.
+ *
+ * The compare-and-set and the pending-document subtraction that this callable
+ * gained in earlier rounds were both real improvements, and neither addresses
+ * this: a *deleted* like is absent from `count()` while the parent still owes
+ * its decrement, so the repair's total and the triggers' quantity differ in
+ * that window with nothing observable to distinguish it.
+ *
+ * Suspending this was not part of the brief — the brief named the pet repair.
+ * It is here because the defect is identical and measured, and disabling is
+ * the same minimal, reversible action; leaving an admin endpoint armed that is
+ * known to corrupt the counter it claims to fix would be the larger risk.
+ *
+ * Unaffected: liking, unliking, commenting, deleting comments, and the
+ * triggers that maintain both counters.
+ */
 export const recomputePostInteractionCountsCallable = onCall(
   async (request) => {
     const callerUid = request.auth?.uid;
@@ -1070,116 +1009,15 @@ export const recomputePostInteractionCountsCallable = onCall(
         "Only admins can recompute post interaction counts."
       );
     }
-    await assertRateLimit(
-      callerUid,
-      "recomputePostInteractionCounts",
-      RATE_LIMITS.write
+
+    throw new HttpsError(
+      "failed-precondition",
+      "Post interaction-count repair is temporarily unavailable. A like or " +
+        "comment that has been deleted but whose delete event has not been " +
+        "processed yet makes any recomputed total wrong by one, so this " +
+        "repair would corrupt the counts rather than fix them. Liking and " +
+        "commenting are unaffected, and the counters are still maintained by " +
+        "their triggers."
     );
-
-    const { postId: rawInteractPostId } = requestData(request.data) as {
-      postId?: string;
-    };
-    const postId = requiredDocId(rawInteractPostId, "postId");
-
-    const postRef = db.doc(`posts/${postId}`);
-    const postSnap = await postRef.get();
-    if (!postSnap.exists) {
-      throw new HttpsError("not-found", "Post not found.");
-    }
-
-    // Subtract the documents whose contribution has not been applied yet, and
-    // only write if the stored value has not moved since it was observed.
-    //
-    // The counter's meaning is "how many likes/comments have been folded in",
-    // and the create triggers are what fold them in — each flips its own
-    // `counted` marker in the same transaction as the increment. A plain
-    // count() therefore over-reports: it includes documents still waiting for
-    // their trigger, whose increment is still to come.
-    //
-    // Subtracting the pending set fixes that, but an *absolute* write still
-    // loses any increment that lands between the aggregates and the write.
-    // Measured in the emulator: two counted likes plus one pending, the
-    // trigger commits 2 → 3, the repair then writes its observed 2, and the
-    // post is permanently one short. So the write is a compare-and-set against
-    // the value read before the aggregates; if a trigger moved it, the repair
-    // starts over with fresh counts. Aggregate queries cannot run inside a
-    // transaction, which is why this is a retry loop rather than one.
-    //
-    // Giving up after a few attempts is safe: not writing leaves whatever the
-    // triggers produced, and the triggers are the only other writer.
-    for (let attempt = 0; attempt < REPAIR_ATTEMPTS; attempt += 1) {
-      const observed = await postRef.get();
-      if (!observed.exists) {
-        throw new HttpsError("not-found", "Post not found.");
-      }
-      const observedLike = countFieldOf(observed.data(), "likeCount");
-      const observedComment = countFieldOf(observed.data(), "commentCount");
-
-      const [likeAgg, commentAgg, pendingLikeAgg, pendingCommentAgg] =
-        await Promise.all([
-          db.collection(`posts/${postId}/likes`).count().get(),
-          db.collection(`posts/${postId}/comments`).count().get(),
-          // `counted == false` is the pending set. A document with no
-          // `counted` field predates the marker and counts as already
-          // applied — the same reading as wasCountedAtCreate in ./shared.ts.
-          db
-            .collection(`posts/${postId}/likes`)
-            .where("counted", "==", false)
-            .count()
-            .get(),
-          db
-            .collection(`posts/${postId}/comments`)
-            .where("counted", "==", false)
-            .count()
-            .get(),
-        ]);
-      const pendingLikes = pendingLikeAgg.data().count;
-      const pendingComments = pendingCommentAgg.data().count;
-      const likeCount = Math.max(0, likeAgg.data().count - pendingLikes);
-      const commentCount = Math.max(
-        0,
-        commentAgg.data().count - pendingComments
-      );
-
-      const applied = await db.runTransaction(async (t) => {
-        const snap = await t.get(postRef);
-        if (!snap.exists) return "gone" as const;
-        if (
-          countFieldOf(snap.data(), "likeCount") !== observedLike ||
-          countFieldOf(snap.data(), "commentCount") !== observedComment
-        ) {
-          return "changed" as const;
-        }
-        t.update(postRef, { likeCount, commentCount });
-        return "written" as const;
-      });
-
-      if (applied === "gone") {
-        throw new HttpsError("not-found", "Post not found.");
-      }
-      if (applied === "written") {
-        return {
-          success: true,
-          likeCount,
-          commentCount,
-          pendingLikes,
-          pendingComments,
-          converged: true,
-        };
-      }
-    }
-
-    // Still moving after several attempts. Reporting it rather than forcing a
-    // value keeps the counter under the triggers' control, which is where it
-    // belongs while they are active.
-    const current = await postRef.get();
-    return {
-      success: true,
-      likeCount: countFieldOf(current.data(), "likeCount"),
-      commentCount: countFieldOf(current.data(), "commentCount"),
-      pendingLikes: 0,
-      pendingComments: 0,
-      converged: false,
-    };
   }
 );

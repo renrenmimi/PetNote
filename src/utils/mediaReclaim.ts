@@ -16,8 +16,8 @@ import type { UploadedAsset } from "../services/cloudinary";
  * local variable inside one submit call, so none of those exits could know the
  * outcome was uncertain.
  *
- * The rule is therefore: **media is deleted only when the attempt is known
- * never to have been handed to a publish call.** Everything else keeps it.
+ * The rule is therefore: **the composer does not delete uploaded media at
+ * all.** Every exit keeps it.
  *
  * In particular, a server answer of `published: false` is *not* grounds to
  * delete. That answer is document existence at one instant, and nothing
@@ -30,49 +30,70 @@ import type { UploadedAsset } from "../services/cloudinary";
  * releasing an asset would need a server-side protocol that is mutually
  * exclusive with publishing, and that does not exist yet.
  *
- * A missing `handedOff` is likewise not evidence of "never handed off" — it is
- * no evidence at all. Older drafts, and drafts whose marker write failed while
- * the publish went ahead, both look like that.
+ * The last thing still trusted was the draft's own record of whether the media
+ * had been handed to a publish call. That record can be stale in the one
+ * direction that matters — see `handedOff` below — so it went too.
  *
- * This is deliberately the conservative end. The cost is orphaned assets,
- * which a future reference model or reaper can collect; the cost of the other
- * choice is a live post pointing at deleted images, which nothing can undo.
+ * **This is a suspension, not a solution.** The cost is orphaned Cloudinary
+ * assets: photos uploaded for a post that was never published are now left on
+ * the CDN. That is a bounded, collectable cost. The cost of the alternative is
+ * a live post pointing at deleted images, which nothing can undo. Reclaiming
+ * them properly needs a media reference model, which is deliberately not being
+ * built here.
  */
 
 export type PublishAttempt = {
-  /** Stable id for the attempt, needed to ask the server what happened. */
+  /** Stable id for the attempt. Kept for messaging, not for this decision. */
   operationId: string | null;
   /**
-   * True once media was handed to the publish call, in this attempt or an
-   * earlier one. `undefined` means unrecorded, which is not the same as false.
+   * What the draft recorded about handoff, if anything.
+   *
+   * **Deliberately ignored by the decision below**, and no longer written by
+   * the composer. It is still accepted because a draft persisted by an earlier
+   * build can carry it, and the safe thing to do with that value is nothing.
+   *
+   * It was the last thing trusted to authorise a deletion, and it could be
+   * *stale*: assets go into the draft with an explicit `false`, the update to
+   * `true` before publishing fails because sessionStorage is full or blocked,
+   * publishing continues and commits, and after a reload the draft still says
+   * false. Three-state handling fixed "the field is missing"; nothing in the
+   * browser can fix "the field is present and out of date". An in-memory true
+   * does not correct a false already written to disk.
    */
-  handedOff: boolean | undefined;
+  handedOff?: boolean;
   assets: UploadedAsset[];
 };
 
-export type ReclaimDecision =
-  | { reclaim: true; assets: UploadedAsset[] }
-  | {
-      reclaim: false;
-      reason: "no-assets" | "outcome-unknown";
-    };
+/**
+ * Why reclaim was withheld.
+ *
+ * There is no `reclaim: true` variant, and that is the point: automatic CDN
+ * reclaim from the composer is **suspended**, and the type makes a deletion
+ * along this path unrepresentable rather than leaving it to a reviewer to
+ * notice one being reintroduced.
+ */
+export type ReclaimDecision = {
+  reclaim: false;
+  reason: "no-assets" | "automatic-reclaim-disabled";
+};
 
 /**
- * Decides whether an attempt's uploaded media may be deleted.
+ * Whether the composer may delete an attempt's uploaded media. It may not.
  *
- * Synchronous and total: it asks the server nothing, because no server answer
- * available today can license a deletion (see the note above). Keeping it
- * free of I/O is also what makes every call site trivially auditable — there
- * is no path through here that deletes something without `handedOff === false`.
+ * Kept as a function, and as the single place the composer consults, because
+ * the answer is a decision with a rationale rather than an absence of code —
+ * and because re-opening it has to come past the tests next to this file.
+ *
+ * Re-enabling needs more than a better flag. It needs the composer to be
+ * unable to publish without having durably recorded that it is publishing, or
+ * a server-side release protocol that is mutually exclusive with publishing.
+ * Another boolean, a retry around the storage write, or asking whether the
+ * post exists yet are all things that have already been tried here and are all
+ * insufficient.
  */
 export function decideAssetReclaim(attempt: PublishAttempt): ReclaimDecision {
   if (attempt.assets.length === 0) {
     return { reclaim: false, reason: "no-assets" };
   }
-  // Explicitly recorded as never handed to a publish call: no post can exist
-  // and none can appear, so this is the only case where deleting is safe.
-  if (attempt.handedOff === false) {
-    return { reclaim: true, assets: attempt.assets };
-  }
-  return { reclaim: false, reason: "outcome-unknown" };
+  return { reclaim: false, reason: "automatic-reclaim-disabled" };
 }

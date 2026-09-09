@@ -1,9 +1,8 @@
 import "./setup";
 import { beforeEach, afterAll, describe, expect, it } from "vitest";
 import { admin, db } from "../platform";
-import { onLikeCreated, onCommentCreated } from "../notifications";
+import { onLikeCreated } from "../notifications";
 import {
-  countAppliedPetPosts,
   createPostCallable,
   onPostWritten,
   recomputePetPostCountCallable,
@@ -362,190 +361,68 @@ describe("a tag that cannot be a document id", () => {
   });
 });
 
-describe("admin repair", () => {
-  it("does not double-count a like whose trigger has not run yet", async () => {
-    await db.doc(`${POST}/likes/liker1`).set({ userId: "liker1", counted: false });
+describe("the suspended interaction-count repair", () => {
+  /**
+   * Same window as the pet repair, and disabled for the same reason. Measured
+   * before disabling: two counted likes, one deleted with its onLikeDeleted
+   * event not yet delivered, the repair wrote 1 and reported converged, then
+   * the event landed and the counter reached 0 with one like still there.
+   */
+  it("refuses, and leaves the stored counts untouched", async () => {
+    await db.doc(`${POST}/likes/liker-a`).set({ userId: "liker-a", counted: true });
+    await db.doc(POST).update({ likeCount: 9, commentCount: 4 });
 
-    const repaired = await callAs<{ likeCount: number; pendingLikes: number }>(
-      recomputePostInteractionCountsCallable,
-      ADMIN_UID,
-      { postId: "contrib-post" }
+    const code = await errorCodeOf(() =>
+      callAs(recomputePostInteractionCountsCallable, ADMIN_UID, {
+        postId: "contrib-post",
+      })
     );
-    // One like exists but has not been folded in, so the repaired count is 0.
-    expect(repaired.likeCount).toBe(0);
-    expect(repaired.pendingLikes).toBe(1);
+
+    expect(code).toBe("failed-precondition");
+    // Not even a partial write: the refusal happens before any read.
+    expect(await fieldOf(POST, "likeCount")).toBe(9);
+    expect(await fieldOf(POST, "commentCount")).toBe(4);
+  });
+
+  it("refuses a non-admin with a permission error, not the unavailable one", async () => {
+    // The authorisation answer must not change just because the feature is
+    // off, or an ordinary user learns about admin endpoints.
+    const code = await errorCodeOf(() =>
+      callAs(recomputePostInteractionCountsCallable, OWNER, {
+        postId: "contrib-post",
+      })
+    );
+    expect(code).toBe("permission-denied");
+  });
+
+  it("leaves a pending like's count to its own trigger", async () => {
+    // What the repair used to be for. The trigger still gets there unaided.
+    await db.doc(POST).update({ likeCount: 0 });
+    const likePath = `${POST}/likes/liker-c`;
+    await db.doc(likePath).set({ userId: "liker-c", counted: false });
 
     await deliverCreate(
       onLikeCreated,
-      `${POST}/likes/liker1`,
-      { postId: "contrib-post", likeId: "liker1" },
-      newEventId("like")
+      likePath,
+      { postId: "contrib-post", likeId: "liker-c" },
+      newEventId("pending-like")
     );
 
     expect(await fieldOf(POST, "likeCount")).toBe(1);
   });
-
-  it("does the same for comments", async () => {
-    await db.doc(`${POST}/comments/c1`).set({
-      authorId: "someone",
-      authorName: "Someone",
-      text: "hi",
-      counted: false,
-    });
-
-    const repaired = await callAs<{ commentCount: number }>(
-      recomputePostInteractionCountsCallable,
-      ADMIN_UID,
-      { postId: "contrib-post" }
-    );
-    expect(repaired.commentCount).toBe(0);
-
-    await deliverCreate(
-      onCommentCreated,
-      `${POST}/comments/c1`,
-      { postId: "contrib-post", commentId: "c1" },
-      newEventId("comment")
-    );
-
-    expect(await fieldOf(POST, "commentCount")).toBe(1);
-  });
-
-  it("still repairs drift on an already-counted like", async () => {
-    await db.doc(`${POST}/likes/liker1`).set({ userId: "liker1", counted: true });
-    await db.doc(POST).update({ likeCount: 7 });
-
-    const repaired = await callAs<{ likeCount: number }>(
-      recomputePostInteractionCountsCallable,
-      ADMIN_UID,
-      { postId: "contrib-post" }
-    );
-
-    expect(repaired.likeCount).toBe(1);
-    expect(await fieldOf(POST, "likeCount")).toBe(1);
-  });
-
-  it("settles a pet's posts before counting them, so a pending trigger is a no-op", async () => {
-    const created = await callAs<{ id: string }>(createPostCallable, OWNER, {
-      petId: "contrib-pet",
-      text: "unpublished aggregate",
-    });
-    // The aggregation trigger has not been delivered: the pet's count is still
-    // 0 and the post's marker says nothing has been applied.
-    expect(await fieldOf(PET, "postCount")).toBe(0);
-
-    const repaired = await callAs<{ postCount: number; settled: number }>(
-      recomputePetPostCountCallable,
-      ADMIN_UID,
-      { petId: "contrib-pet" }
-    );
-    expect(repaired.postCount).toBe(1);
-    expect(repaired.settled).toBe(1);
-
-    // Now the pending trigger arrives. It must find nothing left to do.
-    const snap = await captureSnapshot(`posts/${created.id}`);
-    await deliverWritten(
-      onPostWritten,
-      undefined,
-      snap,
-      { postId: created.id },
-      newEventId("late")
-    );
-
-    expect(await fieldOf(PET, "postCount")).toBe(1);
-    await db.recursiveDelete(db.doc(`posts/${created.id}`));
-  });
 });
 
-describe("admin repair running at the same time as a trigger", () => {
+describe("a post arriving while the pet repair is called", () => {
   /**
-   * The repair takes aggregate counts and then writes an absolute value. A
-   * trigger that increments in between has its work overwritten, and the
-   * counter is left permanently one short of the truth.
+   * The other direction from the pending-delete case below, kept because the
+   * two fail differently: a post *added* during a repair was double-counted,
+   * a post *being removed* was double-subtracted.
    *
-   * The invariant asserted here is the counter's actual meaning: once both
-   * have finished, likeCount equals the number of likes whose contribution has
-   * been applied — which, with every like's trigger delivered, is all of them.
-   *
-   * Repeated, because which side lands first is not deterministic. Before the
-   * fix this fails on most runs; after it, no interleaving can break it.
+   * With the repair suspended, both reduce to the same requirement — the
+   * entry point must refuse, and the triggers must reach the right number on
+   * their own.
    */
-  it("does not lose a like that was counted while the repair was running", async () => {
-    for (let attempt = 0; attempt < 4; attempt += 1) {
-      await resetWorld();
-      // Two likes already folded in, and a third whose trigger is about to run.
-      await db.doc(`${POST}/likes/liker-a`).set({ userId: "liker-a", counted: true });
-      await db.doc(`${POST}/likes/liker-b`).set({ userId: "liker-b", counted: true });
-      await db.doc(POST).update({ likeCount: 2 });
-      const pendingPath = `${POST}/likes/liker-c`;
-      await db.doc(pendingPath).set({ userId: "liker-c", counted: false });
-
-      await Promise.all([
-        callAs(recomputePostInteractionCountsCallable, ADMIN_UID, {
-          postId: "contrib-post",
-        }),
-        deliverCreate(
-          onLikeCreated,
-          pendingPath,
-          { postId: "contrib-post", likeId: "liker-c" },
-          newEventId("race-like")
-        ),
-      ]);
-
-      // Order-independent: the counter must equal the number of likes whose
-      // contribution has been applied, whichever side finished first.
-      const likes = await db.collection(`${POST}/likes`).get();
-      const counted = likes.docs.filter((d) => d.data().counted !== false).length;
-      expect(await fieldOf(POST, "likeCount"), `attempt ${attempt}, counted ${counted}`).toBe(
-        counted
-      );
-    }
-  }, 60_000);
-
-  it("does not lose a post that was counted while the pet repair was running", async () => {
-    for (let attempt = 0; attempt < 4; attempt += 1) {
-      await resetWorld();
-      await db.doc(SURVIVOR).set({
-        authorId: OWNER,
-        petId: "contrib-pet",
-        tags: [],
-        text: "already counted",
-        countedContribution: { petId: "contrib-pet", tags: [] },
-      });
-      await db.doc(PET).update({ postCount: 1 });
-      // A second post whose aggregation trigger has not run yet.
-      await db.doc(POST).set({
-        authorId: OWNER,
-        petId: "contrib-pet",
-        tags: [],
-        text: "pending",
-        countedContribution: { petId: null, tags: [] },
-      });
-      const pending = await captureSnapshot(POST);
-
-      await Promise.all([
-        callAs(recomputePetPostCountCallable, ADMIN_UID, { petId: "contrib-pet" }),
-        deliverWritten(onPostWritten, undefined, pending, params, newEventId("race-post")),
-      ]);
-
-      expect(await fieldOf(PET, "postCount"), `attempt ${attempt}`).toBe(2);
-    }
-  }, 60_000);
-});
-
-describe("repairing a pet's post count counts only settled contributions", () => {
-  /**
-   * The count the repair writes has to mean the same thing the triggers
-   * maintain: how many posts have *applied* their contribution to this pet.
-   *
-   * Taking an absolute `count()` over every live post does not mean that. A
-   * post that exists but whose aggregation trigger has not run yet is counted
-   * by the repair and then counted again by its own trigger. Settling every
-   * post first closes that for posts the scan can see — but a post created
-   * after the scan and before the count is still double-counted, and the
-   * compare-and-set does not notice, because it only watches the parent
-   * number and the parent number has not moved yet.
-   */
-  it("does not count a post whose contribution has not been applied", async () => {
+  it("refuses, and the trigger still gets the count right", async () => {
     await db.doc(SURVIVOR).set({
       authorId: OWNER,
       petId: "contrib-pet",
@@ -554,82 +431,127 @@ describe("repairing a pet's post count counts only settled contributions", () =>
       countedContribution: { petId: "contrib-pet", tags: [] },
     });
     await db.doc(PET).update({ postCount: 1 });
-    // A post exactly as createPostCallable writes it: marker present, empty,
-    // trigger not yet delivered. This is what a post created between the
-    // repair's settle pass and its count looks like.
-    await db.doc(POST).set({
-      authorId: OWNER,
+
+    const created = await callAs<{ id: string }>(createPostCallable, OWNER, {
       petId: "contrib-pet",
-      tags: [],
-      text: "not applied yet",
-      countedContribution: { petId: null, tags: [] },
+      text: "arrived alongside the repair",
     });
+    const code = await errorCodeOf(() =>
+      callAs(recomputePetPostCountCallable, ADMIN_UID, { petId: "contrib-pet" })
+    );
+    expect(code).toBe("failed-precondition");
+    expect(await fieldOf(PET, "postCount")).toBe(1);
 
-    const applied = await countAppliedPetPosts("contrib-pet");
+    const snap = await captureSnapshot(`posts/${created.id}`);
+    await deliverWritten(
+      onPostWritten,
+      undefined,
+      snap,
+      { postId: created.id },
+      newEventId("arrived")
+    );
 
-    expect(applied).toBe(1);
+    const surviving = await db
+      .collection("posts")
+      .where("petId", "==", "contrib-pet")
+      .count()
+      .get();
+    expect(surviving.data().count).toBe(2);
+    expect(await fieldOf(PET, "postCount")).toBe(2);
+    await db.recursiveDelete(db.doc(`posts/${created.id}`));
   });
+});
 
-  it("counts a post once its contribution has been applied", async () => {
+describe("a post being deleted while the pet repair runs", () => {
+  /**
+   * The other direction from "a post arrives during the repair", and the one
+   * the marker-keyed count does not cover.
+   *
+   * Creating is symmetric: the marker and the parent counter can move in one
+   * transaction. Deleting is not. The post document — and with it the
+   * contribution marker — goes first, and the parent counter waits for the
+   * asynchronous delete event. In that window the marker query cannot see the
+   * post, which does *not* mean the parent has already given up its
+   * contribution. So "count the markers" and "what the triggers maintain" are
+   * not the same quantity there, and an absolute write in between is wrong by
+   * exactly one.
+   */
+  it("does not let the repair write a count that the pending delete will subtract again", async () => {
     await db.doc(SURVIVOR).set({
       authorId: OWNER,
       petId: "contrib-pet",
       tags: [],
-      text: "settled",
+      text: "survivor",
       countedContribution: { petId: "contrib-pet", tags: [] },
     });
     await db.doc(POST).set({
       authorId: OWNER,
       petId: "contrib-pet",
       tags: [],
-      text: "also settled",
+      text: "being deleted",
       countedContribution: { petId: "contrib-pet", tags: [] },
     });
+    await db.doc(PET).update({ postCount: 2 });
 
-    expect(await countAppliedPetPosts("contrib-pet")).toBe(2);
+    // The post is gone; its delete event has not been delivered yet, so the
+    // pet still owes a decrement.
+    const beforeDelete = await captureSnapshot(POST);
+    await db.doc(POST).delete();
+    const gone = await captureSnapshot(POST);
+
+    const code = await errorCodeOf(() =>
+      callAs(recomputePetPostCountCallable, ADMIN_UID, { petId: "contrib-pet" })
+    );
+    // The repair must refuse rather than write a number it cannot justify.
+    expect(code).toBe("failed-precondition");
+    expect(await fieldOf(PET, "postCount")).toBe(2);
+
+    // The delete event lands, and the triggers get it right on their own.
+    await deliverWritten(onPostWritten, beforeDelete, gone, params, newEventId("late-del"));
+
+    const surviving = await db
+      .collection("posts")
+      .where("petId", "==", "contrib-pet")
+      .count()
+      .get();
+    expect(surviving.data().count).toBe(1);
+    expect(await fieldOf(PET, "postCount")).toBe(1);
   });
 
-  it("keeps the count and the trigger consistent when a post arrives during the repair", async () => {
-    // The interleaving the reviewer demonstrated with an injected pause,
-    // approached from the outside: publish while the repair runs, then let the
-    // new post's trigger land, and require the counter to equal the number of
-    // applied contributions. Repeated, because which side wins is not
-    // deterministic.
-    for (let attempt = 0; attempt < 4; attempt += 1) {
-      await resetWorld();
-      await db.doc(SURVIVOR).set({
-        authorId: OWNER,
+  it("refuses the repair even when nothing is pending, and says why", async () => {
+    // Disabled outright rather than conditionally: deciding "is anything
+    // pending?" is the same unanswerable question, and a repair that works
+    // most of the time is worse than one an admin knows is unavailable.
+    await db.doc(SURVIVOR).set({
+      authorId: OWNER,
+      petId: "contrib-pet",
+      tags: [],
+      text: "survivor",
+      countedContribution: { petId: "contrib-pet", tags: [] },
+    });
+    await db.doc(PET).update({ postCount: 1 });
+
+    const code = await errorCodeOf(() =>
+      callAs(recomputePetPostCountCallable, ADMIN_UID, { petId: "contrib-pet" })
+    );
+
+    expect(code).toBe("failed-precondition");
+    expect(await fieldOf(PET, "postCount")).toBe(1);
+  });
+
+  it("still refuses for an admin, and does not report success", async () => {
+    await db.doc(PET).update({ postCount: 7 });
+
+    let reported: unknown = "no-result";
+    const code = await errorCodeOf(async () => {
+      reported = await callAs(recomputePetPostCountCallable, ADMIN_UID, {
         petId: "contrib-pet",
-        tags: [],
-        text: "settled",
-        countedContribution: { petId: "contrib-pet", tags: [] },
       });
-      await db.doc(PET).update({ postCount: 1 });
+    });
 
-      const [, created] = await Promise.all([
-        callAs(recomputePetPostCountCallable, ADMIN_UID, { petId: "contrib-pet" }),
-        callAs<{ id: string }>(createPostCallable, OWNER, {
-          petId: "contrib-pet",
-          text: "arrived during the repair",
-        }),
-      ]);
-
-      // The new post's aggregation trigger runs afterwards, as it would.
-      const snap = await captureSnapshot(`posts/${created.id}`);
-      await deliverWritten(
-        onPostWritten,
-        undefined,
-        snap,
-        { postId: created.id },
-        newEventId("during-repair")
-      );
-
-      const applied = await countAppliedPetPosts("contrib-pet");
-      expect(
-        await fieldOf(PET, "postCount"),
-        `attempt ${attempt}, applied ${applied}`
-      ).toBe(applied);
-      await db.recursiveDelete(db.doc(`posts/${created.id}`));
-    }
-  }, 60_000);
+    expect(code).toBe("failed-precondition");
+    expect(reported).toBe("no-result");
+    // Untouched: a disabled repair must not half-write.
+    expect(await fieldOf(PET, "postCount")).toBe(7);
+  });
 });

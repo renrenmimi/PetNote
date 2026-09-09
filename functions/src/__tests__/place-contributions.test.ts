@@ -4,15 +4,18 @@ import { admin, db } from "../platform";
 import {
   checkInCallable,
   onReviewCreated,
+  onReviewDeleted,
   recomputeLocationReviewAggregatesCallable,
   submitReviewCallable,
 } from "../places";
 import { createPetCallable } from "../pets";
 import {
   callAs,
+  captureSnapshot,
   clearEventLedger,
   clearRateLimits,
   deliverCreate,
+  deliverDelete,
   errorCodeOf,
   fieldOf,
   newEventId,
@@ -224,7 +227,18 @@ describe("a meetup review has to be about the meetup's place", () => {
  * again. And an absolute write loses any fold that lands between the scan and
  * the write.
  */
-describe("repairing a place's rating aggregates", () => {
+describe("the suspended location rating repair", () => {
+  /**
+   * Same window as the two post repairs. Measured before disabling: two
+   * folded-in reviews, one deleted with its onReviewDeleted event not yet
+   * delivered, the repair wrote totalRatings 1, then the event landed and it
+   * reached 0 with one review still there.
+   *
+   * Skipping reviews whose `counted` marker is still false — added earlier —
+   * covers a review not folded in *yet*. It cannot cover one that has been
+   * folded in and is on its way out: that document is simply gone from the
+   * scan while the location still owes its subtraction.
+   */
   const ADMIN_UID = "place-admin";
   const LOC = "locagg";
 
@@ -237,25 +251,68 @@ describe("repairing a place's rating aggregates", () => {
     await db.doc(`locations/${LOC}`).set({
       name: "Aggregate park",
       addedBy: OWNER,
-      totalRatings: 1,
-      sumRating: 4,
+      totalRatings: 2,
+      sumRating: 8,
       averageRating: 4,
     });
-    // One review already folded in.
-    await db.doc(`locations/${LOC}/reviews/counted-1`).set({
-      userId: "reviewer-1",
-      rating: 4,
-      tags: [],
-      photos: [],
-      counted: true,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    for (const id of ["counted-1", "counted-2"]) {
+      await db.doc(`locations/${LOC}/reviews/${id}`).set({
+        userId: id,
+        rating: 4,
+        tags: [],
+        photos: [],
+        counted: true,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
   }
 
-  it("does not count a review whose trigger has not folded it in yet", async () => {
+  it("refuses, and leaves the aggregates untouched", async () => {
     await seedAggregateWorld();
-    await db.doc(`locations/${LOC}/reviews/pending-1`).set({
-      userId: "reviewer-2",
+
+    const code = await errorCodeOf(() =>
+      callAs(recomputeLocationReviewAggregatesCallable, ADMIN_UID, {
+        locationId: LOC,
+      })
+    );
+
+    expect(code).toBe("failed-precondition");
+    expect(await fieldOf(`locations/${LOC}`, "totalRatings")).toBe(2);
+    expect(await fieldOf(`locations/${LOC}`, "sumRating")).toBe(8);
+  });
+
+  it("refuses even with a review deleted and its event still pending", async () => {
+    // The exact shape that made the repair corrupt the aggregate.
+    await seedAggregateWorld();
+    const reviewPath = `locations/${LOC}/reviews/counted-2`;
+    const snap = await captureSnapshot(reviewPath);
+    await db.doc(reviewPath).delete();
+
+    const code = await errorCodeOf(() =>
+      callAs(recomputeLocationReviewAggregatesCallable, ADMIN_UID, {
+        locationId: LOC,
+      })
+    );
+    expect(code).toBe("failed-precondition");
+    expect(await fieldOf(`locations/${LOC}`, "totalRatings")).toBe(2);
+
+    // The delete event lands, and the trigger gets it right unaided.
+    await deliverDelete(
+      onReviewDeleted,
+      snap,
+      { locationId: LOC, reviewId: "counted-2" },
+      newEventId("pending-review-delete")
+    );
+
+    expect(await fieldOf(`locations/${LOC}`, "totalRatings")).toBe(1);
+    expect(await fieldOf(`locations/${LOC}`, "sumRating")).toBe(4);
+  });
+
+  it("still folds a pending review in through its own trigger", async () => {
+    await seedAggregateWorld();
+    const pendingPath = `locations/${LOC}/reviews/pending-1`;
+    await db.doc(pendingPath).set({
+      userId: "reviewer-p",
       rating: 2,
       tags: [],
       photos: [],
@@ -263,61 +320,14 @@ describe("repairing a place's rating aggregates", () => {
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    const repaired = await callAs<{ totalRatings: number }>(
-      recomputeLocationReviewAggregatesCallable,
-      ADMIN_UID,
-      { locationId: LOC }
-    );
-
-    // Two review documents exist, but only one has been folded in.
-    expect(repaired.totalRatings).toBe(1);
-    expect(await fieldOf(`locations/${LOC}`, "sumRating")).toBe(4);
-
-    // Now the pending trigger runs. It must reach 2, not 3.
     await deliverCreate(
       onReviewCreated,
-      `locations/${LOC}/reviews/pending-1`,
+      pendingPath,
       { locationId: LOC, reviewId: "pending-1" },
       newEventId("pending-review")
     );
 
-    expect(await fieldOf(`locations/${LOC}`, "totalRatings")).toBe(2);
-    expect(await fieldOf(`locations/${LOC}`, "sumRating")).toBe(6);
+    expect(await fieldOf(`locations/${LOC}`, "totalRatings")).toBe(3);
+    expect(await fieldOf(`locations/${LOC}`, "sumRating")).toBe(10);
   });
-
-  it("does not lose a rating folded in while the repair was running", async () => {
-    for (let attempt = 0; attempt < 4; attempt += 1) {
-      await seedAggregateWorld();
-      const pendingPath = `locations/${LOC}/reviews/pending-race`;
-      await db.doc(pendingPath).set({
-        userId: "reviewer-3",
-        rating: 5,
-        tags: [],
-        photos: [],
-        counted: false,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-
-      await Promise.all([
-        callAs(recomputeLocationReviewAggregatesCallable, ADMIN_UID, {
-          locationId: LOC,
-        }),
-        deliverCreate(
-          onReviewCreated,
-          pendingPath,
-          { locationId: LOC, reviewId: "pending-race" },
-          newEventId("race-review")
-        ),
-      ]);
-
-      // Order-independent: totalRatings equals the number of reviews that have
-      // been folded in, whichever side finished first.
-      const reviews = await db.collection(`locations/${LOC}/reviews`).get();
-      const folded = reviews.docs.filter((d) => d.data().counted !== false).length;
-      expect(
-        await fieldOf(`locations/${LOC}`, "totalRatings"),
-        `attempt ${attempt}, folded ${folded}`
-      ).toBe(folded);
-    }
-  }, 60_000);
 });

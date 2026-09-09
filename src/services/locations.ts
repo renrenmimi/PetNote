@@ -71,8 +71,10 @@ export type Location = {
   verifiedByCheckins?: boolean;
   tags: string[];
   // Server-aggregated fields populated by onReviewCreated / onReviewDeleted
-  // and the recompute callable. Optional because legacy locations created
-  // before these aggregates existed won't have them until recompute runs.
+  // by the review triggers. Optional because locations created before these
+  // aggregates existed do not have them — and the admin recompute that used to
+  // backfill them is suspended (see functions/src/places.ts), so for now they
+  // only appear once a review is written or removed.
   petFriendlySum?: PetFriendlySubscores;
   petFriendlyAvg?: PetFriendlySubscores;
   tagCounts?: Record<string, number>;

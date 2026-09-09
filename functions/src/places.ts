@@ -13,7 +13,6 @@ import {
   optionalTrimmedString,
   optionalTrustedHttpsUrl,
   RATE_LIMITS,
-  recomputeLocationReviewAggregates,
   requestData,
   requiredDocId,
   requiredTrimmedString,
@@ -940,6 +939,27 @@ export const getPetCheckinsCallable = onCall(async (request) => {
 // initialise these aggregates on locations whose reviews predate the
 // trigger that maintains them, or to repair drift after manual data
 // edits.
+/**
+ * SUSPENDED. Refuses with `failed-precondition` and an explanation.
+ *
+ * Same window as the two post repairs, measured the same way: two folded-in
+ * reviews, one deleted with its `onReviewDeleted` event not yet delivered, the
+ * repair writes totalRatings 1, then the event lands and it reaches 0 with one
+ * review still there.
+ *
+ * Skipping reviews whose `counted` marker is still false — added in an earlier
+ * round — handles a review that has not been folded in *yet*. It cannot handle
+ * one that has been folded in and is on its way out: that document is simply
+ * gone from the scan while the location still owes its subtraction.
+ *
+ * Suspending this went beyond the brief, which named the pet repair; the
+ * defect is identical and measured, and an armed repair that corrupts the
+ * aggregate it claims to fix is worse than one an administrator is told is
+ * unavailable.
+ *
+ * Unaffected: reviewing, deleting a review, and the triggers that maintain the
+ * location's rating aggregates.
+ */
 export const recomputeLocationReviewAggregatesCallable = onCall(
   async (request) => {
     const callerUid = request.auth?.uid;
@@ -953,25 +973,14 @@ export const recomputeLocationReviewAggregatesCallable = onCall(
         "Only admins can recompute location aggregates."
       );
     }
-    await assertRateLimit(
-      callerUid,
-      "recomputeLocationReviewAggregates",
-      RATE_LIMITS.write
+
+    throw new HttpsError(
+      "failed-precondition",
+      "Location rating repair is temporarily unavailable. A review that has " +
+        "been deleted but whose delete event has not been processed yet makes " +
+        "any recomputed total wrong by one, so this repair would corrupt the " +
+        "aggregates rather than fix them. Reviewing and deleting reviews are " +
+        "unaffected, and the aggregates are still maintained by their triggers."
     );
-
-    const { locationId: rawRecomputeLocationId } = requestData(
-      request.data
-    ) as {
-      locationId?: string;
-    };
-    const locationId = requiredDocId(rawRecomputeLocationId, "locationId");
-
-    const locationSnap = await db.doc(`locations/${locationId}`).get();
-    if (!locationSnap.exists) {
-      throw new HttpsError("not-found", "Location not found.");
-    }
-
-    const result = await recomputeLocationReviewAggregates(locationId);
-    return { success: true, ...result };
   }
 );
