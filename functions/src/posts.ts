@@ -148,6 +148,17 @@ function optionalOperationId(value: unknown): string | null {
   return trimmed;
 }
 
+/** How many times a repair re-reads before leaving the counter to the triggers. */
+const REPAIR_ATTEMPTS = 3;
+
+function countFieldOf(
+  data: admin.firestore.DocumentData | undefined,
+  field: string
+): number {
+  const value = data?.[field];
+  return typeof value === "number" ? value : 0;
+}
+
 function getPostPetId(data: admin.firestore.DocumentData | undefined): string | null {
   return typeof data?.petId === "string" && data.petId.trim().length > 0
     ? data.petId
@@ -251,6 +262,25 @@ export const onPostWritten = onDocumentWritten("posts/{postId}", async (event) =
     const liveSnap = isDelete ? null : await t.get(postRef);
     const live = liveSnap?.exists ? liveSnap.data() : undefined;
 
+    // A non-delete event for a post that no longer exists has nothing to do.
+    //
+    // The delete event owns the undo, and it is the only event that can do it
+    // correctly, because its `before` snapshot is the only record of what the
+    // post had contributed. An update or create that arrives afterwards must
+    // not derive a second copy of that contribution from its own stale
+    // `before` and subtract it again — which is exactly what happened: two
+    // counted posts, one edited then deleted, delete processed first taking
+    // the count 2 → 1, then the delayed update taking it 1 → 0 with a post
+    // still standing. Event-id deduplication cannot help; those are two
+    // different events.
+    //
+    // Returning before the legacy fallback below is deliberate. That fallback
+    // exists to reconstruct "what was already applied" for a post with no
+    // marker, and it is right for a live document and for a delete. For an
+    // event about a document that is gone it manufactures work out of
+    // history.
+    if (!isDelete && !live) return false;
+
     // The legacy fallback has to read the event's *before* snapshot, not the
     // live document: for a post with no marker, "what was already applied" is
     // its previous state, which is exactly the delta the old handler used.
@@ -260,8 +290,9 @@ export const onPostWritten = onDocumentWritten("posts/{postId}", async (event) =
       ? contributionOf(eventBefore)
       : readContribution(live) ?? legacyContribution(eventBefore);
 
-    // If the post is gone, it contributes nothing — including when a create or
-    // update event arrives after the delete that removed it.
+    // A deleted post contributes nothing. `live` is always present on the
+    // non-delete path by the guard above, so this only resolves to
+    // NO_CONTRIBUTION for a delete event.
     const desired: PostContribution = live
       ? { petId: getPostPetId(live), tags: normalizeTags(live.tags) }
       : NO_CONTRIBUTION;
@@ -553,6 +584,38 @@ export const createPostCallable = onCall(async (request) => {
     throw new HttpsError("already-exists", "That operation id is already in use.");
   }
   return { id: postRef.id, deduplicated: true };
+});
+
+/**
+ * Did this operation id produce a post?
+ *
+ * The composer needs a truthful answer before it reclaims uploaded media. A
+ * publish that commits and then loses its response is indistinguishable, from
+ * the client's side, from one that never happened — and the client used to
+ * resolve that ambiguity by deleting the assets, which is the one choice that
+ * cannot be undone if it guessed wrong.
+ *
+ * Read-only, and scoped to the caller by construction: the document id is
+ * derived from their own uid, so this cannot be used to probe anybody else's
+ * posts. The authorId is checked anyway.
+ */
+export const getPublishStatusCallable = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "Must be logged in.");
+  }
+  await assertRateLimit(callerUid, "getPublishStatus", RATE_LIMITS.read);
+
+  const data = requestData(request.data) as { operationId?: unknown };
+  const operationId = optionalOperationId(data.operationId);
+  if (!operationId) {
+    throw new HttpsError("invalid-argument", "operationId is required.");
+  }
+
+  const postId = postIdForOperation(callerUid, operationId);
+  const snap = await db.doc(`posts/${postId}`).get();
+  const published = snap.exists && snap.data()?.authorId === callerUid;
+  return published ? { published: true, postId } : { published: false };
 });
 
 export const updatePostCallable = onCall(async (request) => {
@@ -905,14 +968,49 @@ export const recomputePetPostCountCallable = onCall(async (request) => {
     cursor = snap.docs[snap.docs.length - 1];
   }
 
-  const aggSnap = await db
-    .collection("posts")
-    .where("petId", "==", petId)
-    .count()
-    .get();
-  const postCount = aggSnap.data().count;
-  await petRef.update({ postCount });
-  return { success: true, postCount, settled };
+  // Compare-and-set, same reason as the interaction repair above: settling the
+  // contributions is transactional per post, but the absolute count that
+  // follows is not, so a post whose trigger lands in between would have its
+  // increment overwritten.
+  for (let attempt = 0; attempt < REPAIR_ATTEMPTS; attempt += 1) {
+    const observed = await petRef.get();
+    if (!observed.exists) {
+      throw new HttpsError("not-found", "Pet not found.");
+    }
+    const observedCount = countFieldOf(observed.data(), "postCount");
+
+    const aggSnap = await db
+      .collection("posts")
+      .where("petId", "==", petId)
+      .count()
+      .get();
+    const postCount = aggSnap.data().count;
+
+    const applied = await db.runTransaction(async (t) => {
+      const snap = await t.get(petRef);
+      if (!snap.exists) return "gone" as const;
+      if (countFieldOf(snap.data(), "postCount") !== observedCount) {
+        return "changed" as const;
+      }
+      t.update(petRef, { postCount });
+      return "written" as const;
+    });
+
+    if (applied === "gone") {
+      throw new HttpsError("not-found", "Pet not found.");
+    }
+    if (applied === "written") {
+      return { success: true, postCount, settled, converged: true };
+    }
+  }
+
+  const current = await petRef.get();
+  return {
+    success: true,
+    postCount: countFieldOf(current.data(), "postCount"),
+    settled,
+    converged: false,
+  };
 });
 
 // Admin-only: recompute likeCount and commentCount on a single post from
@@ -949,49 +1047,99 @@ export const recomputePostInteractionCountsCallable = onCall(
       throw new HttpsError("not-found", "Post not found.");
     }
 
-    // Subtract the documents whose contribution has not been applied yet.
+    // Subtract the documents whose contribution has not been applied yet, and
+    // only write if the stored value has not moved since it was observed.
     //
     // The counter's meaning is "how many likes/comments have been folded in",
-    // and the create triggers are what fold them in — each one flips its own
+    // and the create triggers are what fold them in — each flips its own
     // `counted` marker in the same transaction as the increment. A plain
     // count() therefore over-reports: it includes documents still waiting for
-    // their trigger, whose increment is still to come. Repairing to that
-    // number and then letting the pending triggers run left the post
-    // permanently over-counted by however many were in flight.
+    // their trigger, whose increment is still to come.
     //
-    // `counted == false` is the pending set. A document with no `counted`
-    // field predates the marker and counts as already applied — the same
-    // reading as wasCountedAtCreate in ./shared.ts. Four aggregate queries, no
-    // document writes, so this stays cheap on a post with thousands of likes.
-    const [likeAgg, commentAgg, pendingLikeAgg, pendingCommentAgg] =
-      await Promise.all([
-        db.collection(`posts/${postId}/likes`).count().get(),
-        db.collection(`posts/${postId}/comments`).count().get(),
-        db
-          .collection(`posts/${postId}/likes`)
-          .where("counted", "==", false)
-          .count()
-          .get(),
-        db
-          .collection(`posts/${postId}/comments`)
-          .where("counted", "==", false)
-          .count()
-          .get(),
-      ]);
-    const pendingLikes = pendingLikeAgg.data().count;
-    const pendingComments = pendingCommentAgg.data().count;
-    const likeCount = Math.max(0, likeAgg.data().count - pendingLikes);
-    const commentCount = Math.max(
-      0,
-      commentAgg.data().count - pendingComments
-    );
-    await postRef.update({ likeCount, commentCount });
+    // Subtracting the pending set fixes that, but an *absolute* write still
+    // loses any increment that lands between the aggregates and the write.
+    // Measured in the emulator: two counted likes plus one pending, the
+    // trigger commits 2 → 3, the repair then writes its observed 2, and the
+    // post is permanently one short. So the write is a compare-and-set against
+    // the value read before the aggregates; if a trigger moved it, the repair
+    // starts over with fresh counts. Aggregate queries cannot run inside a
+    // transaction, which is why this is a retry loop rather than one.
+    //
+    // Giving up after a few attempts is safe: not writing leaves whatever the
+    // triggers produced, and the triggers are the only other writer.
+    for (let attempt = 0; attempt < REPAIR_ATTEMPTS; attempt += 1) {
+      const observed = await postRef.get();
+      if (!observed.exists) {
+        throw new HttpsError("not-found", "Post not found.");
+      }
+      const observedLike = countFieldOf(observed.data(), "likeCount");
+      const observedComment = countFieldOf(observed.data(), "commentCount");
+
+      const [likeAgg, commentAgg, pendingLikeAgg, pendingCommentAgg] =
+        await Promise.all([
+          db.collection(`posts/${postId}/likes`).count().get(),
+          db.collection(`posts/${postId}/comments`).count().get(),
+          // `counted == false` is the pending set. A document with no
+          // `counted` field predates the marker and counts as already
+          // applied — the same reading as wasCountedAtCreate in ./shared.ts.
+          db
+            .collection(`posts/${postId}/likes`)
+            .where("counted", "==", false)
+            .count()
+            .get(),
+          db
+            .collection(`posts/${postId}/comments`)
+            .where("counted", "==", false)
+            .count()
+            .get(),
+        ]);
+      const pendingLikes = pendingLikeAgg.data().count;
+      const pendingComments = pendingCommentAgg.data().count;
+      const likeCount = Math.max(0, likeAgg.data().count - pendingLikes);
+      const commentCount = Math.max(
+        0,
+        commentAgg.data().count - pendingComments
+      );
+
+      const applied = await db.runTransaction(async (t) => {
+        const snap = await t.get(postRef);
+        if (!snap.exists) return "gone" as const;
+        if (
+          countFieldOf(snap.data(), "likeCount") !== observedLike ||
+          countFieldOf(snap.data(), "commentCount") !== observedComment
+        ) {
+          return "changed" as const;
+        }
+        t.update(postRef, { likeCount, commentCount });
+        return "written" as const;
+      });
+
+      if (applied === "gone") {
+        throw new HttpsError("not-found", "Post not found.");
+      }
+      if (applied === "written") {
+        return {
+          success: true,
+          likeCount,
+          commentCount,
+          pendingLikes,
+          pendingComments,
+          converged: true,
+        };
+      }
+    }
+
+    // Still moving after several attempts. Reporting it rather than forcing a
+    // value keeps the counter under the triggers' control, which is where it
+    // belongs while they are active.
+    const current = await postRef.get();
     return {
       success: true,
-      likeCount,
-      commentCount,
-      pendingLikes,
-      pendingComments,
+      likeCount: countFieldOf(current.data(), "likeCount"),
+      commentCount: countFieldOf(current.data(), "commentCount"),
+      pendingLikes: 0,
+      pendingComments: 0,
+      converged: false,
     };
   }
 );

@@ -7,7 +7,13 @@ import {
   uploadMedia,
   type UploadedAsset,
 } from "../services/cloudinary";
-import { createPost, newOperationId, type MediaItem } from "../services/posts";
+import {
+  createPost,
+  getPublishStatus,
+  newOperationId,
+  type MediaItem,
+} from "../services/posts";
+import { decideAssetReclaim } from "../utils/mediaReclaim";
 import { getUserPets, type Pet } from "../services/pets";
 import { getUserProfile, type UserProfile } from "../services/users";
 import {
@@ -53,6 +59,15 @@ interface PostDraft {
    * The banner says so rather than implying more than is true.
    */
   uploadedAssets?: UploadedAsset[];
+  /**
+   * True once this attempt's media reached the publish call.
+   *
+   * Durable on purpose. It used to be a local variable inside one submit, so
+   * the catch could protect the assets but nothing else could: changing the
+   * selection, discarding the draft, or coming back to an expired one all
+   * deleted media that a committed post might already reference.
+   */
+  handedOff?: boolean;
 }
 
 /** Where a submission got to, for feedback that names the actual stage. */
@@ -95,6 +110,30 @@ export function Create() {
   // media that already made it to Cloudinary.
   const operationIdRef = useRef<string | null>(null);
   const uploadedAssetsRef = useRef<UploadedAsset[]>([]);
+  // Mirrors PostDraft.handedOff so the reclaim exits below can see it without
+  // waiting for a draft round trip.
+  const handedOffRef = useRef(false);
+
+  /**
+   * The one place that decides whether uploaded media may be deleted.
+   *
+   * Every exit goes through it: the policy is in utils/mediaReclaim.ts and it
+   * refuses to delete anything whose publish outcome is not known to have
+   * failed, checking with the server by operationId when it can.
+   */
+  const reclaimAssets = async (
+    assets: UploadedAsset[],
+    options: { handedOff: boolean; operationId: string | null }
+  ) => {
+    const decision = await decideAssetReclaim(
+      { assets, handedOff: options.handedOff, operationId: options.operationId },
+      getPublishStatus
+    );
+    if (decision.reclaim) {
+      await deleteCloudinaryAssets(decision.assets).catch(() => undefined);
+    }
+    return decision;
+  };
   const [duplicateSkipped, setDuplicateSkipped] = useState(0);
   const [dragActive, setDragActive] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -169,11 +208,14 @@ export function Create() {
         const parsed: PostDraft = JSON.parse(saved);
         if (Date.now() - parsed.savedAt > 24 * 60 * 60 * 1000) {
           sessionStorage.removeItem(draftKeyFor(user.uid));
-          // An abandoned attempt's uploads have nothing referencing them once
-          // the draft is gone. This is the bounded end of the deliberate leak
-          // on the failure path.
+          // An abandoned attempt's uploads are usually unreferenced, but not
+          // always: the attempt may have committed and lost its response. Ask
+          // before deleting, and keep them if the answer is not "no post".
           if (parsed.uploadedAssets?.length) {
-            void deleteCloudinaryAssets(parsed.uploadedAssets);
+            void reclaimAssets(parsed.uploadedAssets, {
+              handedOff: parsed.handedOff === true,
+              operationId: parsed.operationId ?? null,
+            });
           }
         } else {
           setDraft(parsed);
@@ -205,10 +247,31 @@ export function Create() {
     selectionSignatureRef.current = selectionSignature;
     if (previous === null || previous === selectionSignature) return;
     if (uploadedAssetsRef.current.length === 0) return;
-    void deleteCloudinaryAssets(uploadedAssetsRef.current);
+    const stale = uploadedAssetsRef.current;
+    const staleOperationId = operationIdRef.current;
+    const staleHandedOff = handedOffRef.current;
+    // The assets no longer line up with the selection either way, so this
+    // attempt is over. Whether they can be *deleted* is a different question,
+    // and the server answers it.
     uploadedAssetsRef.current = [];
     operationIdRef.current = null;
+    handedOffRef.current = false;
     setPhase({ kind: "idle" });
+    void reclaimAssets(stale, {
+      handedOff: staleHandedOff,
+      operationId: staleOperationId,
+    }).then((decision) => {
+      if (!decision.reclaim && decision.reason === "published") {
+        showToast(
+          "Your earlier post did go through — those photos are still in use.",
+          "info"
+        );
+      }
+    });
+    // showToast comes from a memoized context value and reclaimAssets is
+    // recreated every render by design (it closes over nothing that changes
+    // the decision); the effect must fire only when the selection changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectionSignature]);
 
   useEffect(() => {
@@ -226,6 +289,7 @@ export function Create() {
             ? { operationId: operationIdRef.current }
             : {}),
           ...(hasUploaded ? { uploadedAssets: uploadedAssetsRef.current } : {}),
+          ...(handedOffRef.current ? { handedOff: true } : {}),
         };
         sessionStorage.setItem(key, JSON.stringify(payload));
       } else {
@@ -462,21 +526,26 @@ export function Create() {
     // re-upload bytes that are already on the CDN.
     operationIdRef.current = draft.operationId ?? null;
     uploadedAssetsRef.current = draft.uploadedAssets ?? [];
+    handedOffRef.current = draft.handedOff === true;
     setShowDraftBanner(false);
     setDraft(null);
   };
 
   const handleDiscardDraft = () => {
     if (user) sessionStorage.removeItem(draftKeyFor(user.uid));
-    // Media the discarded attempt had already uploaded is now genuinely
-    // unreferenced — the person just said they do not want this post — so this
-    // is the right place to reclaim it, unlike the failure path.
+    // "I don't want this draft" is not the same as "no post exists". If the
+    // attempt committed and lost its response, its images are in use and
+    // deleting them here would break a real post.
     const orphans = draft?.uploadedAssets ?? uploadedAssetsRef.current;
     if (orphans.length > 0) {
-      void deleteCloudinaryAssets(orphans);
+      void reclaimAssets(orphans, {
+        handedOff: draft?.handedOff ?? handedOffRef.current,
+        operationId: draft?.operationId ?? operationIdRef.current,
+      });
     }
     operationIdRef.current = null;
     uploadedAssetsRef.current = [];
+    handedOffRef.current = false;
     setShowDraftBanner(false);
     setDraft(null);
   };
@@ -585,6 +654,27 @@ export function Create() {
 
       setPhase({ kind: "publishing" });
       handedOff = true;
+      // Durable before the call, not after: if this attempt commits and the
+      // response is lost, every later exit has to know the outcome is
+      // uncertain — including one that happens after a reload.
+      handedOffRef.current = true;
+      try {
+        sessionStorage.setItem(
+          draftKeyFor(user.uid),
+          JSON.stringify({
+            text: caption,
+            tags,
+            petId: selectedPet.id,
+            savedAt: Date.now(),
+            operationId,
+            uploadedAssets: uploadedAssetsRef.current,
+            handedOff: true,
+          } satisfies PostDraft)
+        );
+      } catch {
+        // Storage full or blocked. The in-memory flag still guards this
+        // session's exits; only a reload loses the protection.
+      }
       const { deduplicated } = await createPost({
         authorId: user.uid,
         authorName:
@@ -605,6 +695,7 @@ export function Create() {
       sessionStorage.removeItem(draftKeyFor(user.uid));
       operationIdRef.current = null;
       uploadedAssetsRef.current = [];
+      handedOffRef.current = false;
       setPhase({ kind: "idle" });
       showToast(
         deduplicated

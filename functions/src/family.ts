@@ -8,7 +8,7 @@ import {
   SYSTEM_NOTIFICATION_ACTOR,
 } from "./notifications";
 import { revokeInvitationsCreatedBy } from "./invitations";
-import { getPetFamilyAuthority, PET_FAMILY_READ_LIMIT } from "./pets";
+import { readAuthorityInTransaction } from "./pets";
 import {
   assertRateLimit,
   RATE_LIMITS,
@@ -41,7 +41,22 @@ export type PetReleaseOutcome =
   | { action: "member_removed" }
   | { action: "pet_deleted" }
   | { action: "last_member_refused" }
-  | { action: "not_a_member" };
+  | { action: "not_a_member" }
+  /** The caller was not allowed to do this, judged inside the transaction. */
+  | { action: "not_authorized"; because: "not_primary" | "not_member" }
+  /** Refused: the primary can leave, but cannot be pushed out by somebody else. */
+  | { action: "target_is_primary" };
+
+/**
+ * Who is asking, so the transaction can decide rather than trust.
+ *
+ * Absent for the account-deletion cascade, which is not acting on anybody's
+ * behalf — the account is going regardless of who holds which role.
+ */
+export type ReleaseAuthorization = {
+  callerUid: string;
+  isAdmin: boolean;
+};
 
 type FamilyCandidate = {
   uid: string;
@@ -105,18 +120,48 @@ export async function releasePetMembership(options: {
   leavingUid: string;
   onLastMember: "refuse" | "delete";
   reason: string;
+  /**
+   * Present when a person is asking on their own or somebody else's behalf, so
+   * the permission is decided from the same snapshot as the membership change.
+   * Absent for the account-deletion cascade.
+   */
+  authorize?: ReleaseAuthorization;
 }): Promise<PetReleaseOutcome> {
-  const { petId, leavingUid, onLastMember, reason } = options;
+  const { petId, leavingUid, onLastMember, reason, authorize } = options;
   const petRef = db.doc(`pets/${petId}`);
-  const familyRef = db.collection(`pets/${petId}/family`);
 
   const outcome = await db.runTransaction<PetReleaseOutcome>(async (t) => {
-    const [petSnap, familySnap] = await Promise.all([
-      t.get(petRef),
-      t.get(familyRef.limit(PET_FAMILY_READ_LIMIT)),
-    ]);
-    if (!petSnap.exists) return { action: "not_a_member" };
-    const pet = petSnap.data() ?? {};
+    const authority = await readAuthorityInTransaction(
+      t,
+      petId,
+      authorize?.callerUid ?? leavingUid
+    );
+    if (!authority) return { action: "not_a_member" };
+    const pet = authority.pet;
+    const familySnap = { docs: authority.docs, empty: authority.docs.length === 0 };
+
+    if (authorize) {
+      const isSelf = authorize.callerUid === leavingUid;
+      // Leaving is every owner's own decision; removing somebody *else* is the
+      // primary's. Both are judged here rather than before the transaction,
+      // where a concurrent transfer could invalidate the answer between the
+      // check and the write.
+      if (!isSelf && !authority.isPrimary && !authorize.isAdmin) {
+        return { action: "not_authorized", because: "not_primary" };
+      }
+      if (!isSelf && !authority.isMember && !authorize.isAdmin) {
+        return { action: "not_authorized", because: "not_member" };
+      }
+      if (!isSelf) {
+        const target = authority.docs.find((docSnap) => docSnap.id === leavingUid);
+        if (!target) return { action: "not_a_member" };
+        // The primary can leave, but must not be pushed out — that would be a
+        // way to take over somebody's pet. Transfer the role first.
+        if (target.data()?.role === "primary") {
+          return { action: "target_is_primary" };
+        }
+      }
+    }
 
     const own = familySnap.docs.find((docSnap) => docSnap.id === leavingUid);
     if (!own) {
@@ -175,6 +220,15 @@ export async function releasePetMembership(options: {
       promotedAt: admin.firestore.FieldValue.serverTimestamp(),
       promotedReason: reason,
     });
+    // Demote anybody else still claiming the role. Normally there is nobody —
+    // the leaver is the only primary — but a state with two primaries is
+    // exactly what the bug this transaction closes used to produce, and
+    // handing over is a good moment to stop carrying it.
+    for (const docSnap of authority.currentPrimaries) {
+      if (docSnap.id !== successorUid && docSnap.id !== leavingUid) {
+        t.update(docSnap.ref, { role: "member" });
+      }
+    }
     t.delete(own.ref);
     return { action: "handed_over", newPrimaryUid: successorUid };
   });
@@ -272,42 +326,13 @@ export const removeFamilyMemberCallable = onCall(async (request) => {
   const petId = requiredDocId(rawRemovePetId, "petId");
   const targetUserId = requiredDocId(rawTargetUserId, "targetUserId");
 
-  const authority = await getPetFamilyAuthority(petId, callerUid);
-  if (!authority) {
-    throw new HttpsError("not-found", "Pet not found.");
-  }
-
   const isSelf = callerUid === targetUserId;
-  const isAdmin = caller.role === "admin";
-  // Leaving is every owner's own decision. Removing somebody *else* is the
-  // primary's, which is the one asymmetry the equal-ownership model keeps:
-  // without a single ejector there is no answer to a co-owner who turns
-  // hostile, and with everybody able to eject everybody there is a race.
-  if (!isSelf && !authority.isPrimary && !isAdmin) {
-    throw new HttpsError(
-      "permission-denied",
-      "Only the pet's primary owner can remove another family member."
-    );
-  }
-  if (!isSelf && !authority.isMember && !isAdmin) {
-    throw new HttpsError("permission-denied", "Cannot remove this family member.");
-  }
 
-  if (!isSelf) {
-    const targetSnap = await db.doc(`pets/${petId}/family/${targetUserId}`).get();
-    if (!targetSnap.exists) {
-      return { success: true, action: "not_a_member" };
-    }
-    if (targetSnap.data()?.role === "primary") {
-      // The primary can leave, but cannot be pushed out: that would be a way
-      // to take over a pet. Transfer the role first, deliberately.
-      throw new HttpsError(
-        "failed-precondition",
-        "Transfer the primary owner role before removing this person."
-      );
-    }
-  }
-
+  // Permission, "is the target the primary", and the membership change are all
+  // decided inside releasePetMembership's transaction now. They used to be
+  // three separate reads in front of it, which meant a concurrent transfer
+  // could move the role between the check and the write — and the check would
+  // never know.
   const outcome = await releasePetMembership({
     petId,
     leavingUid: targetUserId,
@@ -315,8 +340,23 @@ export const removeFamilyMemberCallable = onCall(async (request) => {
     // left, they are told to delete the pet on purpose instead.
     onLastMember: "refuse",
     reason: isSelf ? "member_left" : "member_removed",
+    authorize: { callerUid, isAdmin: caller.role === "admin" },
   });
 
+  if (outcome.action === "not_authorized") {
+    throw new HttpsError(
+      "permission-denied",
+      outcome.because === "not_primary"
+        ? "Only the pet's primary owner can remove another family member."
+        : "Cannot remove this family member."
+    );
+  }
+  if (outcome.action === "target_is_primary") {
+    throw new HttpsError(
+      "failed-precondition",
+      "Transfer the primary owner role before removing this person."
+    );
+  }
   if (outcome.action === "last_member_refused") {
     throw new HttpsError(
       "failed-precondition",
@@ -353,35 +393,37 @@ export const transferPetPrimaryCallable = onCall(async (request) => {
   };
   const petId = requiredDocId(data.petId, "petId");
   const targetUserId = requiredDocId(data.targetUserId, "targetUserId");
-  if (targetUserId === callerUid) {
+  const isAdmin = caller.role === "admin";
+  if (targetUserId === callerUid && !isAdmin) {
     return { success: true, alreadyPrimary: true };
   }
 
-  const authority = await getPetFamilyAuthority(petId, callerUid);
-  if (!authority) {
-    throw new HttpsError("not-found", "Pet not found.");
-  }
-  if (!authority.isPrimary && caller.role !== "admin") {
-    throw new HttpsError(
-      "permission-denied",
-      "Only the pet's primary owner can transfer the role."
-    );
-  }
-
   const petRef = db.doc(`pets/${petId}`);
-  const callerFamilyRef = db.doc(`pets/${petId}/family/${callerUid}`);
-  const targetFamilyRef = db.doc(`pets/${petId}/family/${targetUserId}`);
 
-  await db.runTransaction(async (t) => {
-    const [petSnap, callerFamilySnap, targetFamilySnap] = await Promise.all([
-      t.get(petRef),
-      t.get(callerFamilyRef),
-      t.get(targetFamilyRef),
-    ]);
-    if (!petSnap.exists) {
+  // Authorization, the identity of the *actual* current primary, and the write
+  // all happen in one transaction.
+  //
+  // Two things were wrong before. The permission was read outside, so a
+  // concurrent transfer or leave could invalidate it between the check and the
+  // write. And the demotion targeted `callerFamilyRef` — the caller — which is
+  // only the old primary when the caller happens to be it. An admin
+  // transferring on somebody else's behalf demoted a document that does not
+  // exist, and left the real old primary holding the role next to the new one.
+  const outcome = await db.runTransaction<
+    { kind: "done" } | { kind: "already"; uid: string }
+  >(async (t) => {
+    const authority = await readAuthorityInTransaction(t, petId, callerUid);
+    if (!authority) {
       throw new HttpsError("not-found", "Pet not found.");
     }
-    if (!targetFamilySnap.exists) {
+    if (!authority.isPrimary && !isAdmin) {
+      throw new HttpsError(
+        "permission-denied",
+        "Only the pet's primary owner can transfer the role."
+      );
+    }
+    const target = authority.docs.find((docSnap) => docSnap.id === targetUserId);
+    if (!target) {
       // Transfer is not an invitation. The recipient has to already be an
       // owner, which means they already went through redemption.
       throw new HttpsError(
@@ -389,22 +431,40 @@ export const transferPetPrimaryCallable = onCall(async (request) => {
         "That person is not part of this pet's family."
       );
     }
+    if (
+      target.data()?.role === "primary" &&
+      authority.currentPrimaries.length === 1
+    ) {
+      return { kind: "already", uid: targetUserId };
+    }
+
     t.update(petRef, {
       ownerId: targetUserId,
       primaryOwnerId: targetUserId,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-    t.update(targetFamilyRef, {
+    t.update(target.ref, {
       role: "primary",
       promotedAt: admin.firestore.FieldValue.serverTimestamp(),
       promotedReason: "transferred",
     });
-    // The former primary stays an owner — equal to everybody else, which is
+    // Demote every current holder of the role, whoever they are. Not "the
+    // caller": that is the assumption that produced two primaries. Iterating
+    // also repairs a pet that already had more than one.
+    //
+    // The former primary stays an *owner* — equal to everybody else, which is
     // the point. Only the role moves.
-    if (callerFamilySnap.exists) {
-      t.update(callerFamilyRef, { role: "member" });
+    for (const docSnap of authority.currentPrimaries) {
+      if (docSnap.id !== targetUserId) {
+        t.update(docSnap.ref, { role: "member" });
+      }
     }
+    return { kind: "done" };
   });
+
+  if (outcome.kind === "already") {
+    return { success: true, alreadyPrimary: true };
+  }
 
   const petName = await readPetName(petRef);
   await createNotificationIfAllowed(

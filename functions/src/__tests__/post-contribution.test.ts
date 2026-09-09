@@ -40,13 +40,14 @@ import {
  */
 
 const POST = "posts/contrib-post";
+const SURVIVOR = "posts/contrib-survivor";
 const PET = "pets/contrib-pet";
 const OWNER = "contrib-owner";
 const ADMIN_UID = "contrib-admin";
 const TAG = "hashtags/parkday";
 
 async function resetWorld() {
-  await purge(POST, PET, `users/${OWNER}`, `users/${ADMIN_UID}`);
+  await purge(POST, SURVIVOR, PET, `users/${OWNER}`, `users/${ADMIN_UID}`);
   await db.recursiveDelete(db.doc(TAG)).catch(() => undefined);
   await clearEventLedger();
   await clearRateLimits();
@@ -74,7 +75,7 @@ async function resetWorld() {
 
 beforeEach(resetWorld);
 afterAll(async () => {
-  await purge(POST, PET, `users/${OWNER}`, `users/${ADMIN_UID}`);
+  await purge(POST, SURVIVOR, PET, `users/${OWNER}`, `users/${ADMIN_UID}`);
   await db.recursiveDelete(db.doc(TAG)).catch(() => undefined);
   await clearEventLedger();
 });
@@ -102,22 +103,127 @@ describe("out-of-order delivery", () => {
     expect(await fieldOf(PET, "postCount")).toBe(0);
   });
 
-  it("ignores an update event for a post that has since been deleted", async () => {
-    await db.doc(POST).update({
-      tags: ["parkday"],
+  /**
+   * Every assertion in this block keeps a *second*, still-counted post on the
+   * same pet and tag.
+   *
+   * That is the whole point. An earlier version of these tests started the
+   * aggregates at zero, so a spurious extra decrement went to -1, got clamped
+   * back to 0, and the assertion passed — the clamp hid the bug it was
+   * supposed to catch. With a surviving contribution the count has somewhere
+   * to fall to, and a double subtraction is visible as 1 → 0.
+   */
+  async function twoCountedPosts() {
+    const shared = {
+      authorId: OWNER,
       petId: "contrib-pet",
-      countedContribution: { petId: null, tags: [] },
-    });
+      tags: ["parkday"],
+      countedContribution: { petId: "contrib-pet", tags: ["parkday"] },
+    };
+    await db.doc(SURVIVOR).set({ ...shared, text: "survivor" });
+    await db.doc(POST).set({ ...shared, text: "before" });
+    await db.doc(PET).update({ postCount: 2 });
+    await db.doc(TAG).set({ name: "parkday", postCount: 2 });
+  }
+
+  it("subtracts a deleted post's contribution exactly once, not twice", async () => {
+    // The reported failure: the post is edited, then deleted; the delete event
+    // is processed first and takes the count 2 → 1; then the post's own
+    // delayed update event arrives. `live` is gone, but the handler fell back
+    // to the update's `before` snapshot and derived a contribution to undo all
+    // over again — 1 → 0, with one post still standing.
+    await twoCountedPosts();
     const before = await captureSnapshot(POST);
-    await db.doc(POST).update({ tags: ["beachday"] });
+    await db.doc(POST).update({ text: "after" });
     const after = await captureSnapshot(POST);
     await db.doc(POST).delete();
+    const gone = await captureSnapshot(POST);
 
-    await deliverWritten(onPostWritten, before, after, params, newEventId("upd"));
+    await deliverWritten(onPostWritten, after, gone, params, newEventId("del"));
+    expect(await fieldOf(PET, "postCount")).toBe(1);
+    expect(await fieldOf(TAG, "postCount")).toBe(1);
 
-    expect((await db.doc(TAG).get()).exists).toBe(false);
-    expect((await db.doc("hashtags/beachday").get()).exists).toBe(false);
-    expect(await fieldOf(PET, "postCount")).toBe(0);
+    // The late update for a post that no longer exists.
+    await deliverWritten(onPostWritten, before, after, params, newEventId("late"));
+
+    const surviving = await db
+      .collection("posts")
+      .where("petId", "==", "contrib-pet")
+      .count()
+      .get();
+    expect(surviving.data().count).toBe(1);
+    expect(await fieldOf(PET, "postCount")).toBe(1);
+    expect(await fieldOf(TAG, "postCount")).toBe(1);
+    expect((await db.doc(TAG).get()).exists).toBe(true);
+  });
+
+  it("ignores a late create event for a post that has since been deleted", async () => {
+    await twoCountedPosts();
+    const created = await captureSnapshot(POST);
+    await db.doc(POST).delete();
+    const gone = await captureSnapshot(POST);
+
+    await deliverWritten(onPostWritten, created, gone, params, newEventId("del"));
+    await deliverWritten(onPostWritten, undefined, created, params, newEventId("cre"));
+
+    expect(await fieldOf(PET, "postCount")).toBe(1);
+    expect(await fieldOf(TAG, "postCount")).toBe(1);
+  });
+
+  it("subtracts a legacy post's contribution exactly once when its update is late", async () => {
+    // Same shape, but the deleted post has no contribution marker at all —
+    // the path where the handler is *supposed* to fall back to `before`.
+    // Falling back is right for the delete event and wrong for anything that
+    // arrives after it.
+    await twoCountedPosts();
+    await db.doc(POST).update({
+      countedContribution: admin.firestore.FieldValue.delete(),
+    });
+    const before = await captureSnapshot(POST);
+    await db.doc(POST).update({ text: "legacy edit" });
+    const after = await captureSnapshot(POST);
+    await db.doc(POST).delete();
+    const gone = await captureSnapshot(POST);
+
+    await deliverWritten(onPostWritten, after, gone, params, newEventId("legacy-del"));
+    expect(await fieldOf(PET, "postCount")).toBe(1);
+
+    await deliverWritten(onPostWritten, before, after, params, newEventId("legacy-late"));
+    expect(await fieldOf(PET, "postCount")).toBe(1);
+    expect(await fieldOf(TAG, "postCount")).toBe(1);
+  });
+
+  it("does nothing when the handler's own marker write comes back as an event", async () => {
+    // Stamping countedContribution is itself a document write, so it produces
+    // another onPostWritten event. That event must be a no-op, or every post
+    // would be counted twice.
+    await db.doc(SURVIVOR).set({
+      authorId: OWNER,
+      petId: "contrib-pet",
+      tags: ["parkday"],
+      text: "survivor",
+      countedContribution: { petId: "contrib-pet", tags: ["parkday"] },
+    });
+    await db.doc(POST).set({
+      authorId: OWNER,
+      petId: "contrib-pet",
+      tags: ["parkday"],
+      text: "legacy",
+    });
+    await db.doc(PET).update({ postCount: 1 });
+    await db.doc(TAG).set({ name: "parkday", postCount: 1 });
+
+    const beforeStamp = await captureSnapshot(POST);
+    await deliverWritten(onPostWritten, undefined, beforeStamp, params, newEventId("legacy-cre"));
+    expect(await fieldOf(PET, "postCount")).toBe(2);
+    expect(await fieldOf(TAG, "postCount")).toBe(2);
+
+    // The write the handler just made, delivered back to it.
+    const afterStamp = await captureSnapshot(POST);
+    await deliverWritten(onPostWritten, beforeStamp, afterStamp, params, newEventId("marker-echo"));
+
+    expect(await fieldOf(PET, "postCount")).toBe(2);
+    expect(await fieldOf(TAG, "postCount")).toBe(2);
   });
 
   it("converges when the create is redelivered after the real state moved on", async () => {
@@ -342,4 +448,80 @@ describe("admin repair", () => {
     expect(await fieldOf(PET, "postCount")).toBe(1);
     await db.recursiveDelete(db.doc(`posts/${created.id}`));
   });
+});
+
+describe("admin repair running at the same time as a trigger", () => {
+  /**
+   * The repair takes aggregate counts and then writes an absolute value. A
+   * trigger that increments in between has its work overwritten, and the
+   * counter is left permanently one short of the truth.
+   *
+   * The invariant asserted here is the counter's actual meaning: once both
+   * have finished, likeCount equals the number of likes whose contribution has
+   * been applied — which, with every like's trigger delivered, is all of them.
+   *
+   * Repeated, because which side lands first is not deterministic. Before the
+   * fix this fails on most runs; after it, no interleaving can break it.
+   */
+  it("does not lose a like that was counted while the repair was running", async () => {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await resetWorld();
+      // Two likes already folded in, and a third whose trigger is about to run.
+      await db.doc(`${POST}/likes/liker-a`).set({ userId: "liker-a", counted: true });
+      await db.doc(`${POST}/likes/liker-b`).set({ userId: "liker-b", counted: true });
+      await db.doc(POST).update({ likeCount: 2 });
+      const pendingPath = `${POST}/likes/liker-c`;
+      await db.doc(pendingPath).set({ userId: "liker-c", counted: false });
+
+      await Promise.all([
+        callAs(recomputePostInteractionCountsCallable, ADMIN_UID, {
+          postId: "contrib-post",
+        }),
+        deliverCreate(
+          onLikeCreated,
+          pendingPath,
+          { postId: "contrib-post", likeId: "liker-c" },
+          newEventId("race-like")
+        ),
+      ]);
+
+      // Order-independent: the counter must equal the number of likes whose
+      // contribution has been applied, whichever side finished first.
+      const likes = await db.collection(`${POST}/likes`).get();
+      const counted = likes.docs.filter((d) => d.data().counted !== false).length;
+      expect(await fieldOf(POST, "likeCount"), `attempt ${attempt}, counted ${counted}`).toBe(
+        counted
+      );
+    }
+  }, 60_000);
+
+  it("does not lose a post that was counted while the pet repair was running", async () => {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await resetWorld();
+      await db.doc(SURVIVOR).set({
+        authorId: OWNER,
+        petId: "contrib-pet",
+        tags: [],
+        text: "already counted",
+        countedContribution: { petId: "contrib-pet", tags: [] },
+      });
+      await db.doc(PET).update({ postCount: 1 });
+      // A second post whose aggregation trigger has not run yet.
+      await db.doc(POST).set({
+        authorId: OWNER,
+        petId: "contrib-pet",
+        tags: [],
+        text: "pending",
+        countedContribution: { petId: null, tags: [] },
+      });
+      const pending = await captureSnapshot(POST);
+
+      await Promise.all([
+        callAs(recomputePetPostCountCallable, ADMIN_UID, { petId: "contrib-pet" }),
+        deliverWritten(onPostWritten, undefined, pending, params, newEventId("race-post")),
+      ]);
+
+      expect(await fieldOf(PET, "postCount"), `attempt ${attempt}`).toBe(2);
+    }
+  }, 60_000);
 });

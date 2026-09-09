@@ -1,7 +1,7 @@
 import "./setup";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { admin, db } from "../platform";
-import { createPostCallable } from "../posts";
+import { createPostCallable, getPublishStatusCallable } from "../posts";
 import { callAs, clearRateLimits, errorCodeOf } from "./helpers";
 
 /**
@@ -143,5 +143,63 @@ describe("operation id validation", () => {
       })
     );
     expect(code).toBe("invalid-argument");
+  });
+});
+
+describe("asking whether an operation published", () => {
+  /**
+   * The client needs this before it reclaims uploaded media. A publish that
+   * commits and loses its response looks identical to one that never
+   * happened, and the composer used to resolve that by deleting the assets —
+   * which breaks a real post if it guessed wrong.
+   */
+  it("reports a published operation and its post", async () => {
+    const published = await publish(AUTHOR, "op-status-published");
+
+    const status = await callAs<{ published: boolean; postId?: string }>(
+      getPublishStatusCallable,
+      AUTHOR,
+      { operationId: "op-status-published" }
+    );
+
+    expect(status.published).toBe(true);
+    expect(status.postId).toBe(published.id);
+  });
+
+  it("reports an operation that never published", async () => {
+    const status = await callAs<{ published: boolean }>(
+      getPublishStatusCallable,
+      AUTHOR,
+      { operationId: "op-status-never-ran" }
+    );
+
+    expect(status.published).toBe(false);
+  });
+
+  it("does not report another person's post for the same operation id", async () => {
+    // The document id is derived from the caller's own uid, so this cannot be
+    // used to probe somebody else's publishing. Checked explicitly because it
+    // would otherwise be an oracle.
+    await publish(AUTHOR, "op-status-shared");
+
+    const status = await callAs<{ published: boolean; postId?: string }>(
+      getPublishStatusCallable,
+      OTHER,
+      { operationId: "op-status-shared" }
+    );
+
+    expect(status.published).toBe(false);
+    expect(status.postId).toBeUndefined();
+  });
+
+  it("refuses a missing or malformed operation id", async () => {
+    expect(
+      await errorCodeOf(() => callAs(getPublishStatusCallable, AUTHOR, {}))
+    ).toBe("invalid-argument");
+    expect(
+      await errorCodeOf(() =>
+        callAs(getPublishStatusCallable, AUTHOR, { operationId: "op/slash" })
+      )
+    ).toBe("invalid-argument");
   });
 });

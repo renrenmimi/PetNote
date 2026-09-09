@@ -148,6 +148,25 @@ export async function createPost(
   };
 }
 
+/**
+ * Whether a publish attempt actually produced a post.
+ *
+ * The client cannot tell a committed publish whose response was lost from one
+ * that never happened, and it must not guess: guessing "it failed" and
+ * reclaiming the uploaded media leaves a live post pointing at deleted images.
+ * The server derives the post id from the same (caller, operationId) pair it
+ * used to write, so this is an exact answer, not a heuristic.
+ */
+export async function getPublishStatus(
+  operationId: string
+): Promise<{ published: boolean; postId?: string }> {
+  const result = await httpsCallable<
+    { operationId: string },
+    { published: boolean; postId?: string }
+  >(functions, "getPublishStatusCallable")({ operationId });
+  return result.data;
+}
+
 /** A stable id for one publish attempt, reused across its retries. */
 export function newOperationId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {

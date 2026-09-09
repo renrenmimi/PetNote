@@ -235,6 +235,66 @@ export async function getPetFamilyAuthority(
   };
 }
 
+/**
+ * The pet's ownership state, read *through the transaction*.
+ *
+ * `getPetFamilyAuthority` in ./pets.ts answers the same question with plain
+ * reads, which is fine for a check whose worst outcome is one stale edit. It is
+ * not fine for the three operations that change who holds authority: a decision
+ * taken before a transaction is a decision the transaction never verified, and
+ * "I read the document" is not "I checked what I read".
+ *
+ * Two failures came out of that. An admin transfer demoted *the caller* rather
+ * than the actual old primary, so the pet ended up with two people holding a
+ * role that only one may hold — and the former primary still passed every
+ * guard. And a transfer racing a leave had each writer certain about a
+ * different new primary, with the same result.
+ *
+ * Reading the whole family subcollection inside the transaction puts every
+ * document that matters in the read set, so a concurrent write to any of them
+ * forces a retry and the decision is made again against what is now true.
+ */
+export type TransactionAuthority = {
+  pet: admin.firestore.DocumentData;
+  docs: admin.firestore.QueryDocumentSnapshot[];
+  own?: admin.firestore.QueryDocumentSnapshot;
+  isMember: boolean;
+  isPrimary: boolean;
+  /** Every document currently claiming the role. More than one means repair. */
+  currentPrimaries: admin.firestore.QueryDocumentSnapshot[];
+  memberCount: number;
+};
+
+export async function readAuthorityInTransaction(
+  t: admin.firestore.Transaction,
+  petId: string,
+  callerUid: string
+): Promise<TransactionAuthority | null> {
+  const [petSnap, familySnap] = await Promise.all([
+    t.get(db.doc(`pets/${petId}`)),
+    t.get(db.collection(`pets/${petId}/family`).limit(PET_FAMILY_READ_LIMIT)),
+  ]);
+  if (!petSnap.exists) return null;
+  const pet = petSnap.data() ?? {};
+  const docs = familySnap.docs;
+  const own = docs.find((docSnap) => docSnap.id === callerUid);
+  // Same narrow legacy fallback as getPetFamilyAuthority: only trust the pet
+  // document's fields when there is no family subcollection at all. A
+  // subcollection that exists and does not list you means you were removed.
+  const legacyOwnerFallback =
+    docs.length === 0 &&
+    (pet.ownerId === callerUid || pet.primaryOwnerId === callerUid);
+  return {
+    pet,
+    docs,
+    own,
+    isMember: own !== undefined || legacyOwnerFallback,
+    isPrimary: own?.data()?.role === "primary" || legacyOwnerFallback,
+    currentPrimaries: docs.filter((docSnap) => docSnap.data()?.role === "primary"),
+    memberCount: docs.length === 0 && legacyOwnerFallback ? 1 : docs.length,
+  };
+}
+
 export async function getAccessiblePet(
   petId: string,
   userId: string
@@ -436,26 +496,47 @@ export const deletePetCallable = onCall(async (request) => {
   };
   const petId = requiredDocId(rawDeletePetId, "petId");
 
-  const authority = await getPetFamilyAuthority(petId, callerUid);
-  if (!authority) {
-    return { success: true };
-  }
   const isAdmin = caller.role === "admin";
-  if (!authority.isMember && !isAdmin) {
-    throw new HttpsError("permission-denied", "Cannot delete this pet.");
-  }
-  // Deleting the pet destroys a history that belongs to everyone in its
-  // family, so it takes being the only one left. An owner who wants out while
-  // others remain leaves instead (removeFamilyMemberCallable on themselves),
-  // which hands the pet on rather than taking it away from them.
+  const petRef = db.doc(`pets/${petId}`);
+
+  // Authorization, the "am I the last owner?" test and the removal of the pet
+  // document all happen in one transaction.
   //
-  // Admins keep the override: moderation has to be able to remove content
-  // regardless of how many people are attached to it.
-  if (authority.memberCount > 1 && !isAdmin) {
-    throw new HttpsError(
-      "failed-precondition",
-      "This pet has other owners. Leave the pet instead, or ask the other owners to leave first."
-    );
+  // They used to be a plain read followed by a non-transactional cascade, and
+  // the gap between them is long enough to matter: somebody redeeming an
+  // invitation in that window became an owner of a pet that was already on its
+  // way out, and was told they had joined. The family subcollection is in the
+  // transaction's read set, so a redemption forces a retry and the count is
+  // taken again.
+  //
+  // Only the pet document is deleted here. Its subcollections are cleaned up
+  // afterwards, outside the transaction, because a recursive delete is not
+  // something a transaction can hold — same split as releasePetMembership.
+  const decision = await db.runTransaction<"missing" | "delete">(async (t) => {
+    const authority = await readAuthorityInTransaction(t, petId, callerUid);
+    if (!authority) return "missing";
+    if (!authority.isMember && !isAdmin) {
+      throw new HttpsError("permission-denied", "Cannot delete this pet.");
+    }
+    // Deleting the pet destroys a history that belongs to everyone in its
+    // family, so it takes being the only one left. An owner who wants out
+    // while others remain leaves instead (removeFamilyMemberCallable on
+    // themselves), which hands the pet on rather than taking it away.
+    //
+    // Admins keep the override: moderation has to be able to remove content
+    // regardless of how many people are attached to it.
+    if (authority.memberCount > 1 && !isAdmin) {
+      throw new HttpsError(
+        "failed-precondition",
+        "This pet has other owners. Leave the pet instead, or ask the other owners to leave first."
+      );
+    }
+    t.delete(petRef);
+    return "delete";
+  });
+
+  if (decision === "missing") {
+    return { success: true };
   }
 
   await cascadeDeletePet(petId);

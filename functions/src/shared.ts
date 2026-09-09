@@ -685,15 +685,94 @@ export async function recomputeLocationReviewAggregates(
 }> {
   const locationRef = db.doc(`locations/${locationId}`);
   const reviewsRef = db.collection(`locations/${locationId}/reviews`);
+
+  // Compare-and-set against the totals observed before the scan, and skip
+  // reviews the trigger has not folded in yet.
+  //
+  // Both hazards are the ones the post repairs had. onReviewCreated flips a
+  // review's `counted` marker in the same transaction that folds its rating
+  // into the location, so a review with `counted: false` has *not* been
+  // counted — including it here over-reports, and then its pending trigger
+  // adds the same rating again. And an absolute write loses any fold that
+  // lands between the scan and the write.
+  //
+  // A review with no `counted` field predates the marker and is treated as
+  // already folded in, the same reading as wasCountedAtCreate everywhere else.
+  for (let attempt = 0; attempt < LOCATION_REPAIR_ATTEMPTS; attempt += 1) {
+    const observed = await locationRef.get();
+    const observedTotal =
+      typeof observed.data()?.totalRatings === "number"
+        ? (observed.data() as { totalRatings: number }).totalRatings
+        : 0;
+    const observedSum =
+      typeof observed.data()?.sumRating === "number"
+        ? (observed.data() as { sumRating: number }).sumRating
+        : 0;
+
+    const computed = await computeLocationReviewAggregates(reviewsRef);
+
+    const applied = await db.runTransaction(async (t) => {
+      const snap = await t.get(locationRef);
+      const currentTotal =
+        typeof snap.data()?.totalRatings === "number"
+          ? (snap.data() as { totalRatings: number }).totalRatings
+          : 0;
+      const currentSum =
+        typeof snap.data()?.sumRating === "number"
+          ? (snap.data() as { sumRating: number }).sumRating
+          : 0;
+      if (currentTotal !== observedTotal || currentSum !== observedSum) {
+        return false;
+      }
+      t.set(locationRef, computed.write, { merge: true });
+      return true;
+    });
+
+    if (applied) return computed.summary;
+  }
+
+  // Still moving. Leave the aggregates to the triggers rather than force a
+  // value we already know is stale, and report what they currently say.
+  const current = await locationRef.get();
+  const data = current.data() ?? {};
+  return {
+    totalRatings: typeof data.totalRatings === "number" ? data.totalRatings : 0,
+    averageRating:
+      typeof data.averageRating === "number" ? data.averageRating : 0,
+    petFriendlyAvg: readSubscores(data.petFriendlyAvg),
+    tagCount: Object.keys(
+      (data.tagCounts as Record<string, number> | undefined) ?? {}
+    ).length,
+  };
+}
+
+/** How many times the location repair re-reads before deferring to triggers. */
+const LOCATION_REPAIR_ATTEMPTS = 3;
+
+async function computeLocationReviewAggregates(
+  reviewsRef: admin.firestore.CollectionReference
+): Promise<{
+  write: Record<string, unknown>;
+  summary: {
+    totalRatings: number;
+    averageRating: number;
+    petFriendlyAvg: PetFriendlySubscores;
+    tagCount: number;
+  };
+}> {
   const reviewsSnap = await reviewsRef.get();
 
   let sumRating = 0;
+  let count = 0;
   const pfSum: PetFriendlySubscores = { space: 0, safety: 0, cleanliness: 0 };
   const tagCounts: Record<string, number> = {};
   const distinctTags = new Set<string>();
 
   for (const docSnap of reviewsSnap.docs) {
     const data = docSnap.data() ?? {};
+    // Not folded in yet: its trigger still owes the location this rating.
+    if (!wasCountedAtCreate(data)) continue;
+    count += 1;
     const rating = typeof data.rating === "number" ? data.rating : 0;
     sumRating += rating;
     const pf = readSubscores(data.petFriendly);
@@ -710,7 +789,6 @@ export async function recomputeLocationReviewAggregates(
     }
   }
 
-  const count = reviewsSnap.size;
   const averageRating = count === 0 ? 0 : Number((sumRating / count).toFixed(2));
   const petFriendlyAvg = divideSubscores(pfSum, count);
   const topTags = Object.entries(tagCounts)
@@ -718,8 +796,8 @@ export async function recomputeLocationReviewAggregates(
     .slice(0, TOP_TAGS_LIMIT)
     .map(([tag]) => tag);
 
-  await locationRef.set(
-    {
+  return {
+    write: {
       sumRating,
       totalRatings: count,
       averageRating,
@@ -729,14 +807,12 @@ export async function recomputeLocationReviewAggregates(
       topTags,
       tags: Array.from(distinctTags),
     },
-    { merge: true }
-  );
-
-  return {
-    totalRatings: count,
-    averageRating,
-    petFriendlyAvg,
-    tagCount: Object.keys(tagCounts).length,
+    summary: {
+      totalRatings: count,
+      averageRating,
+      petFriendlyAvg,
+      tagCount: Object.keys(tagCounts).length,
+    },
   };
 }
 

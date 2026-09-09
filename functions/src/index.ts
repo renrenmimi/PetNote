@@ -55,6 +55,7 @@ export {
   createPostCallable,
   deleteCommentCallable,
   deletePostCallable,
+  getPublishStatusCallable,
   onPostWritten,
   recomputePetPostCountCallable,
   recomputePostInteractionCountsCallable,
