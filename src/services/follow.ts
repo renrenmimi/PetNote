@@ -29,12 +29,44 @@ export type PetFollower = {
   followedAt?: unknown;
 };
 
+/**
+ * Short-lived cache for the *first* page of a user's followed pets.
+ *
+ * The same list is read by four different callers — the following-feed query
+ * in services/posts.ts, the Feed's empty-state count, meetup eligibility and
+ * explore suggestions — and switching to the Following tab hit two of them
+ * back to back, so up to 200 documents were read twice for one action.
+ *
+ * Only the unpaginated first page is cached: a `lastDoc` cursor makes each
+ * page a distinct question, and caching those would mean reasoning about
+ * cursor identity for no benefit. Follow and unfollow invalidate it, so the
+ * window a stale answer can survive is bounded by a deliberate write, not by
+ * the TTL — the TTL is only a backstop for changes made in another tab or on
+ * another device.
+ */
+const FOLLOWING_CACHE_MS = 30_000;
+type FollowingPage = {
+  followingPets: FollowingPet[];
+  lastDoc: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+};
+const followingCache = new Map<
+  string,
+  { page: FollowingPage; expiresAt: number }
+>();
+
+export function clearFollowingCache(userId?: string): void {
+  if (userId) followingCache.delete(userId);
+  else followingCache.clear();
+}
+
 export async function followPet(_userId: string, petId: string): Promise<void> {
   if (!petId) return;
   await httpsCallable<{ petId: string }, { success: boolean }>(
     functions,
     "followPetCallable"
   )({ petId });
+  clearFollowingCache();
 }
 
 export async function unfollowPet(_userId: string, petId: string): Promise<void> {
@@ -43,6 +75,7 @@ export async function unfollowPet(_userId: string, petId: string): Promise<void>
     functions,
     "unfollowPetCallable"
   )({ petId });
+  clearFollowingCache();
 }
 
 export async function checkIfFollowingPet(
@@ -70,6 +103,13 @@ export async function getFollowingPets(
   // still bounding cost: feed-building and eligibility checks operate on
   // this list, and users following more than 200 pets can keep paginating.
   const limitCount = options?.limitCount ?? 200;
+  const cacheable = !options?.lastDoc && limitCount === 200;
+  if (cacheable) {
+    const cached = followingCache.get(userId);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.page;
+    }
+  }
   const followingRef = collection(db, "users", userId, "followingPets");
   const constraints: QueryConstraint[] = [
     orderBy("followedAt", "desc"),
@@ -87,11 +127,18 @@ export async function getFollowingPets(
     (snapshot.docs[snapshot.docs.length - 1] as
       | QueryDocumentSnapshot
       | undefined) ?? null;
-  return {
+  const page: FollowingPage = {
     followingPets,
     lastDoc: nextLast,
     hasMore: snapshot.docs.length === limitCount,
   };
+  if (cacheable) {
+    followingCache.set(userId, {
+      page,
+      expiresAt: Date.now() + FOLLOWING_CACHE_MS,
+    });
+  }
+  return page;
 }
 
 export async function getPetFollowers(

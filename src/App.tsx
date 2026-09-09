@@ -14,6 +14,7 @@ import { RequireAdmin } from "./components/RequireAdmin";
 import { SuspendedBanner } from "./components/SuspendedBanner";
 import PageTransition from "./components/PageTransition";
 import { SplashScreen } from "./components/SplashScreen";
+import { useAuth } from "./hooks/useAuth";
 
 const Feed = lazy(() =>
   import("./pages/Feed").then((module) => ({ default: module.Feed }))
@@ -320,18 +321,38 @@ function AppContent({ splashVisible, splashFading }: AppContentProps) {
   );
 }
 
+/**
+ * How long the splash may stay up if auth never resolves.
+ *
+ * Not a minimum. The splash used to be opaque for a fixed 1,500 ms and then
+ * fade for 500 ms, unconditionally — two seconds of held-back first paint
+ * measured in front of every mobile load, in an app whose content is public
+ * and whose route chunks already have their own Suspense splash. This cap only
+ * exists so a stalled auth check cannot trap the screen behind it forever.
+ */
+const SPLASH_MAX_MS = 3000;
+
 function App() {
-  const [splashVisible, setSplashVisible] = useState(true);
-  const [splashFading, setSplashFading] = useState(false);
+  // Gated on auth resolving rather than on a timer. Until onAuthStateChanged
+  // fires, the app does not know whether to render a feed or a login prompt,
+  // which is the only real reason to hold the screen.
+  const { loading: authLoading } = useAuth();
+  const [splashExpired, setSplashExpired] = useState(false);
 
   useEffect(() => {
-    const fadeTimer = window.setTimeout(() => setSplashFading(true), 1500);
-    const removeTimer = window.setTimeout(() => setSplashVisible(false), 2000);
-    return () => {
-      window.clearTimeout(fadeTimer);
-      window.clearTimeout(removeTimer);
-    };
+    const capTimer = window.setTimeout(() => setSplashExpired(true), SPLASH_MAX_MS);
+    return () => window.clearTimeout(capTimer);
   }, []);
+
+  const splashFading = !authLoading || splashExpired;
+  const [splashVisible, setSplashVisible] = useState(true);
+  useEffect(() => {
+    if (!splashFading) return;
+    // Let the 200 ms fade finish before unmounting, so removing it is not a
+    // visible snap.
+    const removeTimer = window.setTimeout(() => setSplashVisible(false), 220);
+    return () => window.clearTimeout(removeTimer);
+  }, [splashFading]);
 
   return (
     <ErrorBoundary>

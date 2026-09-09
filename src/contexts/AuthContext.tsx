@@ -1,5 +1,6 @@
 import { createContext, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  browserPopupRedirectResolver,
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
   onAuthStateChanged,
@@ -25,8 +26,10 @@ import {
   updateUserProfile,
   type UserProfile,
 } from "../services/users";
+import { clearFollowingCache } from "../services/follow";
 import { clearPetCache } from "../services/pets";
 import { clearCachedUsers } from "../hooks/useUserCache";
+import { clearLegacyLikeCache } from "../hooks/useBatchLikeStatus";
 import { isAccountDeletionInProgress } from "../services/accountDeletion";
 
 /**
@@ -141,6 +144,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           clearUserProfileCache();
           clearPetCache();
           clearCachedUsers();
+          clearLegacyLikeCache();
+          clearFollowingCache();
           void firebaseSignOut(auth);
           return;
         }
@@ -307,7 +312,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = useCallback(async () => {
     const provider = new GoogleAuthProvider();
-    const result = await signInWithPopup(auth, provider);
+    // The resolver is passed here rather than installed on the auth instance,
+    // which is what keeps Firebase's ~137 kB auth-helper iframe off every
+    // logged-out page load. See services/firebase.ts.
+    const result = await signInWithPopup(
+      auth,
+      provider,
+      browserPopupRedirectResolver
+    );
     const googleUser = result.user;
     const userRef = doc(db, "users", googleUser.uid);
     const snapshot = await getDoc(userRef);
@@ -357,6 +369,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearUserProfileCache();
     clearPetCache();
     clearCachedUsers();
+    clearLegacyLikeCache();
+    clearFollowingCache();
   }, []);
 
   const isAdmin = adminState?.role === "admin";

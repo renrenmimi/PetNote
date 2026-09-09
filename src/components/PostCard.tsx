@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
@@ -30,7 +30,7 @@ type PostCardProps = {
   onPetFollowChanged?: (petId: string, following: boolean) => void;
 };
 
-export function PostCard({
+function PostCardImpl({
   post,
   useMock = false,
   index = 0,
@@ -58,7 +58,16 @@ export function PostCard({
   const [localLiked, setLocalLiked] = useState(false);
   const [localLikeCount, setLocalLikeCount] = useState(post.likeCount ?? 0);
   const [showHeart, setShowHeart] = useState(false);
-  const [isVisible, setIsVisible] = useState(false);
+  // The leading card starts visible.
+  //
+  // This wrapper animates from opacity-0, and an element at opacity 0 does not
+  // count as a largest contentful paint — so the first card's photo could not
+  // be the LCP until an IntersectionObserver callback had run, on a card that
+  // was on screen the whole time. Combined with the image being kept out of
+  // the DOM until that same observer fired, the mobile trace measured 2,324 ms
+  // of LCP discovery delay against 45 ms of transfer. An entrance animation
+  // for something already in view buys nothing and costs that.
+  const [isVisible, setIsVisible] = useState(index === 0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [quickMenuOpen, setQuickMenuOpen] = useState(false);
   const [quickMenuPosition, setQuickMenuPosition] = useState({ x: 0, y: 0 });
@@ -162,6 +171,7 @@ export function PostCard({
   }, [post.petId, initialBirthday]);
 
   useEffect(() => {
+    if (index === 0) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
@@ -173,7 +183,7 @@ export function PostCard({
     );
     if (cardRef.current) observer.observe(cardRef.current);
     return () => observer.disconnect();
-  }, []);
+  }, [index]);
 
   useEffect(() => {
     if (!quickMenuOpen) {
@@ -639,6 +649,10 @@ export function PostCard({
           media={mediaItems}
           onDoubleTap={handleDoubleLike}
           imageSize="medium"
+          // Real feed visibility, not carousel adjacency: this is what stops a
+          // post far down the list fetching and autoplaying its video.
+          visible={isVisible}
+          priority={index === 0}
         />
         {showHeart ? (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -870,3 +884,26 @@ export function PostCard({
     </div>
   );
 }
+
+/**
+ * Memo boundary.
+ *
+ * A production-React measurement of this exact subtree showed every card
+ * re-rendering on any unrelated parent update: 500 renders per update for a
+ * 500-card list, 172.6 ms of synchronous React work at 4× CPU throttling. The
+ * Feed's own state includes pull-to-refresh distance and interaction sets, so
+ * "unrelated parent update" is not hypothetical — it happens on every drag
+ * frame.
+ *
+ * The default shallow comparison is enough because the props are values or
+ * stable callbacks: `post` comes from a memoized array, the four `initial*`
+ * props are booleans read out of Sets, and every handler in Feed is
+ * useCallback'd (including onDeleted, which used to be an inline arrow and
+ * defeated this on its own).
+ *
+ * This is not virtualization. Loaded pages still stay in the DOM — 21,508
+ * elements at 500 cards — and windowing is the next step if long-session
+ * scroll measurements call for it. Stabilising props first is the order the
+ * review recommends, and it is the cheap half.
+ */
+export const PostCard = memo(PostCardImpl);

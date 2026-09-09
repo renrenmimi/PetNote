@@ -3,7 +3,11 @@ import {
   initializeAppCheck,
   ReCaptchaEnterpriseProvider,
 } from "firebase/app-check";
-import { getAuth } from "firebase/auth";
+import {
+  browserLocalPersistence,
+  indexedDBLocalPersistence,
+  initializeAuth,
+} from "firebase/auth";
 import { getFunctions } from "firebase/functions";
 import { getFirestore } from "firebase/firestore";
 
@@ -91,6 +95,35 @@ if (typeof appCheckSiteKey === "string" && appCheckSiteKey.length > 0) {
   }
 }
 
-export const auth = getAuth(app);
+/**
+ * initializeAuth rather than getAuth, with no default popup/redirect resolver.
+ *
+ * getAuth installs `browserPopupRedirectResolver`, and that resolver eagerly
+ * loads Firebase's auth helper iframe so it is ready to complete a pending
+ * redirect sign-in. On a logged-out public visit — the common case for this
+ * app, whose content is readable without an account — a mobile Lighthouse run
+ * measured that as three third-party requests nobody asked for:
+ * `__/auth/iframe.js` at 94,746 B, the gapi iframes bundle at 35,326 B and
+ * `apis.google.com/js/api.js` at 6,424 B. About 137 kB, to be prepared for a
+ * sign-in that may never happen.
+ *
+ * The resolver is now passed explicitly to signInWithPopup in AuthContext, so
+ * the iframe loads when somebody actually taps "Continue with Google". Google
+ * sign-in behaviour is unchanged; what changes is when its support code is
+ * fetched.
+ *
+ * Persistence has to be stated because initializeAuth has no default. This
+ * list reproduces what getAuth picks in a browser: IndexedDB, falling back to
+ * localStorage. Getting this wrong would silently sign everybody out on
+ * reload, so it is deliberate rather than inherited.
+ *
+ * NOTE: `signInWithRedirect` and `getRedirectResult` would need the resolver
+ * passed to them too. This app uses popup only; if a redirect flow is added
+ * (an in-app browser that blocks popups, say), pass the resolver there as well
+ * rather than putting it back here.
+ */
+export const auth = initializeAuth(app, {
+  persistence: [indexedDBLocalPersistence, browserLocalPersistence],
+});
 export const db = getFirestore(app);
 export const functions = getFunctions(app);
