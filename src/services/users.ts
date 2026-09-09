@@ -105,10 +105,29 @@ export async function getUserProfile(
   return request;
 }
 
+/**
+ * Saves the profile, then mirrors the name and avatar onto the Firebase Auth
+ * user record.
+ *
+ * The two are reported separately because they are not equally important and
+ * they cannot fail together. The callable is the durable write: `users/{uid}`
+ * is what the app reads, and the onUserUpdated trigger fans the change out
+ * from there. The Auth record is a mirror, used only for the
+ * `user.displayName` / `user.photoURL` fallbacks before the profile loads.
+ *
+ * It used to `await` the mirror inside the same try, so a failure there threw
+ * out of a function whose durable write had already committed — and the
+ * caller's catch then deleted the freshly uploaded avatar that Firestore was
+ * by then referencing. The profile ended up saved, pointing at an image that
+ * had been deleted, and the person was told the save had failed.
+ *
+ * So: a failed mirror is reported, not thrown. `authMirrored: false` means
+ * "saved, but this browser's cached identity may lag until the next sign-in".
+ */
 export async function updateUserProfile(
   userId: string,
   data: Partial<UserProfile>
-): Promise<void> {
+): Promise<{ authMirrored: boolean }> {
   await httpsCallable<
     { displayName?: string; avatarUrl?: string; bio?: string },
     { success: boolean }
@@ -121,16 +140,23 @@ export async function updateUserProfile(
   );
   clearUserProfileCache(userId);
 
+  let authMirrored = true;
   if (auth.currentUser && auth.currentUser.uid === userId) {
-    await updateProfile(auth.currentUser, {
-      displayName: data.displayName ?? auth.currentUser.displayName ?? undefined,
-      photoURL: data.avatarUrl ?? auth.currentUser.photoURL ?? undefined,
-    });
+    try {
+      await updateProfile(auth.currentUser, {
+        displayName: data.displayName ?? auth.currentUser.displayName ?? undefined,
+        photoURL: data.avatarUrl ?? auth.currentUser.photoURL ?? undefined,
+      });
+    } catch (error) {
+      console.error("updateUserProfile: Auth mirror failed", error);
+      authMirrored = false;
+    }
   }
 
   // Name/avatar sync to posts, comments, notifications, participants,
   // reviews, and family is handled by the onUserUpdated Cloud Function
   // triggered by this user document write. No client-side sync needed.
+  return { authMirrored };
 }
 
 export async function createUserProfile(

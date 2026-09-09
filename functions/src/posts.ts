@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
@@ -19,6 +20,45 @@ import {
 } from "./shared";
 import { getAccessiblePet } from "./pets";
 
+/**
+ * Characters a hashtag cannot contain, because the tag *is* a document id.
+ *
+ * `onPostWritten` writes aggregates to `hashtags/{tag}`. A tag containing "/"
+ * makes that an odd-component path, and the Admin SDK throws out of the whole
+ * aggregation transaction — so a post tagged `dogs/cats` committed fine and
+ * then silently took its pet's postCount down with it. "." splits field paths,
+ * and `* ~ [ ]` are rejected by the Admin SDK's path parser.
+ *
+ * The same set is already rejected for place-review tags in ./places.ts. Post
+ * tags went through a different validator that checked only length, which is
+ * how the two drifted apart.
+ */
+const TAG_FORBIDDEN_CHARACTERS = /[.*~/[\]]/;
+
+/** True when this tag can safely be used as a `hashtags/{id}` document id. */
+function isUsableTag(tag: string): boolean {
+  return (
+    tag.length > 0 &&
+    tag.length <= VALIDATION_LIMITS.tag &&
+    !TAG_FORBIDDEN_CHARACTERS.test(tag) &&
+    // "." alone is also a relative path segment; the character class above
+    // already covers it, but __.*__ is reserved by Firestore separately.
+    !/^__.*__$/.test(tag)
+  );
+}
+
+function normalizeTagText(tag: string): string {
+  return tag.trim().toLowerCase().replace(/^#/, "");
+}
+
+/**
+ * Tags as stored on a post, for the aggregation trigger.
+ *
+ * Unusable tags are **dropped rather than thrown on**. The trigger reads data
+ * that is already committed — including posts written before the validator
+ * below existed — and a tag it cannot turn into a document id must not be
+ * allowed to fail the transaction that also carries the pet's postCount.
+ */
 function normalizeTags(tags: unknown): string[] {
   if (!Array.isArray(tags)) return [];
   return Array.from(
@@ -26,11 +66,86 @@ function normalizeTags(tags: unknown): string[] {
       tags
         .slice(0, VALIDATION_LIMITS.maxTags)
         .filter((tag): tag is string => typeof tag === "string")
-        .map((tag) => tag.trim().toLowerCase().replace(/^#/, ""))
-        .filter((tag) => tag.length <= VALIDATION_LIMITS.tag)
-        .filter(Boolean)
+        .map(normalizeTagText)
+        .filter(isUsableTag)
     )
   );
+}
+
+/**
+ * Tags on the way in, for a callable. Rejects rather than silently dropping:
+ * a person who typed `dogs/cats` should be told, not have it disappear.
+ */
+function validateIncomingTags(tags: unknown): string[] {
+  if (!Array.isArray(tags)) return [];
+  const normalized = tags
+    .slice(0, VALIDATION_LIMITS.maxTags)
+    .filter((tag): tag is string => typeof tag === "string")
+    .map(normalizeTagText)
+    .filter((tag) => tag.length > 0);
+  for (const tag of normalized) {
+    if (tag.length > VALIDATION_LIMITS.tag) {
+      throw new HttpsError(
+        "invalid-argument",
+        `Tags must be ${VALIDATION_LIMITS.tag} characters or fewer.`
+      );
+    }
+    if (!isUsableTag(tag)) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Tags cannot contain . * ~ / [ ] characters."
+      );
+    }
+  }
+  return Array.from(new Set(normalized));
+}
+
+/**
+ * Turns a client-supplied operation id into the post's document id.
+ *
+ * Publishing was not idempotent: the callable did `collection.add()`, which
+ * mints a fresh random id per call. If the response to a successful call was
+ * lost — a dropped connection on a phone, the tab suspended mid-request — the
+ * client saw a failure, and a retry created a *second* post. Worse, the
+ * client's catch also deleted the uploaded media, so the first post survived
+ * pointing at assets that no longer existed.
+ *
+ * Deriving the document id from (caller, operation) makes the write itself the
+ * idempotency record: `.create()` either writes the post or fails with
+ * ALREADY_EXISTS, in which case the earlier attempt is the answer and its id
+ * gets returned. No extra document, no query, no composite index, and no
+ * window where two attempts can both succeed.
+ *
+ * The caller's uid is in the hash so one person's operation id cannot collide
+ * with — or be used to squat on — another's.
+ */
+function postIdForOperation(callerUid: string, operationId: string): string {
+  return createHash("sha256")
+    .update(`${callerUid}:${operationId}`)
+    .digest("hex")
+    .slice(0, 24);
+}
+
+/**
+ * An operation id is opaque to the server; it only has to be stable across a
+ * client's retries and long enough not to collide by accident. A client that
+ * sends nothing gets the old non-idempotent behaviour, so a stale tab loaded
+ * before this shipped keeps working.
+ */
+function optionalOperationId(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string") {
+    throw new HttpsError("invalid-argument", "operationId must be a string.");
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.length < 8 || trimmed.length > 64 || !/^[A-Za-z0-9_-]+$/.test(trimmed)) {
+    throw new HttpsError(
+      "invalid-argument",
+      "operationId must be 8-64 characters of A-Z, a-z, 0-9, - or _."
+    );
+  }
+  return trimmed;
 }
 
 function getPostPetId(data: admin.firestore.DocumentData | undefined): string | null {
@@ -59,38 +174,120 @@ function stagePetPostCountDelta(
   });
 }
 
+/**
+ * What this post has already contributed to the aggregates.
+ *
+ * This is the fix for out-of-order delivery. The handler used to compute a
+ * delta from the *event* (before → after) and clamp the result at zero, so
+ * delivering a post's delete before its create left the aggregates holding a
+ * post that never existed: the early decrement clamped to 0, losing the
+ * inverse, and the later increment then applied for real. Event-id
+ * deduplication cannot help — those are two different events.
+ *
+ * Recording what was applied, on the post itself, makes the handler converge
+ * instead of accumulate: each delivery moves the aggregates from "what this
+ * post has contributed" to "what it should contribute", in any order, any
+ * number of times.
+ */
+type PostContribution = {
+  petId: string | null;
+  tags: string[];
+};
+
+const NO_CONTRIBUTION: PostContribution = { petId: null, tags: [] };
+
+function readContribution(
+  data: admin.firestore.DocumentData | undefined
+): PostContribution | null {
+  const raw = data?.countedContribution;
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as { petId?: unknown; tags?: unknown };
+  return {
+    petId: typeof value.petId === "string" && value.petId ? value.petId : null,
+    tags: Array.isArray(value.tags)
+      ? value.tags.filter((tag): tag is string => typeof tag === "string")
+      : [],
+  };
+}
+
+/**
+ * Applied state for a post that has no `countedContribution` field.
+ *
+ * Only posts written before this protocol shipped are in that position —
+ * createPostCallable stamps an explicit empty contribution, so a *new* post
+ * that is missing the field has genuinely not been counted yet. That
+ * distinction is what makes delete-overtaking-create separable from a legacy
+ * post being deleted:
+ *
+ * - legacy delete: no field, `before` had tags/pet, and its create ran long
+ *   ago under the old handler → undo `before`, which is what the old handler
+ *   would have done.
+ * - new post, delete before create: the field is present and empty → undo
+ *   nothing, because nothing was ever applied.
+ */
+function legacyContribution(
+  before: admin.firestore.DocumentData | undefined
+): PostContribution {
+  if (!before) return NO_CONTRIBUTION;
+  return { petId: getPostPetId(before), tags: normalizeTags(before.tags) };
+}
+
+function contributionOf(data: admin.firestore.DocumentData | undefined): PostContribution {
+  return readContribution(data) ?? legacyContribution(data);
+}
+
 export const onPostWritten = onDocumentWritten("posts/{postId}", async (event) => {
-  const before = event.data?.before?.data();
-  const after = event.data?.after?.data();
+  const postId = event.params.postId;
+  const postRef = db.doc(`posts/${postId}`);
+  const eventBefore = event.data?.before?.data();
+  // A delete event is the one case where the live document cannot be read, so
+  // its snapshot is the only record of what had been applied.
+  const isDelete = event.data?.after?.exists !== true;
 
-  const oldTags = normalizeTags(before?.tags);
-  const newTags = normalizeTags(after?.tags);
-
-  const added = newTags.filter((t) => !oldTags.includes(t));
-  const removed = oldTags.filter((t) => !newTags.includes(t));
-
-  const petDeltas = new Map<string, number>();
-  const previousPetId = getPostPetId(before);
-  const nextPetId = getPostPetId(after);
-  if (previousPetId) {
-    petDeltas.set(previousPetId, (petDeltas.get(previousPetId) ?? 0) - 1);
-  }
-  if (nextPetId) {
-    petDeltas.set(nextPetId, (petDeltas.get(nextPetId) ?? 0) + 1);
-  }
-
-  if (added.length === 0 && removed.length === 0 && petDeltas.size === 0) return;
-
-  // Every count below is a delta against the previous state, so a redelivered
-  // write applies the same delta twice: a tag gains a phantom post, a pet's
-  // postCount drifts up. They all move together in one transaction alongside
-  // the processed-event marker, so a replay is a no-op rather than a partial
-  // reapplication. Bounded by VALIDATION_LIMITS.maxTags (20) added plus 20
-  // removed plus at most two pets, well inside the transaction limit.
   await runEventOnce(event.id, async (t) => {
+    // Read the *live* post, not the event snapshot. Two events for the same
+    // post can arrive in either order, and the live document is the only
+    // thing that says what should be true now.
+    const liveSnap = isDelete ? null : await t.get(postRef);
+    const live = liveSnap?.exists ? liveSnap.data() : undefined;
+
+    // The legacy fallback has to read the event's *before* snapshot, not the
+    // live document: for a post with no marker, "what was already applied" is
+    // its previous state, which is exactly the delta the old handler used.
+    // Reading live here would make applied === desired for every legacy post
+    // and silently stop counting them altogether.
+    const applied = isDelete
+      ? contributionOf(eventBefore)
+      : readContribution(live) ?? legacyContribution(eventBefore);
+
+    // If the post is gone, it contributes nothing — including when a create or
+    // update event arrives after the delete that removed it.
+    const desired: PostContribution = live
+      ? { petId: getPostPetId(live), tags: normalizeTags(live.tags) }
+      : NO_CONTRIBUTION;
+
+    const added = desired.tags.filter((tag) => !applied.tags.includes(tag));
+    const removed = applied.tags.filter((tag) => !desired.tags.includes(tag));
+
+    const petDeltas = new Map<string, number>();
+    if (applied.petId) {
+      petDeltas.set(applied.petId, (petDeltas.get(applied.petId) ?? 0) - 1);
+    }
+    if (desired.petId) {
+      petDeltas.set(desired.petId, (petDeltas.get(desired.petId) ?? 0) + 1);
+    }
+    const petIds = [...petDeltas.keys()].filter((id) => petDeltas.get(id) !== 0);
+
+    const contributionUnchanged =
+      added.length === 0 && removed.length === 0 && petIds.length === 0;
+    // Still stamp the contribution on a live post that has none: that is what
+    // moves a legacy post onto this protocol without a separate write.
+    if (contributionUnchanged && (isDelete || readContribution(live) !== null)) {
+      return false;
+    }
+
     // Every read first — Firestore rejects a read that follows a write in the
     // same transaction, and a post moving from one pet to another needs two.
-    const petIds = [...petDeltas.keys()].filter((id) => petDeltas.get(id) !== 0);
     const [removedSnaps, petSnaps] = await Promise.all([
       Promise.all(removed.map((tag) => t.get(db.doc(`hashtags/${tag}`)))),
       Promise.all(petIds.map((petId) => t.get(db.doc(`pets/${petId}`)))),
@@ -134,9 +331,94 @@ export const onPostWritten = onDocumentWritten("posts/{postId}", async (event) =
       }
     });
 
+    // Record the new applied state in the same transaction as the aggregates,
+    // so the two can never disagree. Nothing to record for a deleted post.
+    if (live) {
+      t.update(postRef, { countedContribution: desired });
+    }
+
     return true;
   });
 });
+
+/**
+ * Brings one post's aggregate contribution up to date, outside the trigger.
+ *
+ * Used by the admin repair callables. It is the *same* protocol the trigger
+ * runs — read the applied state, apply the difference, record the new state —
+ * which is the point: a repair that bypassed the contribution markers is what
+ * made recompute double-count posts whose trigger had not fired yet.
+ */
+export async function settlePostContribution(postId: string): Promise<boolean> {
+  const postRef = db.doc(`posts/${postId}`);
+  return db.runTransaction(async (t) => {
+    const snap = await t.get(postRef);
+    if (!snap.exists) return false;
+    const live = snap.data() ?? {};
+    const applied = contributionOf(live);
+    const desired: PostContribution = {
+      petId: getPostPetId(live),
+      tags: normalizeTags(live.tags),
+    };
+
+    const added = desired.tags.filter((tag) => !applied.tags.includes(tag));
+    const removed = applied.tags.filter((tag) => !desired.tags.includes(tag));
+    const petDeltas = new Map<string, number>();
+    if (applied.petId) {
+      petDeltas.set(applied.petId, (petDeltas.get(applied.petId) ?? 0) - 1);
+    }
+    if (desired.petId) {
+      petDeltas.set(desired.petId, (petDeltas.get(desired.petId) ?? 0) + 1);
+    }
+    const petIds = [...petDeltas.keys()].filter((id) => petDeltas.get(id) !== 0);
+
+    if (
+      added.length === 0 &&
+      removed.length === 0 &&
+      petIds.length === 0 &&
+      readContribution(live) !== null
+    ) {
+      return false;
+    }
+
+    const [removedSnaps, petSnaps] = await Promise.all([
+      Promise.all(removed.map((tag) => t.get(db.doc(`hashtags/${tag}`)))),
+      Promise.all(petIds.map((petId) => t.get(db.doc(`pets/${petId}`)))),
+    ]);
+    petSnaps.forEach((petSnap, i) => {
+      stagePetPostCountDelta(t, petSnap, petDeltas.get(petIds[i]) ?? 0);
+    });
+    for (const tag of added) {
+      t.set(
+        db.doc(`hashtags/${tag}`),
+        {
+          name: tag,
+          postCount: admin.firestore.FieldValue.increment(1),
+          lastUsed: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+    removedSnaps.forEach((snap2) => {
+      if (!snap2.exists) return;
+      const current =
+        typeof snap2.data()?.postCount === "number"
+          ? (snap2.data() as { postCount: number }).postCount
+          : 0;
+      const next = current - 1;
+      if (next <= 0) {
+        t.delete(snap2.ref);
+      } else {
+        t.update(snap2.ref, {
+          postCount: next,
+          lastUsed: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+    });
+    t.update(postRef, { countedContribution: desired });
+    return true;
+  });
+}
 
 export const createPostCallable = onCall(async (request) => {
   const callerAuth = request.auth;
@@ -158,8 +440,10 @@ export const createPostCallable = onCall(async (request) => {
     tags?: unknown;
     media?: Array<{ url?: string; type?: "image" | "video"; thumbUrl?: string }>;
     petId?: string;
+    operationId?: unknown;
   };
 
+  const operationId = optionalOperationId(data.operationId);
   const petId = requiredDocId(data.petId, "petId");
 
   const petData = await getAccessiblePet(petId, callerUid);
@@ -211,32 +495,64 @@ export const createPostCallable = onCall(async (request) => {
   // stripUndefined keeps text-only posts working: when no media is attached
   // firstMedia is undefined and Firestore Admin SDK rejects undefined fields
   // unless ignoreUndefinedProperties is enabled (we don't enable it globally).
-  const result = await db.collection("posts").add(
-    stripUndefined({
-      authorId: callerUid,
-      authorName: caller.fromUserName,
-      authorAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
-      text,
-      media,
-      mediaUrl: firstMedia?.url,
-      mediaType: firstMedia?.type,
-      petId,
-      petName:
-        typeof petData.name === "string" && petData.name.trim().length > 0
-          ? petData.name
-          : "Pet",
-      petAvatarUrl:
-        typeof petData.avatarUrl === "string" && petData.avatarUrl.trim().length > 0
-          ? petData.avatarUrl
-          : getDefaultAvatar(petId),
-      tags: normalizeTags(data.tags),
-      likeCount: 0,
-      commentCount: 0,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    })
-  );
+  const payload = stripUndefined({
+    authorId: callerUid,
+    authorName: caller.fromUserName,
+    authorAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
+    text,
+    media,
+    mediaUrl: firstMedia?.url,
+    mediaType: firstMedia?.type,
+    petId,
+    petName:
+      typeof petData.name === "string" && petData.name.trim().length > 0
+        ? petData.name
+        : "Pet",
+    petAvatarUrl:
+      typeof petData.avatarUrl === "string" && petData.avatarUrl.trim().length > 0
+        ? petData.avatarUrl
+        : getDefaultAvatar(petId),
+    tags: validateIncomingTags(data.tags),
+    // Explicit "nothing counted yet". onPostWritten needs to tell a brand
+    // new post apart from one written before the contribution protocol
+    // existed: a missing field means legacy (already counted the old way),
+    // an empty one means the aggregation trigger has not run. Without that
+    // distinction a delete event overtaking the create would undo a
+    // contribution that was never applied.
+    countedContribution: { petId: null, tags: [] },
+    likeCount: 0,
+    commentCount: 0,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    ...(operationId ? { operationId } : {}),
+  });
 
-  return { id: result.id };
+  if (!operationId) {
+    // No operation id: a client from before idempotency shipped. Keep the old
+    // behaviour rather than refusing to publish for it.
+    const result = await db.collection("posts").add(payload);
+    return { id: result.id, deduplicated: false };
+  }
+
+  const postRef = db.doc(`posts/${postIdForOperation(callerUid, operationId)}`);
+  try {
+    await postRef.create(payload);
+    return { id: postRef.id, deduplicated: false };
+  } catch (error) {
+    if ((error as { code?: number | string } | null)?.code !== 6 /* ALREADY_EXISTS */) {
+      throw error;
+    }
+  }
+
+  // This operation already published. Returning the existing post — rather
+  // than an error — is what makes a retry after a lost response safe: the
+  // client gets the same answer it missed, and its media stays referenced.
+  const existing = await postRef.get();
+  if (existing.data()?.authorId !== callerUid) {
+    // Cannot happen while the id is derived from the caller's own uid, and is
+    // checked anyway: returning somebody else's post here would be a leak.
+    throw new HttpsError("already-exists", "That operation id is already in use.");
+  }
+  return { id: postRef.id, deduplicated: true };
 });
 
 export const updatePostCallable = onCall(async (request) => {
@@ -282,7 +598,7 @@ export const updatePostCallable = onCall(async (request) => {
     );
   }
   if ("tags" in data) {
-    updates.tags = normalizeTags(data.tags);
+    updates.tags = validateIncomingTags(data.tags);
   }
 
   if ("petId" in data) {
@@ -558,6 +874,37 @@ export const recomputePetPostCountCallable = onCall(async (request) => {
     throw new HttpsError("not-found", "Pet not found.");
   }
 
+  // Settle every one of this pet's posts through the contribution protocol
+  // *before* taking an absolute count.
+  //
+  // This is the ordering the previous version got wrong. It went straight to
+  // count(), which counts posts whose aggregation trigger has not run yet — so
+  // the repair wrote a total that already included them, and then their
+  // pending trigger incremented on top of it. One pending post meant a count
+  // one too high, permanently. Settling first means every post's marker says
+  // "counted", so a later (re)delivery is a no-op and the absolute count is
+  // the truth rather than a race.
+  //
+  // Bounded by the pet's own post count, which is what a per-pet repair costs
+  // by nature. Paged so a prolific pet does not load in one go.
+  let settled = 0;
+  let cursor: admin.firestore.QueryDocumentSnapshot | null = null;
+  for (;;) {
+    let page: admin.firestore.Query = db
+      .collection("posts")
+      .where("petId", "==", petId)
+      .orderBy(admin.firestore.FieldPath.documentId())
+      .limit(200);
+    if (cursor) page = page.startAfter(cursor);
+    const snap = await page.get();
+    if (snap.empty) break;
+    for (const docSnap of snap.docs) {
+      if (await settlePostContribution(docSnap.id)) settled += 1;
+    }
+    if (snap.size < 200) break;
+    cursor = snap.docs[snap.docs.length - 1];
+  }
+
   const aggSnap = await db
     .collection("posts")
     .where("petId", "==", petId)
@@ -565,7 +912,7 @@ export const recomputePetPostCountCallable = onCall(async (request) => {
     .get();
   const postCount = aggSnap.data().count;
   await petRef.update({ postCount });
-  return { success: true, postCount };
+  return { success: true, postCount, settled };
 });
 
 // Admin-only: recompute likeCount and commentCount on a single post from
@@ -602,13 +949,49 @@ export const recomputePostInteractionCountsCallable = onCall(
       throw new HttpsError("not-found", "Post not found.");
     }
 
-    const [likeAgg, commentAgg] = await Promise.all([
-      db.collection(`posts/${postId}/likes`).count().get(),
-      db.collection(`posts/${postId}/comments`).count().get(),
-    ]);
-    const likeCount = likeAgg.data().count;
-    const commentCount = commentAgg.data().count;
+    // Subtract the documents whose contribution has not been applied yet.
+    //
+    // The counter's meaning is "how many likes/comments have been folded in",
+    // and the create triggers are what fold them in — each one flips its own
+    // `counted` marker in the same transaction as the increment. A plain
+    // count() therefore over-reports: it includes documents still waiting for
+    // their trigger, whose increment is still to come. Repairing to that
+    // number and then letting the pending triggers run left the post
+    // permanently over-counted by however many were in flight.
+    //
+    // `counted == false` is the pending set. A document with no `counted`
+    // field predates the marker and counts as already applied — the same
+    // reading as wasCountedAtCreate in ./shared.ts. Four aggregate queries, no
+    // document writes, so this stays cheap on a post with thousands of likes.
+    const [likeAgg, commentAgg, pendingLikeAgg, pendingCommentAgg] =
+      await Promise.all([
+        db.collection(`posts/${postId}/likes`).count().get(),
+        db.collection(`posts/${postId}/comments`).count().get(),
+        db
+          .collection(`posts/${postId}/likes`)
+          .where("counted", "==", false)
+          .count()
+          .get(),
+        db
+          .collection(`posts/${postId}/comments`)
+          .where("counted", "==", false)
+          .count()
+          .get(),
+      ]);
+    const pendingLikes = pendingLikeAgg.data().count;
+    const pendingComments = pendingCommentAgg.data().count;
+    const likeCount = Math.max(0, likeAgg.data().count - pendingLikes);
+    const commentCount = Math.max(
+      0,
+      commentAgg.data().count - pendingComments
+    );
     await postRef.update({ likeCount, commentCount });
-    return { success: true, likeCount, commentCount };
+    return {
+      success: true,
+      likeCount,
+      commentCount,
+      pendingLikes,
+      pendingComments,
+    };
   }
 );

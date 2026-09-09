@@ -108,20 +108,54 @@ export function toPost(id: string, data: DocumentData): Post {
   };
 }
 
-export async function createPost(data: CreatePostInput): Promise<string> {
+/**
+ * Publishes a post, at most once per `operationId`.
+ *
+ * Pass the same `operationId` on every retry of the same submission. The
+ * server derives the post's document id from it, so a retry after a lost
+ * response returns the post the first attempt already created instead of
+ * making a second one — `deduplicated` says which happened.
+ *
+ * That is what lets a caller stop deleting its uploaded media on an uncertain
+ * failure: retrying is safe, so "did it commit?" is answerable by asking
+ * again rather than by guessing and cleaning up.
+ */
+export async function createPost(
+  data: CreatePostInput & { operationId?: string }
+): Promise<{ id: string; deduplicated: boolean }> {
   if (!data.petId) {
     throw new Error("Please select a pet before posting.");
   }
   const result = await httpsCallable<
-    { text: string; tags: string[]; media: MediaItem[]; petId: string },
-    { id: string }
+    {
+      text: string;
+      tags: string[];
+      media: MediaItem[];
+      petId: string;
+      operationId?: string;
+    },
+    { id: string; deduplicated?: boolean }
   >(functions, "createPostCallable")({
     text: data.text,
     tags: data.tags,
     media: data.media,
     petId: data.petId,
+    ...(data.operationId ? { operationId: data.operationId } : {}),
   });
-  return result.data.id;
+  return {
+    id: result.data.id,
+    deduplicated: result.data.deduplicated === true,
+  };
+}
+
+/** A stable id for one publish attempt, reused across its retries. */
+export function newOperationId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID().replace(/-/g, "");
+  }
+  // Older Safari without randomUUID. Not security-sensitive — it only has to
+  // be unlikely to collide with this user's other submissions.
+  return `op${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
 }
 
 export async function updatePost(
