@@ -115,7 +115,11 @@ export function Notifications() {
                   if (!item.read) {
                     void markAsRead(item.id).catch(() => undefined);
                   }
-                  if (item.type === "pet_follow" || item.type === "follow") {
+                  if (
+                    item.type === "pet_follow" ||
+                    item.type === "follow" ||
+                    item.type === "pet_primary_transferred"
+                  ) {
                     // Prefer the pet page (backend now stamps petId); fall back
                     // to the follower's profile for legacy notifications.
                     navigate(

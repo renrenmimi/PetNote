@@ -369,20 +369,6 @@ export async function deletePet(petId: string): Promise<void> {
   clearPetCache(petId);
 }
 
-export async function getPetsByOwner(ownerId: string): Promise<Pet[]> {
-  const petsRef = collection(db, "pets");
-  const petsQuery = query(
-    petsRef,
-    where("ownerId", "==", ownerId),
-    orderBy("createdAt", "desc")
-  );
-  const snapshot = await getDocs(petsQuery);
-  return snapshot.docs.map((docSnap) => ({
-    id: docSnap.id,
-    ...(docSnap.data() as Omit<Pet, "id">),
-  }));
-}
-
 export async function getUserPets(userId: string): Promise<Pet[]> {
   // Single collectionGroup read for family memberships, then chunked
   // documentId() "in" reads for the pet docs themselves. Previously we
@@ -491,14 +477,42 @@ export async function isFamilyMember(
   return memberSnap.exists();
 }
 
+/**
+ * Removes an owner from a pet's family, or — with `targetUserId` equal to the
+ * caller — leaves it.
+ *
+ * The pet is never destroyed by this. The server hands the primary role on if
+ * the person leaving held it, and refuses outright if they are the only owner
+ * left (a pet must be deleted deliberately, not orphaned by a leave).
+ */
 export async function removeFamilyMember(
+  petId: string,
+  targetUserId: string
+): Promise<{ action: string }> {
+  const result = await httpsCallable<
+    { petId: string; targetUserId: string },
+    { success: boolean; action: string }
+  >(functions, "removeFamilyMemberCallable")({ petId, targetUserId });
+  clearPetCache(petId);
+  return { action: result.data.action };
+}
+
+/**
+ * Hands the primary owner role to another existing family member.
+ *
+ * Primary is the one asymmetry the equal-ownership model keeps — it is who may
+ * remove somebody else — so it has to be movable, or the family is stuck with
+ * whoever happened to create the pet.
+ */
+export async function transferPetPrimary(
   petId: string,
   targetUserId: string
 ): Promise<void> {
   await httpsCallable<
     { petId: string; targetUserId: string },
-    { success: boolean }
-  >(functions, "removeFamilyMemberCallable")({ petId, targetUserId });
+    { success: boolean; alreadyPrimary: boolean }
+  >(functions, "transferPetPrimaryCallable")({ petId, targetUserId });
+  clearPetCache(petId);
 }
 
 export async function getPetById(petId: string): Promise<Pet | null> {

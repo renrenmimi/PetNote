@@ -1,9 +1,12 @@
 export { onPetDeleted, onPostDeleted } from "./cleanup";
 export {
+  removeFamilyMemberCallable,
+  transferPetPrimaryCallable,
+} from "./family";
+export {
   createInvitationCallable,
   getActiveInvitationCallable,
   redeemInvitationCallable,
-  removeFamilyMemberCallable,
   revokeInvitationCallable,
   validateInvitationCallable,
 } from "./invitations";

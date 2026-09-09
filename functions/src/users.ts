@@ -4,11 +4,11 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
 import {
   cascadeDeleteMeetup,
-  cascadeDeletePet,
   cascadeDeletePost,
   deleteCollectionPath,
   deleteQueryDocs,
 } from "./cleanup";
+import { getPetIdsForMember, releasePetMembership } from "./family";
 import { assertCallerAccountActive, getNotificationActor } from "./notifications";
 import {
   assertRateLimit,
@@ -540,13 +540,28 @@ export const deleteUserAccount = onCall({ timeoutSeconds: 540 }, async (request)
     );
   });
 
-  await runStep("pets", async () => {
-    await forEachQueryDocumentInBatches(
-      db.collection("pets").where("ownerId", "==", userId),
-      async (docSnap) => {
-        await cascadeDeletePet(docSnap.id);
-      }
-    );
+  // A pet outlives any one of its owners. This step used to select pets by
+  // ownerId and cascade-delete the subtree, which meant deleting the account
+  // of whoever created a shared pet destroyed it for every other owner — the
+  // product's own premise, undone by its deletion job.
+  //
+  // releasePetMembership hands each pet to a remaining owner, and only ends a
+  // pet that has nobody left. It runs before the cross-reference steps because
+  // one of those deletes this user's family documents, which is the very state
+  // the handover reads.
+  await runStep("petMemberships", async () => {
+    const petIds = await getPetIdsForMember(userId);
+    for (const petId of petIds) {
+      await releasePetMembership({
+        petId,
+        leavingUid: userId,
+        // The account is going regardless, so a pet with no owners left has to
+        // end. This is the one place "delete" is correct; an ordinary leave
+        // refuses instead.
+        onLastMember: "delete",
+        reason: "owner_account_deleted",
+      });
+    }
   });
 
   await runStep("meetups", async () => {
@@ -573,6 +588,11 @@ export const deleteUserAccount = onCall({ timeoutSeconds: 540 }, async (request)
       deleteQueryDocs(db.collectionGroup("reviews").where("userId", "==", userId))],
     ["participants", () =>
       deleteQueryDocs(db.collectionGroup("participants").where("userId", "==", userId))],
+    // Backstop only. releasePetMembership above already removed this user's
+    // family documents pet by pet, because the handover has to read them. This
+    // catches anything it could not resolve (a pet document that vanished
+    // mid-cascade, say) rather than leaving a membership pointing at a deleted
+    // account. It runs after that step, so it cannot race it.
     ["family", () =>
       deleteQueryDocs(db.collectionGroup("family").where("userId", "==", userId))],
     ["reports", () =>

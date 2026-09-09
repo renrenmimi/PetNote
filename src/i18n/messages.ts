@@ -228,6 +228,11 @@ const en = {
   "settings.deleteAccountTitle": "Delete Account",
   "settings.deleteAccountConfirm":
     "Type DELETE to confirm. This action cannot be undone.",
+  // Says what actually happens to a shared pet now: it is handed to another
+  // owner rather than deleted along with the account. The old copy said
+  // nothing, and the old behaviour destroyed other people's pets.
+  "settings.deleteAccountSharedPets":
+    "Pets you share with someone else stay with them — the longest-standing remaining owner becomes the primary owner. Pets only you own are deleted, along with your posts.",
   "settings.deleting": "Deleting...",
   "settings.delete": "Delete",
 
@@ -451,6 +456,8 @@ const zh = {
   "settings.signOutConfirm": "确定要退出登录吗？",
   "settings.deleteAccountTitle": "删除账号",
   "settings.deleteAccountConfirm": "输入 DELETE 进行确认，此操作无法撤销。",
+  "settings.deleteAccountSharedPets":
+    "与他人共同拥有的宠物会留给对方——加入最久的那位主人将成为主要主人。只属于你一个人的宠物会被删除，你的帖子也会一并删除。",
   "settings.deleting": "删除中...",
   "settings.delete": "删除",
 

@@ -165,6 +165,76 @@ function sanitizePetDraft(value: unknown): {
   });
 }
 
+/**
+ * Who may do what to a pet that several humans share.
+ *
+ * PetNote's premise is one pet with several *equal* human owners, but the data
+ * model was built around a privileged creator: `pets/{id}.ownerId` and
+ * `.primaryOwnerId` were the creator's uid forever, and every management check
+ * compared against them. A co-owner could contribute and could not manage.
+ *
+ * The authority now comes from `pets/{id}/family/{uid}`. The two fields on the
+ * pet document are retained and *redefined*: they name the **current** primary
+ * owner, kept in sync with the family member whose `role` is `"primary"`, and
+ * they move when that person leaves. Keeping them costs nothing and buys two
+ * things — the pets-per-creator cap can stay a single indexed query, and a
+ * legacy pet that somehow has no family subcollection does not become
+ * unmanageable by the person who made it (the `legacyOwnerFallback` below).
+ *
+ * The rights split, per the product decision recorded in the review handoff:
+ * everything additive is equal (edit the profile, invite, revoke, post, check
+ * in, bring the pet to a meetup); the two destructive acts converge. Removing
+ * *another* owner is the primary's alone, and the primary role is
+ * transferable. Deleting the pet outright requires being the last owner left —
+ * so it can never be used against the other owners' shared history.
+ */
+export type PetFamilyAuthority = {
+  pet: admin.firestore.DocumentData;
+  /** May contribute and manage: edit the profile, invite, revoke. */
+  isMember: boolean;
+  /** May remove other members and transfer the role. */
+  isPrimary: boolean;
+  /** Total humans in this pet's family, counting the caller. */
+  memberCount: number;
+  /** True when membership was inferred from ownerId/primaryOwnerId. */
+  legacyOwnerFallback: boolean;
+};
+
+// A pet's family is a handful of humans, not a social graph. The cap exists so
+// a corrupted subcollection cannot turn an authorization read into an
+// unbounded one.
+export const PET_FAMILY_READ_LIMIT = 50;
+
+export async function getPetFamilyAuthority(
+  petId: string,
+  userId: string
+): Promise<PetFamilyAuthority | null> {
+  const safePetId = requiredDocId(petId, "petId");
+  const safeUserId = requiredDocId(userId, "userId");
+  const [petSnap, familySnap] = await Promise.all([
+    db.doc(`pets/${safePetId}`).get(),
+    db.collection(`pets/${safePetId}/family`).limit(PET_FAMILY_READ_LIMIT).get(),
+  ]);
+  if (!petSnap.exists) return null;
+
+  const pet = petSnap.data() ?? {};
+  const own = familySnap.docs.find((docSnap) => docSnap.id === safeUserId);
+  // Only trust the pet fields when there is no family subcollection at all.
+  // If the subcollection exists and does not list the caller, they were
+  // removed — a stale ownerId must not let them back in.
+  const legacyOwnerFallback =
+    familySnap.empty &&
+    (pet.ownerId === safeUserId || pet.primaryOwnerId === safeUserId);
+
+  return {
+    pet,
+    isMember: own !== undefined || legacyOwnerFallback,
+    isPrimary: own?.data()?.role === "primary" || legacyOwnerFallback,
+    memberCount: familySnap.empty && legacyOwnerFallback ? 1 : familySnap.size,
+    legacyOwnerFallback,
+  };
+}
+
 export async function getAccessiblePet(
   petId: string,
   userId: string
@@ -266,14 +336,14 @@ export const updatePetCallable = onCall(async (request) => {
   const petId = requiredDocId(rawUpdatePetId, "petId");
 
   const petRef = db.doc(`pets/${petId}`);
-  const petSnap = await petRef.get();
-  if (!petSnap.exists) {
+  // Every owner, not just the creator. Editing the pet's profile is the most
+  // basic thing "co-owner" has to mean; restricting it to primaryOwnerId was
+  // the clearest place the implementation contradicted the product.
+  const authority = await getPetFamilyAuthority(petId, callerUid);
+  if (!authority) {
     throw new HttpsError("not-found", "Pet not found.");
   }
-  const petData = petSnap.data() ?? {};
-  const canUpdate =
-    petData.ownerId === callerUid || petData.primaryOwnerId === callerUid || caller.role === "admin";
-  if (!canUpdate) {
+  if (!authority.isMember && caller.role !== "admin") {
     throw new HttpsError("permission-denied", "Cannot update this pet.");
   }
 
@@ -366,18 +436,26 @@ export const deletePetCallable = onCall(async (request) => {
   };
   const petId = requiredDocId(rawDeletePetId, "petId");
 
-  const petRef = db.doc(`pets/${petId}`);
-  const petSnap = await petRef.get();
-  if (!petSnap.exists) {
+  const authority = await getPetFamilyAuthority(petId, callerUid);
+  if (!authority) {
     return { success: true };
   }
-  const petData = petSnap.data() ?? {};
-  const canDelete =
-    petData.ownerId === callerUid ||
-    petData.primaryOwnerId === callerUid ||
-    caller.role === "admin";
-  if (!canDelete) {
+  const isAdmin = caller.role === "admin";
+  if (!authority.isMember && !isAdmin) {
     throw new HttpsError("permission-denied", "Cannot delete this pet.");
+  }
+  // Deleting the pet destroys a history that belongs to everyone in its
+  // family, so it takes being the only one left. An owner who wants out while
+  // others remain leaves instead (removeFamilyMemberCallable on themselves),
+  // which hands the pet on rather than taking it away from them.
+  //
+  // Admins keep the override: moderation has to be able to remove content
+  // regardless of how many people are attached to it.
+  if (authority.memberCount > 1 && !isAdmin) {
+    throw new HttpsError(
+      "failed-precondition",
+      "This pet has other owners. Leave the pet instead, or ask the other owners to leave first."
+    );
   }
 
   await cascadeDeletePet(petId);

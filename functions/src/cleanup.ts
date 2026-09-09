@@ -28,10 +28,22 @@ export async function cascadeDeletePost(postId: string): Promise<void> {
 }
 
 export async function cascadeDeletePet(petId: string): Promise<void> {
+  // The top-level invitationCodes/{code} lookup has to go with the pet's
+  // invitations. It was left behind before: the subcollection document was
+  // deleted and the lookup — which is what redeemInvitationCallable resolves a
+  // typed code through, and which carries petId — survived, pointing at a pet
+  // that no longer exists. Matching on petId also reaps any lookup orphaned by
+  // an earlier pet deletion.
   await Promise.all([
     deleteCollectionPath(`pets/${petId}/family`),
     deleteCollectionPath(`pets/${petId}/followers`),
     deleteCollectionPath(`pets/${petId}/invitations`),
+    processQueryInBatches(
+      db.collection("invitationCodes").where("petId", "==", petId),
+      (batch, docSnap) => {
+        batch.delete(docSnap.ref);
+      }
+    ),
   ]);
   await db.doc(`pets/${petId}`).delete();
 }

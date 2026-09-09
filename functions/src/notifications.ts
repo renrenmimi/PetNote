@@ -27,6 +27,7 @@ export type ServerNotificationType =
   | "reply"
   | "meetup_join"
   | "meetup_cancelled"
+  | "pet_primary_transferred"
   | "warning";
 
 export type ServerNotificationPayload = {
@@ -83,6 +84,29 @@ export async function getNotificationActor(userId: string): Promise<Notification
   };
 }
 
+/**
+ * The sender for notifications that are not from a person.
+ *
+ * A role change ("you are now this pet's primary owner") is a system event,
+ * and attributing it to a user is wrong twice over. It is not a social
+ * interaction, and when the event is caused by an account deletion the
+ * cascade's `notifications.fromUserId` step would delete the notice it just
+ * produced — scrubbing the departing person's identity is exactly what that
+ * step is for, and it cannot tell the two kinds of notification apart.
+ *
+ * Not a real uid, and deliberately not one: nothing should resolve it to a
+ * profile. Clients render fromUserName; Avatar falls back to a generated
+ * image for an unknown id.
+ */
+export const SYSTEM_NOTIFICATION_ACTOR: Pick<
+  NotificationActor,
+  "fromUserId" | "fromUserName" | "fromUserAvatar"
+> = {
+  fromUserId: "petnote-system",
+  fromUserName: "PetNote",
+  fromUserAvatar: getDefaultAvatar("petnote-system"),
+};
+
 // Throws if the actor's account is mid-deletion. Use after the ban check on
 // every mutating callable so concurrent writes can't race the cascade.
 export function assertActorNotDeleting(actor: NotificationActor): void {
@@ -135,7 +159,14 @@ async function shouldSendNotification(
   recipientId: string,
   type: ServerNotificationType
 ): Promise<boolean> {
-  if (type === "warning" || type === "meetup_join" || type === "meetup_cancelled") {
+  if (
+    type === "warning" ||
+    type === "meetup_join" ||
+    type === "meetup_cancelled" ||
+    // Not a social notification: it tells somebody they are now responsible
+    // for a pet. There is no preference under which that should be silent.
+    type === "pet_primary_transferred"
+  ) {
     return true;
   }
 
@@ -170,10 +201,14 @@ async function shouldSendNotification(
  *   organizer still needs to be told the meetup is off — withholding that is a
  *   worse outcome than the unwanted contact, because it ends with them
  *   standing in a park.
+ * - `pet_primary_transferred` hands somebody responsibility for an animal. If
+ *   two co-owners have blocked each other and one deletes their account, the
+ *   other still has to learn that the pet is now theirs.
  */
 const BLOCK_EXEMPT_NOTIFICATIONS = new Set<ServerNotificationType>([
   "warning",
   "meetup_cancelled",
+  "pet_primary_transferred",
 ]);
 
 async function isBlockedInteraction(

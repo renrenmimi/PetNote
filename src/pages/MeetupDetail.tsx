@@ -24,7 +24,7 @@ import {
   type MeetupRequirements,
   type Participant,
 } from "../services/meetups";
-import { getPetsByOwner, type Pet } from "../services/pets";
+import { getUserPets, type Pet } from "../services/pets";
 import { getSpeciesMeta } from "../utils/petHelpers";
 import {
   getLocation,
@@ -200,7 +200,10 @@ export function MeetupDetail() {
     let ignore = false;
     if (!user) return;
     const loadPets = async () => {
-      const data = await getPetsByOwner(user.uid);
+      // Family-aware, same reason as CreateMeetup: a co-owner could not pick
+      // the shared pet to join with, even though the server would have
+      // allowed it.
+      const data = await getUserPets(user.uid);
       if (!ignore) {
         setPets(data);
         setSelectedPetId((prev) => prev ?? data[0]?.id ?? null);

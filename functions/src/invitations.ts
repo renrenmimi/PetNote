@@ -2,6 +2,7 @@ import { randomInt } from "node:crypto";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin, db } from "./platform";
 import { assertCallerAccountActive, getNotificationActor } from "./notifications";
+import { getPetFamilyAuthority } from "./pets";
 import {
   assertRateLimit,
   getDefaultAvatar,
@@ -102,7 +103,7 @@ function revokedInvitationFields(
  * worth anything the moment the authority behind it goes away, not 48 hours
  * later when it happens to expire.
  */
-async function revokeInvitationsCreatedBy(
+export async function revokeInvitationsCreatedBy(
   petId: string,
   createdBy: string,
   revokedBy: string,
@@ -237,8 +238,12 @@ async function getLatestActiveInvitationByCode(
 }
 
 async function assertPetFamilyMember(petId: string, userId: string): Promise<void> {
-  const familySnap = await db.doc(`pets/${petId}/family/${userId}`).get();
-  if (!familySnap.exists) {
+  // Through getPetFamilyAuthority rather than a bare family-document read, so
+  // a legacy pet with no family subcollection does not lock its own creator
+  // out of inviting anybody. Inviting is an additive act, so every owner has
+  // it — see ./pets.ts for the rights split.
+  const authority = await getPetFamilyAuthority(petId, userId);
+  if (!authority?.isMember) {
     throw new HttpsError("permission-denied", "Only family members can access invitations.");
   }
 }
@@ -545,70 +550,6 @@ export const redeemInvitationCallable = onCall(async (request) => {
         ? petData.name
         : "Pet",
   };
-});
-
-export const removeFamilyMemberCallable = onCall(async (request) => {
-  const callerUid = request.auth?.uid;
-  if (!callerUid) {
-    throw new HttpsError("unauthenticated", "Must be logged in.");
-  }
-
-  const caller = await getNotificationActor(callerUid);
-  if (caller.banned === true) {
-    throw new HttpsError("permission-denied", "Banned users cannot remove family members.");
-  }
-  await assertCallerAccountActive(callerUid, caller);
-  await assertRateLimit(callerUid, "removeFamilyMember", RATE_LIMITS.write);
-
-  const { petId: rawRemovePetId, targetUserId: rawTargetUserId } = requestData(
-    request.data
-  ) as {
-    petId?: string;
-    targetUserId?: string;
-  };
-  const petId = requiredDocId(rawRemovePetId, "petId");
-  const targetUserId = requiredDocId(rawTargetUserId, "targetUserId");
-
-  const petSnap = await db.doc(`pets/${petId}`).get();
-  if (!petSnap.exists) {
-    throw new HttpsError("not-found", "Pet not found.");
-  }
-  const petData = petSnap.data() ?? {};
-  const canRemove =
-    callerUid === targetUserId ||
-    petData.primaryOwnerId === callerUid ||
-    petData.ownerId === callerUid;
-  if (!canRemove) {
-    throw new HttpsError("permission-denied", "Cannot remove this family member.");
-  }
-
-  const targetFamilyRef = db.doc(`pets/${petId}/family/${targetUserId}`);
-  const targetFamilySnap = await targetFamilyRef.get();
-  if (!targetFamilySnap.exists) {
-    return { success: true };
-  }
-
-  const targetFamilyData = targetFamilySnap.data() ?? {};
-  if (targetFamilyData.role === "primary") {
-    throw new HttpsError(
-      "failed-precondition",
-      "Primary family members cannot be removed from the family."
-    );
-  }
-
-  await targetFamilyRef.delete();
-  // Outstanding codes this person minted die with their membership. Doing it
-  // here (rather than relying only on the check inside the redeem
-  // transaction) means the code also stops validating and stops being handed
-  // back by getActiveInvitation, so nobody is left staring at a code that
-  // looks live and fails at the last step.
-  const revokedCount = await revokeInvitationsCreatedBy(
-    petId,
-    targetUserId,
-    callerUid,
-    callerUid === targetUserId ? "member_left" : "member_removed"
-  );
-  return { success: true, revokedInvitations: revokedCount };
 });
 
 /**

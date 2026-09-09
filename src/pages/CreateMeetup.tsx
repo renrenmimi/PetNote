@@ -11,7 +11,7 @@ import {
 } from "../services/cloudinary";
 import { reverseGeocode } from "../services/geoapify";
 import { getCurrentLocation } from "../services/location";
-import { getPetsByOwner, type Pet } from "../services/pets";
+import { getUserPets, type Pet } from "../services/pets";
 import {
   createMeetup,
   type MeetupRequirements,
@@ -83,7 +83,12 @@ export function CreateMeetup() {
     let ignore = false;
     if (!user) return;
     const load = async () => {
-      const petList = await getPetsByOwner(user.uid);
+      // Family-aware. This used to be an owner-only query, so a co-owner who
+      // had never created a pet of their own had nothing to bring — the client
+      // narrowing the product's own premise (one pet, several equal humans)
+      // down to "pets you created", even though joinMeetupCallable already
+      // accepted family membership. The owner-only selector is gone.
+      const petList = await getUserPets(user.uid);
       if (!ignore) setPets(petList);
     };
     void load();

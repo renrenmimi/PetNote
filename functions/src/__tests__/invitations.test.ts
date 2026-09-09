@@ -6,8 +6,10 @@ import {
   redeemInvitationCallable,
   revokeInvitationCallable,
   validateInvitationCallable,
-  removeFamilyMemberCallable,
 } from "../invitations";
+// removeFamilyMemberCallable moved to ../family with the shared-pet lifecycle
+// work: losing family membership is an ownership event, not an invitation one.
+import { removeFamilyMemberCallable } from "../family";
 import { createPetCallable } from "../pets";
 import { callAs, clearRateLimits, errorCodeOf } from "./helpers";
 

@@ -46,17 +46,34 @@ export async function blockUser(
       for (const follow of page.followingPets) {
         const petRef = doc(db, "pets", follow.petId);
         const petSnap = await getDoc(petRef);
-        if (petSnap.exists()) {
-          const petData = petSnap.data() as {
-            ownerId?: string;
-            primaryOwnerId?: string;
-          };
-          if (
-            petData.ownerId === targetUid ||
-            petData.primaryOwnerId === targetUid
-          ) {
-            await unfollowPet(myUid, follow.petId);
-          }
+        if (!petSnap.exists()) continue;
+        const petData = petSnap.data() as {
+          ownerId?: string;
+          primaryOwnerId?: string;
+        };
+        if (
+          petData.ownerId !== targetUid &&
+          petData.primaryOwnerId !== targetUid
+        ) {
+          continue;
+        }
+        // Only unfollow when the blocked person is this pet's *only* owner.
+        //
+        // ownerId/primaryOwnerId now name whoever currently holds the primary
+        // role, and that role moves between equal co-owners — so matching on
+        // it alone would cut you off from a pet several other people also own,
+        // and would do so based on which of them happens to hold the role
+        // today. The feed already filters posts by their author, which is
+        // where an unwanted person's content actually comes from; this loop is
+        // only for the case where following the pet *is* following them.
+        const familySnap = await getDocs(
+          collection(db, "pets", follow.petId, "family")
+        );
+        const otherOwners = familySnap.docs.filter(
+          (docSnap) => docSnap.id !== targetUid
+        );
+        if (otherOwners.length === 0) {
+          await unfollowPet(myUid, follow.petId);
         }
       }
       if (!page.hasMore || !page.lastDoc) break;
