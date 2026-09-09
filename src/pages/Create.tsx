@@ -66,7 +66,7 @@ type PublishPhase =
 export function Create() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, isBanned } = useAuth();
+  const { user, emailVerified, isBanned } = useAuth();
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [files, setFiles] = useState<
@@ -111,7 +111,7 @@ export function Create() {
   const [showDraftBanner, setShowDraftBanner] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
   const [sendingVerification, setSendingVerification] = useState(false);
-  const isEmailVerified = !!user?.emailVerified;
+  const isEmailVerified = !!user && emailVerified;
 
   const remaining = useMemo(() => MAX_CHARS - caption.length, [caption]);
   const counterTone =
@@ -896,11 +896,18 @@ export function Create() {
               You need to add a pet before posting
             </h2>
             <p className="text-sm text-slate-500 dark:text-slate-300">
-              Add your pet profile first, then share posts for that pet.
+              Add your pet profile first — we&apos;ll bring you straight back
+              here.
             </p>
             <button
               type="button"
-              onClick={() => navigate("/add-pet")}
+              // Carry the destination so adding a pet returns to the composer
+              // instead of the new pet's page. This is the "ask for a pet when
+              // publishing needs one" half of shortening onboarding: it only
+              // works if the detour comes back.
+              onClick={() =>
+                navigate("/add-pet", { state: { from: "/create" } })
+              }
               className="mx-auto rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white"
             >
               Add Pet

@@ -30,7 +30,7 @@ const durations = [
 
 export function CreateMeetup() {
   const navigate = useNavigate();
-  const { user, profile } = useAuth();
+  const { user, emailVerified, profile } = useAuth();
   const { showToast } = useToast();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -70,7 +70,7 @@ export function CreateMeetup() {
   const [additionalNotes, setAdditionalNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [pets, setPets] = useState<Pet[]>([]);
-  const requiresEmailVerification = !!user && !user.emailVerified;
+  const requiresEmailVerification = !!user && !emailVerified;
 
   useEffect(() => {
     if (!coverFile) return;

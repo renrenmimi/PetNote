@@ -136,7 +136,12 @@ export function Login() {
           message: t("login.invalidMessage"),
           actionLabel: t("login.noAccountAction"),
           action: () =>
-            navigate("/signup", { state: { email: normalizedEmail } }),
+            navigate("/signup", {
+              state: {
+                email: normalizedEmail,
+                ...(fromLocation ? { from: fromLocation } : {}),
+              },
+            }),
         });
       } else {
         setNotice({
@@ -281,8 +286,11 @@ export function Login() {
 
         <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-300">
           {t("login.noAccount")}
+          {/* Carries the destination across, so signing up from a deep link
+              still lands on the thing the person came for. */}
           <Link
             to="/signup"
+            state={fromLocation ? { from: fromLocation } : undefined}
             className="ml-1 font-semibold text-purple-600 hover:text-purple-500"
           >
             {t("login.signUpCta")}

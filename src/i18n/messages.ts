@@ -226,6 +226,17 @@ const en = {
   "settings.signOutTitle": "Sign Out",
   "settings.signOutConfirm": "Are you sure you want to sign out?",
   "settings.deleteAccountTitle": "Delete Account",
+  "signup.weakPasswordTitle": "Password too weak",
+  "signup.weakPasswordMessage":
+    "Firebase rejected this password. Try a longer one, or one with more variety.",
+  "signup.emailSignUpDisabled":
+    "Email sign-up is turned off for this app right now. Try continuing with Google.",
+  "auth.networkErrorTitle": "No connection",
+  "auth.networkErrorMessage":
+    "We couldn't reach PetNote. Check your connection and try again — your details are still here.",
+  "auth.tooManyRequestsTitle": "Too many attempts",
+  "auth.tooManyRequestsMessage":
+    "Too many attempts from this device. Wait a minute and try again.",
   "settings.deleteAccountConfirm":
     "Type DELETE to confirm. This action cannot be undone.",
   // Says what actually happens to a shared pet now: it is handed to another
@@ -455,6 +466,13 @@ const zh = {
   "settings.signOutTitle": "退出登录",
   "settings.signOutConfirm": "确定要退出登录吗？",
   "settings.deleteAccountTitle": "删除账号",
+  "signup.weakPasswordTitle": "密码强度不足",
+  "signup.weakPasswordMessage": "Firebase 拒绝了这个密码。换一个更长、或字符更多样的密码。",
+  "signup.emailSignUpDisabled": "本应用目前关闭了邮箱注册，可以试试用 Google 继续。",
+  "auth.networkErrorTitle": "网络不可用",
+  "auth.networkErrorMessage": "连不上 PetNote。检查网络后重试——你填的内容还在。",
+  "auth.tooManyRequestsTitle": "尝试次数过多",
+  "auth.tooManyRequestsMessage": "这台设备尝试次数过多，请等一分钟后再试。",
   "settings.deleteAccountConfirm": "输入 DELETE 进行确认，此操作无法撤销。",
   "settings.deleteAccountSharedPets":
     "与他人共同拥有的宠物会留给对方——加入最久的那位主人将成为主要主人。只属于你一个人的宠物会被删除，你的帖子也会一并删除。",

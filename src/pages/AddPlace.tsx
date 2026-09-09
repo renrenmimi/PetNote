@@ -46,7 +46,7 @@ const featureOptions: Array<{ key: PlaceFeature; label: string }> = [
 
 export function AddPlace() {
   const navigate = useNavigate();
-  const { user, profile } = useAuth();
+  const { user, emailVerified, profile } = useAuth();
   const { showToast } = useToast();
   const [name, setName] = useState("");
   const [category, setCategory] = useState<PlaceCategory>("dog_park");
@@ -64,7 +64,7 @@ export function AddPlace() {
   const [safety, setSafety] = useState(0);
   const [cleanliness, setCleanliness] = useState(0);
   const [saving, setSaving] = useState(false);
-  const requiresEmailVerification = !!user && !user.emailVerified;
+  const requiresEmailVerification = !!user && !emailVerified;
 
   useEffect(() => {
     const urls = photos.map((file) => URL.createObjectURL(file));
