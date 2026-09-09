@@ -149,13 +149,13 @@ export async function createPost(
 }
 
 /**
- * Whether a publish attempt actually produced a post.
+ * Whether a publish attempt has produced a post yet.
  *
- * The client cannot tell a committed publish whose response was lost from one
- * that never happened, and it must not guess: guessing "it failed" and
- * reclaiming the uploaded media leaves a live post pointing at deleted images.
- * The server derives the post id from the same (caller, operationId) pair it
- * used to write, so this is an exact answer, not a heuristic.
+ * For telling the person what happened, not for deciding whether media can be
+ * deleted. A `false` answer only means "not visible right now": the original
+ * request is not cancelled, so a publish still in flight answers false and
+ * then commits. See src/utils/mediaReclaim.ts, which keeps anything that was
+ * ever handed off regardless of what this returns.
  */
 export async function getPublishStatus(
   operationId: string

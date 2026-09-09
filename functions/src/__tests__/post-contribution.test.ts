@@ -3,6 +3,7 @@ import { beforeEach, afterAll, describe, expect, it } from "vitest";
 import { admin, db } from "../platform";
 import { onLikeCreated, onCommentCreated } from "../notifications";
 import {
+  countAppliedPetPosts,
   createPostCallable,
   onPostWritten,
   recomputePetPostCountCallable,
@@ -48,6 +49,11 @@ const TAG = "hashtags/parkday";
 
 async function resetWorld() {
   await purge(POST, SURVIVOR, PET, `users/${OWNER}`, `users/${ADMIN_UID}`);
+  // Posts published through the callable get random ids, so purging the two
+  // fixture paths is not enough — a leftover from an earlier test would be
+  // counted by anything that aggregates over the pet.
+  const strays = await db.collection("posts").where("petId", "==", "contrib-pet").get();
+  for (const d of strays.docs) await db.recursiveDelete(d.ref).catch(() => undefined);
   await db.recursiveDelete(db.doc(TAG)).catch(() => undefined);
   await clearEventLedger();
   await clearRateLimits();
@@ -522,6 +528,108 @@ describe("admin repair running at the same time as a trigger", () => {
       ]);
 
       expect(await fieldOf(PET, "postCount"), `attempt ${attempt}`).toBe(2);
+    }
+  }, 60_000);
+});
+
+describe("repairing a pet's post count counts only settled contributions", () => {
+  /**
+   * The count the repair writes has to mean the same thing the triggers
+   * maintain: how many posts have *applied* their contribution to this pet.
+   *
+   * Taking an absolute `count()` over every live post does not mean that. A
+   * post that exists but whose aggregation trigger has not run yet is counted
+   * by the repair and then counted again by its own trigger. Settling every
+   * post first closes that for posts the scan can see — but a post created
+   * after the scan and before the count is still double-counted, and the
+   * compare-and-set does not notice, because it only watches the parent
+   * number and the parent number has not moved yet.
+   */
+  it("does not count a post whose contribution has not been applied", async () => {
+    await db.doc(SURVIVOR).set({
+      authorId: OWNER,
+      petId: "contrib-pet",
+      tags: [],
+      text: "settled",
+      countedContribution: { petId: "contrib-pet", tags: [] },
+    });
+    await db.doc(PET).update({ postCount: 1 });
+    // A post exactly as createPostCallable writes it: marker present, empty,
+    // trigger not yet delivered. This is what a post created between the
+    // repair's settle pass and its count looks like.
+    await db.doc(POST).set({
+      authorId: OWNER,
+      petId: "contrib-pet",
+      tags: [],
+      text: "not applied yet",
+      countedContribution: { petId: null, tags: [] },
+    });
+
+    const applied = await countAppliedPetPosts("contrib-pet");
+
+    expect(applied).toBe(1);
+  });
+
+  it("counts a post once its contribution has been applied", async () => {
+    await db.doc(SURVIVOR).set({
+      authorId: OWNER,
+      petId: "contrib-pet",
+      tags: [],
+      text: "settled",
+      countedContribution: { petId: "contrib-pet", tags: [] },
+    });
+    await db.doc(POST).set({
+      authorId: OWNER,
+      petId: "contrib-pet",
+      tags: [],
+      text: "also settled",
+      countedContribution: { petId: "contrib-pet", tags: [] },
+    });
+
+    expect(await countAppliedPetPosts("contrib-pet")).toBe(2);
+  });
+
+  it("keeps the count and the trigger consistent when a post arrives during the repair", async () => {
+    // The interleaving the reviewer demonstrated with an injected pause,
+    // approached from the outside: publish while the repair runs, then let the
+    // new post's trigger land, and require the counter to equal the number of
+    // applied contributions. Repeated, because which side wins is not
+    // deterministic.
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await resetWorld();
+      await db.doc(SURVIVOR).set({
+        authorId: OWNER,
+        petId: "contrib-pet",
+        tags: [],
+        text: "settled",
+        countedContribution: { petId: "contrib-pet", tags: [] },
+      });
+      await db.doc(PET).update({ postCount: 1 });
+
+      const [, created] = await Promise.all([
+        callAs(recomputePetPostCountCallable, ADMIN_UID, { petId: "contrib-pet" }),
+        callAs<{ id: string }>(createPostCallable, OWNER, {
+          petId: "contrib-pet",
+          text: "arrived during the repair",
+        }),
+      ]);
+
+      // The new post's aggregation trigger runs afterwards, as it would.
+      const snap = await captureSnapshot(`posts/${created.id}`);
+      await deliverWritten(
+        onPostWritten,
+        undefined,
+        snap,
+        { postId: created.id },
+        newEventId("during-repair")
+      );
+
+      const applied = await countAppliedPetPosts("contrib-pet");
+      expect(
+        await fieldOf(PET, "postCount"),
+        `attempt ${attempt}, applied ${applied}`
+      ).toBe(applied);
+      await db.recursiveDelete(db.doc(`posts/${created.id}`));
     }
   }, 60_000);
 });

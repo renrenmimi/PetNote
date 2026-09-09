@@ -373,6 +373,43 @@ export const onPostWritten = onDocumentWritten("posts/{postId}", async (event) =
 });
 
 /**
+ * How many of a pet's posts have actually applied their contribution to it.
+ *
+ * Keyed on the contribution marker, not on `petId`. That is the difference
+ * between "posts about this pet" and "posts this pet's counter has been told
+ * about", and the repair needs the second one — it has to write the same
+ * quantity the triggers maintain, or it hands them a number they will then
+ * add to.
+ *
+ * The failure this replaces: the repair settled every post it could see and
+ * then took an absolute `count()` over live documents. A post created after
+ * that scan and before the count carries an empty marker (createPostCallable
+ * writes `{petId: null, tags: []}`), so it was included in the absolute total
+ * *and* incremented again by its own trigger a moment later. The
+ * compare-and-set could not see it, because it watches the parent number and
+ * the parent number had not moved yet — the trigger had not run.
+ *
+ * Counting by the marker makes the two agree by construction: a post is in
+ * this total exactly when its increment has already happened. It also makes
+ * the compare-and-set's blind spot benign — a create and a delete that both
+ * land during the window leave the parent number where it was *and* leave this
+ * set where it was, because both are derived from the same predicate.
+ *
+ * `countedContribution.petId` is a map subfield, which Firestore indexes
+ * automatically, so this needs no composite index and no deploy. Posts written
+ * before the marker existed have none — the repair's settle pass stamps every
+ * post it scans, which is what keeps legacy pets from being zeroed.
+ */
+export async function countAppliedPetPosts(petId: string): Promise<number> {
+  const agg = await db
+    .collection("posts")
+    .where("countedContribution.petId", "==", petId)
+    .count()
+    .get();
+  return agg.data().count;
+}
+
+/**
  * Brings one post's aggregate contribution up to date, outside the trigger.
  *
  * Used by the admin repair callables. It is the *same* protocol the trigger
@@ -587,13 +624,21 @@ export const createPostCallable = onCall(async (request) => {
 });
 
 /**
- * Did this operation id produce a post?
+ * Has this operation id produced a post *yet*?
  *
- * The composer needs a truthful answer before it reclaims uploaded media. A
- * publish that commits and then loses its response is indistinguishable, from
- * the client's side, from one that never happened — and the client used to
- * resolve that ambiguity by deleting the assets, which is the one choice that
- * cannot be undone if it guessed wrong.
+ * Informational only. It is used to tell somebody "your earlier post did go
+ * through", and it must never be used to authorise deleting media.
+ *
+ * The reason is the word "yet". This reads document existence at one instant,
+ * and nothing here cancels or blocks the original publish — a request paused
+ * just before its `.create()` answers `published: false` and then commits,
+ * referencing assets that a `false` answer had released. Demonstrated in the
+ * emulator against this very handler. A `true` answer is sound; a `false`
+ * answer means "not visible right now", which is not the same as "never will
+ * be", and waiting longer or asking twice does not upgrade it. Releasing an
+ * asset needs a server-side protocol that is mutually exclusive with
+ * publishing, and there isn't one; until then src/utils/mediaReclaim.ts keeps
+ * anything that was ever handed off.
  *
  * Read-only, and scoped to the caller by construction: the document id is
  * derived from their own uid, so this cannot be used to probe anybody else's
@@ -979,12 +1024,7 @@ export const recomputePetPostCountCallable = onCall(async (request) => {
     }
     const observedCount = countFieldOf(observed.data(), "postCount");
 
-    const aggSnap = await db
-      .collection("posts")
-      .where("petId", "==", petId)
-      .count()
-      .get();
-    const postCount = aggSnap.data().count;
+    const postCount = await countAppliedPetPosts(petId);
 
     const applied = await db.runTransaction(async (t) => {
       const snap = await t.get(petRef);

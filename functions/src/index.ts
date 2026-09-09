@@ -66,6 +66,7 @@ export {
   createPetCallable,
   deletePetCallable,
   followPetCallable,
+  resumeAbandonedPetDeletions,
   unfollowPetCallable,
   updatePetCallable,
 } from "./pets";

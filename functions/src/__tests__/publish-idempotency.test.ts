@@ -148,10 +148,11 @@ describe("operation id validation", () => {
 
 describe("asking whether an operation published", () => {
   /**
-   * The client needs this before it reclaims uploaded media. A publish that
-   * commits and loses its response looks identical to one that never
-   * happened, and the composer used to resolve that by deleting the assets —
-   * which breaks a real post if it guessed wrong.
+   * Informational only: it tells somebody "your earlier post did go through".
+   * It is deliberately *not* what decides whether media may be deleted — a
+   * publish paused before its write answers `published: false` and then
+   * commits, so a false answer cannot license a deletion. That reasoning lives
+   * in src/utils/mediaReclaim.ts and its tests.
    */
   it("reports a published operation and its post", async () => {
     const published = await publish(AUTHOR, "op-status-published");

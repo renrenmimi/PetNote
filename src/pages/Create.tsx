@@ -111,8 +111,9 @@ export function Create() {
   const operationIdRef = useRef<string | null>(null);
   const uploadedAssetsRef = useRef<UploadedAsset[]>([]);
   // Mirrors PostDraft.handedOff so the reclaim exits below can see it without
-  // waiting for a draft round trip.
-  const handedOffRef = useRef(false);
+  // waiting for a draft round trip. `undefined` means "not recorded", which is
+  // treated as handed off — a missing marker is not evidence of a safe delete.
+  const handedOffRef = useRef<boolean | undefined>(false);
 
   /**
    * The one place that decides whether uploaded media may be deleted.
@@ -123,12 +124,13 @@ export function Create() {
    */
   const reclaimAssets = async (
     assets: UploadedAsset[],
-    options: { handedOff: boolean; operationId: string | null }
+    options: { handedOff: boolean | undefined; operationId: string | null }
   ) => {
-    const decision = await decideAssetReclaim(
-      { assets, handedOff: options.handedOff, operationId: options.operationId },
-      getPublishStatus
-    );
+    const decision = decideAssetReclaim({
+      assets,
+      handedOff: options.handedOff,
+      operationId: options.operationId,
+    });
     if (decision.reclaim) {
       await deleteCloudinaryAssets(decision.assets).catch(() => undefined);
     }
@@ -213,7 +215,7 @@ export function Create() {
           // before deleting, and keep them if the answer is not "no post".
           if (parsed.uploadedAssets?.length) {
             void reclaimAssets(parsed.uploadedAssets, {
-              handedOff: parsed.handedOff === true,
+              handedOff: parsed.handedOff,
               operationId: parsed.operationId ?? null,
             });
           }
@@ -260,8 +262,13 @@ export function Create() {
     void reclaimAssets(stale, {
       handedOff: staleHandedOff,
       operationId: staleOperationId,
-    }).then((decision) => {
-      if (!decision.reclaim && decision.reason === "published") {
+    }).then(async (decision) => {
+      if (decision.reclaim || !staleOperationId) return;
+      // The photos are kept either way. The lookup is only used to say
+      // something true about what happened — it does not authorise deleting
+      // anything, because "no post yet" is not "no post ever".
+      const status = await getPublishStatus(staleOperationId).catch(() => null);
+      if (status?.published) {
         showToast(
           "Your earlier post did go through — those photos are still in use.",
           "info"
@@ -289,7 +296,14 @@ export function Create() {
             ? { operationId: operationIdRef.current }
             : {}),
           ...(hasUploaded ? { uploadedAssets: uploadedAssetsRef.current } : {}),
-          ...(handedOffRef.current ? { handedOff: true } : {}),
+          // Written explicitly when known, including when false — leaving the
+          // field out would make a later read say "unrecorded". But an
+          // *already* unrecorded state must stay unrecorded: writing false
+          // there would upgrade "we don't know" into "safe to delete", which
+          // is the exact inversion this policy exists to prevent.
+          ...(handedOffRef.current === undefined
+            ? {}
+            : { handedOff: handedOffRef.current }),
         };
         sessionStorage.setItem(key, JSON.stringify(payload));
       } else {
@@ -526,7 +540,9 @@ export function Create() {
     // re-upload bytes that are already on the CDN.
     operationIdRef.current = draft.operationId ?? null;
     uploadedAssetsRef.current = draft.uploadedAssets ?? [];
-    handedOffRef.current = draft.handedOff === true;
+    // Absent means unrecorded, not false. Kept as undefined so the policy
+    // errs towards keeping the media.
+    handedOffRef.current = draft.handedOff;
     setShowDraftBanner(false);
     setDraft(null);
   };
@@ -539,7 +555,7 @@ export function Create() {
     const orphans = draft?.uploadedAssets ?? uploadedAssetsRef.current;
     if (orphans.length > 0) {
       void reclaimAssets(orphans, {
-        handedOff: draft?.handedOff ?? handedOffRef.current,
+        handedOff: draft ? draft.handedOff : handedOffRef.current,
         operationId: draft?.operationId ?? operationIdRef.current,
       });
     }

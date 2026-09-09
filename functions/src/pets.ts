@@ -1,4 +1,5 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import { admin, db } from "./platform";
 import { cascadeDeletePet } from "./cleanup";
 import { assertCallerAccountActive, getNotificationActor } from "./notifications";
@@ -14,6 +15,22 @@ import {
   TRUSTED_AVATAR_URL_HOSTS,
   VALIDATION_LIMITS,
 } from "./shared";
+
+/**
+ * Outstanding pet deletions, written by deletePetCallable and cleared when the
+ * cascade finishes.
+ *
+ * Server-only. There is no rule for this collection in firestore.rules, and
+ * Firestore denies anything a rule does not allow, so clients cannot read or
+ * write it. An explicit `allow read, write: if false` block would be tidier
+ * and is worth adding next time the rules are deployed; it is not added here
+ * because this round does not touch or deploy rules.
+ */
+const PET_DELETION_TASKS = "petDeletionTasks";
+
+function petDeletionTaskRef(petId: string): admin.firestore.DocumentReference {
+  return db.doc(`${PET_DELETION_TASKS}/${petId}`);
+}
 
 const allowedPetSpecies = new Set([
   "dog",
@@ -498,6 +515,7 @@ export const deletePetCallable = onCall(async (request) => {
 
   const isAdmin = caller.role === "admin";
   const petRef = db.doc(`pets/${petId}`);
+  const taskRef = petDeletionTaskRef(petId);
 
   // Authorization, the "am I the last owner?" test and the removal of the pet
   // document all happen in one transaction.
@@ -532,16 +550,102 @@ export const deletePetCallable = onCall(async (request) => {
       );
     }
     t.delete(petRef);
+    // A durable record of work that is still owed, written in the same
+    // transaction that removes the parent. Without it the cascade below has no
+    // way to be resumed: it runs outside the transaction (a recursive delete
+    // cannot be held in one), and if it fails the pet document is already gone
+    // — so a retry saw no pet, concluded there was nothing to do, and reported
+    // success over family, followers and invitation documents still sitting
+    // there.
+    //
+    // It carries who asked, because "the parent is missing" must not become an
+    // authorisation on its own. Only the requester or an admin can resume.
+    t.set(taskRef, {
+      petId,
+      requestedBy: callerUid,
+      requestedByAdmin: isAdmin,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      // TTL field, for a Firestore TTL policy to reap records whose cleanup
+      // somehow never completes. Not required for correctness — the scheduled
+      // sweeper finishes them — but it stops the collection growing forever.
+      expiresAt: admin.firestore.Timestamp.fromMillis(
+        Date.now() + 30 * 24 * 60 * 60 * 1000
+      ),
+    });
     return "delete";
   });
 
   if (decision === "missing") {
-    return { success: true };
+    // No pet. Either it never existed, or a previous attempt removed it and
+    // its cleanup did not finish. Only the second case has work to do, and
+    // only for somebody entitled to it.
+    const resumed = await resumePetDeletion(petId, callerUid, isAdmin);
+    return { success: true, resumed };
   }
 
-  await cascadeDeletePet(petId);
-  return { success: true };
+  await runPetCascade(petId);
+  return { success: true, resumed: false };
 });
+
+/**
+ * Runs the cascade and clears the recovery record only if it completes.
+ *
+ * Deliberately rethrows. Reporting success while subcollections remain is what
+ * made the failure invisible; the caller retrying is the primary recovery path,
+ * and the scheduled sweeper below is the backstop for the caller who never
+ * comes back.
+ */
+async function runPetCascade(petId: string): Promise<void> {
+  await cascadeDeletePet(petId);
+  await petDeletionTaskRef(petId).delete().catch(() => undefined);
+}
+
+/**
+ * Finishes an interrupted deletion, if this caller is entitled to.
+ *
+ * Returns false — not an error — when there is no outstanding task, because
+ * deleting an already-deleted pet is a no-op, and when the caller is not the
+ * requester, because telling an unrelated account whether somebody else has a
+ * half-finished deletion is not information it needs.
+ */
+async function resumePetDeletion(
+  petId: string,
+  callerUid: string,
+  isAdmin: boolean
+): Promise<boolean> {
+  const taskSnap = await petDeletionTaskRef(petId).get();
+  if (!taskSnap.exists) return false;
+  const task = taskSnap.data() ?? {};
+  if (task.requestedBy !== callerUid && !isAdmin) return false;
+  await runPetCascade(petId);
+  return true;
+}
+
+/**
+ * Finishes pet deletions whose cleanup never completed.
+ *
+ * The backstop for the requester who never retries. Without it an interrupted
+ * cascade leaves family, followers and invitation documents indefinitely —
+ * `onPetDeleted` covers followingPets and posts' pet references, not those.
+ */
+export const resumeAbandonedPetDeletions = onSchedule(
+  { schedule: "every 6 hours", timeoutSeconds: 540 },
+  async () => {
+    const tasks = await db.collection(PET_DELETION_TASKS).limit(200).get();
+    for (const taskSnap of tasks.docs) {
+      try {
+        await runPetCascade(taskSnap.id);
+      } catch (error) {
+        // Leave the record in place for the next run rather than losing track
+        // of the work.
+        console.error(
+          `resumeAbandonedPetDeletions: ${taskSnap.id} still failing`,
+          error
+        );
+      }
+    }
+  }
+);
 
 export const followPetCallable = onCall(async (request) => {
   const callerUid = request.auth?.uid;
