@@ -5,11 +5,12 @@ import {
 } from "firebase/app-check";
 import {
   browserLocalPersistence,
+  connectAuthEmulator,
   indexedDBLocalPersistence,
   initializeAuth,
 } from "firebase/auth";
-import { getFunctions } from "firebase/functions";
-import { getFirestore } from "firebase/firestore";
+import { connectFunctionsEmulator, getFunctions } from "firebase/functions";
+import { connectFirestoreEmulator, getFirestore } from "firebase/firestore";
 
 const requiredEnv = {
   VITE_FIREBASE_API_KEY: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -127,3 +128,30 @@ export const auth = initializeAuth(app, {
 });
 export const db = getFirestore(app);
 export const functions = getFunctions(app);
+
+/**
+ * Point the SDK at the local emulator suite, for acceptance testing a branch
+ * whose backend is not deployed anywhere.
+ *
+ * Opt-in and development-only. `import.meta.env.DEV` is statically false in a
+ * production build, so Vite drops this whole block from the shipped bundle —
+ * it cannot be switched on by an environment variable in production. Set
+ * VITE_FIREBASE_EMULATORS=1 in a local .env to use it. See
+ * docs/acceptance-environment.md.
+ *
+ * The functions port is served by scripts/callable-shim.mjs rather than the
+ * Firebase functions emulator: firebase-tools 15.13.0 stubs `firebase-admin`
+ * with a proxy that loses `admin.firestore.FieldValue`, so every authenticated
+ * callable 500s inside its runtime. That is an upstream bug, reproduced
+ * against this checkout, not something this app can configure away.
+ */
+if (import.meta.env.DEV && import.meta.env.VITE_FIREBASE_EMULATORS === "1") {
+  const host = import.meta.env.VITE_EMULATOR_HOST || "127.0.0.1";
+  connectAuthEmulator(auth, `http://${host}:9099`, { disableWarnings: true });
+  connectFirestoreEmulator(db, host, 8088);
+  connectFunctionsEmulator(functions, host, 5101);
+  // Loud on purpose: nobody should be unsure which backend they just tested.
+  console.info(
+    `[PetNote] Firebase emulators: auth :9099, firestore :8088, callables :5101 (host ${host}). No production data is reachable.`
+  );
+}
