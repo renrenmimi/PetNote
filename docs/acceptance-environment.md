@@ -24,6 +24,14 @@ accepted there.
 Two terminals.
 
 ```bash
+# 0 — once per checkout: fake secrets for the five functions that declare them.
+#     Gitignored on purpose, so a fresh clone has to write it. Never real values.
+cat > functions/.secret.local <<'SECRETS'
+CLOUDINARY_API_KEY=emulator-fake-key
+CLOUDINARY_API_SECRET=emulator-fake-secret
+GEOAPIFY_API_KEY=emulator-fake-key
+SECRETS
+
 # 1 — emulators: Firestore, Auth, Cloud Functions, Pub/Sub
 export JAVA_HOME=/opt/homebrew/opt/openjdk
 export PATH="$JAVA_HOME/bin:$PATH"
