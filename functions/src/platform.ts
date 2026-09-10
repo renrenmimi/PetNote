@@ -1,4 +1,23 @@
 import * as admin from "firebase-admin";
+// `FieldValue`, `Timestamp` and `FieldPath` are re-exported from the
+// `firebase-admin/firestore` subpath rather than read off `admin.firestore`,
+// and every module imports them from here.
+//
+// They are the same objects either way — `require("firebase-admin/firestore")
+// .FieldValue === admin.firestore.FieldValue` is true — so this changes nothing
+// at run time in production. What it changes is whether the code can run under
+// the Cloud Functions emulator at all. firebase-tools proxies `firebase-admin`
+// and answers every `admin.firestore` access with `admin.firestore.bind(module)`;
+// `bind()` returns a fresh function that carries none of the original's own
+// properties, so inside that runtime `admin.firestore.FieldValue` is
+// `undefined`. Since every authenticated callable reaches `assertRateLimit`,
+// which calls `FieldValue.serverTimestamp()`, the whole backend used to return
+// 500 there and the emulator was unusable. The subpath is not proxied.
+//
+// The `admin` namespace is still exported, and still used for `admin.auth()`,
+// `admin.firestore.Query<T>` type positions and so on. Only these three value
+// imports moved.
+import { FieldPath, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
 import { setGlobalOptions } from "firebase-functions/v2";
 
@@ -33,6 +52,9 @@ const CLOUDINARY_CLOUD_NAME = "dgeunvmmn";
 export {
   admin,
   db,
+  FieldValue,
+  Timestamp,
+  FieldPath,
   CLOUDINARY_CLOUD_NAME,
   CLOUDINARY_API_KEY,
   CLOUDINARY_API_SECRET,

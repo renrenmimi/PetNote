@@ -1,7 +1,7 @@
 import { onDocumentDeleted } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import { admin, db } from "./platform";
+import { db, FieldValue, Timestamp } from "./platform";
 import { assertNoBlockBetween } from "./blocking";
 import { assertCallerAccountActive, getNotificationActor } from "./notifications";
 import {
@@ -219,7 +219,7 @@ export const onParticipantDeleted = onDocumentDeleted(
       const meetupSnap = await t.get(meetupRef);
       if (!meetupSnap.exists) return false;
       t.update(meetupRef, {
-        participantCount: admin.firestore.FieldValue.increment(-1),
+        participantCount: FieldValue.increment(-1),
       });
       return true;
     });
@@ -371,7 +371,7 @@ export const createMeetupCallable = onCall(async (request) => {
               TRUSTED_MEDIA_URL_HOSTS
             )
           : undefined,
-      date: admin.firestore.Timestamp.fromMillis(dateMillis),
+      date: Timestamp.fromMillis(dateMillis),
       duration,
       location: publicLocation,
       locationId,
@@ -382,8 +382,8 @@ export const createMeetupCallable = onCall(async (request) => {
       // is being created in the same batch.
       participantCount: 1,
       isRatingOpen: false,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     })
   );
 
@@ -408,7 +408,7 @@ export const createMeetupCallable = onCall(async (request) => {
       petId: organizerPetId,
       petName: organizerPetName,
       petAvatar: organizerPetAvatar,
-      joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+      joinedAt: FieldValue.serverTimestamp(),
       status: "confirmed",
       // participantCount is seeded to 1 for this organizer in the same batch,
       // so the count is already applied. Stamping it lets onParticipantDeleted
@@ -522,7 +522,7 @@ export const updateMeetupCallable = onCall(async (request) => {
             TRUSTED_MEDIA_URL_HOSTS
           )
         : undefined,
-    date: admin.firestore.Timestamp.fromMillis(dateMillis),
+    date: Timestamp.fromMillis(dateMillis),
     duration,
     location: publicLocation,
     locationVisibility,
@@ -530,9 +530,9 @@ export const updateMeetupCallable = onCall(async (request) => {
     organizerName: organizerActor.fromUserName,
     organizerAvatar:
       organizerActor.fromUserAvatar || getDefaultAvatar(organizerId),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
     ...(isPrivate
-      ? { locationId: admin.firestore.FieldValue.delete() }
+      ? { locationId: FieldValue.delete() }
       : { locationId }),
   });
 
@@ -589,7 +589,7 @@ export const cancelMeetupCallable = onCall(async (request) => {
 
   await meetupRef.update({
     status: "cancelled",
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
   });
 
   return { success: true };
@@ -766,15 +766,15 @@ export const joinMeetupCallable = onCall(async (request) => {
       petId: participantPetId,
       petName: participantPetName,
       petAvatar: participantPetAvatar,
-      joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+      joinedAt: FieldValue.serverTimestamp(),
       status: "confirmed",
       // Written in the same transaction as the increment below, so the stamp
       // and the count can never disagree.
       counted: true,
     });
     t.update(meetupRef, {
-      participantCount: admin.firestore.FieldValue.increment(1),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      participantCount: FieldValue.increment(1),
+      updatedAt: FieldValue.serverTimestamp(),
     });
 
     return { success: true };
@@ -787,7 +787,7 @@ export const joinMeetupCallable = onCall(async (request) => {
 // and review submission stayed blocked.
 export const autoCompleteMeetups = onSchedule("every 15 minutes", async () => {
   const now = Date.now();
-  const nowTimestamp = admin.firestore.Timestamp.fromMillis(now);
+  const nowTimestamp = Timestamp.fromMillis(now);
   const snapshot = await db
     .collection("meetups")
     .where("status", "==", "upcoming")
@@ -798,7 +798,7 @@ export const autoCompleteMeetups = onSchedule("every 15 minutes", async () => {
 
   const expired = snapshot.docs.filter((docSnap) => {
     const data = docSnap.data();
-    if (!(data.date instanceof admin.firestore.Timestamp)) return false;
+    if (!(data.date instanceof Timestamp)) return false;
     const duration = typeof data.duration === "number" ? data.duration : 0;
     const endMillis = data.date.toMillis() + duration * 60 * 1000;
     return now >= endMillis;
@@ -810,7 +810,7 @@ export const autoCompleteMeetups = onSchedule("every 15 minutes", async () => {
     batch.update(docSnap.ref, {
       status: "completed",
       isRatingOpen: true,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
   });
 });
@@ -834,7 +834,7 @@ export const checkMeetupStatusCallable = onCall(async (request) => {
     return { updated: false };
   }
 
-  const dateVal = meetup.date as admin.firestore.Timestamp;
+  const dateVal = meetup.date as Timestamp;
   if (!dateVal?.toDate) return { updated: false };
   const duration = typeof meetup.duration === "number" ? meetup.duration : 0;
   const endTime = new Date(dateVal.toDate().getTime() + duration * 60 * 1000);
@@ -843,7 +843,7 @@ export const checkMeetupStatusCallable = onCall(async (request) => {
     await meetupRef.update({
       status: "completed",
       isRatingOpen: true,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
     return { updated: true };
   }

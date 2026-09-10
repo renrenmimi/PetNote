@@ -1,5 +1,5 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { admin, db } from "./platform";
+import { db, FieldValue } from "./platform";
 import { assertCallerAccountActive, getNotificationActor } from "./notifications";
 import {
   assertRateLimit,
@@ -90,7 +90,7 @@ export const reportContentCallable = onCall(async (request) => {
       reason,
       description,
       status: "pending",
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
     });
   } catch (error) {
     if (
@@ -149,7 +149,7 @@ export const submitFeedbackCallable = onCall(async (request) => {
     subject,
     message,
     status: "new",
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: FieldValue.serverTimestamp(),
   });
 
   return { id: result.id };

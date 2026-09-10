@@ -1,5 +1,5 @@
 import { onDocumentDeleted } from "firebase-functions/v2/firestore";
-import { admin, db } from "./platform";
+import { admin, db, FieldValue } from "./platform";
 import { processQueryInBatches } from "./shared";
 
 export async function deleteCollectionPath(path: string): Promise<void> {
@@ -73,9 +73,9 @@ export const onPetDeleted = onDocumentDeleted("pets/{petId}", async (event) => {
         // index, so where("petId","==","") would otherwise match orphaned
         // posts. Deleting the field removes them from petId-keyed indexes.
         batch.update(doc.ref, {
-          petId: admin.firestore.FieldValue.delete(),
-          petName: admin.firestore.FieldValue.delete(),
-          petAvatarUrl: admin.firestore.FieldValue.delete(),
+          petId: FieldValue.delete(),
+          petName: FieldValue.delete(),
+          petAvatarUrl: FieldValue.delete(),
         });
       }
     ),

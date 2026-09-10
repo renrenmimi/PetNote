@@ -1,5 +1,5 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { admin, db } from "./platform";
+import { admin, db, FieldValue, Timestamp } from "./platform";
 import { cascadeDeletePet } from "./cleanup";
 import {
   assertCallerAccountActive,
@@ -93,7 +93,7 @@ async function readPetName(
 }
 
 function joinedAtMillisOf(data: admin.firestore.DocumentData): number {
-  return data.joinedAt instanceof admin.firestore.Timestamp
+  return data.joinedAt instanceof Timestamp
     ? data.joinedAt.toMillis()
     : Number.POSITIVE_INFINITY;
 }
@@ -213,11 +213,11 @@ export async function releasePetMembership(options: {
     t.update(petRef, {
       ownerId: successorUid,
       primaryOwnerId: successorUid,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
     t.update(db.doc(`pets/${petId}/family/${successorUid}`), {
       role: "primary",
-      promotedAt: admin.firestore.FieldValue.serverTimestamp(),
+      promotedAt: FieldValue.serverTimestamp(),
       promotedReason: reason,
     });
     // Demote anybody else still claiming the role. Normally there is nobody —
@@ -441,11 +441,11 @@ export const transferPetPrimaryCallable = onCall(async (request) => {
     t.update(petRef, {
       ownerId: targetUserId,
       primaryOwnerId: targetUserId,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
     t.update(target.ref, {
       role: "primary",
-      promotedAt: admin.firestore.FieldValue.serverTimestamp(),
+      promotedAt: FieldValue.serverTimestamp(),
       promotedReason: "transferred",
     });
     // Demote every current holder of the role, whoever they are. Not "the

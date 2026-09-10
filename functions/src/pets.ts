@@ -1,6 +1,6 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import { admin, db } from "./platform";
+import { admin, db, FieldValue, Timestamp } from "./platform";
 import { cascadeDeletePet } from "./cleanup";
 import { assertCallerAccountActive, getNotificationActor } from "./notifications";
 import {
@@ -62,9 +62,9 @@ const allowedPetRelationships = new Set([
   "other",
 ]);
 
-function timestampFromMillis(value: unknown): admin.firestore.Timestamp | null {
+function timestampFromMillis(value: unknown): Timestamp | null {
   return typeof value === "number" && Number.isFinite(value)
-    ? admin.firestore.Timestamp.fromMillis(value)
+    ? Timestamp.fromMillis(value)
     : null;
 }
 
@@ -75,7 +75,7 @@ function timestampFromMillis(value: unknown): admin.firestore.Timestamp | null {
 // timestamps in mixed timezones.
 function deriveBirthdayMonthDay(
   data: Record<string, unknown>,
-  birthday: admin.firestore.Timestamp | null
+  birthday: Timestamp | null
 ): { birthdayMonth?: number; birthdayDay?: number } {
   const explicitMonth =
     typeof data.birthdayMonth === "number" && Number.isFinite(data.birthdayMonth)
@@ -129,7 +129,7 @@ function sanitizePetDraft(value: unknown): {
   nameLower: string;
   species: string;
   breed: string;
-  birthday?: admin.firestore.Timestamp;
+  birthday?: Timestamp;
   birthdayMonth?: number;
   birthdayDay?: number;
   gender: string;
@@ -377,7 +377,7 @@ export const createPetCallable = onCall(async (request) => {
         primaryOwnerId: callerUid,
         followerCount: 0,
         postCount: 0,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
       })
     );
     t.set(
@@ -389,7 +389,7 @@ export const createPetCallable = onCall(async (request) => {
         relationship: relationshipData.relationship,
         customRelationship: relationshipData.customRelationship,
         role: "primary",
-        joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+        joinedAt: FieldValue.serverTimestamp(),
       })
     );
   });
@@ -482,14 +482,14 @@ export const updatePetCallable = onCall(async (request) => {
     "birthdayDay" in rawUpdates
   ) {
     const birthday = timestampFromMillis(rawUpdates.birthdayMillis);
-    updates.birthday = birthday ?? admin.firestore.FieldValue.delete();
+    updates.birthday = birthday ?? FieldValue.delete();
     const { birthdayMonth, birthdayDay } = deriveBirthdayMonthDay(
       rawUpdates,
       birthday
     );
     updates.birthdayMonth =
-      birthdayMonth ?? admin.firestore.FieldValue.delete();
-    updates.birthdayDay = birthdayDay ?? admin.firestore.FieldValue.delete();
+      birthdayMonth ?? FieldValue.delete();
+    updates.birthdayDay = birthdayDay ?? FieldValue.delete();
   }
 
   if (Object.keys(updates).length === 0) {
@@ -567,7 +567,7 @@ export const deletePetCallable = onCall(async (request) => {
       petId,
       requestedBy: callerUid,
       requestedByAdmin: isAdmin,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
       // Deliberately no `expiresAt`, and no TTL policy should be configured
       // for this collection.
       //
@@ -709,7 +709,7 @@ export const followPetCallable = onCall(async (request) => {
         typeof petData.avatarUrl === "string" && petData.avatarUrl.trim().length > 0
           ? petData.avatarUrl
           : getDefaultAvatar(petId),
-      followedAt: admin.firestore.FieldValue.serverTimestamp(),
+      followedAt: FieldValue.serverTimestamp(),
       // onFollowingPetCreated flips this to true in the same transaction as
       // the followerCount / followingPetsCount increments, so an unfollow that
       // overtakes the follow knows there is nothing to subtract.

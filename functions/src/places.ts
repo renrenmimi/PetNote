@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { onDocumentCreated, onDocumentDeleted } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { admin, db } from "./platform";
+import { admin, db, FieldValue } from "./platform";
 import { assertCallerAccountActive, getNotificationActor } from "./notifications";
 import { deleteCollectionPath } from "./cleanup";
 import {
@@ -101,8 +101,8 @@ async function writeLocationPhotoEntries(
         url,
         source,
         addedBy: addedBy || "",
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
       },
       { merge: true }
     );
@@ -135,9 +135,9 @@ async function appendLocationPhotoPreviews(
         LOCATION_PHOTO_PREVIEW_LIMIT
       ),
       ...(incrementTotalPhotos
-        ? { totalPhotos: admin.firestore.FieldValue.increment(photoUrls.length) }
+        ? { totalPhotos: FieldValue.increment(photoUrls.length) }
         : {}),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
   });
 }
@@ -273,8 +273,8 @@ export async function getOrCreatePublicMeetupLocation(params: {
       tags: [],
       source: "meetup",
       verified: false,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
   }
   return locationId;
@@ -534,8 +534,8 @@ export const addPlaceCallable = onCall(async (request) => {
         tags: [],
         source: place.source,
         verified: false,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       }
     );
   });
@@ -741,7 +741,7 @@ export const submitReviewCallable = onCall(async (request) => {
         safety: petFriendlySafety,
         cleanliness: petFriendlyCleanliness,
       },
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
     }));
   } catch (error) {
     if (
@@ -840,7 +840,7 @@ export const checkInCallable = onCall(async (request) => {
       petName,
       locationId,
       dayKey,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
     }));
   } catch (error) {
     if (

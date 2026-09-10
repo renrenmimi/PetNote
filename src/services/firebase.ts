@@ -139,11 +139,15 @@ export const functions = getFunctions(app);
  * VITE_FIREBASE_EMULATORS=1 in a local .env to use it. See
  * docs/acceptance-environment.md.
  *
- * The functions port is served by scripts/callable-shim.mjs rather than the
- * Firebase functions emulator: firebase-tools 15.13.0 stubs `firebase-admin`
- * with a proxy that loses `admin.firestore.FieldValue`, so every authenticated
- * callable 500s inside its runtime. That is an upstream bug, reproduced
- * against this checkout, not something this app can configure away.
+ * Port 5101 is the Firebase functions emulator (firebase.json pins it there so
+ * this wiring does not have to change). functions/scripts/callable-shim.mjs
+ * binds the same port and is only a fallback if the emulator refuses to start;
+ * the two cannot both be up, so whichever answers is unambiguous.
+ *
+ * This covers Firebase only. Cloudinary and Geoapify are separate services and
+ * are not redirected here — the callable that signs an upload still talks to
+ * the real Cloudinary API, with whatever credentials the backend was started
+ * with.
  */
 if (import.meta.env.DEV && import.meta.env.VITE_FIREBASE_EMULATORS === "1") {
   const host = import.meta.env.VITE_EMULATOR_HOST || "127.0.0.1";
@@ -151,7 +155,8 @@ if (import.meta.env.DEV && import.meta.env.VITE_FIREBASE_EMULATORS === "1") {
   connectFirestoreEmulator(db, host, 8088);
   connectFunctionsEmulator(functions, host, 5101);
   // Loud on purpose: nobody should be unsure which backend they just tested.
+  // Scoped on purpose too: this says nothing about Cloudinary or Geoapify.
   console.info(
-    `[PetNote] Firebase emulators: auth :9099, firestore :8088, callables :5101 (host ${host}). No production data is reachable.`
+    `[PetNote] Firebase emulators: auth :9099, firestore :8088, callables :5101 (host ${host}). No production Firebase project is reachable. Cloudinary and Geoapify are NOT emulated.`
   );
 }

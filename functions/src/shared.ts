@@ -4,6 +4,9 @@ import {
   db,
   CLOUDINARY_CLOUD_NAME,
   CLOUDINARY_FOLDER,
+  FieldValue,
+  Timestamp,
+  FieldPath,
 } from "./platform";
 
 export const FIRESTORE_BATCH_LIMIT = 450;
@@ -366,8 +369,8 @@ export async function runEventOnce(
 
     t.set(ledgerRef, {
       eventId,
-      processedAt: admin.firestore.FieldValue.serverTimestamp(),
-      expiresAt: admin.firestore.Timestamp.fromMillis(
+      processedAt: FieldValue.serverTimestamp(),
+      expiresAt: Timestamp.fromMillis(
         Date.now() + PROCESSED_EVENT_RETENTION_MS
       ),
     });
@@ -453,8 +456,8 @@ export async function assertRateLimit(
         windowStartedAt,
         windowMs: options.windowMs,
         count: currentCount + 1,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        expiresAt: admin.firestore.Timestamp.fromMillis(
+        updatedAt: FieldValue.serverTimestamp(),
+        expiresAt: Timestamp.fromMillis(
           windowStartedAt + options.windowMs * 2
         ),
       },
@@ -474,7 +477,7 @@ export async function processQueryInBatches(
   operation: (batch: admin.firestore.WriteBatch, doc: admin.firestore.QueryDocumentSnapshot) => void
 ): Promise<void> {
   const orderedQuery: admin.firestore.Query = queryRef.orderBy(
-    admin.firestore.FieldPath.documentId()
+    FieldPath.documentId()
   );
   let lastDoc: admin.firestore.QueryDocumentSnapshot | null = null;
 
@@ -500,7 +503,7 @@ export async function forEachQueryDocumentInBatches(
   operation: (doc: admin.firestore.QueryDocumentSnapshot) => Promise<void>
 ): Promise<void> {
   const orderedQuery: admin.firestore.Query = queryRef.orderBy(
-    admin.firestore.FieldPath.documentId()
+    FieldPath.documentId()
   );
   let lastDoc: admin.firestore.QueryDocumentSnapshot | null = null;
 
@@ -621,7 +624,7 @@ export async function applyReviewAggregationDelta(
     averageRating,
   };
   if (delta.tagsToAdd && delta.tagsToAdd.length > 0) {
-    update.tags = admin.firestore.FieldValue.arrayUnion(...delta.tagsToAdd);
+    update.tags = FieldValue.arrayUnion(...delta.tagsToAdd);
   }
   if (delta.photosToAdd && delta.photosToAdd.length > 0) {
     update.photos = mergeCappedStrings(
@@ -652,7 +655,7 @@ export async function applyReviewAggregationDelta(
       if (next <= 0) {
         // Drop the key entirely so the map doesn't accumulate dead tags.
         delete prevCounts[tag];
-        update[`tagCounts.${tag}`] = admin.firestore.FieldValue.delete();
+        update[`tagCounts.${tag}`] = FieldValue.delete();
       } else {
         prevCounts[tag] = next;
         update[`tagCounts.${tag}`] = next;

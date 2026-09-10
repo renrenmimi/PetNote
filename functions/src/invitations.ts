@@ -1,6 +1,6 @@
 import { randomInt } from "node:crypto";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { admin, db } from "./platform";
+import { admin, db, FieldValue, Timestamp } from "./platform";
 import { assertCallerAccountActive, getNotificationActor } from "./notifications";
 import { getPetFamilyAuthority } from "./pets";
 import {
@@ -36,7 +36,7 @@ function normalizeInvitationCode(code: unknown): string {
 function getInvitationExpiresAtMillis(
   invitation: admin.firestore.DocumentData | undefined
 ): number {
-  return invitation?.expiresAt instanceof admin.firestore.Timestamp
+  return invitation?.expiresAt instanceof Timestamp
     ? invitation.expiresAt.toMillis()
     : 0;
 }
@@ -90,7 +90,7 @@ function revokedInvitationFields(
     revoked: true,
     revokedBy,
     revokedReason: reason,
-    revokedAt: admin.firestore.FieldValue.serverTimestamp(),
+    revokedAt: FieldValue.serverTimestamp(),
   };
 }
 
@@ -163,7 +163,7 @@ async function getLatestActiveInvitationForPet(
   // instead of reading the entire invitations subcollection. Old expired
   // invitations accumulate over time and were previously all loaded just to
   // find the single active one.
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
   const invitationsSnap = await db
     .collection(`pets/${petId}/invitations`)
     .where("used", "==", false)
@@ -188,9 +188,9 @@ async function ensureInvitationLookup(
       invitationPath: `pets/${invitation.petId}/invitations/${invitation.code}`,
       createdBy: invitation.createdBy,
       createdByName: invitation.createdByName,
-      expiresAt: admin.firestore.Timestamp.fromMillis(invitation.expiresAtMillis),
+      expiresAt: Timestamp.fromMillis(invitation.expiresAtMillis),
       used: invitation.used,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true }
   );
@@ -286,7 +286,7 @@ export const createInvitationCallable = onCall(async (request) => {
       db.collectionGroup("invitations").where("code", "==", code).limit(1).get(),
     ]);
     if (!duplicateLookupSnap.exists && duplicateSnap.empty) {
-      const expiresAt = admin.firestore.Timestamp.fromMillis(
+      const expiresAt = Timestamp.fromMillis(
         Date.now() + 48 * 60 * 60 * 1000
       );
       const invitationRef = db.doc(`pets/${petId}/invitations/${code}`);
@@ -297,7 +297,7 @@ export const createInvitationCallable = onCall(async (request) => {
         createdByName: caller.fromUserName,
         expiresAt,
         used: false,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
       });
       batch.create(invitationLookupRef(code), {
         code,
@@ -307,7 +307,7 @@ export const createInvitationCallable = onCall(async (request) => {
         createdByName: caller.fromUserName,
         expiresAt,
         used: false,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
       });
       await batch.commit();
       return {
@@ -462,7 +462,7 @@ export const redeemInvitationCallable = onCall(async (request) => {
 
     const invitation = freshInvitationSnap.data() ?? {};
     const expiresAt =
-      invitation.expiresAt instanceof admin.firestore.Timestamp
+      invitation.expiresAt instanceof Timestamp
         ? invitation.expiresAt.toMillis()
         : 0;
     if (invitation.revoked === true) {
@@ -516,7 +516,7 @@ export const redeemInvitationCallable = onCall(async (request) => {
             : undefined,
         role: "member",
         invitationCode: normalizedCode,
-        joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+        joinedAt: FieldValue.serverTimestamp(),
       })
     );
 
@@ -534,7 +534,7 @@ export const redeemInvitationCallable = onCall(async (request) => {
         used: true,
         usedBy: callerUid,
         usedByName: caller.fromUserName,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true }
     );

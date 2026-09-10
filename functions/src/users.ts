@@ -1,7 +1,7 @@
 import { createHash, randomInt } from "node:crypto";
 import { onDocumentCreated, onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { admin, db } from "./platform";
+import { admin, db, FieldValue, Timestamp, FieldPath } from "./platform";
 import {
   cascadeDeleteMeetup,
   cascadeDeletePost,
@@ -135,7 +135,7 @@ export const onUserUpdated = onDocumentWritten(
     ) => {
       if (Object.keys(fields).length === 0) return;
       const orderedQuery: admin.firestore.Query = collectionQuery.orderBy(
-        admin.firestore.FieldPath.documentId()
+        FieldPath.documentId()
       );
       let lastDoc: admin.firestore.QueryDocumentSnapshot | null = null;
       while (true) {
@@ -330,8 +330,8 @@ export const ensureUserProfileCallable = onCall(async (request) => {
           userId: callerUid,
           displayName,
           displayNameLower,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
         });
         transaction.set(userRef, {
           displayName,
@@ -339,7 +339,7 @@ export const ensureUserProfileCallable = onCall(async (request) => {
           avatarUrl,
           bio,
           onboardingComplete,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: FieldValue.serverTimestamp(),
         });
         return { displayName, avatarUrl };
       });
@@ -445,7 +445,7 @@ export const updateUserProfileCallable = onCall(async (request) => {
         userId: callerUid,
         displayName,
         displayNameLower,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
       update.displayName = displayName;
       update.displayNameLower = displayNameLower;
@@ -457,8 +457,8 @@ export const updateUserProfileCallable = onCall(async (request) => {
       userRef,
       stripUndefined({
         ...update,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        ...(userSnap.exists ? {} : { createdAt: admin.firestore.FieldValue.serverTimestamp() }),
+        updatedAt: FieldValue.serverTimestamp(),
+        ...(userSnap.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
       }),
       { merge: true }
     );
@@ -501,8 +501,8 @@ export const deleteUserAccount = onCall({ timeoutSeconds: 540 }, async (request)
   await userRef.set(
     {
       deletionPending: true,
-      deletionStartedAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      deletionStartedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true }
   );
@@ -515,8 +515,8 @@ export const deleteUserAccount = onCall({ timeoutSeconds: 540 }, async (request)
   await db.doc(`userDeletionTombstones/${userId}`).set({
     userId,
     reason: "account_deleted",
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    expiresAt: admin.firestore.Timestamp.fromMillis(
+    createdAt: FieldValue.serverTimestamp(),
+    expiresAt: Timestamp.fromMillis(
       Date.now() + 24 * 60 * 60 * 1000
     ),
   });

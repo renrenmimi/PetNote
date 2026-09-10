@@ -1,7 +1,7 @@
 import { onDocumentCreated, onDocumentDeleted, onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import { admin, db } from "./platform";
+import { db, FieldValue, Timestamp } from "./platform";
 import {
   assertRateLimit,
   batchChunked,
@@ -245,7 +245,7 @@ export async function createNotificationIfAllowed(
   const docData: Record<string, unknown> = {
     ...payload,
     read: payload.read ?? false,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: FieldValue.serverTimestamp(),
   };
 
   Object.keys(docData).forEach((key) => {
@@ -277,7 +277,7 @@ const READ_NOTIFICATION_RETENTION_DAYS = 90;
 export const cleanupOldReadNotifications = onSchedule(
   { schedule: "every 24 hours", timeoutSeconds: 540, memory: "512MiB" },
   async () => {
-    const cutoff = admin.firestore.Timestamp.fromMillis(
+    const cutoff = Timestamp.fromMillis(
       Date.now() - READ_NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000
     );
 
@@ -360,17 +360,17 @@ export const onFollowingPetCreated = onDocumentCreated(
       if (!petTxnSnap.exists) return false;
       if (userTxnSnap.exists) {
         t.update(userRef, {
-          followingPetsCount: admin.firestore.FieldValue.increment(1),
+          followingPetsCount: FieldValue.increment(1),
         });
       }
       t.update(petRef, {
-        followerCount: admin.firestore.FieldValue.increment(1),
+        followerCount: FieldValue.increment(1),
       });
       t.set(followerMirrorRef, {
         userId,
         userName: actor.fromUserName,
         userAvatar: actor.fromUserAvatar || getDefaultAvatar(userId),
-        followedAt: admin.firestore.FieldValue.serverTimestamp(),
+        followedAt: FieldValue.serverTimestamp(),
       });
       // Stamp counted:true alongside the increments so onFollowingPetDeleted
       // only decrements follows that were actually counted (legacy follows
@@ -477,7 +477,7 @@ export const onLikeCreated = onDocumentCreated(
       // has aged out: the stamp on the like doc outlives the ledger.
       if (likeSnap.data()?.counted === true) return false;
 
-      t.update(postRef, { likeCount: admin.firestore.FieldValue.increment(1) });
+      t.update(postRef, { likeCount: FieldValue.increment(1) });
       t.update(likeRef, { counted: true });
       return true;
     });
@@ -549,7 +549,7 @@ export const onLikeDeleted = onDocumentDeleted(
       const postTxnSnap = await t.get(postRef);
       if (!postTxnSnap.exists) return false;
       t.update(postRef, {
-        likeCount: admin.firestore.FieldValue.increment(-1),
+        likeCount: FieldValue.increment(-1),
       });
       return true;
     });
@@ -590,7 +590,7 @@ export const onCommentCreated = onDocumentCreated(
       if (commentSnap.data()?.counted === true) return false;
 
       t.update(postRef, {
-        commentCount: admin.firestore.FieldValue.increment(1),
+        commentCount: FieldValue.increment(1),
       });
       t.update(commentDocRef, { counted: true });
       return true;
@@ -686,7 +686,7 @@ export const onCommentDeleted = onDocumentDeleted(
       const postTxnSnap = await t.get(postRef);
       if (!postTxnSnap.exists) return false;
       t.update(postRef, {
-        commentCount: admin.firestore.FieldValue.increment(-1),
+        commentCount: FieldValue.increment(-1),
       });
       return true;
     });

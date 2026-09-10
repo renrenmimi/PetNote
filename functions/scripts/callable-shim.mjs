@@ -46,6 +46,10 @@
  *
  *     # terminal 2, from functions/
  *     npm run build && node scripts/callable-shim.mjs
+ *
+ * It refuses to start if the Cloudinary credentials are anything but its own
+ * placeholders, and it does not serve `deleteCloudinaryAssetsCallable` at all.
+ * See the guard below for why.
  */
 
 import http from "node:http";
@@ -65,12 +69,52 @@ process.env.FIRESTORE_EMULATOR_HOST ||= "127.0.0.1:8088";
 process.env.FIREBASE_AUTH_EMULATOR_HOST ||= "127.0.0.1:9099";
 process.env.GCLOUD_PROJECT = PROJECT;
 process.env.FIREBASE_CONFIG ||= JSON.stringify({ projectId: PROJECT });
-// The signature callable reads these through defineSecret().value(). Left
-// obviously fake unless the operator exports real ones: with fakes the
-// signature is refused by Cloudinary, so media upload cannot be exercised
-// here. That limitation is documented rather than papered over.
-process.env.CLOUDINARY_API_KEY ||= "shim-fake-key";
-process.env.CLOUDINARY_API_SECRET ||= "shim-fake-secret";
+// The upload-signature callable reads these through defineSecret().value().
+// They are placeholders, always: with them the signature Cloudinary receives
+// is invalid, so media upload cannot be exercised here at all. The guard below
+// makes that a property of the harness rather than a convention.
+const FAKE_CLOUDINARY_KEY = "shim-fake-key";
+const FAKE_CLOUDINARY_SECRET = "shim-fake-secret";
+process.env.CLOUDINARY_API_KEY ||= FAKE_CLOUDINARY_KEY;
+process.env.CLOUDINARY_API_SECRET ||= FAKE_CLOUDINARY_SECRET;
+
+// Refuse to run with anything but the fake credentials.
+//
+// An earlier version of docs/acceptance-environment.md told the operator to
+// export real Cloudinary secrets to exercise publishing, on the reasoning that
+// "the composer's automatic reclaim is suspended, so only uploads are
+// reachable". That reasoning was wrong, and this guard exists because a
+// document cannot enforce it:
+//
+//   - index.ts exports deleteCloudinaryAssetsCallable, and the registration
+//     loop below picks up every export with a .run() hook, so the destroy
+//     endpoint was live here.
+//   - eight other screens still call deleteCloudinaryAssets on their own
+//     failure paths (AddPlace, AddPet, EditProfile, CheckInModal,
+//     LocationRatingModal, CreateMeetup, EditMeetup, OnboardingFlow). Only the
+//     composer's reclaim was suspended.
+//   - decodeEmulatorToken below *decodes* rather than verifies, which is
+//     correct in front of an emulator and is not an authorization boundary to
+//     put real credentials behind.
+//
+// Real media needs a separate Cloudinary test account with its own cloud name,
+// or a controlled backend that verifies identity properly.
+for (const [name, fake] of [
+  ["CLOUDINARY_API_KEY", FAKE_CLOUDINARY_KEY],
+  ["CLOUDINARY_API_SECRET", FAKE_CLOUDINARY_SECRET],
+]) {
+  if (process.env[name] !== fake) {
+    console.error(
+      `Refusing to start: ${name} is not the shim's placeholder.\n` +
+        `This harness must never hold credentials that can reach a real ` +
+        `Cloudinary account — it exposes deleteCloudinaryAssetsCallable and ` +
+        `does not verify caller identity. Use a separate Cloudinary test ` +
+        `account against a properly authenticated backend instead.\n` +
+        `See docs/acceptance-environment.md.`
+    );
+    process.exit(1);
+  }
+}
 
 const lib = require(path.join(functionsRoot, "lib", "index.js"));
 const { admin, db } = require(path.join(functionsRoot, "lib", "platform.js"));
@@ -104,9 +148,29 @@ function decodeEmulatorToken(header) {
 
 /* -------------------------------------------------------------- callables --- */
 
+/**
+ * Callables this harness will not serve, whatever `index.ts` exports.
+ *
+ * The registration loop is deliberately blanket — it picks up every callable so
+ * the acceptance environment stays complete as the API grows — which means the
+ * exclusions have to be explicit. `deleteCloudinaryAssetsCallable` reaches
+ * Cloudinary's `/destroy`, so it has no business being callable from a harness
+ * whose auth is a token decode.
+ */
+const NOT_SERVED = new Map([
+  [
+    "deleteCloudinaryAssetsCallable",
+    "This harness does not serve CDN deletion. It decodes rather than verifies " +
+      "tokens, so it is not an authorization boundary for destructive calls to " +
+      "an external service. Media lifecycle needs a separate Cloudinary test " +
+      "account and a properly authenticated backend.",
+  ],
+]);
+
 const callables = new Map();
 for (const [name, value] of Object.entries(lib)) {
   if (value && typeof value.run === "function" && !value.__trigger?.eventTrigger) {
+    if (NOT_SERVED.has(name)) continue;
     callables.set(name, value);
   }
 }
@@ -141,6 +205,18 @@ const server = http.createServer((req, res) => {
   }
 
   const name = (req.url || "").split("?")[0].split("/").filter(Boolean).pop();
+  if (name && NOT_SERVED.has(name)) {
+    // Answered explicitly rather than as a 404, so a tester who hits this
+    // learns why instead of assuming the build is broken.
+    console.log(`  ${name} -> refused (not served by this harness)`);
+    res.writeHead(501, { ...cors, "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify({
+        error: { message: NOT_SERVED.get(name), status: "UNIMPLEMENTED" },
+      })
+    );
+    return;
+  }
   const fn = name ? callables.get(name) : undefined;
   if (!fn) {
     res.writeHead(404, { ...cors, "Content-Type": "application/json" });
@@ -278,9 +354,10 @@ server.listen(PORT, "127.0.0.1", () => {
   console.log(`callable shim: http://127.0.0.1:${PORT}/${PROJECT}/${REGION}/<name>`);
   console.log(`  firestore ${process.env.FIRESTORE_EMULATOR_HOST}, auth ${process.env.FIREBASE_AUTH_EMULATOR_HOST}`);
   console.log(`  ${callables.size} callables, ${triggers.length} triggers`);
-  if (process.env.CLOUDINARY_API_SECRET === "shim-fake-secret") {
-    console.log("  Cloudinary secrets are fake: media upload will be refused by Cloudinary.");
-  }
+  console.log(
+    "  Cloudinary: placeholder credentials only. Uploads are refused by " +
+      "Cloudinary, and CDN deletion is not served at all."
+  );
   for (const entry of triggers) watch(entry);
 });
 

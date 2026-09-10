@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { admin, db } from "./platform";
+import { admin, db, FieldValue } from "./platform";
 import { assertNoBlockBetween } from "./blocking";
 import { cascadeDeletePost, deleteQueryDocs } from "./cleanup";
 import { assertCallerAccountActive, getNotificationActor } from "./notifications";
@@ -322,8 +322,8 @@ export const onPostWritten = onDocumentWritten("posts/{postId}", async (event) =
         db.doc(`hashtags/${tag}`),
         {
           name: tag,
-          postCount: admin.firestore.FieldValue.increment(1),
-          lastUsed: admin.firestore.FieldValue.serverTimestamp(),
+          postCount: FieldValue.increment(1),
+          lastUsed: FieldValue.serverTimestamp(),
         },
         { merge: true }
       );
@@ -346,7 +346,7 @@ export const onPostWritten = onDocumentWritten("posts/{postId}", async (event) =
       } else {
         t.update(snap.ref, {
           postCount: next,
-          lastUsed: admin.firestore.FieldValue.serverTimestamp(),
+          lastUsed: FieldValue.serverTimestamp(),
         });
       }
     });
@@ -416,8 +416,8 @@ export async function settlePostContribution(postId: string): Promise<boolean> {
         db.doc(`hashtags/${tag}`),
         {
           name: tag,
-          postCount: admin.firestore.FieldValue.increment(1),
-          lastUsed: admin.firestore.FieldValue.serverTimestamp(),
+          postCount: FieldValue.increment(1),
+          lastUsed: FieldValue.serverTimestamp(),
         },
         { merge: true }
       );
@@ -434,7 +434,7 @@ export async function settlePostContribution(postId: string): Promise<boolean> {
       } else {
         t.update(snap2.ref, {
           postCount: next,
-          lastUsed: admin.firestore.FieldValue.serverTimestamp(),
+          lastUsed: FieldValue.serverTimestamp(),
         });
       }
     });
@@ -545,7 +545,7 @@ export const createPostCallable = onCall(async (request) => {
     countedContribution: { petId: null, tags: [] },
     likeCount: 0,
     commentCount: 0,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: FieldValue.serverTimestamp(),
     ...(operationId ? { operationId } : {}),
   });
 
@@ -713,7 +713,7 @@ export const setPinnedPostCallable = onCall(async (request) => {
   // postId === null or missing means "unpin"
   if (postId === null || postId === undefined || postId === "") {
     await userRef.set(
-      { pinnedPostId: admin.firestore.FieldValue.delete() },
+      { pinnedPostId: FieldValue.delete() },
       { merge: true }
     );
     return { success: true };
@@ -842,7 +842,7 @@ export const createCommentCallable = onCall(async (request) => {
     authorName: caller.fromUserName,
     authorAvatar: caller.fromUserAvatar || getDefaultAvatar(callerUid),
     text,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: FieldValue.serverTimestamp(),
     // onCommentCreated flips this to true in the same transaction as the
     // commentCount increment. Until then the comment is not counted, so a
     // delete that overtakes the create knows to leave the count alone.
