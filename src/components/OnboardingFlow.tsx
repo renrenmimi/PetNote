@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { doc, getDoc, serverTimestamp } from "firebase/firestore";
-import PawIcon from "./PawIcon";
 import Avatar from "./Avatar";
 import { auth, db } from "../services/firebase";
 import {
@@ -33,7 +32,20 @@ type OnboardingFlowProps = {
   onComplete: () => void;
 };
 
-const stepCount = 5;
+/**
+ * Three steps, down from five.
+ *
+ * The two that went were decorative: a "Welcome to PetNote!" screen with a
+ * Next button, and an "You're all set!" screen with a Let's Go button. Neither
+ * asked for anything or told the person anything they could act on, and both
+ * sat between signing up and seeing a single pet. Public browsing already
+ * works without an account, so spending attention before any value is
+ * delivered is the wrong trade.
+ *
+ * What is left asks for something or offers something: a username, an optional
+ * pet or invitation code, and pets to follow.
+ */
+const stepCount = 3;
 
 const normalizeInviteCode = (value: string): string =>
   value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 8);
@@ -46,7 +58,10 @@ const formatInviteCode = (value: string): string => {
 export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
   // Namespaced per user: a previous account abandoning onboarding at step 3
   // on this browser must not make the next new account skip the early steps.
-  const stepStorageKey = `onboardingStep:${userId}`;
+  // Versioned: the step indices changed when the two decorative screens were
+  // removed, so a saved index from the old five-step flow would land somebody
+  // on the wrong screen. Bumping the key ignores those instead.
+  const stepStorageKey = `onboardingStep:v2:${userId}`;
   const [step, setStep] = useState(() => {
     if (typeof window === "undefined") return 0;
     const saved = window.localStorage.getItem(stepStorageKey);
@@ -211,8 +226,10 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
     try {
       await completeOnboarding(userId);
       localStorage.removeItem(stepStorageKey);
-      // Clean up the legacy non-namespaced key from older sessions too.
+      // Clean up the older keys from previous sessions too: the un-namespaced
+      // one, and the v1 five-step index.
       localStorage.removeItem("onboardingStep");
+      localStorage.removeItem(`onboardingStep:${userId}`);
       onComplete();
     } catch (error) {
       showToast(
@@ -428,27 +445,6 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
       <div className="w-full max-w-md space-y-6">
         {step === 0 ? (
           <>
-            <div className="mx-auto w-fit animate-pulse">
-              <PawIcon size={72} />
-            </div>
-            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
-              Welcome to PetNote! 🐾
-            </h1>
-            <p className="text-sm text-slate-500 dark:text-slate-300">
-              The best place to share your pet&apos;s life.
-            </p>
-            <button
-              type="button"
-              onClick={handleNext}
-              className="w-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-6 py-3 text-sm font-semibold text-white transition-all duration-200 hover:brightness-110"
-            >
-              Next
-            </button>
-          </>
-        ) : null}
-
-        {step === 1 ? (
-          <>
             <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
               Choose your username
             </h1>
@@ -533,11 +529,20 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
           </>
         ) : null}
 
-        {step === 2 ? (
+        {step === 1 ? (
           <>
             <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
               Let&apos;s meet your pet!
             </h1>
+            {/* Says that this is genuinely optional and when it will be asked
+                for instead. A pet is only needed to publish — reading,
+                following and joining all work without one — so presenting it
+                as a step to get through was asking for details before there
+                was any reason to give them. */}
+            <p className="text-sm text-slate-500 dark:text-slate-300">
+              Optional. You can skip this and add your pet later — we&apos;ll
+              ask when you write your first post.
+            </p>
 
             {!showInviteJoin ? (
               <div className="space-y-3">
@@ -726,9 +731,9 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
               <button
                 type="button"
                 onClick={handleNext}
-                className="text-xs text-slate-400 dark:text-slate-500"
+                className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-500 transition hover:border-slate-300 dark:border-slate-600 dark:text-slate-400"
               >
-                Skip
+                Skip for now
               </button>
               {!showInviteJoin ? (
                 <button
@@ -746,29 +751,7 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
           </>
         ) : null}
 
-        {step === 3 ? (
-          <>
-            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
-              Share Your Pet&apos;s Moments!
-            </h1>
-            <div className="mx-auto flex h-32 w-32 items-center justify-center rounded-3xl bg-slate-100 text-4xl dark:bg-slate-800">
-              📸
-            </div>
-            <p className="text-sm text-slate-500 dark:text-slate-300">
-              You&apos;re all set! Start sharing photos and videos of your pet
-              anytime from the home screen.
-            </p>
-            <button
-              type="button"
-              onClick={handleNext}
-              className="w-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-6 py-3 text-sm font-semibold text-white transition-all duration-200 hover:brightness-110"
-            >
-              Let&apos;s Go! 🐾
-            </button>
-          </>
-        ) : null}
-
-        {step === 4 ? (
+        {step === 2 ? (
           <>
             <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
               Find your community!

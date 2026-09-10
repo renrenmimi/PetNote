@@ -1,15 +1,15 @@
 import { createHash, randomInt } from "node:crypto";
 import { onDocumentCreated, onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { admin, db } from "./platform";
+import { admin, db, FieldValue, Timestamp, FieldPath } from "./platform";
 import {
   cascadeDeleteMeetup,
-  cascadeDeletePet,
   cascadeDeletePost,
   deleteCollectionPath,
   deleteQueryDocs,
 } from "./cleanup";
-import { assertActorNotDeleting, getNotificationActor } from "./notifications";
+import { getPetIdsForMember, releasePetMembership } from "./family";
+import { assertCallerAccountActive, getNotificationActor } from "./notifications";
 import {
   assertRateLimit,
   batchChunked,
@@ -135,7 +135,7 @@ export const onUserUpdated = onDocumentWritten(
     ) => {
       if (Object.keys(fields).length === 0) return;
       const orderedQuery: admin.firestore.Query = collectionQuery.orderBy(
-        admin.firestore.FieldPath.documentId()
+        FieldPath.documentId()
       );
       let lastDoc: admin.firestore.QueryDocumentSnapshot | null = null;
       while (true) {
@@ -330,8 +330,8 @@ export const ensureUserProfileCallable = onCall(async (request) => {
           userId: callerUid,
           displayName,
           displayNameLower,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
         });
         transaction.set(userRef, {
           displayName,
@@ -339,7 +339,7 @@ export const ensureUserProfileCallable = onCall(async (request) => {
           avatarUrl,
           bio,
           onboardingComplete,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: FieldValue.serverTimestamp(),
         });
         return { displayName, avatarUrl };
       });
@@ -403,8 +403,12 @@ export const updateUserProfileCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot update profiles.");
   }
-  assertActorNotDeleting(caller);
-  await assertUserNotDeletionTombstoned(callerUid);
+  // assertCallerAccountActive covers the tombstone now, so the local
+  // assertUserNotDeletionTombstoned call that used to sit here is gone —
+  // it would just re-read the same document. ensureUserProfileCallable
+  // still uses the local one: it is the deliberate exception that has to
+  // run before a profile exists, so it cannot take the shared helper.
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "updateUserProfile", RATE_LIMITS.write);
 
   const data = requestData(request.data);
@@ -441,7 +445,7 @@ export const updateUserProfileCallable = onCall(async (request) => {
         userId: callerUid,
         displayName,
         displayNameLower,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
       update.displayName = displayName;
       update.displayNameLower = displayNameLower;
@@ -453,8 +457,8 @@ export const updateUserProfileCallable = onCall(async (request) => {
       userRef,
       stripUndefined({
         ...update,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        ...(userSnap.exists ? {} : { createdAt: admin.firestore.FieldValue.serverTimestamp() }),
+        updatedAt: FieldValue.serverTimestamp(),
+        ...(userSnap.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
       }),
       { merge: true }
     );
@@ -497,8 +501,8 @@ export const deleteUserAccount = onCall({ timeoutSeconds: 540 }, async (request)
   await userRef.set(
     {
       deletionPending: true,
-      deletionStartedAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      deletionStartedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true }
   );
@@ -511,8 +515,8 @@ export const deleteUserAccount = onCall({ timeoutSeconds: 540 }, async (request)
   await db.doc(`userDeletionTombstones/${userId}`).set({
     userId,
     reason: "account_deleted",
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    expiresAt: admin.firestore.Timestamp.fromMillis(
+    createdAt: FieldValue.serverTimestamp(),
+    expiresAt: Timestamp.fromMillis(
       Date.now() + 24 * 60 * 60 * 1000
     ),
   });
@@ -536,13 +540,28 @@ export const deleteUserAccount = onCall({ timeoutSeconds: 540 }, async (request)
     );
   });
 
-  await runStep("pets", async () => {
-    await forEachQueryDocumentInBatches(
-      db.collection("pets").where("ownerId", "==", userId),
-      async (docSnap) => {
-        await cascadeDeletePet(docSnap.id);
-      }
-    );
+  // A pet outlives any one of its owners. This step used to select pets by
+  // ownerId and cascade-delete the subtree, which meant deleting the account
+  // of whoever created a shared pet destroyed it for every other owner — the
+  // product's own premise, undone by its deletion job.
+  //
+  // releasePetMembership hands each pet to a remaining owner, and only ends a
+  // pet that has nobody left. It runs before the cross-reference steps because
+  // one of those deletes this user's family documents, which is the very state
+  // the handover reads.
+  await runStep("petMemberships", async () => {
+    const petIds = await getPetIdsForMember(userId);
+    for (const petId of petIds) {
+      await releasePetMembership({
+        petId,
+        leavingUid: userId,
+        // The account is going regardless, so a pet with no owners left has to
+        // end. This is the one place "delete" is correct; an ordinary leave
+        // refuses instead.
+        onLastMember: "delete",
+        reason: "owner_account_deleted",
+      });
+    }
   });
 
   await runStep("meetups", async () => {
@@ -569,6 +588,11 @@ export const deleteUserAccount = onCall({ timeoutSeconds: 540 }, async (request)
       deleteQueryDocs(db.collectionGroup("reviews").where("userId", "==", userId))],
     ["participants", () =>
       deleteQueryDocs(db.collectionGroup("participants").where("userId", "==", userId))],
+    // Backstop only. releasePetMembership above already removed this user's
+    // family documents pet by pet, because the handover has to read them. This
+    // catches anything it could not resolve (a pet document that vanished
+    // mid-cascade, say) rather than leaving a membership pointing at a deleted
+    // account. It runs after that step, so it cannot race it.
     ["family", () =>
       deleteQueryDocs(db.collectionGroup("family").where("userId", "==", userId))],
     ["reports", () =>

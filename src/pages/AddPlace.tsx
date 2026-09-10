@@ -46,7 +46,7 @@ const featureOptions: Array<{ key: PlaceFeature; label: string }> = [
 
 export function AddPlace() {
   const navigate = useNavigate();
-  const { user, profile } = useAuth();
+  const { user, emailVerified, profile } = useAuth();
   const { showToast } = useToast();
   const [name, setName] = useState("");
   const [category, setCategory] = useState<PlaceCategory>("dog_park");
@@ -64,7 +64,7 @@ export function AddPlace() {
   const [safety, setSafety] = useState(0);
   const [cleanliness, setCleanliness] = useState(0);
   const [saving, setSaving] = useState(false);
-  const requiresEmailVerification = !!user && !user.emailVerified;
+  const requiresEmailVerification = !!user && !emailVerified;
 
   useEffect(() => {
     const urls = photos.map((file) => URL.createObjectURL(file));
@@ -129,6 +129,11 @@ export function AddPlace() {
     // image URLs. We only clean assets when the failure happened during the
     // upload phase, before any location write.
     let photosHandedToBackend = false;
+    // Set as soon as the location write succeeds. The review is a separate
+    // call, so "the place is saved but the review failed" is a real outcome —
+    // and reporting it as "Failed to add place." pushed people into adding the
+    // same place again. Once this is set the catch routes to the place instead.
+    let savedLocationId: string | null = null;
     try {
       // 1. Upload photos FIRST. If this fails, no location is created — so the
       // catch just cleans the orphan Cloudinary assets and nothing is left
@@ -175,6 +180,7 @@ export function AddPlace() {
         addedBy: user.uid,
         addedByName: profile?.displayName || user.displayName || "PetNote User",
       });
+      savedLocationId = locationId;
 
       // Existing place and no review: addPlace ignored our photos (they were
       // not attached to anything), so it's safe to clean them here.
@@ -216,6 +222,17 @@ export function AddPlace() {
       // (a future scheduled cleanup can reap it).
       if (!photosHandedToBackend && uploaded.length > 0) {
         void deleteCloudinaryAssets(uploaded);
+      }
+      if (savedLocationId) {
+        // The place exists. Say so, and take the user to it — retrying the
+        // whole form would only create a duplicate, and the review can be
+        // added again from the place page.
+        showToast(
+          "Place saved, but the review didn't go through. You can rate it from here.",
+          "warning"
+        );
+        navigate(`/location/${savedLocationId}`, { replace: true });
+        return;
       }
       showToast("Failed to add place.", "error");
     } finally {

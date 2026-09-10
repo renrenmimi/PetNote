@@ -81,6 +81,73 @@ const canvasToBlob = (
     );
   });
 
+/**
+ * The worker that does the downscale + re-encode, created once and reused.
+ *
+ * Lazily, because most sessions never upload a photo and a worker costs a
+ * thread. Set to "unsupported" after the worker tells us it cannot do the job,
+ * so a browser without OffscreenCanvas.convertToBlob pays the probe once and
+ * then goes straight to the DOM path.
+ */
+let compressWorker: Worker | null | "unsupported" = null;
+let compressRequestId = 0;
+
+function getCompressWorker(): Worker | null {
+  if (compressWorker === "unsupported") return null;
+  if (compressWorker) return compressWorker;
+  if (typeof Worker === "undefined") {
+    compressWorker = "unsupported";
+    return null;
+  }
+  try {
+    compressWorker = new Worker(
+      new URL("./imageCompressor.worker.ts", import.meta.url),
+      { type: "module" }
+    );
+    return compressWorker;
+  } catch {
+    compressWorker = "unsupported";
+    return null;
+  }
+}
+
+type WorkerResult =
+  | { ok: true; blob: Blob; type: string }
+  | { ok: false; reason: "unsupported" | "failed"; message?: string };
+
+function compressInWorker(
+  worker: Worker,
+  payload: {
+    blob: Blob;
+    maxWidth: number;
+    maxHeight: number;
+    quality: number;
+    maxBytes: number;
+    outputType: string;
+  }
+): Promise<WorkerResult> {
+  const id = ++compressRequestId;
+  return new Promise<WorkerResult>((resolve) => {
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { id?: number } & WorkerResult;
+      if (data?.id !== id) return;
+      cleanup();
+      resolve(data);
+    };
+    const onError = () => {
+      cleanup();
+      resolve({ ok: false, reason: "failed", message: "worker error" });
+    };
+    const cleanup = () => {
+      worker.removeEventListener("message", onMessage);
+      worker.removeEventListener("error", onError);
+    };
+    worker.addEventListener("message", onMessage);
+    worker.addEventListener("error", onError);
+    worker.postMessage({ id, ...payload });
+  });
+}
+
 export async function compressImage(
   file: File,
   options: CompressOptions = {}
@@ -106,6 +173,43 @@ export async function compressImage(
   if (file.type === "image/gif") return file;
   if (file.size <= maxBytes) return file;
 
+  // Which container to write. Decided before the worker call so both paths
+  // produce identical output.
+  const desiredOutputType =
+    file.type === "image/png" && file.size <= maxBytes
+      ? "image/png"
+      : "image/jpeg";
+
+  // Try the worker first. The DOM path below stays as the fallback: it is not
+  // dead code, it is what runs when OffscreenCanvas.convertToBlob is missing.
+  const worker = getCompressWorker();
+  if (worker) {
+    const result = await compressInWorker(worker, {
+      blob: file,
+      maxWidth,
+      maxHeight,
+      quality,
+      maxBytes,
+      outputType: desiredOutputType,
+    });
+    if (result.ok) {
+      const extension = result.type === "image/png" ? "png" : "jpg";
+      return new File(
+        [result.blob],
+        file.name.replace(/\.[^/.]+$/, `.${extension}`),
+        { type: result.type, lastModified: file.lastModified }
+      );
+    }
+    if (result.reason === "unsupported") {
+      // Remember, so every subsequent photo skips the round trip.
+      worker.terminate();
+      compressWorker = "unsupported";
+    }
+    // A "failed" result falls through to the DOM path for this photo without
+    // disabling the worker: one undecodable image should not change the
+    // strategy for the rest of the session.
+  }
+
   const img = await loadImage(file);
   const ratio = Math.min(1, maxWidth / img.width, maxHeight / img.height);
   const width = Math.round(img.width * ratio);
@@ -119,14 +223,7 @@ export async function compressImage(
   if (!ctx) return file;
   ctx.drawImage(img, 0, 0, width, height);
 
-  let outputType =
-    file.type === "image/png" && file.size <= maxBytes
-      ? "image/png"
-      : "image/jpeg";
-
-  if (file.type === "image/png" && file.size > maxBytes) {
-    outputType = "image/jpeg";
-  }
+  let outputType = desiredOutputType;
 
   let currentQuality = quality;
   let blob = await canvasToBlob(canvas, outputType, currentQuality);

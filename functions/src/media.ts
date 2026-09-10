@@ -6,7 +6,7 @@ import {
   CLOUDINARY_CLOUD_NAME,
   CLOUDINARY_FOLDER,
 } from "./platform";
-import { assertActorNotDeleting, getNotificationActor } from "./notifications";
+import { assertCallerAccountActive, getNotificationActor } from "./notifications";
 import { assertRateLimit, RATE_LIMITS, requestData } from "./shared";
 
 function signCloudinaryParams(params: Record<string, string>, apiSecret: string): string {
@@ -76,7 +76,7 @@ export const getCloudinaryUploadSignature = onCall(
     if (caller.banned === true) {
       throw new HttpsError("permission-denied", "Banned users cannot upload media.");
     }
-    assertActorNotDeleting(caller);
+    await assertCallerAccountActive(callerUid, caller);
     await assertRateLimit(
       callerUid,
       "getCloudinaryUploadSignature",

@@ -1,5 +1,5 @@
 import { onDocumentDeleted } from "firebase-functions/v2/firestore";
-import { admin, db } from "./platform";
+import { admin, db, FieldValue } from "./platform";
 import { processQueryInBatches } from "./shared";
 
 export async function deleteCollectionPath(path: string): Promise<void> {
@@ -28,10 +28,22 @@ export async function cascadeDeletePost(postId: string): Promise<void> {
 }
 
 export async function cascadeDeletePet(petId: string): Promise<void> {
+  // The top-level invitationCodes/{code} lookup has to go with the pet's
+  // invitations. It was left behind before: the subcollection document was
+  // deleted and the lookup — which is what redeemInvitationCallable resolves a
+  // typed code through, and which carries petId — survived, pointing at a pet
+  // that no longer exists. Matching on petId also reaps any lookup orphaned by
+  // an earlier pet deletion.
   await Promise.all([
     deleteCollectionPath(`pets/${petId}/family`),
     deleteCollectionPath(`pets/${petId}/followers`),
     deleteCollectionPath(`pets/${petId}/invitations`),
+    processQueryInBatches(
+      db.collection("invitationCodes").where("petId", "==", petId),
+      (batch, docSnap) => {
+        batch.delete(docSnap.ref);
+      }
+    ),
   ]);
   await db.doc(`pets/${petId}`).delete();
 }
@@ -61,9 +73,9 @@ export const onPetDeleted = onDocumentDeleted("pets/{petId}", async (event) => {
         // index, so where("petId","==","") would otherwise match orphaned
         // posts. Deleting the field removes them from petId-keyed indexes.
         batch.update(doc.ref, {
-          petId: admin.firestore.FieldValue.delete(),
-          petName: admin.firestore.FieldValue.delete(),
-          petAvatarUrl: admin.firestore.FieldValue.delete(),
+          petId: FieldValue.delete(),
+          petName: FieldValue.delete(),
+          petAvatarUrl: FieldValue.delete(),
         });
       }
     ),

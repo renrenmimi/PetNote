@@ -1,7 +1,7 @@
 import { onDocumentCreated, onDocumentDeleted, onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import { admin, db } from "./platform";
+import { db, FieldValue, Timestamp } from "./platform";
 import {
   assertRateLimit,
   batchChunked,
@@ -27,6 +27,7 @@ export type ServerNotificationType =
   | "reply"
   | "meetup_join"
   | "meetup_cancelled"
+  | "pet_primary_transferred"
   | "warning";
 
 export type ServerNotificationPayload = {
@@ -83,6 +84,29 @@ export async function getNotificationActor(userId: string): Promise<Notification
   };
 }
 
+/**
+ * The sender for notifications that are not from a person.
+ *
+ * A role change ("you are now this pet's primary owner") is a system event,
+ * and attributing it to a user is wrong twice over. It is not a social
+ * interaction, and when the event is caused by an account deletion the
+ * cascade's `notifications.fromUserId` step would delete the notice it just
+ * produced — scrubbing the departing person's identity is exactly what that
+ * step is for, and it cannot tell the two kinds of notification apart.
+ *
+ * Not a real uid, and deliberately not one: nothing should resolve it to a
+ * profile. Clients render fromUserName; Avatar falls back to a generated
+ * image for an unknown id.
+ */
+export const SYSTEM_NOTIFICATION_ACTOR: Pick<
+  NotificationActor,
+  "fromUserId" | "fromUserName" | "fromUserAvatar"
+> = {
+  fromUserId: "petnote-system",
+  fromUserName: "PetNote",
+  fromUserAvatar: getDefaultAvatar("petnote-system"),
+};
+
 // Throws if the actor's account is mid-deletion. Use after the ban check on
 // every mutating callable so concurrent writes can't race the cascade.
 export function assertActorNotDeleting(actor: NotificationActor): void {
@@ -94,11 +118,55 @@ export function assertActorNotDeleting(actor: NotificationActor): void {
   }
 }
 
+/**
+ * The authorization check a mutating callable owes its caller's account state.
+ *
+ * assertActorNotDeleting only covers the *middle* of a deletion: it reads
+ * `deletionPending` off users/{uid}, and the cascade deletes that document on
+ * its way out. Once it is gone, getNotificationActor happily manufactures a
+ * default actor ("PetNote User" + generated avatar) for a uid with no profile,
+ * `deletionPending` reads as undefined, and every mutating callable let the
+ * deleted account back in — a non-expired ID token stayed good for its
+ * remaining hour, and Firestore rules don't check whether the Auth user still
+ * exists.
+ *
+ * userDeletionTombstones/{uid} is the record that survives the cascade, so
+ * that is what closes the window. It was already consulted by the two profile
+ * callables; this makes it the shared rule rather than something each callable
+ * has to remember.
+ *
+ * Deliberately NOT checked here: whether users/{uid} exists. A brand-new
+ * signed-in user has no profile document until ensureUserProfileCallable
+ * writes one, and requiring existence in this helper would break first
+ * signup. Absent profile + present tombstone is the deleted case, and the
+ * tombstone is the half that is authoritative.
+ */
+export async function assertCallerAccountActive(
+  uid: string,
+  actor: NotificationActor
+): Promise<void> {
+  assertActorNotDeleting(actor);
+  const tombstoneSnap = await db.doc(`userDeletionTombstones/${uid}`).get();
+  if (tombstoneSnap.exists) {
+    throw new HttpsError(
+      "failed-precondition",
+      "This account has been deleted."
+    );
+  }
+}
+
 async function shouldSendNotification(
   recipientId: string,
   type: ServerNotificationType
 ): Promise<boolean> {
-  if (type === "warning" || type === "meetup_join" || type === "meetup_cancelled") {
+  if (
+    type === "warning" ||
+    type === "meetup_join" ||
+    type === "meetup_cancelled" ||
+    // Not a social notification: it tells somebody they are now responsible
+    // for a pet. There is no preference under which that should be silent.
+    type === "pet_primary_transferred"
+  ) {
     return true;
   }
 
@@ -114,6 +182,47 @@ async function shouldSendNotification(
   return true;
 }
 
+/**
+ * A notification is a message. Somebody the recipient has blocked should not
+ * be able to send one, and neither should somebody the recipient blocked be
+ * kept informed of the recipient's activity.
+ *
+ * This is the third leg of block enforcement, alongside comment creation and
+ * meetup admission (see ./blocking.ts). It matters for the interactions that
+ * are *not* gated by a callable — a like is written straight to
+ * posts/{id}/likes/{uid} under a Firestore rule, so the trigger fan-out is the
+ * only place a block can stop the resulting "X liked your post" from landing.
+ *
+ * Two types are deliberately exempt, in BLOCK_EXEMPT_NOTIFICATIONS below:
+ *
+ * - `warning` is an admin moderation decision, not a peer interaction.
+ * - `meetup_cancelled` is logistics about something the recipient already
+ *   committed to attending. Somebody who joined a meetup and later blocked the
+ *   organizer still needs to be told the meetup is off — withholding that is a
+ *   worse outcome than the unwanted contact, because it ends with them
+ *   standing in a park.
+ * - `pet_primary_transferred` hands somebody responsibility for an animal. If
+ *   two co-owners have blocked each other and one deletes their account, the
+ *   other still has to learn that the pet is now theirs.
+ */
+const BLOCK_EXEMPT_NOTIFICATIONS = new Set<ServerNotificationType>([
+  "warning",
+  "meetup_cancelled",
+  "pet_primary_transferred",
+]);
+
+async function isBlockedInteraction(
+  recipientId: string,
+  senderId: string | undefined
+): Promise<boolean> {
+  if (!senderId || !recipientId || senderId === recipientId) return false;
+  const [recipientBlockedSender, senderBlockedRecipient] = await Promise.all([
+    db.doc(`users/${recipientId}/blockedUsers/${senderId}`).get(),
+    db.doc(`users/${senderId}/blockedUsers/${recipientId}`).get(),
+  ]);
+  return recipientBlockedSender.exists || senderBlockedRecipient.exists;
+}
+
 export async function createNotificationIfAllowed(
   payload: ServerNotificationPayload,
   options?: {
@@ -126,11 +235,17 @@ export async function createNotificationIfAllowed(
   if (!(await shouldSendNotification(payload.userId, payload.type))) {
     return "";
   }
+  if (
+    !BLOCK_EXEMPT_NOTIFICATIONS.has(payload.type) &&
+    (await isBlockedInteraction(payload.userId, payload.fromUserId))
+  ) {
+    return "";
+  }
 
   const docData: Record<string, unknown> = {
     ...payload,
     read: payload.read ?? false,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: FieldValue.serverTimestamp(),
   };
 
   Object.keys(docData).forEach((key) => {
@@ -162,7 +277,7 @@ const READ_NOTIFICATION_RETENTION_DAYS = 90;
 export const cleanupOldReadNotifications = onSchedule(
   { schedule: "every 24 hours", timeoutSeconds: 540, memory: "512MiB" },
   async () => {
-    const cutoff = admin.firestore.Timestamp.fromMillis(
+    const cutoff = Timestamp.fromMillis(
       Date.now() - READ_NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000
     );
 
@@ -245,17 +360,17 @@ export const onFollowingPetCreated = onDocumentCreated(
       if (!petTxnSnap.exists) return false;
       if (userTxnSnap.exists) {
         t.update(userRef, {
-          followingPetsCount: admin.firestore.FieldValue.increment(1),
+          followingPetsCount: FieldValue.increment(1),
         });
       }
       t.update(petRef, {
-        followerCount: admin.firestore.FieldValue.increment(1),
+        followerCount: FieldValue.increment(1),
       });
       t.set(followerMirrorRef, {
         userId,
         userName: actor.fromUserName,
         userAvatar: actor.fromUserAvatar || getDefaultAvatar(userId),
-        followedAt: admin.firestore.FieldValue.serverTimestamp(),
+        followedAt: FieldValue.serverTimestamp(),
       });
       // Stamp counted:true alongside the increments so onFollowingPetDeleted
       // only decrements follows that were actually counted (legacy follows
@@ -362,7 +477,7 @@ export const onLikeCreated = onDocumentCreated(
       // has aged out: the stamp on the like doc outlives the ledger.
       if (likeSnap.data()?.counted === true) return false;
 
-      t.update(postRef, { likeCount: admin.firestore.FieldValue.increment(1) });
+      t.update(postRef, { likeCount: FieldValue.increment(1) });
       t.update(likeRef, { counted: true });
       return true;
     });
@@ -434,7 +549,7 @@ export const onLikeDeleted = onDocumentDeleted(
       const postTxnSnap = await t.get(postRef);
       if (!postTxnSnap.exists) return false;
       t.update(postRef, {
-        likeCount: admin.firestore.FieldValue.increment(-1),
+        likeCount: FieldValue.increment(-1),
       });
       return true;
     });
@@ -475,7 +590,7 @@ export const onCommentCreated = onDocumentCreated(
       if (commentSnap.data()?.counted === true) return false;
 
       t.update(postRef, {
-        commentCount: admin.firestore.FieldValue.increment(1),
+        commentCount: FieldValue.increment(1),
       });
       t.update(commentDocRef, { counted: true });
       return true;
@@ -571,7 +686,7 @@ export const onCommentDeleted = onDocumentDeleted(
       const postTxnSnap = await t.get(postRef);
       if (!postTxnSnap.exists) return false;
       t.update(postRef, {
-        commentCount: admin.firestore.FieldValue.increment(-1),
+        commentCount: FieldValue.increment(-1),
       });
       return true;
     });
@@ -656,7 +771,7 @@ export const sendNotification = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot send notifications.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "sendNotification", RATE_LIMITS.write);
 
   if (caller.role !== "admin") {

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
 import type { MediaItem } from "../services/posts";
+import { getVideoThumbnail } from "../utils/cloudinaryUrl";
 import LazyImage from "./LazyImage";
 
 type MediaCarouselProps = {
@@ -8,6 +9,24 @@ type MediaCarouselProps = {
   mediaType?: "image" | "video";
   onDoubleTap?: () => void;
   imageSize?: "medium" | "large";
+  /**
+   * Whether the thing containing this carousel is actually on screen.
+   *
+   * `isNearby` below gates *carousel* adjacency, which is not the same
+   * question: a post ten screens down the feed still had its active slide
+   * mounted as `<video src=... autoPlay>`, so two original .mov files —
+   * 840 kB of measured transfer in a mobile Lighthouse run — were fetched and
+   * started playing before anyone had scrolled to them, let alone asked.
+   *
+   * Defaults to true so the standalone uses (EditPost, LocationDetail) keep
+   * their current behaviour; the feed passes its own visibility.
+   */
+  visible?: boolean;
+  /**
+   * Load the leading image immediately instead of waiting for an observer.
+   * Only the first card in a list should set this — see LazyImage.
+   */
+  priority?: boolean;
 };
 
 const formatDuration = (value?: number) => {
@@ -23,6 +42,8 @@ export function MediaCarousel({
   mediaType,
   onDoubleTap,
   imageSize = "medium",
+  visible = true,
+  priority = false,
 }: MediaCarouselProps) {
   const items = useMemo<MediaItem[]>(() => {
     if (media && media.length > 0) return media;
@@ -48,6 +69,11 @@ export function MediaCarousel({
   const videoRefs = useRef<Array<HTMLVideoElement | null>>([]);
   const [videoPlaying, setVideoPlaying] = useState<Record<number, boolean>>({});
   const [durations, setDurations] = useState<Record<number, number>>({});
+  // Slides whose poster has been tapped. Tapping is an explicit request for
+  // the video, so it overrides the visibility gate.
+  const [videoUnlocked, setVideoUnlocked] = useState<Record<number, boolean>>({});
+  const unlockVideo = (idx: number) =>
+    setVideoUnlocked((prev) => ({ ...prev, [idx]: true }));
 
   const hasMultiple = items.length > 1;
 
@@ -60,16 +86,17 @@ export function MediaCarousel({
   useEffect(() => {
     videoRefs.current.forEach((video, idx) => {
       if (!video) return;
-      if (idx !== index) {
+      if (idx !== index || !visible) {
         video.pause();
         setVideoPlaying((prev) => ({ ...prev, [idx]: false }));
       } else if (video.paused) {
         // The autoPlay attribute only applies at load time; a video swiped
-        // into view later must be started explicitly.
+        // into view later must be started explicitly. Scrolling a playing
+        // video off screen pauses it through the same path.
         video.play().catch(() => undefined);
       }
     });
-  }, [index]);
+  }, [index, visible]);
 
   const handleTouchStart = (event: TouchEvent<HTMLDivElement>) => {
     const touch = event.touches[0];
@@ -185,6 +212,30 @@ export function MediaCarousel({
                   // Same adjacency gating as images so a multi-video post
                   // doesn't fetch every video up front.
                   <div className="max-h-[500px] w-full bg-slate-200 dark:bg-slate-700" />
+                ) : !visible && !videoUnlocked[idx] ? (
+                  // Off screen: show the Cloudinary frame-0 thumbnail — a
+                  // transformed JPEG, kilobytes rather than the original
+                  // container — and no <video> element at all, so nothing is
+                  // fetched or decoded until the post is actually reached or
+                  // the poster is tapped.
+                  <button
+                    type="button"
+                    onClick={() => unlockVideo(idx)}
+                    className="relative block max-h-[500px] w-full"
+                    aria-label="Load video"
+                  >
+                    <img
+                      src={getVideoThumbnail(item.url, imageSize)}
+                      alt=""
+                      loading="lazy"
+                      className="max-h-[500px] w-full object-contain"
+                    />
+                    <span className="absolute inset-0 flex items-center justify-center">
+                      <span className="rounded-full bg-black/50 px-3 py-2 text-sm text-white">
+                        ▶
+                      </span>
+                    </span>
+                  </button>
                 ) : (
                 <div className="relative w-full">
                   <video
@@ -192,8 +243,13 @@ export function MediaCarousel({
                       videoRefs.current[idx] = node;
                     }}
                     src={item.url}
+                    poster={getVideoThumbnail(item.url, imageSize)}
                     muted
-                    autoPlay={isActive}
+                    // Only the visible, active slide autoplays. preload is
+                    // metadata rather than the implicit auto so arriving at a
+                    // post does not immediately pull the whole file.
+                    autoPlay={isActive && visible}
+                    preload="metadata"
                     loop
                     playsInline
                     className="max-h-[500px] w-full object-contain"
@@ -241,6 +297,9 @@ export function MediaCarousel({
                     // clipped by the wrapper instead of letterboxed.
                     imgClassName="max-h-[500px] object-contain"
                     cloudinarySize={imageSize}
+                    // Only the leading slide of the leading card. Everything
+                    // else stays behind the observer.
+                    priority={priority && isActive}
                   />
                 ) : (
                   <div className="max-h-[500px] w-full bg-slate-200 dark:bg-slate-700" />

@@ -145,6 +145,10 @@ export function EditProfile() {
 
     setSaving(true);
     const uploaded: UploadedAsset[] = [];
+    // Set the moment the new avatar has been handed to the profile write. Past
+    // that point the saved profile may already reference it, so deleting it
+    // would leave a real profile pointing at a dead image.
+    let avatarHandedOff = false;
     try {
       let avatarUrl = avatarPreview || user.photoURL || "";
       if (avatarFile) {
@@ -153,17 +157,30 @@ export function EditProfile() {
         avatarUrl = asset.url;
       }
 
-      await updateUserProfile(user.uid, {
+      avatarHandedOff = true;
+      const { authMirrored } = await updateUserProfile(user.uid, {
         displayName: name,
         avatarUrl,
         bio: bio.trim(),
       });
 
+      if (!authMirrored) {
+        // The profile is saved; only this browser's cached Auth identity did
+        // not update. Say that, rather than reporting a failed save.
+        showToast(
+          "Saved. Your name may take until the next sign-in to update everywhere.",
+          "warning"
+        );
+      }
       navigate("/profile", { replace: true });
     } catch (err) {
-      // Best-effort orphan cleanup if updateUserProfile rejected the new
-      // avatar upload.
-      void deleteCloudinaryAssets(uploaded);
+      // Only reclaim an avatar that never reached the profile write. The
+      // durable write is the callable inside updateUserProfile; if it
+      // committed, the profile references this image and deleting it is
+      // unrecoverable. An orphan asset is the cheaper mistake.
+      if (!avatarHandedOff) {
+        void deleteCloudinaryAssets(uploaded);
+      }
       const message =
         err instanceof Error ? err.message : "Failed to update profile.";
       showToast(message, "error");

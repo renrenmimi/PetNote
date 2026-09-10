@@ -32,7 +32,7 @@ export function CommentSection({
   onCommentAdded,
   onCommentDeleted,
 }: CommentSectionProps) {
-  const { user, isBanned } = useAuth();
+  const { user, emailVerified, isBanned } = useAuth();
   const navigate = useNavigate();
   const { showToast } = useToast();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -58,7 +58,7 @@ export function CommentSection({
     authorId: string;
   } | null>(null);
   const [commentToDelete, setCommentToDelete] = useState<Comment | null>(null);
-  const isEmailVerified = !!user?.emailVerified;
+  const isEmailVerified = !!user && emailVerified;
   const remaining = 500 - text.length;
   const counterTone =
     remaining <= 0

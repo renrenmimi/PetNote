@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { onDocumentCreated, onDocumentDeleted } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { admin, db } from "./platform";
-import { assertActorNotDeleting, getNotificationActor } from "./notifications";
+import { admin, db, FieldValue } from "./platform";
+import { assertCallerAccountActive, getNotificationActor } from "./notifications";
 import { deleteCollectionPath } from "./cleanup";
 import {
   applyReviewAggregationDelta,
@@ -13,12 +13,12 @@ import {
   optionalTrimmedString,
   optionalTrustedHttpsUrl,
   RATE_LIMITS,
-  recomputeLocationReviewAggregates,
   requestData,
   requiredDocId,
   requiredTrimmedString,
   requiredTrustedHttpsUrl,
   runEventOnce,
+  stripUndefined,
   TRUSTED_MEDIA_URL_HOSTS,
   validateCoordinateRange,
   validateRatingScore,
@@ -101,8 +101,8 @@ async function writeLocationPhotoEntries(
         url,
         source,
         addedBy: addedBy || "",
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
       },
       { merge: true }
     );
@@ -135,9 +135,9 @@ async function appendLocationPhotoPreviews(
         LOCATION_PHOTO_PREVIEW_LIMIT
       ),
       ...(incrementTotalPhotos
-        ? { totalPhotos: admin.firestore.FieldValue.increment(photoUrls.length) }
+        ? { totalPhotos: FieldValue.increment(photoUrls.length) }
         : {}),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
   });
 }
@@ -273,8 +273,8 @@ export async function getOrCreatePublicMeetupLocation(params: {
       tags: [],
       source: "meetup",
       verified: false,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
   }
   return locationId;
@@ -495,7 +495,7 @@ export const addPlaceCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot create places.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "addPlace", RATE_LIMITS.strictWrite);
 
   const place = sanitizePlaceDraft(requestData(request.data));
@@ -534,8 +534,8 @@ export const addPlaceCallable = onCall(async (request) => {
         tags: [],
         source: place.source,
         verified: false,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       }
     );
   });
@@ -559,7 +559,7 @@ export const addLocationPhotosCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot add place photos.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "addLocationPhotos", RATE_LIMITS.write);
 
   const data = requestData(request.data) as {
@@ -602,7 +602,7 @@ export const submitReviewCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot review locations.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "submitReview", RATE_LIMITS.write);
 
   const data = requestData(request.data) as {
@@ -664,6 +664,25 @@ export const submitReviewCallable = onCall(async (request) => {
     if (meetupData.status !== "completed" || meetupData.isRatingOpen !== true) {
       throw new HttpsError("permission-denied", "Meetup reviews open only after the meetup is completed.");
     }
+    // The meetup has to have happened at the place being rated. Participation
+    // and completion were checked, but not the association, so a completed
+    // meetup at place A was a reusable licence to rate place B — one extra
+    // rating per meetup, on any location in the database.
+    //
+    // Requiring the id to be present as well as equal is deliberate: a
+    // participants_only meetup has no public locationId at all
+    // (createMeetupCallable only mints one for `everyone` visibility), and the
+    // client only ever opens the rating modal with meetup.locationId, so there
+    // is no legitimate caller that arrives here without one.
+    if (
+      typeof meetupData.locationId !== "string" ||
+      meetupData.locationId !== locationId
+    ) {
+      throw new HttpsError(
+        "permission-denied",
+        "This meetup did not take place at this location."
+      );
+    }
   }
 
   const reviewId = meetupIdValue ? `${callerUid}_${meetupIdValue}` : callerUid;
@@ -673,7 +692,13 @@ export const submitReviewCallable = onCall(async (request) => {
   // existence check and overwrite each other; Firestore rejects the
   // second call with ALREADY_EXISTS.
   try {
-    await reviewRef.create({
+    // stripUndefined is what keeps an ordinary place review working: a review
+    // that is not attached to a meetup leaves meetupIdValue undefined, and the
+    // Admin SDK rejects the whole write rather than dropping the key
+    // ("Cannot use \"undefined\" as a Firestore value"). Omitting the field is
+    // also what the readers expect — src/services/locations.ts only ever
+    // queries `where("meetupId", "==", <an id>)`, never against null.
+    await reviewRef.create(stripUndefined({
       // onReviewCreated flips this to true in the same transaction that folds
       // the rating into the location aggregates.
       counted: false,
@@ -716,8 +741,8 @@ export const submitReviewCallable = onCall(async (request) => {
         safety: petFriendlySafety,
         cleanliness: petFriendlyCleanliness,
       },
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+      createdAt: FieldValue.serverTimestamp(),
+    }));
   } catch (error) {
     if (
       typeof error === "object" &&
@@ -745,7 +770,7 @@ export const checkInCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot check in.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "checkIn", RATE_LIMITS.write);
 
   const data = requestData(request.data) as {
@@ -795,7 +820,10 @@ export const checkInCallable = onCall(async (request) => {
   // rapid-fire submissions can't both pass an existence check and then
   // overwrite each other.
   try {
-    await checkinRef.create({
+    // Same reason as submitReviewCallable: the pet is optional on a check-in,
+    // so checkinPetId and petName are undefined for a person checking in
+    // without a pet, and the Admin SDK rejects undefined values outright.
+    await checkinRef.create(stripUndefined({
       // onCheckinCreated flips this to true in the same transaction as the
       // totalCheckins increment.
       counted: false,
@@ -812,8 +840,8 @@ export const checkInCallable = onCall(async (request) => {
       petName,
       locationId,
       dayKey,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+      createdAt: FieldValue.serverTimestamp(),
+    }));
   } catch (error) {
     if (
       typeof error === "object" &&
@@ -911,6 +939,27 @@ export const getPetCheckinsCallable = onCall(async (request) => {
 // initialise these aggregates on locations whose reviews predate the
 // trigger that maintains them, or to repair drift after manual data
 // edits.
+/**
+ * SUSPENDED. Refuses with `failed-precondition` and an explanation.
+ *
+ * Same window as the two post repairs, measured the same way: two folded-in
+ * reviews, one deleted with its `onReviewDeleted` event not yet delivered, the
+ * repair writes totalRatings 1, then the event lands and it reaches 0 with one
+ * review still there.
+ *
+ * Skipping reviews whose `counted` marker is still false — added in an earlier
+ * round — handles a review that has not been folded in *yet*. It cannot handle
+ * one that has been folded in and is on its way out: that document is simply
+ * gone from the scan while the location still owes its subtraction.
+ *
+ * Suspending this went beyond the brief, which named the pet repair; the
+ * defect is identical and measured, and an armed repair that corrupts the
+ * aggregate it claims to fix is worse than one an administrator is told is
+ * unavailable.
+ *
+ * Unaffected: reviewing, deleting a review, and the triggers that maintain the
+ * location's rating aggregates.
+ */
 export const recomputeLocationReviewAggregatesCallable = onCall(
   async (request) => {
     const callerUid = request.auth?.uid;
@@ -924,25 +973,14 @@ export const recomputeLocationReviewAggregatesCallable = onCall(
         "Only admins can recompute location aggregates."
       );
     }
-    await assertRateLimit(
-      callerUid,
-      "recomputeLocationReviewAggregates",
-      RATE_LIMITS.write
+
+    throw new HttpsError(
+      "failed-precondition",
+      "Location rating repair is temporarily unavailable. A review that has " +
+        "been deleted but whose delete event has not been processed yet makes " +
+        "any recomputed total wrong by one, so this repair would corrupt the " +
+        "aggregates rather than fix them. Reviewing and deleting reviews are " +
+        "unaffected, and the aggregates are still maintained by their triggers."
     );
-
-    const { locationId: rawRecomputeLocationId } = requestData(
-      request.data
-    ) as {
-      locationId?: string;
-    };
-    const locationId = requiredDocId(rawRecomputeLocationId, "locationId");
-
-    const locationSnap = await db.doc(`locations/${locationId}`).get();
-    if (!locationSnap.exists) {
-      throw new HttpsError("not-found", "Location not found.");
-    }
-
-    const result = await recomputeLocationReviewAggregates(locationId);
-    return { success: true, ...result };
   }
 );

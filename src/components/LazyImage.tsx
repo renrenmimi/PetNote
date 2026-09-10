@@ -12,6 +12,20 @@ interface LazyImageProps {
   style?: React.CSSProperties;
   onClick?: () => void;
   cloudinarySize?: ImageSize;
+  /**
+   * Render the <img> immediately, eagerly, at high fetch priority.
+   *
+   * The default path keeps the element out of the DOM until an
+   * IntersectionObserver fires, which means the browser's preload scanner
+   * cannot see it at all. For an above-the-fold image that is the whole
+   * problem: a mobile Lighthouse trace measured 2,324 ms of LCP *discovery*
+   * delay against 45 ms of actual transfer. Lazy-loading the largest
+   * contentful paint is the one case where lazy is strictly worse.
+   *
+   * Set this on the leading image of a list and nothing else — making
+   * everything eager would just move the contention.
+   */
+  priority?: boolean;
 }
 
 export default function LazyImage({
@@ -22,9 +36,10 @@ export default function LazyImage({
   style,
   onClick,
   cloudinarySize,
+  priority = false,
 }: LazyImageProps) {
   const [loaded, setLoaded] = useState(false);
-  const [inView, setInView] = useState(false);
+  const [inView, setInView] = useState(priority);
   const [error, setError] = useState(false);
   const imgRef = useRef<HTMLDivElement>(null);
   const resolvedSrc = cloudinarySize
@@ -32,6 +47,9 @@ export default function LazyImage({
     : src;
 
   useEffect(() => {
+    // A priority image is already in the DOM; observing it would only cost a
+    // callback to reach a conclusion it was mounted with.
+    if (priority) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
@@ -43,7 +61,7 @@ export default function LazyImage({
     );
     if (imgRef.current) observer.observe(imgRef.current);
     return () => observer.disconnect();
-  }, []);
+  }, [priority]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -78,7 +96,8 @@ export default function LazyImage({
           style={style}
           onLoad={() => setLoaded(true)}
           onError={() => setError(true)}
-          loading="lazy"
+          loading={priority ? "eager" : "lazy"}
+          fetchPriority={priority ? "high" : undefined}
         />
       ) : null}
     </div>

@@ -19,6 +19,10 @@ export type NotificationType =
   | "reply"
   | "meetup_join"
   | "meetup_cancelled"
+  // Sent by PetNote, not by a person: somebody has become a pet's primary
+  // owner, either by transfer or because the previous one deleted their
+  // account. fromUserId is a system sentinel, not a real uid.
+  | "pet_primary_transferred"
   | "warning";
 
 export type NotificationItem = {

@@ -7,7 +7,7 @@ type SplashScreenProps = {
 export function SplashScreen({ visible }: SplashScreenProps) {
   return (
     <div
-      className={`fixed inset-0 z-50 flex flex-col items-center justify-center bg-white transition-opacity duration-500 dark:bg-slate-900 ${
+      className={`fixed inset-0 z-50 flex flex-col items-center justify-center bg-white transition-opacity duration-200 dark:bg-slate-900 ${
         visible ? "opacity-100" : "pointer-events-none opacity-0"
       }`}
     >

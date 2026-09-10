@@ -1,5 +1,5 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { admin, db, GEOAPIFY_API_KEY } from "./platform";
+import { db, GEOAPIFY_API_KEY, FieldValue, Timestamp } from "./platform";
 import { getNotificationActor } from "./notifications";
 import { assertRateLimit, RATE_LIMITS, requestData } from "./shared";
 
@@ -201,8 +201,8 @@ async function assertGeoapifyQuota(callerUid: string): Promise<void> {
       {
         bucket,
         count: currentCount + 1,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        expiresAt: admin.firestore.Timestamp.fromMillis(now + 2 * 60 * 60 * 1000),
+        updatedAt: FieldValue.serverTimestamp(),
+        expiresAt: Timestamp.fromMillis(now + 2 * 60 * 60 * 1000),
       },
       { merge: true }
     );

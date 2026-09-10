@@ -40,8 +40,8 @@ export function CheckInModal({
   onSuccess,
 }: CheckInModalProps) {
   const { showToast } = useToast();
-  const { user } = useAuth();
-  const requiresEmailVerification = !!user && !user.emailVerified;
+  const { user, emailVerified } = useAuth();
+  const requiresEmailVerification = !!user && !emailVerified;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previewUrlRef = useRef<string | null>(null);
   const mountedRef = useRef(true);

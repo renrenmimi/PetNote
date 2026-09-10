@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { sendEmailVerification } from "firebase/auth";
 import { useAuth } from "../hooks/useAuth";
+import { uploadMedia, type UploadedAsset } from "../services/cloudinary";
 import {
-  deleteCloudinaryAssets,
-  uploadMedia,
-  type UploadedAsset,
-} from "../services/cloudinary";
-import { createPost, type MediaItem } from "../services/posts";
+  createPost,
+  getPublishStatus,
+  newOperationId,
+  type MediaItem,
+} from "../services/posts";
+import { decideAssetReclaim } from "../utils/mediaReclaim";
 import { getUserPets, type Pet } from "../services/pets";
 import { getUserProfile, type UserProfile } from "../services/users";
 import {
@@ -21,19 +23,70 @@ import { useToast } from "../contexts/ToastContext";
 import { FILTER_MAP, ImageFilter, type FilterName } from "../components/ImageFilter";
 
 const MAX_CHARS = 2000;
-const DRAFT_KEY = "petnote_post_draft";
+
+/**
+ * Per-user draft key. The old key was a single global string, so two accounts
+ * sharing a browser saw each other's unfinished post.
+ */
+const draftKeyFor = (uid: string) => `petnote_post_draft:${uid}`;
 
 interface PostDraft {
   text: string;
   tags: string[];
   petId?: string;
   savedAt: number;
+  /**
+   * Stable id for this submission, kept in the draft so a retry — including
+   * one after a reload — reuses it and the server recognises the operation
+   * instead of publishing a second post.
+   */
+  operationId?: string;
+  /**
+   * Media that has already reached Cloudinary.
+   *
+   * The asset records, not the files: once an upload succeeds the bytes are on
+   * the CDN, so a retry does not have to re-upload them and a reload can pick
+   * the work back up. publicId is kept alongside the url because discarding
+   * the draft is the one moment those assets become genuinely unreferenced and
+   * safe to delete.
+   *
+   * Files that were selected but never uploaded cannot live here —
+   * sessionStorage holds strings, not blobs — so those stay in memory only.
+   * The banner says so rather than implying more than is true.
+   */
+  uploadedAssets?: UploadedAsset[];
+  /**
+   * True once this attempt's media reached the publish call.
+   *
+   * Durable on purpose. It used to be a local variable inside one submit, so
+   * the catch could protect the assets but nothing else could: changing the
+   * selection, discarding the draft, or coming back to an expired one all
+   * deleted media that a committed post might already reference.
+   */
+  /**
+   * @deprecated Never written any more, and ignored when read.
+   *
+   * Kept in the shape only so a draft persisted by an earlier build parses.
+   * It recorded whether the media had reached the publish call, and it could
+   * be stale: the write that set it to true happens immediately before
+   * publishing and can fail while publishing continues. See
+   * utils/mediaReclaim.ts.
+   */
+  handedOff?: boolean;
 }
+
+/** Where a submission got to, for feedback that names the actual stage. */
+type PublishPhase =
+  | { kind: "idle" }
+  | { kind: "preparing"; index: number; total: number }
+  | { kind: "uploading"; index: number; total: number }
+  | { kind: "publishing" }
+  | { kind: "failed"; stage: "upload" | "publish" };
 
 export function Create() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, isBanned } = useAuth();
+  const { user, emailVerified, isBanned } = useAuth();
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [files, setFiles] = useState<
@@ -57,7 +110,34 @@ export function Create() {
   const [tagInput, setTagInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [converting, setConverting] = useState(false);
-  const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
+  const [phase, setPhase] = useState<PublishPhase>({ kind: "idle" });
+  // Survives a failed attempt so a retry reuses the same operation id and the
+  // media that already made it to Cloudinary.
+  const operationIdRef = useRef<string | null>(null);
+  const uploadedAssetsRef = useRef<UploadedAsset[]>([]);
+
+  /**
+   * Finishes with an attempt's uploaded media, locally.
+   *
+   * **Automatic CDN reclaim from this screen is suspended.** There is no call
+   * to deleteCloudinaryAssets here, and the policy in utils/mediaReclaim.ts has
+   * no `reclaim: true` variant, so reintroducing one has to get past the
+   * compiler rather than past a reviewer.
+   *
+   * Why: every exit below runs at a moment when the composer cannot prove the
+   * post was not published. The last thing it relied on was the draft's own
+   * record of whether it had handed the media over, and that record can be
+   * stale — the update to it happens just before publishing and can fail while
+   * publishing goes ahead anyway. Deleting on a stale record breaks a live
+   * post's images irreversibly.
+   *
+   * The cost is orphaned assets on Cloudinary. That is recorded, bounded, and
+   * collectable later; the alternative is not.
+   */
+  const releaseAttemptAssets = (
+    assets: UploadedAsset[],
+    options: { operationId: string | null }
+  ) => decideAssetReclaim({ assets, operationId: options.operationId });
   const [duplicateSkipped, setDuplicateSkipped] = useState(0);
   const [dragActive, setDragActive] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -74,7 +154,7 @@ export function Create() {
   const [showDraftBanner, setShowDraftBanner] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
   const [sendingVerification, setSendingVerification] = useState(false);
-  const isEmailVerified = !!user?.emailVerified;
+  const isEmailVerified = !!user && emailVerified;
 
   const remaining = useMemo(() => MAX_CHARS - caption.length, [caption]);
   const counterTone =
@@ -125,12 +205,20 @@ export function Create() {
   }, [pets]);
 
   useEffect(() => {
+    if (!user) return;
     try {
-      const saved = sessionStorage.getItem(DRAFT_KEY);
+      const saved = sessionStorage.getItem(draftKeyFor(user.uid));
       if (saved) {
         const parsed: PostDraft = JSON.parse(saved);
         if (Date.now() - parsed.savedAt > 24 * 60 * 60 * 1000) {
-          sessionStorage.removeItem(DRAFT_KEY);
+          sessionStorage.removeItem(draftKeyFor(user.uid));
+          // The draft is dropped; its uploads are left on the CDN. See
+          // releaseAttemptAssets for why nothing is deleted here.
+          if (parsed.uploadedAssets?.length) {
+            releaseAttemptAssets(parsed.uploadedAssets, {
+              operationId: parsed.operationId ?? null,
+            });
+          }
         } else {
           setDraft(parsed);
           setShowDraftBanner(true);
@@ -141,29 +229,82 @@ export function Create() {
     } finally {
       setDraftReady(true);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     filesRef.current = files;
   }, [files]);
 
+  // A failed attempt's uploaded assets are matched to the file selection by
+  // position, so changing the selection (or a filter, which changes the bytes)
+  // invalidates them. Reclaim them and start a fresh operation rather than
+  // publishing a post whose media is a mix of two different selections.
+  const selectionSignature = useMemo(
+    () => files.map((item) => `${item.id}:${filtersById[item.id] ?? ""}`).join("|"),
+    [files, filtersById]
+  );
+  const selectionSignatureRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!draftReady || showDraftBanner) return;
+    const previous = selectionSignatureRef.current;
+    selectionSignatureRef.current = selectionSignature;
+    if (previous === null || previous === selectionSignature) return;
+    if (uploadedAssetsRef.current.length === 0) return;
+    const stale = uploadedAssetsRef.current;
+    const staleOperationId = operationIdRef.current;
+    // The assets no longer line up with the selection either way, so this
+    // attempt is over. Whether they can be *deleted* is a different question,
+    // and the server answers it.
+    uploadedAssetsRef.current = [];
+    operationIdRef.current = null;
+    setPhase({ kind: "idle" });
+    releaseAttemptAssets(stale, { operationId: staleOperationId });
+    if (staleOperationId) {
+      // Nothing is deleted either way. The lookup is only used to say
+      // something true about what happened — a `false` answer means "not
+      // visible yet", not "never published".
+      void getPublishStatus(staleOperationId)
+        .then((status) => {
+          if (status.published) {
+            showToast(
+              "Your earlier post did go through — those photos are still in use.",
+              "info"
+            );
+          }
+        })
+        .catch(() => undefined);
+    }
+    // showToast comes from a memoized context value and reclaimAssets is
+    // recreated every render by design (it closes over nothing that changes
+    // the decision); the effect must fire only when the selection changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectionSignature]);
+
+  useEffect(() => {
+    if (!draftReady || showDraftBanner || !user) return;
+    const key = draftKeyFor(user.uid);
     const timer = setTimeout(() => {
-      if (caption.trim() || tags.length > 0 || selectedPetId) {
+      const hasUploaded = uploadedAssetsRef.current.length > 0;
+      if (caption.trim() || tags.length > 0 || selectedPetId || hasUploaded) {
         const payload: PostDraft = {
           text: caption,
           tags,
           petId: selectedPetId || undefined,
           savedAt: Date.now(),
+          ...(operationIdRef.current
+            ? { operationId: operationIdRef.current }
+            : {}),
+          ...(hasUploaded ? { uploadedAssets: uploadedAssetsRef.current } : {}),
+          // handedOff is deliberately not written any more. Nothing may act on
+          // it — a persisted false can be stale in the one direction that
+          // matters — so writing it would only invite somebody to trust it.
         };
-        sessionStorage.setItem(DRAFT_KEY, JSON.stringify(payload));
+        sessionStorage.setItem(key, JSON.stringify(payload));
       } else {
-        sessionStorage.removeItem(DRAFT_KEY);
+        sessionStorage.removeItem(key);
       }
     }, 1000);
     return () => clearTimeout(timer);
-  }, [caption, tags, selectedPetId, draftReady, showDraftBanner]);
+  }, [caption, tags, selectedPetId, draftReady, showDraftBanner, user, phase]);
 
   const validateVideoDuration = (file: File) =>
     new Promise<number>((resolve, reject) => {
@@ -387,12 +528,28 @@ export function Create() {
     setCaption(draft.text || "");
     setTags(draft.tags || []);
     setSelectedPetId(draft.petId || null);
+    // Restore the failed attempt's identity and its already-uploaded media, so
+    // resuming publishes the same post rather than a second one, and does not
+    // re-upload bytes that are already on the CDN.
+    operationIdRef.current = draft.operationId ?? null;
+    uploadedAssetsRef.current = draft.uploadedAssets ?? [];
     setShowDraftBanner(false);
     setDraft(null);
   };
 
   const handleDiscardDraft = () => {
-    sessionStorage.removeItem(DRAFT_KEY);
+    if (user) sessionStorage.removeItem(draftKeyFor(user.uid));
+    // Discarding the draft clears it locally, as it should. It does not delete
+    // the uploaded photos: "I don't want this draft" is not evidence that no
+    // post references them.
+    const orphans = draft?.uploadedAssets ?? uploadedAssetsRef.current;
+    if (orphans.length > 0) {
+      releaseAttemptAssets(orphans, {
+        operationId: draft?.operationId ?? operationIdRef.current,
+      });
+    }
+    operationIdRef.current = null;
+    uploadedAssetsRef.current = [];
     setShowDraftBanner(false);
     setDraft(null);
   };
@@ -421,14 +578,35 @@ export function Create() {
     }
     submitLockedRef.current = true;
     setLoading(true);
-    setUploadingIndex(1);
 
-    const uploadedAssets: UploadedAsset[] = [];
+    // One id for this submission, reused by every retry of it. The server
+    // derives the post's document id from it, so retrying after a lost
+    // response returns the post the first attempt made instead of a second
+    // one — which is what makes the failure path below safe.
+    if (!operationIdRef.current) {
+      operationIdRef.current = newOperationId();
+    }
+    const operationId = operationIdRef.current;
+
+    // Anything a previous attempt already got onto Cloudinary. Re-uploading it
+    // would waste the person's data and leak the old copies.
+    const alreadyUploaded = uploadedAssetsRef.current;
+    const remaining = files.slice(alreadyUploaded.length);
+    setPhase({
+      kind: "uploading",
+      index: alreadyUploaded.length,
+      total: files.length,
+    });
+
+    // True once the media has been handed to createPost. From that moment a
+    // failure is ambiguous — the write may have committed and the response
+    // been lost — so the assets must NOT be deleted. Same protection AddPlace
+    // already had; the composer was destroying media it might still need.
+    let handedOff = false;
     try {
-      const media: MediaItem[] = [];
-      for (let i = 0; i < files.length; i += 1) {
-        setUploadingIndex(i + 1);
-        const current = files[i];
+      for (let i = 0; i < remaining.length; i += 1) {
+        const current = remaining[i];
+        const absoluteIndex = alreadyUploaded.length + i;
         let uploadFile = current.file;
         if (current.type === "image") {
           const filterName = filtersById[current.id] || "normal";
@@ -437,6 +615,15 @@ export function Create() {
             filterName !== "normal" &&
             current.sourceFile.type !== "image/gif"
           ) {
+            // Filtering and re-compressing is CPU work on the main thread, and
+            // on a phone it is the slowest part of a large photo. Naming it
+            // separately stops the UI claiming "uploading" while nothing is
+            // on the wire.
+            setPhase({
+              kind: "preparing",
+              index: absoluteIndex + 1,
+              total: files.length,
+            });
             uploadFile = await applyFilter(current.sourceFile, filterCss);
             uploadFile = await compressImage(uploadFile, {
               maxWidth: 1920,
@@ -448,19 +635,50 @@ export function Create() {
             uploadFile = current.file;
           }
         }
-        const result = await uploadMedia(uploadFile);
-        uploadedAssets.push(result);
-        media.push({
-          url: result.url,
-          type: result.type,
-          ...(result.thumbUrl ? { thumbUrl: result.thumbUrl } : {}),
+        setPhase({
+          kind: "uploading",
+          index: absoluteIndex + 1,
+          total: files.length,
         });
+        const result = await uploadMedia(uploadFile);
+        // Record each success as it lands, not at the end: a failure on file
+        // three must not throw away files one and two.
+        uploadedAssetsRef.current = [...uploadedAssetsRef.current, result];
       }
+
       const selectedPet = pets.find((petItem) => petItem.id === selectedPetId);
       if (!selectedPet) {
         throw new Error("Please select a valid pet.");
       }
-      const postPayload: Parameters<typeof createPost>[0] = {
+      const media: MediaItem[] = uploadedAssetsRef.current.map((asset) => ({
+        url: asset.url,
+        type: asset.type,
+        ...(asset.thumbUrl ? { thumbUrl: asset.thumbUrl } : {}),
+      }));
+
+      setPhase({ kind: "publishing" });
+      handedOff = true;
+      // The draft is saved before the call so a reload can resume the text,
+      // tags and already-uploaded media. It no longer records a handoff flag:
+      // that write can fail while publishing goes ahead regardless, leaving a
+      // stale value behind, and nothing acts on it now anyway.
+      try {
+        sessionStorage.setItem(
+          draftKeyFor(user.uid),
+          JSON.stringify({
+            text: caption,
+            tags,
+            petId: selectedPet.id,
+            savedAt: Date.now(),
+            operationId,
+            uploadedAssets: uploadedAssetsRef.current,
+          } satisfies PostDraft)
+        );
+      } catch {
+        // Storage full or blocked. Publishing continues; only draft resumption
+        // after a reload is lost, and no cleanup decision depends on it.
+      }
+      const { deduplicated } = await createPost({
         authorId: user.uid,
         authorName:
           profile?.displayName || user.displayName || "PetNote User",
@@ -474,12 +692,19 @@ export function Create() {
         petId: selectedPet.id,
         petName: selectedPet.name,
         petAvatarUrl: selectedPet.avatarUrl || "",
-      };
-      await createPost({
-        ...postPayload,
+        operationId,
       });
-      sessionStorage.removeItem(DRAFT_KEY);
-      showToast("Posted successfully!", "success");
+
+      sessionStorage.removeItem(draftKeyFor(user.uid));
+      operationIdRef.current = null;
+      uploadedAssetsRef.current = [];
+      setPhase({ kind: "idle" });
+      showToast(
+        deduplicated
+          ? "That post was already published."
+          : "Posted successfully!",
+        "success"
+      );
       if (navigateTimerRef.current) {
         window.clearTimeout(navigateTimerRef.current);
       }
@@ -488,21 +713,48 @@ export function Create() {
         navigate("/", { replace: true });
       }, 600);
     } catch (err) {
-      // Best-effort orphan cleanup. Covers both partial-upload failures
-      // (loop threw mid-iteration) and createPost rejecting after every
-      // upload finished — both leak Cloudinary assets without this.
-      void deleteCloudinaryAssets(uploadedAssets);
-      // Only release the lock / loading on failure. On success we keep them
-      // set through the navigate timer so a second click in the post-success
-      // window can't re-upload and create a duplicate post.
+      // Only clean up media that never reached the backend. Past the handoff
+      // the write may have committed with the response lost, and deleting the
+      // assets then leaves a real post pointing at dead URLs — irreversibly.
+      // A rare orphan asset is the cheaper mistake, and pressing Share again
+      // is safe because the operation id makes the publish idempotent.
+      // Assets that did upload are deliberately kept, not deleted: the retry
+      // resumes from them instead of making the person send the same photos
+      // again. They are reclaimed when the draft is discarded or expires, and
+      // when the file selection changes so they no longer line up.
+      setPhase({ kind: "failed", stage: handedOff ? "publish" : "upload" });
       submitLockedRef.current = false;
       setLoading(false);
-      setUploadingIndex(null);
       const message =
         err instanceof Error ? err.message : "Failed to post. Try again.";
-      showToast(message, "error");
+      showToast(
+        handedOff
+          ? `${message} Press Share again — it won't post twice.`
+          : message,
+        "error"
+      );
     }
   };
+
+  /**
+   * What the button says while working.
+   *
+   * "Uploading 2/3" while the main thread is busy filtering and compressing a
+   * photo was not just imprecise, it was the wrong thing to look at on a slow
+   * phone: nothing was on the wire yet. Each stage now names itself.
+   */
+  const phaseLabel = useMemo(() => {
+    switch (phase.kind) {
+      case "preparing":
+        return `Preparing ${phase.index}/${phase.total}...`;
+      case "uploading":
+        return `Uploading ${Math.max(1, phase.index)}/${phase.total}...`;
+      case "publishing":
+        return "Publishing...";
+      default:
+        return "Posting...";
+    }
+  }, [phase]);
 
   const handleResendVerification = async () => {
     if (!user || sendingVerification) return;
@@ -662,10 +914,10 @@ export function Create() {
             {loading ? (
               <>
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/70 border-t-transparent" />
-                {uploadingIndex
-                  ? `Uploading ${uploadingIndex}/${files.length}...`
-                  : "Posting..."}
+                {phaseLabel}
               </>
+            ) : phase.kind === "failed" ? (
+              "Retry"
             ) : (
               "Share"
             )}
@@ -676,9 +928,20 @@ export function Create() {
       <main className="mx-auto w-full max-w-md space-y-6 px-4 py-6">
         {showDraftBanner && draft ? (
           <div className="flex items-center justify-between gap-3 rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-700 shadow-sm dark:bg-blue-900/20 dark:text-blue-200">
-            <div className="flex items-center gap-2">
+            <div className="flex items-start gap-2">
               <span className="text-lg">📝</span>
-              <span>You have an unsaved draft</span>
+              {/* Names what is actually in the draft. Photos are only in there
+                  if a previous attempt already uploaded them; ones that were
+                  only selected cannot be stored in sessionStorage, so
+                  promising "your draft" without qualification would be a
+                  promise the storage cannot keep. */}
+              <span>
+                {draft.uploadedAssets?.length
+                  ? `Unsaved draft, with ${draft.uploadedAssets.length} photo${
+                      draft.uploadedAssets.length === 1 ? "" : "s"
+                    } already uploaded`
+                  : "You have an unsaved draft (text, tags and pet — photos need picking again)"}
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -726,11 +989,18 @@ export function Create() {
               You need to add a pet before posting
             </h2>
             <p className="text-sm text-slate-500 dark:text-slate-300">
-              Add your pet profile first, then share posts for that pet.
+              Add your pet profile first — we&apos;ll bring you straight back
+              here.
             </p>
             <button
               type="button"
-              onClick={() => navigate("/add-pet")}
+              // Carry the destination so adding a pet returns to the composer
+              // instead of the new pet's page. This is the "ask for a pet when
+              // publishing needs one" half of shortening onboarding: it only
+              // works if the detour comes back.
+              onClick={() =>
+                navigate("/add-pet", { state: { from: "/create" } })
+              }
               className="mx-auto rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white"
             >
               Add Pet

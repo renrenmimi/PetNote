@@ -4,6 +4,7 @@ import { AuthNotice } from "../components/AuthNotice";
 import { LanguageSelector } from "../components/LanguageSelector";
 import { PasswordVisibilityButton } from "../components/PasswordVisibilityButton";
 import { useAuth } from "../hooks/useAuth";
+import { useToast } from "../contexts/ToastContext";
 import { useLanguage } from "../hooks/useLanguage";
 import PawIcon from "../components/PawIcon";
 import { PasswordStrengthIndicator } from "../components/PasswordStrengthIndicator";
@@ -79,11 +80,22 @@ export function SignUp() {
   const navigate = useNavigate();
   const location = useLocation();
   const { signUp, signInWithGoogle } = useAuth();
+  const { showToast } = useToast();
   const { t } = useLanguage();
   const initialEmail =
     typeof (location.state as { email?: unknown } | null)?.email === "string"
       ? String((location.state as { email: string }).email)
       : "";
+  // Where the person was trying to go before being asked to sign in. Login
+  // already consumed this; SignUp threw it away and always landed on the feed,
+  // so an invitation link or a deep link into the composer was lost by the
+  // time the account existed.
+  const fromLocation = (
+    location.state as { from?: { pathname?: string; search?: string } } | null
+  )?.from;
+  const redirectTo = fromLocation?.pathname
+    ? `${fromLocation.pathname}${fromLocation.search ?? ""}`
+    : "/";
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -111,26 +123,71 @@ export function SignUp() {
     setNotice(null);
     const normalizedEmail = email.trim();
     try {
-      await signUp(normalizedEmail, password);
-      navigate("/", { replace: true });
+      const outcome = await signUp(normalizedEmail, password);
+      // The account exists. Anything else that went wrong is a "finish setting
+      // up" problem, not a failed sign-up — the old code reported both the
+      // same way, so a failed profile write sent people back to sign up again
+      // and straight into email-already-in-use on their own new account.
+      if (!outcome.verificationSent) {
+        showToast(
+          `Account created, but we couldn't send the verification email to ${normalizedEmail}. Use "Resend email" on the banner.`,
+          "warning"
+        );
+      } else if (!outcome.profileCreated) {
+        showToast(
+          "Account created. We're still finishing your profile setup.",
+          "warning"
+        );
+      }
+      // Keep the destination the person was heading for.
+      navigate(redirectTo, { replace: true });
     } catch (err) {
       const code =
         err && typeof err === "object" && "code" in err
           ? String((err as { code?: string }).code)
           : "";
+      // Note: the email and both password fields are deliberately NOT cleared
+      // here. Making somebody retype a password because a request failed is
+      // its own small punishment, and it defeats the password manager.
       if (code.includes("email-already-in-use")) {
         setNotice({
           title: t("signup.emailExistsTitle"),
           message: t("signup.emailExistsMessage"),
           actionLabel: t("signup.emailExistsAction"),
-          action: () => navigate("/login", { state: { email: normalizedEmail } }),
+          action: () =>
+            navigate("/login", {
+              state: { email: normalizedEmail, ...(fromLocation ? { from: fromLocation } : {}) },
+            }),
         });
       } else if (code.includes("invalid-email")) {
         setNotice({
           title: t("signup.invalidEmailTitle"),
           message: t("signup.invalidEmailMessage"),
         });
+      } else if (code.includes("weak-password")) {
+        setNotice({
+          title: t("signup.weakPasswordTitle"),
+          message: t("signup.weakPasswordMessage"),
+        });
+      } else if (code.includes("network-request-failed")) {
+        setNotice({
+          title: t("auth.networkErrorTitle"),
+          message: t("auth.networkErrorMessage"),
+        });
+      } else if (code.includes("too-many-requests")) {
+        setNotice({
+          title: t("auth.tooManyRequestsTitle"),
+          message: t("auth.tooManyRequestsMessage"),
+        });
+      } else if (code.includes("operation-not-allowed")) {
+        setNotice({
+          title: t("auth.genericErrorTitle"),
+          message: t("signup.emailSignUpDisabled"),
+        });
       } else {
+        // Raw SDK strings as a last resort only. Mapping the codes above is
+        // what stops "Firebase: Error (auth/...)" reaching a person who can do
+        // nothing with it.
         setNotice({
           title: t("auth.genericErrorTitle"),
           message: err instanceof Error ? err.message : t("signup.signUpFailed"),
@@ -313,6 +370,7 @@ export function SignUp() {
           {t("signup.haveAccount")}
           <Link
             to="/login"
+            state={fromLocation ? { from: fromLocation } : undefined}
             className="ml-1 font-semibold text-purple-600 hover:text-purple-500"
           >
             {t("signup.loginCta")}

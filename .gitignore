@@ -28,3 +28,6 @@ serviceAccountKey.json
 *.sln
 *.sw?
 .vercel
+
+# Emulator-only secret values. Never real credentials.
+functions/.secret.local

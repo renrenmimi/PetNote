@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { Timestamp } from "firebase/firestore";
 import { useAuth } from "../hooks/useAuth";
 import {
@@ -94,6 +94,15 @@ function RelationshipSelector({
 
 export function AddPet() {
   const navigate = useNavigate();
+  const location = useLocation();
+  // Where the person was before being sent here to add a pet. The composer
+  // sends them here when they have no pet yet, and dropping them on the pet
+  // page afterwards meant they had to find their way back to what they were
+  // actually trying to do.
+  const returnTo =
+    typeof (location.state as { from?: unknown } | null)?.from === "string"
+      ? String((location.state as { from: string }).from)
+      : null;
   const { petId } = useParams();
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -318,7 +327,7 @@ export function AddPet() {
       }
 
       if (targetId) {
-        navigate(`/pet/${targetId}`, { replace: true });
+        navigate(returnTo ?? `/pet/${targetId}`, { replace: true });
       }
     } catch (err) {
       // Best-effort orphan cleanup: only the freshly uploaded avatar (not
@@ -380,7 +389,7 @@ export function AddPet() {
         return;
       }
       showToast(`Welcome to ${result.petName || pendingInvite.petName}'s family!`, "success");
-      navigate(`/pet/${result.petId}`, { replace: true });
+      navigate(returnTo ?? `/pet/${result.petId}`, { replace: true });
     } catch {
       showToast("Could not join family.", "error");
     } finally {

@@ -124,6 +124,27 @@ export async function getActiveInvitation(
   return result.data.invitation;
 }
 
+/**
+ * Kills the pet's outstanding invitation code.
+ *
+ * A code grants write access to a shared pet for 48 hours, and there was no
+ * way to take one back once it had been shown to the wrong person or posted
+ * somewhere it shouldn't have been.
+ */
+export async function revokeInvitation(
+  petId: string,
+  code: string
+): Promise<void> {
+  const normalized = normalizeCode(code);
+  if (normalized.length !== 8) {
+    throw new Error("Invitation code must be 8 characters.");
+  }
+  await httpsCallable<
+    { petId: string; code: string },
+    { success: boolean; alreadyInactive: boolean }
+  >(functions, "revokeInvitationCallable")({ petId, code: normalized });
+}
+
 export async function redeemInvitation(
   code: string,
   _userId: string,

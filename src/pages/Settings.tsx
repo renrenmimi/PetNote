@@ -661,6 +661,9 @@ export function Settings() {
             <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
               {t("settings.deleteAccountConfirm")}
             </p>
+            <p className="mt-2 rounded-xl bg-slate-50 p-3 text-xs text-slate-500 dark:bg-slate-900 dark:text-slate-300">
+              {t("settings.deleteAccountSharedPets")}
+            </p>
             <input
               type="text"
               value={deleteInput}

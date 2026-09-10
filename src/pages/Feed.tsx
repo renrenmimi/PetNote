@@ -316,6 +316,19 @@ export function Feed() {
     []
   );
 
+  // Stable identity, so the memo boundary on PostCard actually holds. An
+  // inline arrow here handed every card a new prop on every parent render —
+  // and the parent re-renders on pull-to-refresh distance and interaction-set
+  // changes — which is what made a measured 500-card list re-render all 500
+  // cards per unrelated update.
+  const handlePostDeleted = useCallback(
+    (postId: string) => {
+      removePost(postId);
+      setLocalPosts((prev) => prev.filter((item) => item.id !== postId));
+    },
+    [removePost]
+  );
+
   const handlePetFollowChanged = useCallback(
     (petId: string, following: boolean) => {
       checkedFollowPetIdsRef.current.add(petId);
@@ -487,10 +500,7 @@ export function Feed() {
               onLikeChanged={handleLikeChanged}
               onBookmarkChanged={handleBookmarkChanged}
               onPetFollowChanged={handlePetFollowChanged}
-              onDeleted={(postId) => {
-                removePost(postId);
-                setLocalPosts((prev) => prev.filter((item) => item.id !== postId));
-              }}
+              onDeleted={handlePostDeleted}
             />
           </ErrorBoundary>
         ))}

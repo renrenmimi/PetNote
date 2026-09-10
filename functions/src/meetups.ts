@@ -1,8 +1,9 @@
 import { onDocumentDeleted } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import { admin, db } from "./platform";
-import { assertActorNotDeleting, getNotificationActor } from "./notifications";
+import { db, FieldValue, Timestamp } from "./platform";
+import { assertNoBlockBetween } from "./blocking";
+import { assertCallerAccountActive, getNotificationActor } from "./notifications";
 import {
   assertRateLimit,
   batchChunked,
@@ -218,7 +219,7 @@ export const onParticipantDeleted = onDocumentDeleted(
       const meetupSnap = await t.get(meetupRef);
       if (!meetupSnap.exists) return false;
       t.update(meetupRef, {
-        participantCount: admin.firestore.FieldValue.increment(-1),
+        participantCount: FieldValue.increment(-1),
       });
       return true;
     });
@@ -237,7 +238,7 @@ export const createMeetupCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot create meetups.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "createMeetup", RATE_LIMITS.strictWrite);
 
   const data = requestData(request.data) as {
@@ -370,7 +371,7 @@ export const createMeetupCallable = onCall(async (request) => {
               TRUSTED_MEDIA_URL_HOSTS
             )
           : undefined,
-      date: admin.firestore.Timestamp.fromMillis(dateMillis),
+      date: Timestamp.fromMillis(dateMillis),
       duration,
       location: publicLocation,
       locationId,
@@ -381,8 +382,8 @@ export const createMeetupCallable = onCall(async (request) => {
       // is being created in the same batch.
       participantCount: 1,
       isRatingOpen: false,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     })
   );
 
@@ -407,7 +408,7 @@ export const createMeetupCallable = onCall(async (request) => {
       petId: organizerPetId,
       petName: organizerPetName,
       petAvatar: organizerPetAvatar,
-      joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+      joinedAt: FieldValue.serverTimestamp(),
       status: "confirmed",
       // participantCount is seeded to 1 for this organizer in the same batch,
       // so the count is already applied. Stamping it lets onParticipantDeleted
@@ -429,7 +430,7 @@ export const updateMeetupCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot edit meetups.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "updateMeetup", RATE_LIMITS.write);
 
   const data = requestData(request.data) as {
@@ -521,7 +522,7 @@ export const updateMeetupCallable = onCall(async (request) => {
             TRUSTED_MEDIA_URL_HOSTS
           )
         : undefined,
-    date: admin.firestore.Timestamp.fromMillis(dateMillis),
+    date: Timestamp.fromMillis(dateMillis),
     duration,
     location: publicLocation,
     locationVisibility,
@@ -529,9 +530,9 @@ export const updateMeetupCallable = onCall(async (request) => {
     organizerName: organizerActor.fromUserName,
     organizerAvatar:
       organizerActor.fromUserAvatar || getDefaultAvatar(organizerId),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
     ...(isPrivate
-      ? { locationId: admin.firestore.FieldValue.delete() }
+      ? { locationId: FieldValue.delete() }
       : { locationId }),
   });
 
@@ -567,7 +568,7 @@ export const cancelMeetupCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot cancel meetups.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "cancelMeetup", RATE_LIMITS.write);
 
   const { meetupId: rawCancelMeetupId } = requestData(request.data) as {
@@ -588,7 +589,7 @@ export const cancelMeetupCallable = onCall(async (request) => {
 
   await meetupRef.update({
     status: "cancelled",
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
   });
 
   return { success: true };
@@ -602,7 +603,7 @@ export const joinMeetupCallable = onCall(async (request) => {
   if (caller.banned === true) {
     throw new HttpsError("permission-denied", "Banned users cannot join meetups.");
   }
-  assertActorNotDeleting(caller);
+  await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "joinMeetup", RATE_LIMITS.write);
 
   const { meetupId: rawMeetupId, petId: rawPetId } = requestData(request.data) as {
@@ -619,6 +620,22 @@ export const joinMeetupCallable = onCall(async (request) => {
 
   const meetupRef = db.doc(`meetups/${meetupId}`);
   const participantRef = db.doc(`meetups/${meetupId}/participants/${callerUid}`);
+
+  // Admission check, before the transaction. Joining is not just a roster
+  // entry: for a participants_only meetup it is what grants read access to
+  // meetups/{id}/private/address, i.e. where the organizer will physically
+  // be. An organizer who has blocked someone must not be findable that way.
+  //
+  // It reads the meetup one extra time rather than folding the blocklist read
+  // into the transaction, which keeps the transaction body about the part
+  // that has to be atomic (capacity and roster) — a block is not something
+  // the join itself races against, and organizerId never changes.
+  const admissionSnap = await meetupRef.get();
+  if (!admissionSnap.exists) throw new HttpsError("not-found", "Meetup not found.");
+  const admissionOrganizerId = admissionSnap.data()?.organizerId;
+  if (typeof admissionOrganizerId === "string" && admissionOrganizerId) {
+    await assertNoBlockBetween(callerUid, admissionOrganizerId, "Joining this meetup");
+  }
 
   return await db.runTransaction(async (t) => {
     const meetupSnap = await t.get(meetupRef);
@@ -749,15 +766,15 @@ export const joinMeetupCallable = onCall(async (request) => {
       petId: participantPetId,
       petName: participantPetName,
       petAvatar: participantPetAvatar,
-      joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+      joinedAt: FieldValue.serverTimestamp(),
       status: "confirmed",
       // Written in the same transaction as the increment below, so the stamp
       // and the count can never disagree.
       counted: true,
     });
     t.update(meetupRef, {
-      participantCount: admin.firestore.FieldValue.increment(1),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      participantCount: FieldValue.increment(1),
+      updatedAt: FieldValue.serverTimestamp(),
     });
 
     return { success: true };
@@ -770,7 +787,7 @@ export const joinMeetupCallable = onCall(async (request) => {
 // and review submission stayed blocked.
 export const autoCompleteMeetups = onSchedule("every 15 minutes", async () => {
   const now = Date.now();
-  const nowTimestamp = admin.firestore.Timestamp.fromMillis(now);
+  const nowTimestamp = Timestamp.fromMillis(now);
   const snapshot = await db
     .collection("meetups")
     .where("status", "==", "upcoming")
@@ -781,7 +798,7 @@ export const autoCompleteMeetups = onSchedule("every 15 minutes", async () => {
 
   const expired = snapshot.docs.filter((docSnap) => {
     const data = docSnap.data();
-    if (!(data.date instanceof admin.firestore.Timestamp)) return false;
+    if (!(data.date instanceof Timestamp)) return false;
     const duration = typeof data.duration === "number" ? data.duration : 0;
     const endMillis = data.date.toMillis() + duration * 60 * 1000;
     return now >= endMillis;
@@ -793,7 +810,7 @@ export const autoCompleteMeetups = onSchedule("every 15 minutes", async () => {
     batch.update(docSnap.ref, {
       status: "completed",
       isRatingOpen: true,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
   });
 });
@@ -817,7 +834,7 @@ export const checkMeetupStatusCallable = onCall(async (request) => {
     return { updated: false };
   }
 
-  const dateVal = meetup.date as admin.firestore.Timestamp;
+  const dateVal = meetup.date as Timestamp;
   if (!dateVal?.toDate) return { updated: false };
   const duration = typeof meetup.duration === "number" ? meetup.duration : 0;
   const endTime = new Date(dateVal.toDate().getTime() + duration * 60 * 1000);
@@ -826,7 +843,7 @@ export const checkMeetupStatusCallable = onCall(async (request) => {
     await meetupRef.update({
       status: "completed",
       isRatingOpen: true,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
     return { updated: true };
   }

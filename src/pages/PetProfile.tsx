@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Avatar from "../components/Avatar";
 import { EmptyState } from "../components/EmptyState";
+import { FamilyManageModal } from "../components/FamilyManageModal";
 import { InviteCodeModal } from "../components/InviteCodeModal";
 import LazyImage from "../components/LazyImage";
 import { useAuth } from "../hooks/useAuth";
@@ -52,6 +53,10 @@ export function PetProfile() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [familyManageOpen, setFamilyManageOpen] = useState(false);
+  // Bumped after a family change so the page refetches pet + family instead of
+  // rendering a roster the server has already moved past.
+  const [familyReloadKey, setFamilyReloadKey] = useState(0);
   const [followersOpen, setFollowersOpen] = useState(false);
   const [followers, setFollowers] = useState<PetFollower[]>([]);
   const [followersLoading, setFollowersLoading] = useState(false);
@@ -150,9 +155,9 @@ export function PetProfile() {
       ignore = true;
     };
     // showToast comes from a stable context value; the effect should
-    // re-run only when petId or user change.
+    // re-run only when petId, the viewer, or a family change require it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [petId, user]);
+  }, [petId, user, familyReloadKey]);
 
   const speciesMeta = useMemo(
     () => getSpeciesMeta(pet?.species),
@@ -206,14 +211,20 @@ export function PetProfile() {
 
   const primaryOwnerId = pet.primaryOwnerId || pet.ownerId;
   const isPrimaryOwner = user?.uid === primaryOwnerId;
-  // Mirror updatePetCallable / deletePetCallable: only the (primary) owner or
-  // an admin may edit/delete. Regular family members can still invite, but
-  // showing them "Edit Pet" only led to a permission-denied on save.
-  const canManagePet = isPrimaryOwner || isAdmin;
-  // Edit + Delete are owner/admin actions; Invite is for any family member.
-  // The action row renders if either applies, so a non-family admin still
-  // sees Edit/Delete.
-  const petActionCount = (canManagePet ? 2 : 0) + (viewerIsFamilyMember ? 1 : 0);
+  // Mirrors the server (see functions/src/pets.ts getPetFamilyAuthority):
+  // every owner can edit the pet, because that is the least a co-owner has to
+  // mean. Hiding Edit from co-owners was the visible half of the pet having a
+  // privileged creator; the callable was the other half.
+  const canEditPet = viewerIsFamilyMember || isAdmin;
+  // Deleting destroys history that belongs to everyone attached to the pet, so
+  // it needs being the last owner left. Anyone else leaves instead — which
+  // hands the pet on rather than taking it away.
+  const isOnlyOwner = familyMembers.length <= 1;
+  const canDeletePet = (viewerIsFamilyMember && isOnlyOwner) || isAdmin;
+  const petActionCount =
+    (canEditPet ? 1 : 0) +
+    (viewerIsFamilyMember ? 1 : 0) +
+    (canDeletePet || viewerIsFamilyMember ? 1 : 0);
 
   return (
     <div className="min-h-screen bg-white pb-10 dark:bg-slate-900">
@@ -322,7 +333,7 @@ export function PetProfile() {
             </div>
           </div>
 
-          {viewerIsFamilyMember || canManagePet ? (
+          {viewerIsFamilyMember || canEditPet ? (
             <div
               className={`grid gap-2 ${
                 petActionCount >= 3
@@ -332,7 +343,7 @@ export function PetProfile() {
                   : "grid-cols-1"
               }`}
             >
-              {canManagePet ? (
+              {canEditPet ? (
                 <button
                   type="button"
                   onClick={() => navigate(`/edit-pet/${pet.id}`)}
@@ -350,13 +361,23 @@ export function PetProfile() {
                   Invite Family
                 </button>
               ) : null}
-              {canManagePet ? (
+              {canDeletePet ? (
                 <button
                   type="button"
                   onClick={() => setConfirmDelete(true)}
                   className="rounded-full border border-red-200 px-4 py-2 text-sm font-semibold text-red-500 transition-all duration-200 hover:bg-red-50 dark:border-red-500/40 dark:hover:bg-red-500/10"
                 >
                   Delete
+                </button>
+              ) : viewerIsFamilyMember ? (
+                // Not "Delete" for a co-owner: the pet is not theirs alone to
+                // end. Leaving is the action that actually applies to them.
+                <button
+                  type="button"
+                  onClick={() => setFamilyManageOpen(true)}
+                  className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-all duration-200 hover:border-purple-300 hover:text-purple-600 dark:border-slate-700 dark:text-slate-200"
+                >
+                  Owners
                 </button>
               ) : null}
             </div>
@@ -380,13 +401,22 @@ export function PetProfile() {
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-slate-900 dark:text-white">🏠 Family</h3>
             {viewerIsFamilyMember ? (
-              <button
-                type="button"
-                onClick={() => setInviteOpen(true)}
-                className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-3 py-1 text-xs font-semibold text-white"
-              >
-                Invite
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFamilyManageOpen(true)}
+                  className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 dark:border-slate-600 dark:text-slate-300"
+                >
+                  Manage
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInviteOpen(true)}
+                  className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-3 py-1 text-xs font-semibold text-white"
+                >
+                  Invite
+                </button>
+              </div>
             ) : null}
           </div>
           <div className="flex gap-3 overflow-x-auto pb-1">
@@ -634,6 +664,26 @@ export function PetProfile() {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {user && viewerIsFamilyMember ? (
+        <FamilyManageModal
+          open={familyManageOpen}
+          petId={pet.id}
+          petName={pet.name}
+          viewerUid={user.uid}
+          viewerIsPrimary={isPrimaryOwner}
+          members={familyMembers}
+          onClose={() => setFamilyManageOpen(false)}
+          onChanged={() => setFamilyReloadKey((key) => key + 1)}
+          onLeft={() => {
+            setFamilyManageOpen(false);
+            // The viewer is no longer an owner, so send them somewhere that is
+            // still theirs rather than leaving them on a page whose controls
+            // have all just disappeared.
+            navigate("/profile", { replace: true });
+          }}
+        />
       ) : null}
 
       {user && viewerIsFamilyMember ? (
