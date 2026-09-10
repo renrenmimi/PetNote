@@ -116,10 +116,12 @@ without `--import` starts empty, which is the fastest full reset.
 
 ## Environment B — Vercel preview
 
-<https://pet-note-e68gjlds4-renrenmimis-projects.vercel.app>
+Vercel mints a new preview URL per commit, so take the current one from the
+**Vercel check on PR #195** ("Deployment has completed" → *Details*) rather
+than from a link written down here.
 
-Vercel deployment protection is on (it returns 302 to a sign-in), so open it
-while signed in to the Vercel account that owns the project.
+Deployment protection is on — a preview URL returns 302 to a sign-in — so open
+it while signed in to the Vercel account that owns the project.
 
 **Before using it, check in Vercel → Project → Settings → Environment Variables
 which Firebase project the Preview environment points at.** It could not be
