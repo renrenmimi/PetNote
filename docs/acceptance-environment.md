@@ -200,10 +200,20 @@ What is established:
   (`{"error":{"code":"forbidden","invalidToken":true}}`), so the project's
   environment variables could not be queried either.
 
-So the Preview target's `VITE_FIREBASE_PROJECT_ID` has to be read by a human, in
-**Vercel → Project → Settings → Environment Variables**, filtered to the
-*Preview* environment. Until then assume it is `petnote-a9dac`, i.e. production
-data. If it is:
+Narrowed by elimination, read-only: `firebase projects:list` shows exactly one
+PetNote project on this account (`petnote-a9dac`; the rest are codelabs and
+unrelated work), and `petnote-a9dac` has exactly one web app. So the Preview
+either points at `petnote-a9dac` or has no Firebase config at all, in which case
+the app would not start. That is not the same as having read it, so it stays
+listed as unverified — but its only consequence is whether hand-testing the
+preview could touch production data, and the acceptance is automated against the
+local emulator instead.
+
+Reading it directly needs a human in **Vercel → Project → Settings →
+Environment Variables**, filtered to the *Preview* environment. Nothing in the
+release path depends on that, so it is not worth interrupting anyone for. It
+only matters if somebody does decide to hand-test a preview, in which case treat
+it as production data:
 
 - Use a throwaway account, not a real one.
 - Delete nothing: no account deletion, no pet deletion, no leaving a shared pet,
@@ -217,95 +227,122 @@ Pushing this branch does **not** trigger a production deploy: every historical
 `Production` deployment targeted a commit on `main`, every other ref gets a
 `Preview`, and `ci.yml` contains no deploy step.
 
-## Hands-on acceptance checklist
+## Acceptance, and what it did not cover
 
-Three tiers. Tier 1 needs nobody; it is listed so you know what not to re-do.
+`functions/scripts/acceptance-run.mjs` drives the scenarios against the real
+Cloud Functions emulator over the callable HTTP protocol, with real ID tokens,
+asserting outcomes by reading Firestore. **68/68, repeatable across three
+consecutive runs.** Run it yourself:
 
-### Tier 1 — already verified on the real runtime, no action needed
+```bash
+cd functions && node scripts/seed-acceptance.mjs && node scripts/acceptance-run.mjs
+```
 
-Recorded in `PetNote-review-20260908/REAL-RUNTIME-VERIFICATION.md`. Spot-check
-any of these if you want, but they are done.
+It covers the shared-owner lifecycle (invite, validate, redeem, equal editing by
+both owners, revoke a code, transfer primary in both directions, leave, refuse
+the last owner's leave, refuse deleting a shared pet, hand the primary role over
+on leave, delete as sole owner, resume a half-finished cascade with and without
+entitlement), the email-verification gate, the publish flow (counter, idempotent
+replay, tag contract, delete back to zero), and the three suspended repairs.
 
-### Tier 2 — Environment A, you click through it (~20 min)
+The script tears down its own pets first, because pets are capped at 5 per owner
+and the scenarios legitimately leave one behind — without that, the second run
+of the day fails on `Maximum 5 pets allowed` and it looks like a defect in the
+invite flow.
 
-1. Sign in as `accept-a@example.com`. Confirm the emulator console line above.
-2. Publish a post for Mochi **without** media (media upload needs real
-   Cloudinary). Confirm Mochi's post count goes to 1.
-3. Delete that post. Confirm the count goes back to 0 and does not go negative.
-4. Invite `accept-b@example.com` to Mochi. Accept as B. Confirm **both** owners
-   see Mochi as theirs and both can edit it — this is the equal-owners core.
-5. As B, transfer primary to A, then back. Confirm there is never more than one
-   primary and never zero.
-6. As B, leave Mochi. Confirm A keeps the pet and it is not deleted.
-7. As A, delete Mochi. Confirm the pet is gone, the family subcollection is
-   empty, and any posts it had are still there with the pet fields stripped
-   (this is deliberate — posts outlive pets).
-8. Sign in as `accept-new@example.com` (unverified) and try to publish.
-   Expect "Verify your email before posting."
-9. Sign in as `accept-admin@example.com` and trigger any of the three repair
-   actions. Expect an explicit "temporarily unavailable" message, not a silent
-   failure and not a wrong number.
-10. Block/unblock between A and B. Confirm the message is the same in both
-    directions and reveals nothing about who blocked whom.
+Two product rules are worth stating, because reading the code the wrong way gets
+them backwards: **a shared pet cannot be deleted** (you leave instead), and **a
+sole owner cannot leave** (you delete instead). Together: nobody can end a pet
+that is not only theirs, and nobody can strand a pet with no owner.
 
-### Tier 3 — needs your Google account, your inbox, or your iPhone
+### What no amount of this run establishes
 
-None of this can be done without you, and none of it has been done.
+- **Real Google popup sign-in.** The Auth emulator simulates the provider, so
+  the `initializeAuth` / `browserPopupRedirectResolver` change is not exercised.
+  This is the highest remaining risk in the branch: if it is broken, nobody
+  using Google can sign in. It is also visible on the production home page in
+  one click, and a frontend rollback is a Vercel *Promote*, so the exposure is
+  short.
+- **The real verification-email round trip.** The gate itself is verified, and
+  so is the claim-refresh mechanism (flip `emailVerified`, re-mint a token,
+  publishing unblocks). Mail delivery and the timing of the token refresh after
+  clicking the link are not.
+- **Real Cloudinary and Geoapify.** Fake credentials by design. The signing
+  callable is verified end to end against them, which proves the secret binding,
+  not the CDN round trip.
+- **iPhone.** No device.
+- **Scheduled functions actually firing.** See "What Environment A still cannot
+  do" above.
+- **At-least-once and out-of-order trigger delivery.** The emulator delivers
+  once, in order; the 202 backend tests are what cover redelivery.
+- **Rate limiting.** The script clears the counters so runs are deterministic.
+- **Index sufficiency.** The Firestore emulator creates indexes on demand, so a
+  green run says nothing about production indexes. Those were checked separately
+  and read-only; see below.
 
-1. **Read the Preview's Firebase project id** in the Vercel dashboard (above).
-   Everything else in this tier depends on knowing the answer.
-2. **Real Google popup sign-in** on the preview URL: sign in, then cancel the
-   popup mid-flow, then sign in again. This is the only test of the
-   `initializeAuth` / `browserPopupRedirectResolver` change.
-3. **Real verification email**: sign up with a throwaway address, receive the
-   mail, click the link, come back, and confirm publishing is unblocked without
-   a manual reload (the token refresh path).
-4. **Real media upload** through Cloudinary — production credentials only exist
-   in production, so this is preview-only, and it writes real assets.
-5. **iPhone Safari**: photo picker, HEIC conversion, video, geolocation prompt,
-   and the composer on a real touch keyboard.
+## Merge and deploy order
 
-Because the preview backend is old code, treat tier 3 as verifying *frontend and
-provider integration only*. Re-run tier 2 against the deployed functions after
-they ship.
+**Functions first, from the branch, before merging.** Merging is what deploys
+the frontend, so "merge then deploy functions" puts a frontend in production
+that calls two callables which do not exist yet.
 
-## Merge and deploy order, and how to get back
+Verified read-only against production: **63 functions are deployed, this branch
+exports 67**, the difference is entirely additive, and of the four new ones two
+are live buttons in this branch's frontend with **zero callers in `main`'s** —
+`transferPetPrimaryCallable` (`FamilyManageModal.tsx:70`) and
+`revokeInvitationCallable` (`InviteCodeModal.tsx:129`). So old-frontend-plus-new-functions
+is a usable intermediate state; new-frontend-plus-old-functions is not.
 
-Frontend and backend deploy separately and the backend is not automatic, so the
-order matters. Functions first, always: the new frontend calls
-`getPublishStatusCallable`, which does not exist in production yet.
-
-1. **Merge PR #195 into `main`** (squash). This deploys the **frontend** to
-   production by itself, via the Vercel Git integration. Nothing deploys the
-   backend.
-2. **Deploy functions immediately after**, from `main`:
+1. **Deploy functions from the branch.**
    ```bash
+   git checkout fix/review-20260908 && git pull
    cd functions && npm ci && npm run build && npm run deploy
    ```
-   `npm run deploy` retries once and reports partial failures per function
-   (added in #192). If it reports a partial failure, re-run it before doing
-   anything else — a half-deployed function set is the worst state to sit in.
-3. **Check the deployed rules match the file.** Never verified in any round:
-   ```bash
-   npx firebase deploy --only firestore:rules --project petnote-a9dac
-   ```
-   Deploying them is idempotent and cheaper than proving they already match.
-4. **Smoke-test production** with a throwaway account: publish a post with one
-   photo, check the pet's count, delete the post, check the count.
+   Do **not** pass `--force`; nothing needs deleting. If it reports a partial
+   failure, re-run before going further — half-deployed is the worst state to
+   sit in. Two behaviours change for the still-live old frontend: tags
+   containing `. * ~ / [ ]` now fail the whole post (neither frontend filters
+   them client-side, so this is the new behaviour arriving early, not a
+   window-specific regression), and the three repairs start refusing admins
+   (no caller in `src/`).
+2. **Merge PR #195** (squash). Vercel deploys the frontend from `main`.
+3. **Do not deploy rules.** The live ruleset
+   (`acea436f-2601-4bf9-a7c0-55605c8b444b`) is byte-identical to both
+   `origin/main:firestore.rules` and this branch's, and this branch changes no
+   rules. Verified with a read-only `GET` against `firebaserules.googleapis.com`.
+4. **Do not deploy indexes.** The 25 indexes match item for item, `queryScope`
+   included, and this branch changes none. More importantly, production has
+   three `fieldOverrides` the repo file does not: the `admin.banned`
+   collection-group index and TTL policies on `processedEvents.expiresAt` and
+   `userDeletionTombstones.expiresAt`. An index deploy offers to delete what the
+   file omits, and `--force` would take out the ban check and both TTL cleanups.
+   The reason to skip this step is not that it is unnecessary — it is that it is
+   harmful.
+5. **Smoke-test with a throwaway account:** publish a post with one photo, check
+   the pet's count, delete it, check the count. The photo is also the first real
+   Cloudinary verification there has ever been.
+6. **Try Google sign-in once.** The one thing automation cannot reach and the
+   one whose failure is worst.
+
+Prerequisites confirmed read-only: `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
+and `GEOAPIFY_API_KEY` all exist and are `ENABLED` in production Secret Manager
+(metadata only — no values were read), so the five secret-declaring functions
+will not fail to deploy.
 
 ### Rolling back
 
-- **Frontend only** — Vercel → Deployments → the previous production deployment
-  → *Promote to Production*. Seconds, no rebuild.
-- **Backend only** — `git revert` the merge commit on `main`, then re-run the
-  functions deploy from that state. There is no "previous version" button for
-  Cloud Functions.
-- **Both** — revert the merge commit on `main` and push. That redeploys the old
-  frontend automatically; the functions deploy is still manual.
+Reverse order: **frontend first.**
 
-Order matters here too, in reverse: roll the **frontend** back first. An old
-frontend against new functions is fine — the new callables are additive. A new
-frontend against reverted functions is not.
+- **Frontend** — Vercel → Deployments → the previous production deployment →
+  *Promote to Production*. Seconds, no rebuild. Because the functions are purely
+  additive, **this alone fully restores the old behaviour**; the four extra
+  functions simply sit unused. No backend action is needed for a
+  frontend-caused problem.
+- **A function itself** — `git revert` on `main` and re-run the functions
+  deploy. Cloud Functions has no rollback button. Still do not use `--force` to
+  remove the four new functions; leaving them idle beats risking a prune.
+- Rules and indexes are not in the deploy list, so they are not in the rollback
+  list either.
 
 ### Two things this branch left switched off
 
@@ -318,5 +355,5 @@ part of this PR:
 - All three **online recompute endpoints** (pet post count, post interaction
   counts, location rating aggregates). They return an explicit
   `failed-precondition` to admins. Cost: a counter that has genuinely drifted
-  cannot be repaired from the app; it needs a script written against a known-idle
-  window.
+  cannot be repaired from the app; it needs a script written against a
+  known-idle window.
