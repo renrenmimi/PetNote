@@ -6,6 +6,8 @@ import { PasswordVisibilityButton } from "../components/PasswordVisibilityButton
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../contexts/ToastContext";
 import { useLanguage } from "../hooks/useLanguage";
+import { emailFieldProps, newPasswordFieldProps } from "../utils/formFields";
+import { mapAuthError } from "../utils/authErrors";
 import PawIcon from "../components/PawIcon";
 import { PasswordStrengthIndicator } from "../components/PasswordStrengthIndicator";
 import { validatePassword } from "../utils/passwordValidator";
@@ -185,13 +187,17 @@ export function SignUp() {
           message: t("signup.emailSignUpDisabled"),
         });
       } else {
-        // Raw SDK strings as a last resort only. Mapping the codes above is
-        // what stops "Firebase: Error (auth/...)" reaching a person who can do
-        // nothing with it.
-        setNotice({
-          title: t("auth.genericErrorTitle"),
-          message: err instanceof Error ? err.message : t("signup.signUpFailed"),
-        });
+        // Shared mapping for everything sign-up has no special copy for. It
+        // never returns a raw SDK string, which is what used to reach this
+        // branch: "Firebase: Error (auth/...)" tells a person nothing they
+        // can act on.
+        const notice = mapAuthError(err);
+        if (notice) {
+          setNotice({
+            title: t(notice.titleKey),
+            message: t(notice.messageKey),
+          });
+        }
       }
     } finally {
       setLoading(false);
@@ -205,18 +211,22 @@ export function SignUp() {
       await signInWithGoogle();
       navigate("/", { replace: true });
     } catch (err) {
-      setNotice({
-        title: t("auth.genericErrorTitle"),
-        message: err instanceof Error ? err.message : t("signup.googleFailed"),
-      });
+      // null when the Google sheet was dismissed on purpose — no banner.
+      const notice = mapAuthError(err);
+      if (notice) {
+        setNotice({
+          title: t(notice.titleKey),
+          message: t(notice.messageKey),
+        });
+      }
     } finally {
       setGoogleLoading(false);
     }
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-sky-500 via-teal-400 to-emerald-400 px-4">
-      <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl dark:bg-slate-900">
+    <main className="auth-shell bg-gradient-to-br from-sky-500 via-teal-400 to-emerald-400">
+      <div className="auth-card rounded-3xl bg-white p-8 shadow-2xl dark:bg-slate-900">
         <div className="mb-6 flex justify-end">
           <LanguageSelector compact />
         </div>
@@ -259,9 +269,8 @@ export function SignUp() {
             <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
               <MailIcon />
               <input
-                type="email"
+                {...emailFieldProps}
                 placeholder={t("auth.emailPlaceholder")}
-                autoComplete="email"
                 className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
@@ -279,7 +288,7 @@ export function SignUp() {
               <input
                 type={showPassword ? "text" : "password"}
                 placeholder={t("signup.passwordPlaceholder")}
-                autoComplete="new-password"
+                {...newPasswordFieldProps}
                 className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
@@ -306,7 +315,7 @@ export function SignUp() {
               <input
                 type={showConfirm ? "text" : "password"}
                 placeholder={t("signup.confirmPasswordPlaceholder")}
-                autoComplete="new-password"
+                {...newPasswordFieldProps}
                 className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
                 value={confirmPassword}
                 onChange={(event) => setConfirmPassword(event.target.value)}

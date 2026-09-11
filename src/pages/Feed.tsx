@@ -11,6 +11,10 @@ import PawIcon from "../components/PawIcon";
 import { SkeletonPostCard } from "../components/SkeletonPostCard";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { ScrollToTop } from "../components/ScrollToTop";
+import {
+  PullToRefreshIndicator,
+  type PullState,
+} from "../components/PullToRefreshIndicator";
 import { usePosts } from "../hooks/usePosts";
 import { useAuth } from "../hooks/useAuth";
 import { useBlockedUsers } from "../hooks/useBlockedUsers";
@@ -22,6 +26,13 @@ import { batchCheckPetBirthdays } from "../services/pets";
 import { useToast } from "../contexts/ToastContext";
 import { useLanguage } from "../hooks/useLanguage";
 import { type Post } from "../services/posts";
+
+/**
+ * Pull distance, in damped CSS px, at which letting go refreshes, and the
+ * point past which further dragging stops moving the indicator.
+ */
+const PULL_THRESHOLD = 64;
+const PULL_MAX = 96;
 
 export function Feed() {
   const navigate = useNavigate();
@@ -39,9 +50,14 @@ export function Feed() {
   // flick that scrolls to the top mid-gesture measures against a stale
   // start point and fires an unintended refresh.
   const pullingRef = useRef(false);
+  // Checked synchronously in the touch handlers: `refreshing` state lands a
+  // render later, which is long enough for a second flick to start a second
+  // request.
+  const refreshingRef = useRef(false);
   const lastErrorRef = useRef<string | null>(null);
   const [pullDistance, setPullDistance] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshFailed, setRefreshFailed] = useState(false);
   const [followingCount, setFollowingCount] = useState(0);
   const { blockedUserIds } = useBlockedUsers(user?.uid ?? null);
   const { showToast } = useToast();
@@ -345,11 +361,45 @@ export function Feed() {
     []
   );
 
-  const pullLabel = refreshing
-    ? t("feed.refreshing")
-    : pullDistance > 60
-    ? t("feed.releaseToRefresh")
-    : t("feed.pullToRefresh");
+  const pullState: PullState = refreshing
+    ? "refreshing"
+    : pullDistance <= 0
+      ? "idle"
+      : pullDistance >= PULL_THRESHOLD
+        ? "armed"
+        : "pulling";
+
+  const endGesture = useCallback(() => {
+    pullingRef.current = false;
+    setPullDistance(0);
+  }, []);
+
+  const runRefresh = useCallback(async () => {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+    setRefreshing(true);
+    setRefreshFailed(false);
+    try {
+      const ok = await refresh();
+      setRefreshFailed(!ok);
+    } finally {
+      refreshingRef.current = false;
+      setRefreshing(false);
+    }
+  }, [refresh]);
+
+  // A gesture that is interrupted rather than finished — rotation, the app
+  // going to the background, the page being navigated away from — must not
+  // leave the indicator half open, and must not refresh.
+  useEffect(() => {
+    const cancel = () => endGesture();
+    window.addEventListener("orientationchange", cancel);
+    document.addEventListener("visibilitychange", cancel);
+    return () => {
+      window.removeEventListener("orientationchange", cancel);
+      document.removeEventListener("visibilitychange", cancel);
+    };
+  }, [endGesture]);
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20 dark:bg-slate-900">
@@ -358,29 +408,41 @@ export function Feed() {
       <main
         className="mx-auto w-full max-w-md space-y-4 px-4 py-4"
         onTouchStart={(event) => {
+          // One finger only: a second finger means a pinch-zoom, and treating
+          // that as a pull fights the browser's own gesture.
+          if (refreshingRef.current || event.touches.length > 1) {
+            pullingRef.current = false;
+            return;
+          }
           pullingRef.current = window.scrollY <= 0;
           if (!pullingRef.current) return;
           startYRef.current = event.touches[0].clientY;
         }}
         onTouchMove={(event) => {
-          if (!pullingRef.current || window.scrollY > 0) return;
-          const distance = event.touches[0].clientY - startYRef.current;
-          if (distance > 0) {
-            setPullDistance(Math.min(distance, 80));
+          if (!pullingRef.current) return;
+          if (event.touches.length > 1 || window.scrollY > 0) {
+            endGesture();
+            return;
           }
+          const raw = event.touches[0].clientY - startYRef.current;
+          if (raw <= 0) {
+            // Upward move: hand the gesture back to normal scrolling rather
+            // than holding a zero-height indicator open.
+            if (pullDistance !== 0) setPullDistance(0);
+            return;
+          }
+          // Damped, so the indicator does not track the finger 1:1 and the
+          // threshold is something you have to mean.
+          setPullDistance(Math.min(raw * 0.55, PULL_MAX));
         }}
-        onTouchEnd={async () => {
-          const shouldRefresh = pullingRef.current && pullDistance > 60;
-          pullingRef.current = false;
-          setPullDistance(0);
-          if (shouldRefresh) {
-            setRefreshing(true);
-            try {
-              await refresh();
-            } finally {
-              setRefreshing(false);
-            }
-          }
+        onTouchEnd={() => {
+          const shouldRefresh =
+            pullingRef.current && pullDistance >= PULL_THRESHOLD;
+          endGesture();
+          if (shouldRefresh) void runRefresh();
+        }}
+        onTouchCancel={() => {
+          endGesture();
         }}
       >
         <div
@@ -426,9 +488,27 @@ export function Feed() {
           </div>
         </div>
 
-        <p className="text-center text-xs text-slate-400 dark:text-slate-500">
-          {pullLabel}
-        </p>
+        <PullToRefreshIndicator
+          state={pullState}
+          distance={pullDistance}
+          threshold={PULL_THRESHOLD}
+          pullLabel={t("feed.pullToRefresh")}
+          releaseLabel={t("feed.releaseToRefresh")}
+          refreshingLabel={t("feed.refreshing")}
+        />
+
+        {refreshFailed && !refreshing ? (
+          <div className="flex items-center justify-center gap-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-200">
+            <span>{t("feed.refreshFailed")}</span>
+            <button
+              type="button"
+              onClick={() => void runRefresh()}
+              className="font-semibold underline underline-offset-2"
+            >
+              {t("feed.retry")}
+            </button>
+          </div>
+        ) : null}
 
         <EmailVerificationBanner />
         <BirthdayCelebration ownerId={user?.uid ?? null} />

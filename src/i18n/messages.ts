@@ -60,9 +60,12 @@ const en = {
   "login.noAccountMessage":
     "This email is not registered yet. Create an account first, then you can log in.",
   "login.noAccountAction": "Create account",
-  "login.invalidTitle": "Check your email or password",
+  // Deliberately does not distinguish "no such account" from "wrong
+  // password", and deliberately does not suggest signing up again — see
+  // utils/authErrors.ts.
+  "login.invalidTitle": "Email or password is incorrect",
   "login.invalidMessage":
-    "We could not sign you in with these details. If you are new, create an account first.",
+    "Check both and try again. Use \u201cForgot password?\u201d if you need to reset it.",
   "login.googleOnlyTitle": "Use Google Sign-In",
   "login.googleOnlyAction": "Continue with Google",
 
@@ -118,6 +121,8 @@ const en = {
   "feed.refreshing": "Refreshing...",
   "feed.releaseToRefresh": "Release to refresh",
   "feed.pullToRefresh": "Pull to refresh",
+  "feed.refreshFailed": "Could not refresh",
+  "feed.retry": "Retry",
   "feed.emptyFollowingTitle": "No posts from followed pets",
   "feed.emptyFollowingDescription": "Follow some pets to see their posts here",
   "feed.discoverPets": "Discover Pets",
@@ -237,6 +242,17 @@ const en = {
   "auth.tooManyRequestsTitle": "Too many attempts",
   "auth.tooManyRequestsMessage":
     "Too many attempts from this device. Wait a minute and try again.",
+  "auth.genericErrorMessage":
+    "Something went wrong on our side. Please try again in a moment.",
+  "auth.userDisabledTitle": "Account unavailable",
+  "auth.userDisabledMessage":
+    "This account cannot be used to sign in right now. Contact support if you think that is wrong.",
+  "auth.popupBlockedTitle": "Sign-in window was blocked",
+  "auth.popupBlockedMessage":
+    "Allow pop-ups for PetNote and try again, or sign in with your email and password.",
+  "auth.signInMethodTitle": "Try a different sign-in method",
+  "auth.signInMethodMessage":
+    "This email is set up with another sign-in method. Use that one, or reset your password.",
   "settings.deleteAccountConfirm":
     "Type DELETE to confirm. This action cannot be undone.",
   // Says what actually happens to a shared pet now: it is handed to another
@@ -308,8 +324,8 @@ const zh = {
   "login.noAccountTitle": "没有找到账号",
   "login.noAccountMessage": "这个邮箱还没有注册，请先创建账号，再回来登录。",
   "login.noAccountAction": "创建账号",
-  "login.invalidTitle": "请检查邮箱或密码",
-  "login.invalidMessage": "我们无法用这些信息登录。如果你是新用户，请先注册账号。",
+  "login.invalidTitle": "邮箱或密码错误",
+  "login.invalidMessage": "请检查后重试。需要重设密码可以点下面的「忘记密码？」。",
   "login.googleOnlyTitle": "请使用 Google 登录",
   "login.googleOnlyAction": "使用 Google 继续",
 
@@ -363,6 +379,8 @@ const zh = {
   "feed.refreshing": "正在刷新...",
   "feed.releaseToRefresh": "松开即可刷新",
   "feed.pullToRefresh": "下拉刷新",
+  "feed.refreshFailed": "刷新失败",
+  "feed.retry": "重试",
   "feed.emptyFollowingTitle": "你关注的宠物还没有发帖",
   "feed.emptyFollowingDescription": "先去关注一些宠物，这里就会出现它们的动态",
   "feed.discoverPets": "去发现宠物",
@@ -473,6 +491,13 @@ const zh = {
   "auth.networkErrorMessage": "连不上 PetNote。检查网络后重试——你填的内容还在。",
   "auth.tooManyRequestsTitle": "尝试次数过多",
   "auth.tooManyRequestsMessage": "这台设备尝试次数过多，请等一分钟后再试。",
+  "auth.genericErrorMessage": "我们这边出了点问题，请稍后重试。",
+  "auth.userDisabledTitle": "账号不可用",
+  "auth.userDisabledMessage": "这个账号目前无法登录。如果你认为这是误判，请联系我们。",
+  "auth.popupBlockedTitle": "登录窗口被拦截",
+  "auth.popupBlockedMessage": "请允许 PetNote 弹出窗口后重试，或改用邮箱密码登录。",
+  "auth.signInMethodTitle": "请换一种登录方式",
+  "auth.signInMethodMessage": "这个邮箱使用的是另一种登录方式。请用那种方式登录，或重设密码。",
   "settings.deleteAccountConfirm": "输入 DELETE 进行确认，此操作无法撤销。",
   "settings.deleteAccountSharedPets":
     "与他人共同拥有的宠物会留给对方——加入最久的那位主人将成为主要主人。只属于你一个人的宠物会被删除，你的帖子也会一并删除。",

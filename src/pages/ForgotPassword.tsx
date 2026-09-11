@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { LanguageSelector } from "../components/LanguageSelector";
 import { useLanguage } from "../hooks/useLanguage";
+import { emailFieldProps } from "../utils/formFields";
 import PawIcon from "../components/PawIcon";
 import { auth } from "../services/firebase";
 
@@ -47,17 +48,37 @@ export function ForgotPassword() {
       await sendPasswordResetEmail(auth, email.trim());
       setStatus("success");
       setMessage(t("forgot.resetSent"));
-    } catch {
+    } catch (err) {
+      // A failure that says something about *this request* — offline, rate
+      // limited — has to be reported as such. The old code showed the
+      // neutral "if an account exists, we sent a link" line for every error,
+      // so sending with no connection looked like it had worked.
+      //
+      // Anything that might say something about the *account* keeps the
+      // neutral line: which errors those are is Firebase's business, and
+      // guessing would reopen enumeration.
+      const code =
+        err && typeof err === "object" && "code" in err
+          ? String((err as { code?: unknown }).code ?? "")
+          : "";
       setStatus("error");
-      setMessage(t("forgot.fallback"));
+      if (code.includes("network-request-failed")) {
+        setMessage(t("auth.networkErrorMessage"));
+      } else if (code.includes("too-many-requests")) {
+        setMessage(t("auth.tooManyRequestsMessage"));
+      } else if (code.includes("invalid-email")) {
+        setMessage(t("signup.invalidEmailMessage"));
+      } else {
+        setMessage(t("forgot.fallback"));
+      }
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 px-4">
-      <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl dark:bg-slate-900">
+    <main className="auth-shell bg-gradient-to-br from-purple-500 to-pink-500">
+      <div className="auth-card rounded-3xl bg-white p-8 shadow-2xl dark:bg-slate-900">
         <div className="mb-6 flex justify-end">
           <LanguageSelector compact />
         </div>
@@ -84,9 +105,8 @@ export function ForgotPassword() {
             <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
               <MailIcon />
               <input
-                type="email"
+                {...emailFieldProps}
                 placeholder={t("auth.emailPlaceholder")}
-                autoComplete="email"
                 className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}

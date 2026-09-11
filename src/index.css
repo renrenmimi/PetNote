@@ -38,3 +38,68 @@
 header.sticky {
   padding-top: env(safe-area-inset-top, 0px);
 }
+
+/*
+ * iOS zooms the whole page in when a focused field's computed font-size is
+ * below 16px, and it does not zoom back out on blur. Every form here uses
+ * Tailwind's text-sm (14px) or text-xs (12px), so one tap on an email,
+ * password or comment field left the app magnified and stuck that way.
+ *
+ * Set on the control itself rather than at ~70 call sites across 20 files:
+ * a per-site number is the kind of thing the next form forgets. An explicit
+ * list of text-entry types rather than a `:not()` chain, so nothing touches
+ * the metrics of buttons, checkboxes, range thumbs or file pickers — and
+ * because `input[type="text"]` already outranks a `.text-sm` utility on
+ * specificity, this does not depend on cascade-layer ordering.
+ *
+ * max() rather than a flat 16px so a larger root font size — accessibility
+ * text scaling — still wins. Visible label and body text is untouched; this
+ * only governs what the person types.
+ */
+input:not([type]),
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+input[type="tel"],
+input[type="url"],
+input[type="number"],
+input[type="date"],
+input[type="datetime-local"],
+input[type="month"],
+input[type="time"],
+input[type="week"],
+textarea,
+select {
+  font-size: max(16px, 1rem);
+}
+
+/*
+ * Shell for the three unauthenticated pages (login, sign up, forgot
+ * password). They were `min-h-screen items-center`, which has two problems
+ * in a full-screen iOS web view: nothing reserves the status bar / Dynamic
+ * Island inset, and `align-items: center` on a scrollable flex container
+ * pushes the top of an over-tall card out of reach instead of letting it
+ * scroll — which is exactly what happens once the keyboard is up, or at a
+ * large text size, or in landscape.
+ *
+ * `margin: auto` on the child centres it when there is room and stays
+ * scrollable when there is not, which `align-items: center` cannot do.
+ * 100dvh keeps the shell matched to the viewport WebKit actually leaves
+ * visible; on its own that would not have been enough.
+ */
+.auth-shell {
+  display: flex;
+  min-height: 100vh; /* fallback for anything without dvh */
+  min-height: 100dvh;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 1.5rem);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 1.5rem);
+  padding-left: max(1rem, env(safe-area-inset-left, 0px));
+  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+}
+
+.auth-shell > .auth-card {
+  margin: auto;
+  width: 100%;
+  max-width: 28rem; /* unchanged from the previous max-w-md */
+}

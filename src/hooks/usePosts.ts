@@ -9,7 +9,16 @@ type UsePostsResult = {
   hasMore: boolean;
   error: string | null;
   loadMore: () => Promise<void>;
-  refresh: () => Promise<void>;
+  /**
+   * Reload the first page without blanking what is already on screen.
+   *
+   * Resolves true when fresh posts replaced the list and false when the
+   * request failed — pull-to-refresh needs to tell those apart so it can
+   * offer a retry instead of leaving a spinner turning. The initial load
+   * still goes through `loading`, which does clear the list, because there
+   * is nothing to preserve then.
+   */
+  refresh: () => Promise<boolean>;
   removePost: (postId: string) => void;
 };
 
@@ -238,8 +247,57 @@ export function usePosts(mode: FeedMode = "all", userId?: string | null): UsePos
   }, [activeFeed.hasMore, activeFeed.lastDoc, activeFeed.loading, activeFeed.loadingMore, fetchPosts, mode]);
 
   const refresh = useCallback(async () => {
-    await loadPosts(mode, true);
-  }, [loadPosts, mode]);
+    const targetMode = mode;
+    const requestId = requestIdRef.current[targetMode] + 1;
+    requestIdRef.current[targetMode] = requestId;
+
+    // Deliberately does not touch `posts` or `loading`. The old path called
+    // loadPosts(reset: true), which set posts to [] before the request went
+    // out — so every pull flashed the whole feed away to skeletons, and a
+    // failed pull left an empty list behind with the content it had a moment
+    // ago now unrecoverable without a second request.
+    try {
+      const { posts, lastDoc, hasMore } = await fetchPosts(targetMode, null);
+      if (
+        !mountedRef.current ||
+        requestIdRef.current[targetMode] !== requestId
+      ) {
+        return false;
+      }
+      setFeeds((prev) => ({
+        ...prev,
+        [targetMode]: {
+          ...prev[targetMode],
+          posts: posts.filter(
+            (item) => !removedPostIdsRef.current.has(item.id)
+          ),
+          lastDoc,
+          hasMore,
+          error: null,
+          initialized: true,
+        },
+      }));
+      return true;
+    } catch (err) {
+      if (
+        !mountedRef.current ||
+        requestIdRef.current[targetMode] !== requestId
+      ) {
+        return false;
+      }
+      const message =
+        err instanceof Error ? err.message : "Failed to refresh";
+      setFeeds((prev) => ({
+        ...prev,
+        [targetMode]: {
+          ...prev[targetMode],
+          // posts left exactly as they were.
+          error: message,
+        },
+      }));
+      return false;
+    }
+  }, [fetchPosts, mode]);
 
   // Remove a post from both feed caches so a deleted post doesn't reappear
   // when posts is re-synced or loadMore appends a new page.

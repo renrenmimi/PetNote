@@ -5,6 +5,8 @@ import { LanguageSelector } from "../components/LanguageSelector";
 import { PasswordVisibilityButton } from "../components/PasswordVisibilityButton";
 import { useAuth } from "../hooks/useAuth";
 import { useLanguage } from "../hooks/useLanguage";
+import { emailFieldProps, currentPasswordFieldProps } from "../utils/formFields";
+import { mapAuthError } from "../utils/authErrors";
 import PawIcon from "../components/PawIcon";
 
 function MailIcon() {
@@ -109,44 +111,16 @@ export function Login() {
       await signIn(normalizedEmail, password);
       navigate(redirectTo, { replace: true });
     } catch (err) {
-      const code =
-        err && typeof err === "object" && "code" in err
-          ? String((err as { code?: string }).code)
-          : "";
-
-      if (code.includes("invalid-email")) {
+      // One mapping for every code, shared with the Google path below and
+      // with sign-up. No branch falls back on err.message: the raw Firebase
+      // string used to end up on screen here. And no branch offers "create
+      // an account" — mistyping a password is not evidence of not having one,
+      // and the sign-up link is already on this page.
+      const notice = mapAuthError(err);
+      if (notice) {
         setNotice({
-          title: t("signup.invalidEmailTitle"),
-          message: t("signup.invalidEmailMessage"),
-        });
-      } else if (
-        code.includes("user-not-found") ||
-        code.includes("wrong-password") ||
-        code.includes("invalid-credential")
-      ) {
-        // Show a generic "invalid credentials" message with a sign-up
-        // CTA. We used to call fetchSignInMethodsForEmail here to figure
-        // out whether the email belonged to a Google-only account, but
-        // that API was deprecated by Firebase under Email Enumeration
-        // Protection (default since 2023-09) and now returns an empty
-        // array regardless. The "Continue with Google" button below
-        // covers the Google-only path without leaking account existence.
-        setNotice({
-          title: t("login.invalidTitle"),
-          message: t("login.invalidMessage"),
-          actionLabel: t("login.noAccountAction"),
-          action: () =>
-            navigate("/signup", {
-              state: {
-                email: normalizedEmail,
-                ...(fromLocation ? { from: fromLocation } : {}),
-              },
-            }),
-        });
-      } else {
-        setNotice({
-          title: t("auth.genericErrorTitle"),
-          message: err instanceof Error ? err.message : t("login.loginFailed"),
+          title: t(notice.titleKey),
+          message: t(notice.messageKey),
         });
       }
     } finally {
@@ -161,18 +135,23 @@ export function Login() {
       await signInWithGoogle();
       navigate(redirectTo, { replace: true });
     } catch (err) {
-      setNotice({
-        title: t("auth.genericErrorTitle"),
-        message: err instanceof Error ? err.message : t("login.googleFailed"),
-      });
+      // mapAuthError returns null when the person dismissed the Google
+      // sheet themselves; an error banner for that is noise.
+      const notice = mapAuthError(err);
+      if (notice) {
+        setNotice({
+          title: t(notice.titleKey),
+          message: t(notice.messageKey),
+        });
+      }
     } finally {
       setGoogleLoading(false);
     }
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 px-4">
-      <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl dark:bg-slate-900">
+    <main className="auth-shell bg-gradient-to-br from-purple-500 to-pink-500">
+      <div className="auth-card rounded-3xl bg-white p-8 shadow-2xl dark:bg-slate-900">
         <div className="mb-6 flex justify-end">
           <LanguageSelector compact />
         </div>
@@ -216,9 +195,8 @@ export function Login() {
             <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
               <MailIcon />
               <input
-                type="email"
+                {...emailFieldProps}
                 placeholder={t("auth.emailPlaceholder")}
-                autoComplete="email"
                 className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
@@ -236,7 +214,7 @@ export function Login() {
               <input
                 type={showPassword ? "text" : "password"}
                 placeholder={t("login.passwordPlaceholder")}
-                autoComplete="current-password"
+                {...currentPasswordFieldProps}
                 className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}

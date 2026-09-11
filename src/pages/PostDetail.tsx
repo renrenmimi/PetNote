@@ -98,7 +98,17 @@ export function PostDetail() {
   const { isLiked, likeCount, toggleLike } = useLike(
     postId,
     user?.uid ?? null,
-    post?.likeCount ?? 0
+    post?.likeCount ?? 0,
+    undefined,
+    {
+      onFailure: (reason) =>
+        showToast(
+          reason === "post-missing"
+            ? "This post is no longer available"
+            : "Could not update like. Please try again.",
+          "error"
+        ),
+    }
   );
   const { isBookmarked, toggleBookmark } = useBookmark(
     postId,
@@ -195,11 +205,7 @@ export function PostDetail() {
     if (isBanned) {
       return;
     }
-    try {
-      await toggleLike();
-    } catch {
-      showToast("Failed to update like", "error");
-    }
+    toggleLike();
   };
 
   const handleBookmark = async () => {
