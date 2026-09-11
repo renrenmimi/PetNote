@@ -19,3 +19,22 @@
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+
+/*
+ * A full-screen iOS web view — the Capacitor shell, and the site added to the
+ * home screen as a PWA — starts the page at the physical top of the display,
+ * with no browser chrome above it. Every page header here is `sticky top-0`,
+ * so without this the title row sits underneath the clock and the Dynamic
+ * Island.
+ *
+ * Padding rather than offsetting the header: the header keeps sticking at 0,
+ * so its own background still covers the status bar strip while content
+ * scrolls under it, and only its contents move clear. env() resolves to 0 in
+ * an ordinary browser tab, which is why this is inert on the web.
+ *
+ * Anything that sticks at a fixed offset *below* a header has to add the same
+ * inset or it slides underneath — see the feed's tab bar and the search field.
+ */
+header.sticky {
+  padding-top: env(safe-area-inset-top, 0px);
+}

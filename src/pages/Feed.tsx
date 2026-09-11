@@ -383,7 +383,12 @@ export function Feed() {
           }
         }}
       >
-        <div className="sticky top-[56px] z-10 -mx-4 bg-slate-50 px-4 pb-2 pt-1 dark:bg-slate-900">
+        <div
+          className="sticky z-10 -mx-4 bg-slate-50 px-4 pb-2 pt-1 dark:bg-slate-900"
+          // The Navbar grows by the status-bar inset in a full-screen iOS
+          // web view, so the tab bar has to clear the same amount.
+          style={{ top: "calc(56px + env(safe-area-inset-top, 0px))" }}
+        >
           <div
             className={`relative border-b border-slate-200 dark:border-slate-700 ${
               user ? "grid grid-cols-2" : "grid grid-cols-1"

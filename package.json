@@ -8,6 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "ios:sync": "npm run build && cap sync ios",
+    "ios:open": "cap open ios",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:rules": "vitest run --config vitest.rules.config.ts",
@@ -15,6 +17,8 @@
     "typecheck:tests": "tsc -p tsconfig.tests.json"
   },
   "dependencies": {
+    "@capacitor/core": "^8.5.1",
+    "@capacitor/ios": "^8.5.1",
     "firebase": "^12.18.0",
     "heic2any": "^0.0.4",
     "lucide-react": "^1.38.0",
@@ -23,6 +27,7 @@
     "react-router-dom": "^7.18.3"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.1",
     "@eslint/js": "^9.39.1",
     "@firebase/rules-unit-testing": "^5.0.2",
     "@tailwindcss/vite": "^4.1.18",
