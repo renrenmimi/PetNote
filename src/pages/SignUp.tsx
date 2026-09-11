@@ -226,7 +226,8 @@ export function SignUp() {
 
   return (
     <main className="auth-shell bg-gradient-to-br from-sky-500 via-teal-400 to-emerald-400">
-      <div className="auth-card rounded-3xl bg-white p-8 shadow-2xl dark:bg-slate-900">
+      <div className="auth-scroll">
+        <div className="auth-card rounded-3xl bg-white p-8 shadow-2xl dark:bg-slate-900">
         <div className="mb-6 flex justify-end">
           <LanguageSelector compact />
         </div>
@@ -385,6 +386,7 @@ export function SignUp() {
             {t("signup.loginCta")}
           </Link>
         </p>
+        </div>
       </div>
     </main>
   );

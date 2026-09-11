@@ -19,6 +19,7 @@
   "dependencies": {
     "@capacitor/core": "^8.5.1",
     "@capacitor/ios": "^8.5.1",
+    "@capacitor/keyboard": "^8.0.5",
     "firebase": "^12.18.0",
     "heic2any": "^0.0.4",
     "lucide-react": "^1.38.0",

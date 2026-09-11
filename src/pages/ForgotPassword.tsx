@@ -78,7 +78,8 @@ export function ForgotPassword() {
 
   return (
     <main className="auth-shell bg-gradient-to-br from-purple-500 to-pink-500">
-      <div className="auth-card rounded-3xl bg-white p-8 shadow-2xl dark:bg-slate-900">
+      <div className="auth-scroll">
+        <div className="auth-card rounded-3xl bg-white p-8 shadow-2xl dark:bg-slate-900">
         <div className="mb-6 flex justify-end">
           <LanguageSelector compact />
         </div>
@@ -144,6 +145,7 @@ export function ForgotPassword() {
             {t("forgot.backToLogin")}
           </Link>
         </p>
+        </div>
       </div>
     </main>
   );

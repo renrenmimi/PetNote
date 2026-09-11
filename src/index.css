@@ -76,29 +76,54 @@ select {
 
 /*
  * Shell for the three unauthenticated pages (login, sign up, forgot
- * password). They were `min-h-screen items-center`, which has two problems
- * in a full-screen iOS web view: nothing reserves the status bar / Dynamic
- * Island inset, and `align-items: center` on a scrollable flex container
- * pushes the top of an over-tall card out of reach instead of letting it
- * scroll — which is exactly what happens once the keyboard is up, or at a
- * large text size, or in landscape.
+ * password). They were `min-h-screen items-center`, which has three problems
+ * in a full-screen iOS web view.
  *
- * `margin: auto` on the child centres it when there is room and stays
- * scrollable when there is not, which `align-items: center` cannot do.
- * 100dvh keeps the shell matched to the viewport WebKit actually leaves
- * visible; on its own that would not have been enough.
+ * Nothing reserved the status bar / Dynamic Island inset. `align-items:
+ * center` on a scrollable container pushes the top of an over-tall card out
+ * of reach instead of letting it scroll — which is what happens once the
+ * keyboard is up, at a large text size, or in landscape; `margin: auto` on
+ * the child centres it when there is room and stays scrollable when there is
+ * not, which `align-items: center` cannot do.
+ *
+ * The third is why this is two elements rather than one. Reserving the inset
+ * as padding on the scrolling element does not help: the padding box is
+ * visible, so content scrolls up into it and ends up under the clock anyway.
+ * The inset therefore belongs to a fixed-size outer box, and the scrolling
+ * happens in a child that is clipped to it — so nothing can ever paint in the
+ * status bar strip, which shows the page's own gradient instead.
+ *
+ * `position: fixed` rather than a viewport height unit, because measuring
+ * this in the simulator with the keyboard up showed 100dvh does not track the
+ * keyboard: window.innerHeight went 874 → 498 while the shell stayed 874px,
+ * so the *document* overflowed, WebKit scrolled the document by 376px to
+ * reveal the focused field, and the reserved inset went up under the clock
+ * with everything else. A fixed element is sized to the layout viewport
+ * WebKit actually shrank, and contributes no document height, so there is
+ * nothing for WebKit to scroll except .auth-scroll — which is the intent.
  */
 .auth-shell {
+  position: fixed;
+  inset: 0;
   display: flex;
-  min-height: 100vh; /* fallback for anything without dvh */
-  min-height: 100dvh;
-  padding-top: calc(env(safe-area-inset-top, 0px) + 1.5rem);
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 1.5rem);
-  padding-left: max(1rem, env(safe-area-inset-left, 0px));
-  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-.auth-shell > .auth-card {
+.auth-scroll {
+  display: flex;
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  /* Keeps the field WebKit just scrolled to off the very edge of the
+     keyboard, rather than flush against it. */
+  scroll-padding: 1rem 0 2rem;
+  padding: 1.5rem max(1rem, env(safe-area-inset-right, 0px)) 1.5rem
+    max(1rem, env(safe-area-inset-left, 0px));
+}
+
+.auth-scroll > .auth-card {
   margin: auto;
   width: 100%;
   max-width: 28rem; /* unchanged from the previous max-w-md */
