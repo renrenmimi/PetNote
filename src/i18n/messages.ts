@@ -104,6 +104,34 @@ const en = {
   "forgot.googleAccount": "This account uses Google Sign-In.",
   "forgot.googleCta": "Sign in with Google",
   "forgot.backToLogin": "Back to Login",
+  "forgot.spamHint":
+    "Not there after a minute? Check your spam or junk folder.",
+  "forgot.resendIn": "Resend in {seconds}s",
+  "forgot.resend": "Send another code",
+  "forgot.resendLink": "Send the link again",
+  "forgot.changeEmail": "Use a different email",
+  "forgot.codeSentTitle": "Check your email",
+  "forgot.codeSentBody":
+    "If an account exists for {email}, a {length}-digit code is on its way. It expires in {minutes} minutes.",
+  "forgot.codeLabel": "Verification code",
+  "forgot.codeHint": "{length} digits from the email",
+  "forgot.newPasswordLabel": "New password",
+  "forgot.newPasswordPlaceholder": "At least 8 characters",
+  "forgot.setPassword": "Set new password",
+  "forgot.settingPassword": "Setting password...",
+  "forgot.resetDone": "Password updated. You can log in now.",
+  "forgot.codeWrong": "That code is not correct. Check the email and try again.",
+  "forgot.codeExpired": "That code has expired. Send a new one.",
+  "forgot.codeUsed":
+    "That code was already used. Try logging in with your new password.",
+  "forgot.codeTooMany":
+    "Too many attempts. Send a new code and try again.",
+  "forgot.codeGoogleOnly":
+    "This account signs in with Google. Use Continue with Google on the login screen.",
+  "forgot.codeAccountUnavailable":
+    "This account cannot be used to sign in right now.",
+  "forgot.codeNotConfigured":
+    "Code delivery is not available yet. Use the reset link instead.",
 
   "notFound.title": "Page not found",
   "notFound.description": "This page doesn't exist or has been removed.",
@@ -362,6 +390,28 @@ const zh = {
   "forgot.googleAccount": "这个账号使用 Google 登录。",
   "forgot.googleCta": "使用 Google 登录",
   "forgot.backToLogin": "返回登录",
+  "forgot.spamHint": "一分钟还没收到？看一下垃圾邮件文件夹。",
+  "forgot.resendIn": "{seconds} 秒后可重发",
+  "forgot.resend": "重新发送验证码",
+  "forgot.resendLink": "重新发送链接",
+  "forgot.changeEmail": "换一个邮箱",
+  "forgot.codeSentTitle": "请查收邮件",
+  "forgot.codeSentBody":
+    "如果 {email} 有对应账号，{length} 位验证码已发出，{minutes} 分钟内有效。",
+  "forgot.codeLabel": "验证码",
+  "forgot.codeHint": "邮件里的 {length} 位数字",
+  "forgot.newPasswordLabel": "新密码",
+  "forgot.newPasswordPlaceholder": "至少 8 个字符",
+  "forgot.setPassword": "设置新密码",
+  "forgot.settingPassword": "正在设置...",
+  "forgot.resetDone": "密码已更新，现在可以登录了。",
+  "forgot.codeWrong": "验证码不正确，请核对邮件后重试。",
+  "forgot.codeExpired": "验证码已过期，请重新发送。",
+  "forgot.codeUsed": "这个验证码已经用过了。请用新密码直接登录。",
+  "forgot.codeTooMany": "尝试次数过多，请重新发送验证码。",
+  "forgot.codeGoogleOnly": "这个账号使用 Google 登录，请在登录页点「Continue with Google」。",
+  "forgot.codeAccountUnavailable": "这个账号目前无法登录。",
+  "forgot.codeNotConfigured": "验证码发送暂不可用，请改用重置链接。",
 
   "notFound.title": "页面不存在",
   "notFound.description": "这个页面不存在，或已经被移除。",

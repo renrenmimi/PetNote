@@ -16,6 +16,10 @@ export {
 } from "./media";
 export { reverseGeocodeCallable, searchAddressesCallable } from "./geo";
 export {
+  confirmPasswordResetCodeCallable,
+  requestPasswordResetCodeCallable,
+} from "./passwordReset";
+export {
   autoCompleteMeetups,
   cancelMeetupCallable,
   checkMeetupStatusCallable,

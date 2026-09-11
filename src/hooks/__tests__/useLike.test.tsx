@@ -122,10 +122,14 @@ describe("useLike", () => {
     // recorded in the progress notes, not here.
     expect(feedbackAfterMs).toBeLessThan(1000);
 
-    // Hold the response for three seconds of wall time, then settle it.
+    // Hold the response for three seconds, on fake timers: sleeping for real
+    // makes the suite slow and, worse, makes it depend on the machine not
+    // being busy.
+    vi.useFakeTimers();
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 3000));
+      await vi.advanceTimersByTimeAsync(3000);
     });
+    vi.useRealTimers();
     expect(liked()).toBe("liked");
 
     await act(async () => {
@@ -135,7 +139,7 @@ describe("useLike", () => {
     expect(liked()).toBe("liked");
     expect(count()).toBe("11");
     expect(screen.getByTestId("loading").textContent).toBe("idle");
-  }, 15000);
+  });
 
   it("rolls back and reports the reason when the request fails", async () => {
     likePost.mockRejectedValue(new Error("permission-denied"));

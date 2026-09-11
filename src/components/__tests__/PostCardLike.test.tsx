@@ -159,9 +159,11 @@ describe("PostCard like, integrated with the real hook and a Feed-like parent", 
     expect(screen.getByTestId("parent-liked").textContent).toBe("parent-liked");
     expect(elapsed).toBeLessThan(1000);
 
+    vi.useFakeTimers();
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 3000));
+      await vi.advanceTimersByTimeAsync(3000);
     });
+    vi.useRealTimers();
     // Still showing the like three seconds into an unanswered request.
     expect(shownCount()).toBe("11");
 
@@ -170,7 +172,7 @@ describe("PostCard like, integrated with the real hook and a Feed-like parent", 
       await gate.promise;
     });
     expect(shownCount()).toBe("11");
-  }, 15000);
+  });
 
   it("does not add the like twice when the aggregate catches up", async () => {
     likePost.mockResolvedValue("changed");

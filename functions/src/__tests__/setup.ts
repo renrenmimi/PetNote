@@ -18,6 +18,12 @@ process.env.GCLOUD_PROJECT ||= "petnote-test";
 // happened to supply something the deployed function would not have.
 process.env.CLOUDINARY_API_KEY ||= "test-api-key";
 process.env.CLOUDINARY_API_SECRET ||= "test-api-secret";
+// Same reason, for the password reset code digests. Obviously fake, and no
+// real provider is ever contacted: the email transport is stubbed in the
+// password reset tests, so a code only ever leaves through the fake.
+process.env.PASSWORD_RESET_CODE_SECRET ||= "test-password-reset-hmac-key";
+process.env.TRANSACTIONAL_EMAIL_API_KEY ||= "test-email-api-key";
+process.env.TRANSACTIONAL_EMAIL_FROM ||= "no-reply@example.invalid";
 process.env.FIREBASE_CONFIG ||= JSON.stringify({
   projectId: process.env.GCLOUD_PROJECT,
 });
