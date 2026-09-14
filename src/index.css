@@ -76,39 +76,29 @@ select {
 
 /*
  * Shell for the three unauthenticated pages (login, sign up, forgot
- * password). They were `min-h-screen items-center`, which has three problems
- * in a full-screen iOS web view.
- *
- * Nothing reserved the status bar / Dynamic Island inset. `align-items:
- * center` on a scrollable container pushes the top of an over-tall card out
- * of reach instead of letting it scroll — which is what happens once the
- * keyboard is up, at a large text size, or in landscape; `margin: auto` on
- * the child centres it when there is room and stays scrollable when there is
- * not, which `align-items: center` cannot do.
- *
- * The third is why this is two elements rather than one. Reserving the inset
- * as padding on the scrolling element does not help: the padding box is
- * visible, so content scrolls up into it and ends up under the clock anyway.
- * The inset therefore belongs to a fixed-size outer box, and the scrolling
- * happens in a child that is clipped to it — so nothing can ever paint in the
- * status bar strip, which shows the page's own gradient instead.
+ * password).
  *
  * `position: fixed` rather than a viewport height unit, because measuring
  * this in the simulator with the keyboard up showed 100dvh does not track the
- * keyboard: window.innerHeight went 874 → 498 while the shell stayed 874px,
- * so the *document* overflowed, WebKit scrolled the document by 376px to
- * reveal the focused field, and the reserved inset went up under the clock
- * with everything else. A fixed element is sized to the layout viewport
- * WebKit actually shrank, and contributes no document height, so there is
- * nothing for WebKit to scroll except .auth-scroll — which is the intent.
+ * keyboard: window.innerHeight went 874 -> 498 while the shell stayed 874px,
+ * so the *document* overflowed and WebKit scrolled it, carrying the reserved
+ * inset up under the clock. A fixed element is sized to the layout viewport
+ * the keyboard plugin actually shrinks, and contributes no document height,
+ * so there is nothing for WebKit to scroll except .auth-scroll.
+ *
+ * The insets live on the scroll container rather than on the shell. Putting
+ * them on the shell clipped the card dead against the status bar and against
+ * the top of the keyboard — a razor cut straight through whichever control
+ * happened to be at the boundary. As padding inside the scroller, content
+ * can pass under those edges, and the frosted strips below give it something
+ * to pass under.
  */
 .auth-shell {
   position: fixed;
   inset: 0;
   display: flex;
+  overflow: hidden;
   box-sizing: border-box;
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .auth-scroll {
@@ -116,15 +106,63 @@ select {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  /* Keeps the field WebKit just scrolled to off the very edge of the
-     keyboard, rather than flush against it. */
-  scroll-padding: 1rem 0 2rem;
-  padding: 1.5rem max(1rem, env(safe-area-inset-right, 0px)) 1.5rem
+  padding: calc(env(safe-area-inset-top, 0px) + 1.5rem)
+    max(1rem, env(safe-area-inset-right, 0px))
+    calc(env(safe-area-inset-bottom, 0px) + 1.5rem)
     max(1rem, env(safe-area-inset-left, 0px));
+  /*
+   * Where WebKit parks a field it has just scrolled into view. Without the
+   * bottom value the focused input landed flush against the keyboard with
+   * half of it cut off; 4rem keeps the whole control, and its label, clear.
+   */
+  scroll-padding-top: calc(env(safe-area-inset-top, 0px) + 1rem);
+  scroll-padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4rem);
 }
 
 .auth-scroll > .auth-card {
   margin: auto;
   width: 100%;
   max-width: 28rem; /* unchanged from the previous max-w-md */
+}
+
+/*
+ * Frosted edges, top and bottom.
+ *
+ * Content scrolls under them instead of being clipped by them, which is the
+ * difference between "the card continues up there" and "the card has been
+ * guillotined". The bottom one sits directly above the keyboard, because the
+ * keyboard plugin makes the web view end exactly where the keyboard begins.
+ *
+ * Both are masked so the blur itself fades out — a blurred strip that stops
+ * on a hard line just moves the ugly edge a few pixels. pointer-events are
+ * off so neither can swallow a tap meant for the form.
+ *
+ * A minimum height keeps a soft edge even where there is no inset to
+ * reserve: `env(safe-area-inset-bottom)` collapses to 0 while the keyboard
+ * is up, which is exactly when the bottom edge matters most.
+ */
+.auth-shell::before,
+.auth-shell::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
+}
+
+.auth-shell::before {
+  top: 0;
+  height: max(env(safe-area-inset-top, 0px), 0.75rem);
+  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+}
+
+.auth-shell::after {
+  bottom: 0;
+  height: max(env(safe-area-inset-bottom, 0px), 1.25rem);
+  -webkit-mask-image: linear-gradient(to top, #000 55%, transparent 100%);
+  mask-image: linear-gradient(to top, #000 55%, transparent 100%);
 }

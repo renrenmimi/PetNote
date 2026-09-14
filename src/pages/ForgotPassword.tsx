@@ -8,6 +8,7 @@ import { VerificationCodeInput } from "../components/VerificationCodeInput";
 import { useLanguage } from "../hooks/useLanguage";
 import type { TranslationKey } from "../i18n/messages";
 import PawIcon from "../components/PawIcon";
+import { AuthShell } from "../components/AuthShell";
 import { auth } from "../services/firebase";
 import { emailFieldProps, newPasswordFieldProps } from "../utils/formFields";
 import {
@@ -240,188 +241,184 @@ export function ForgotPassword() {
   const showSpamHint = status === "success" && !done;
 
   return (
-    <main className="auth-shell bg-gradient-to-br from-purple-500 to-pink-500">
-      <div className="auth-scroll">
-        <div className="auth-card rounded-3xl bg-white p-8 shadow-2xl dark:bg-slate-900">
-          <div className="mb-6 flex justify-end">
-            <LanguageSelector compact />
+    <AuthShell gradient="bg-gradient-to-br from-purple-500 to-pink-500">
+        <div className="mb-6 flex justify-end">
+          <LanguageSelector compact />
+        </div>
+        <div className="mb-6 text-center">
+          <div className="flex justify-center">
+            <PawIcon size={48} />
           </div>
-          <div className="mb-6 text-center">
-            <div className="flex justify-center">
-              <PawIcon size={48} />
-            </div>
-            <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
-              {t("common.appName")}
-            </h1>
-            <h2 className="mt-4 text-lg font-semibold text-slate-900 dark:text-white">
-              {step === "code" ? t("forgot.codeSentTitle") : t("forgot.title")}
-            </h2>
-            {step === "email" ? (
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
-                {t("forgot.subtitle")}
-              </p>
-            ) : null}
-          </div>
-
+          <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
+            {t("common.appName")}
+          </h1>
+          <h2 className="mt-4 text-lg font-semibold text-slate-900 dark:text-white">
+            {step === "code" ? t("forgot.codeSentTitle") : t("forgot.title")}
+          </h2>
           {step === "email" ? (
-            <form className="space-y-4" onSubmit={handleSubmit}>
-              <label className="block">
-                <span className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
-                  {t("auth.email")}
-                </span>
-                <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
-                  <MailIcon />
-                  <input
-                    {...emailFieldProps}
-                    placeholder={t("auth.emailPlaceholder")}
-                    className="w-full bg-transparent text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                    required
-                  />
-                </div>
-              </label>
-
-              <button
-                type="submit"
-                disabled={loading || !trimmedEmail}
-                className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {loading ? t("forgot.sending") : t("forgot.sendReset")}
-              </button>
-            </form>
-          ) : null}
-
-          {step === "code" && !done ? (
-            <form
-              className="space-y-4"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void submitCode();
-              }}
-            >
-              <VerificationCodeInput
-                value={code}
-                onChange={setCode}
-                length={RESET_CODE_LENGTH}
-                label={t("forgot.codeLabel")}
-                hint={t("forgot.codeHint", { length: RESET_CODE_LENGTH })}
-                disabled={loading}
-                autoFocus
-              />
-
-              <label className="block">
-                <span className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
-                  {t("forgot.newPasswordLabel")}
-                </span>
-                <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
-                  <LockIcon />
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    {...newPasswordFieldProps}
-                    placeholder={t("forgot.newPasswordPlaceholder")}
-                    className="w-full bg-transparent text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
-                    value={newPassword}
-                    onChange={(event) => setNewPassword(event.target.value)}
-                    required
-                  />
-                  <PasswordVisibilityButton
-                    visible={showPassword}
-                    onToggle={() => setShowPassword((prev) => !prev)}
-                    showLabel={t("auth.show")}
-                    hideLabel={t("auth.hide")}
-                  />
-                </div>
-                <div className="mt-2">
-                  <PasswordStrengthIndicator password={newPassword} />
-                </div>
-              </label>
-
-              <button
-                type="submit"
-                disabled={
-                  loading ||
-                  code.length !== RESET_CODE_LENGTH ||
-                  newPassword.length === 0
-                }
-                className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {loading
-                  ? t("forgot.settingPassword")
-                  : t("forgot.setPassword")}
-              </button>
-            </form>
-          ) : null}
-
-          {status !== "idle" ? (
-            <div
-              role="status"
-              aria-live="polite"
-              className={`mt-4 rounded-xl px-4 py-2 text-sm ${
-                status === "success"
-                  ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300"
-                  : "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-300"
-              }`}
-            >
-              {status === "success" ? "📧 " : ""}
-              {message}
-            </div>
-          ) : null}
-
-          {showSpamHint ? (
-            <p className="mt-3 text-center text-xs text-slate-400 dark:text-slate-500">
-              {t("forgot.spamHint")}
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
+              {t("forgot.subtitle")}
             </p>
           ) : null}
-
-          {!done && (status === "success" || step === "code") ? (
-            <div className="mt-4 flex flex-col items-center gap-2">
-              <button
-                type="button"
-                disabled={loading || cooldown > 0}
-                onClick={() =>
-                  void (passwordResetOtpEnabled
-                    ? sendCode(challengeId)
-                    : sendLink())
-                }
-                className="text-sm font-semibold text-purple-600 transition hover:text-purple-500 disabled:cursor-not-allowed disabled:text-slate-400 dark:disabled:text-slate-500"
-              >
-                {cooldown > 0
-                  ? t("forgot.resendIn", { seconds: cooldown })
-                  : passwordResetOtpEnabled
-                    ? t("forgot.resend")
-                    : t("forgot.resendLink")}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  // Back to the address field with everything about the old
-                  // attempt dropped, including the challenge.
-                  setStep("email");
-                  setChallengeId(null);
-                  setCode("");
-                  setNewPassword("");
-                  setStatus("idle");
-                  setMessage("");
-                  setCooldown(0);
-                }}
-                className="text-xs text-slate-400 underline underline-offset-2 transition hover:text-purple-500 dark:text-slate-500"
-              >
-                {t("forgot.changeEmail")}
-              </button>
-            </div>
-          ) : null}
-
-          <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-300">
-            <Link
-              to="/login"
-              className="font-semibold text-purple-600 hover:text-purple-500"
-            >
-              {t("forgot.backToLogin")}
-            </Link>
-          </p>
         </div>
-      </div>
-    </main>
+
+        {step === "email" ? (
+          <form className="space-y-4" onSubmit={handleSubmit}>
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
+                {t("auth.email")}
+              </span>
+              <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
+                <MailIcon />
+                <input
+                  {...emailFieldProps}
+                  placeholder={t("auth.emailPlaceholder")}
+                  className="w-full bg-transparent text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  required
+                />
+              </div>
+            </label>
+
+            <button
+              type="submit"
+              disabled={loading || !trimmedEmail}
+              className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {loading ? t("forgot.sending") : t("forgot.sendReset")}
+            </button>
+          </form>
+        ) : null}
+
+        {step === "code" && !done ? (
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitCode();
+            }}
+          >
+            <VerificationCodeInput
+              value={code}
+              onChange={setCode}
+              length={RESET_CODE_LENGTH}
+              label={t("forgot.codeLabel")}
+              hint={t("forgot.codeHint", { length: RESET_CODE_LENGTH })}
+              disabled={loading}
+              autoFocus
+            />
+
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
+                {t("forgot.newPasswordLabel")}
+              </span>
+              <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
+                <LockIcon />
+                <input
+                  type={showPassword ? "text" : "password"}
+                  {...newPasswordFieldProps}
+                  placeholder={t("forgot.newPasswordPlaceholder")}
+                  className="w-full bg-transparent text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                  required
+                />
+                <PasswordVisibilityButton
+                  visible={showPassword}
+                  onToggle={() => setShowPassword((prev) => !prev)}
+                  showLabel={t("auth.show")}
+                  hideLabel={t("auth.hide")}
+                />
+              </div>
+              <div className="mt-2">
+                <PasswordStrengthIndicator password={newPassword} />
+              </div>
+            </label>
+
+            <button
+              type="submit"
+              disabled={
+                loading ||
+                code.length !== RESET_CODE_LENGTH ||
+                newPassword.length === 0
+              }
+              className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {loading
+                ? t("forgot.settingPassword")
+                : t("forgot.setPassword")}
+            </button>
+          </form>
+        ) : null}
+
+        {status !== "idle" ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className={`mt-4 rounded-xl px-4 py-2 text-sm ${
+              status === "success"
+                ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300"
+                : "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-300"
+            }`}
+          >
+            {status === "success" ? "📧 " : ""}
+            {message}
+          </div>
+        ) : null}
+
+        {showSpamHint ? (
+          <p className="mt-3 text-center text-xs text-slate-400 dark:text-slate-500">
+            {t("forgot.spamHint")}
+          </p>
+        ) : null}
+
+        {!done && (status === "success" || step === "code") ? (
+          <div className="mt-4 flex flex-col items-center gap-2">
+            <button
+              type="button"
+              disabled={loading || cooldown > 0}
+              onClick={() =>
+                void (passwordResetOtpEnabled
+                  ? sendCode(challengeId)
+                  : sendLink())
+              }
+              className="text-sm font-semibold text-purple-600 transition hover:text-purple-500 disabled:cursor-not-allowed disabled:text-slate-400 dark:disabled:text-slate-500"
+            >
+              {cooldown > 0
+                ? t("forgot.resendIn", { seconds: cooldown })
+                : passwordResetOtpEnabled
+                  ? t("forgot.resend")
+                  : t("forgot.resendLink")}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                // Back to the address field with everything about the old
+                // attempt dropped, including the challenge.
+                setStep("email");
+                setChallengeId(null);
+                setCode("");
+                setNewPassword("");
+                setStatus("idle");
+                setMessage("");
+                setCooldown(0);
+              }}
+              className="text-xs text-slate-400 underline underline-offset-2 transition hover:text-purple-500 dark:text-slate-500"
+            >
+              {t("forgot.changeEmail")}
+            </button>
+          </div>
+        ) : null}
+
+        <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-300">
+          <Link
+            to="/login"
+            className="font-semibold text-purple-600 hover:text-purple-500"
+          >
+            {t("forgot.backToLogin")}
+          </Link>
+        </p>
+    </AuthShell>
   );
 }
