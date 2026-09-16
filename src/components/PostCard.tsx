@@ -516,9 +516,15 @@ function PostCardImpl({
             className="h-10 w-10"
           />
         </button>
-        <div className="flex flex-1 items-center justify-between">
-          <div>
-            <div className="flex flex-wrap items-center gap-1">
+        {/*
+          min-w-0 on both: a flex item's default min-width is its content, so
+          one long unbroken name — or a long CJK string, which has no spaces
+          to wrap at — pushed the options button off the card instead of
+          being truncated.
+        */}
+        <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="flex min-w-0 flex-wrap items-center gap-1">
               <button
                 type="button"
                 onClick={() =>
@@ -526,7 +532,7 @@ function PostCardImpl({
                     ? navigate(`/pet/${post.petId}`)
                     : navigate(`/profile/${post.authorId}`)
                 }
-                className="text-sm font-semibold text-slate-900 transition-all duration-200 hover:text-purple-600 dark:text-white"
+                className="max-w-full truncate text-sm font-semibold text-slate-900 transition-all duration-200 hover:text-purple-600 dark:text-white"
               >
                 {primaryName}
               </button>
@@ -535,7 +541,7 @@ function PostCardImpl({
               <button
                 type="button"
                 onClick={() => navigate(`/profile/${post.authorId}`)}
-                className="text-xs text-slate-500 transition-all duration-200 hover:text-purple-600 dark:text-slate-400"
+                className="block max-w-full truncate text-xs text-slate-500 transition-all duration-200 hover:text-purple-600 dark:text-slate-400"
               >
                 by {authorName}
               </button>
