@@ -70,6 +70,25 @@ let feedCache: { key: string; feeds: Feeds } | null = null;
 
 const cacheKeyFor = (userId?: string | null) => userId ?? "anonymous";
 
+/**
+ * Throw the cached pages away, so the next mount fetches.
+ *
+ * The cache is right for going into a post and coming back, and wrong for
+ * exactly one case: you have just created something the cached pages cannot
+ * contain. Publishing sends you to the feed, and the feed showed the pages it
+ * had loaded before you left — so the post you had just made was not in it,
+ * and the only way to see it was to pull to refresh. Seen end to end on the
+ * simulator: post created (Firestore confirms it, newest by `createdAt`),
+ * pet page shows it, feed does not.
+ *
+ * Deliberately not a refetch. The publisher does not know whether a feed is
+ * even mounted, and the cheapest correct thing is to drop the stale pages and
+ * let whoever mounts next ask.
+ */
+export function invalidateFeedCache(): void {
+  feedCache = null;
+}
+
 export function usePosts(mode: FeedMode = "all", userId?: string | null): UsePostsResult {
   const cacheKey = cacheKeyFor(userId);
   const [feeds, setFeeds] = useState<Feeds>(() =>

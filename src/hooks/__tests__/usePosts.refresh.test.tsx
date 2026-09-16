@@ -91,6 +91,45 @@ describe("usePosts refresh", () => {
     expect(getPosts).toHaveBeenCalledTimes(1);
   });
 
+  it("forgets the cached pages when something is published", async () => {
+    /*
+     * The cache is right for going into a post and coming back, and wrong for
+     * the one case where you have just made something it cannot contain.
+     * Publishing navigates to the feed, and the feed showed the pages it had
+     * loaded before the composer opened — so the new post was not in it.
+     * Verified end to end on the simulator before this was written: the post
+     * existed in Firestore and appeared on the pet page, and not in the feed.
+     */
+    getPosts.mockResolvedValueOnce({
+      posts: [post("p1")],
+      lastDoc: null,
+      hasMore: false,
+    });
+    const first = render(<Harness />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(getPosts).toHaveBeenCalledTimes(1);
+
+    const { invalidateFeedCache } = await import("../usePosts");
+    first.unmount();
+    invalidateFeedCache();
+
+    getPosts.mockResolvedValueOnce({
+      posts: [post("new"), post("p1")],
+      lastDoc: null,
+      hasMore: false,
+    });
+    render(<Harness />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // It asked again, and the new post is there.
+    expect(getPosts).toHaveBeenCalledTimes(2);
+    expect(ids()).toBe("new,p1");
+  });
+
   it("keeps the existing posts on screen while refreshing", async () => {
     await mountWithFirstPage();
 

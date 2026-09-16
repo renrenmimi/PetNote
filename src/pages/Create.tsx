@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { invalidateFeedCache } from "../hooks/usePosts";
 import { Camera, NotebookPen } from "lucide-react";
 import { isComposing } from "../hooks/useSubmitGuard";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -706,6 +707,12 @@ export function Create() {
       operationIdRef.current = null;
       uploadedAssetsRef.current = [];
       setPhase({ kind: "idle" });
+      // The feed keeps its loaded pages across unmounts, which is right for
+      // going into a post and back, and wrong here: the pages it cached
+      // before you opened the composer cannot contain what you just made.
+      // Without this the navigate below lands on a feed missing the post,
+      // and pull-to-refresh was the only way to see it.
+      invalidateFeedCache();
       showToast(
         deduplicated
           ? "That post was already published."
