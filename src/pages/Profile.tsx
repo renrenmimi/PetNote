@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Avatar from "../components/Avatar";
 import LazyImage from "../components/LazyImage";
 import { EmptyState } from "../components/EmptyState";
+import { InlineRetry } from "../components/InlineRetry";
 import { SkeletonProfile } from "../components/SkeletonProfile";
 import { useAuth } from "../hooks/useAuth";
 import { useAdmin } from "../hooks/useAdmin";
@@ -49,6 +50,11 @@ export function Profile() {
 
   const [checkins, setCheckins] = useState<Checkin[]>([]);
   const [checkinsLoading, setCheckinsLoading] = useState(false);
+  // The check-ins tab is one module of this page. A refused or dropped read
+  // used to empty it and show "no check-ins yet", which is a claim about the
+  // person's history rather than about the request.
+  const [checkinsFailed, setCheckinsFailed] = useState(false);
+  const [checkinsToken, setCheckinsToken] = useState(0);
   const [checkinLocations, setCheckinLocations] = useState<Record<string, Location | null>>(
     {}
   );
@@ -138,11 +144,13 @@ export function Profile() {
         if (ignore) return;
 
         setCheckinLocations(mapping);
+        setCheckinsFailed(false);
       } catch (error) {
         console.warn("Permission error while loading check-ins:", error);
         if (!ignore) {
           setCheckins([]);
           setCheckinLocations({});
+          setCheckinsFailed(true);
         }
       } finally {
         if (!ignore) {
@@ -155,7 +163,7 @@ export function Profile() {
     return () => {
       ignore = true;
     };
-  }, [activeTab, user]);
+  }, [activeTab, user, checkinsToken]);
 
   const joinedDate = useMemo(() => {
     const created = user?.metadata?.creationTime;
@@ -486,6 +494,11 @@ export function Profile() {
                     />
                   ))}
                 </div>
+              ) : checkinsFailed && checkins.length === 0 ? (
+                <InlineRetry
+                  label="Check-ins"
+                  onRetry={() => setCheckinsToken((value) => value + 1)}
+                />
               ) : checkins.length === 0 ? (
                 <EmptyState
                   icon="📍"

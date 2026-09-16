@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Avatar from "../components/Avatar";
 import { EmptyState } from "../components/EmptyState";
+import { LoadFailedState } from "../components/LoadFailedState";
 import { FamilyManageModal } from "../components/FamilyManageModal";
 import { InviteCodeModal } from "../components/InviteCodeModal";
 import LazyImage from "../components/LazyImage";
@@ -31,6 +32,12 @@ import { timeAgo } from "../utils/timeAgo";
 const genderSymbolClass = "text-lg font-bold";
 
 export function PetProfile() {
+  // A refused or dropped read used to render the same sentence as a
+  // genuinely missing record. Three outcomes, three answers.
+  const [loadFailure, setLoadFailure] = useState<
+    "failed" | "denied" | null
+  >(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const navigate = useNavigate();
   const { petId } = useParams();
   const { user, profile, isAdmin } = useAuth();
@@ -137,6 +144,13 @@ export function PetProfile() {
         // permission glitch on a private subcollection) left the page
         // stuck on "Loading pet profile..." with no recovery.
         console.error("Failed to load pet profile:", error);
+        const failureCode =
+          error && typeof error === "object" && "code" in error
+            ? String((error as { code?: unknown }).code ?? "")
+            : "";
+        setLoadFailure(
+          failureCode.includes("permission-denied") ? "denied" : "failed"
+        );
         if (!ignore) {
           showToast(
             error instanceof Error
@@ -155,9 +169,10 @@ export function PetProfile() {
       ignore = true;
     };
     // showToast comes from a stable context value; the effect should
-    // re-run only when petId, the viewer, or a family change require it.
+    // re-run only when petId, the viewer, a family change, or the retry
+    // button (reloadToken) require it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [petId, user, familyReloadKey]);
+  }, [petId, user, familyReloadKey, reloadToken]);
 
   const speciesMeta = useMemo(
     () => getSpeciesMeta(pet?.species),
@@ -201,9 +216,27 @@ export function PetProfile() {
     return (
       <div className="min-h-screen bg-white pb-10 dark:bg-slate-900">
         <main className="mx-auto w-full max-w-md px-4 py-6">
-          <div className="rounded-2xl bg-slate-50 p-6 text-center text-sm text-slate-500 dark:bg-slate-800 dark:text-slate-300">
-            Pet not found.
-          </div>
+          {loadFailure ? (
+            <LoadFailedState
+              title={
+                loadFailure === "denied"
+                  ? "This pet is not visible to you"
+                  : "Could not load this pet"
+              }
+              description={
+                loadFailure === "denied"
+                  ? "It may be private, or shared with a different account."
+                  : "Something went wrong reaching PetNote. Check your connection and try again."
+              }
+              retryLabel="Try again"
+              retryingLabel="Trying..."
+              onRetry={() => setReloadToken((value) => value + 1)}
+            />
+          ) : (
+            <div className="rounded-2xl bg-slate-50 p-6 text-center text-sm text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+              This pet no longer exists.
+            </div>
+          )}
         </main>
       </div>
     );

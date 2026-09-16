@@ -4,6 +4,8 @@ import { useScrollRestoration } from "../hooks/useScrollRestoration";
 import { Navbar } from "../components/Navbar";
 import { PostCard } from "../components/PostCard";
 import { EmptyState } from "../components/EmptyState";
+import { InlineRetry } from "../components/InlineRetry";
+import { LoadFailedState } from "../components/LoadFailedState";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import Avatar from "../components/Avatar";
 import LazyImage from "../components/LazyImage";
@@ -200,6 +202,20 @@ export function Search() {
     Set<string>
   >(new Set());
   const [popularPets, setPopularPets] = useState<PopularPet[]>([]);
+  /*
+   * Which discovery modules failed, tracked one by one.
+   *
+   * These five were loaded with Promise.all and no catch at all, so any one
+   * rejection emptied the other four and surfaced an unhandled rejection.
+   * allSettled lets the parts that worked stay on screen and gives each
+   * failure its own retry, which is the difference between "search is broken"
+   * and "trending tags could not load".
+   */
+  const [exploreFailed, setExploreFailed] = useState<Set<string>>(new Set());
+  const [exploreToken, setExploreToken] = useState(0);
+  const [searchFailed, setSearchFailed] = useState(false);
+  const [tagsFailed, setTagsFailed] = useState(false);
+  const [tagsToken, setTagsToken] = useState(0);
   const [topPlaces, setTopPlaces] = useState<Location[]>([]);
   const [upcomingMeetups, setUpcomingMeetups] = useState<Meetup[]>([]);
   const [exploreLoading, setExploreLoading] = useState(false);
@@ -261,17 +277,21 @@ export function Search() {
     const loadTags = async () => {
       try {
         const tags = await getTrendingTags(12);
-        if (!ignore) setTrendingTags(tags);
+        if (!ignore) {
+          setTrendingTags(tags);
+          setTagsFailed(false);
+        }
       } catch {
-        // Trending tags are a non-critical discovery enhancement; on failure
-        // leave the section empty instead of surfacing an unhandled rejection.
+        // Still non-critical, but an empty section and a failed one are not
+        // the same thing, and only one of them is worth offering a retry for.
+        if (!ignore) setTagsFailed(true);
       }
     };
     void loadTags();
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [tagsToken]);
 
   useEffect(() => {
     if (hasQuery) return;
@@ -279,20 +299,29 @@ export function Search() {
     const loadExplore = async () => {
       setExploreLoading(true);
       try {
-        const [trending, suggested, popular, places, meetups] = await Promise.all([
+        const results = await Promise.allSettled([
           getTrendingPosts(9),
           getSuggestedPets(user?.uid ?? "", 8),
           getPopularPets(8),
           getTopRatedPlaces(5),
           getUpcomingMeetupPreview(3),
         ]);
-        if (!ignore) {
-          setTrendingPosts(trending);
-          setSuggestedPets(suggested);
-          setPopularPets(popular);
-          setTopPlaces(places);
-          setUpcomingMeetups(meetups);
-        }
+        if (ignore) return;
+        const failed = new Set<string>();
+        const take = <T,>(
+          result: PromiseSettledResult<T>,
+          key: string,
+          apply: (value: T) => void
+        ) => {
+          if (result.status === "fulfilled") apply(result.value);
+          else failed.add(key);
+        };
+        take(results[0], "trendingPosts", setTrendingPosts);
+        take(results[1], "suggestedPets", setSuggestedPets);
+        take(results[2], "popularPets", setPopularPets);
+        take(results[3], "topPlaces", setTopPlaces);
+        take(results[4], "meetups", setUpcomingMeetups);
+        setExploreFailed(failed);
       } finally {
         if (!ignore) setExploreLoading(false);
       }
@@ -301,7 +330,7 @@ export function Search() {
     return () => {
       ignore = true;
     };
-  }, [hasQuery, user]);
+  }, [hasQuery, user, exploreToken]);
 
   useEffect(() => {
     setShowAllPeople(false);
@@ -353,6 +382,7 @@ export function Search() {
             : searchByText(keyword),
         ]);
         if (ignore) return;
+        setSearchFailed(false);
         setSearchResults({
           users: userResults,
           pets: petResults,
@@ -360,8 +390,11 @@ export function Search() {
           posts: postResults,
         });
       } catch {
+        // An empty result set used to stand in for a failed query, so losing
+        // the connection mid-search read as "nothing matches".
         if (!ignore) {
           setSearchResults({ users: [], pets: [], tags: [], posts: [] });
+          setSearchFailed(true);
         }
       } finally {
         if (!ignore) {
@@ -431,6 +464,23 @@ export function Search() {
   // showing the empty state in that window flashes a false negative.
   const searchCompleted = searchResults !== null;
 
+  /*
+   * Discovery, deduplicated.
+   *
+   * The two sections do rank differently — suggested is followerCount
+   * descending minus the pets you already follow, popular is postCount
+   * descending — but with a small catalogue both lists resolve to the same
+   * animals, and the screen showed the same pet twice under two headings.
+   *
+   * So: one primary section, and the second only when it has enough pets the
+   * first does not already show. Neither is labelled "for you"; the headings
+   * say what the ordering actually is.
+   */
+  const discoverPets = suggestedPets;
+  const discoverIds = new Set(discoverPets.map((pet) => pet.id));
+  const alsoActivePets = popularPets.filter((pet) => !discoverIds.has(pet.id));
+  const showAlsoActive = alsoActivePets.length >= 3;
+
   return (
     <div className="min-h-screen bg-slate-50 pb-20 dark:bg-slate-900">
       <Navbar />
@@ -465,6 +515,13 @@ export function Search() {
 
         {!hasQuery ? (
           <div className="space-y-5">
+            {tagsFailed && trendingTags.length === 0 ? (
+              <InlineRetry
+                label="Trending tags"
+                onRetry={() => setTagsToken((value) => value + 1)}
+              />
+            ) : null}
+
             {trendingTags.length > 0 ? (
               <section>
                 <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
@@ -547,13 +604,27 @@ export function Search() {
               </section>
             ) : null}
 
-            {suggestedPets.length > 0 ? (
+            {exploreFailed.has("trendingPosts") && trendingPosts.length === 0 ? (
+              <InlineRetry
+                label="Trending posts"
+                onRetry={() => setExploreToken((value) => value + 1)}
+              />
+            ) : null}
+
+            {exploreFailed.has("suggestedPets") && discoverPets.length === 0 ? (
+              <InlineRetry
+                label="Pet suggestions"
+                onRetry={() => setExploreToken((value) => value + 1)}
+              />
+            ) : null}
+
+            {discoverPets.length > 0 ? (
               <section>
                 <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-                  Suggested Pets
+                  Discover pets
                 </h3>
                 <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
-                  {suggestedPets.map((pet) => (
+                  {discoverPets.map((pet) => (
                     <SuggestedPetCard
                       key={pet.id}
                       pet={pet}
@@ -564,13 +635,13 @@ export function Search() {
               </section>
             ) : null}
 
-            {popularPets.length > 0 ? (
+            {showAlsoActive ? (
               <section>
                 <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-                  Popular Pets
+                  Most posts
                 </h3>
                 <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
-                  {popularPets.map((pet) => (
+                  {alsoActivePets.map((pet) => (
                     <button
                       key={pet.id}
                       type="button"
@@ -696,7 +767,17 @@ export function Search() {
               </div>
             ) : null}
 
-            {!searching && searchCompleted && !hasAnyResult ? (
+            {!searching && searchFailed ? (
+              <LoadFailedState
+                title="Search could not run"
+                description="Something went wrong reaching PetNote. Check your connection and try again."
+                retryLabel="Try again"
+                retryingLabel="Trying..."
+                onRetry={() => handleQueryChange(query)}
+              />
+            ) : null}
+
+            {!searching && !searchFailed && searchCompleted && !hasAnyResult ? (
               <EmptyState
                 icon="🔍"
                 title={`No results for "${normalizedQuery}"`}
