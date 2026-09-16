@@ -482,7 +482,7 @@ export function Search() {
   const showAlsoActive = alsoActivePets.length >= 3;
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20 dark:bg-slate-900">
+    <div className="min-h-screen bg-slate-50 pb-nav dark:bg-slate-900">
       <Navbar />
 
       <main className="mx-auto w-full max-w-md space-y-4 px-4 py-4">

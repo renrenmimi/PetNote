@@ -195,7 +195,7 @@ export function Profile() {
   }
 
   return (
-    <div className="min-h-screen bg-white pb-24 dark:bg-slate-900">
+    <div className="min-h-screen bg-white pb-nav dark:bg-slate-900">
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-3">
           <h1 className="text-base font-semibold text-slate-900 dark:text-white">

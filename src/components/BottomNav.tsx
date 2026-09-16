@@ -64,7 +64,15 @@ export function BottomNav() {
   return (
     <nav
       className="fixed bottom-0 left-0 right-0 z-50 border-t border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
-      style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+      // The home indicator's inset when there is one; a floor of 6px when
+      // there is not. The raised Create button makes its column exactly as
+      // tall as the 56px row, so on an SE-class screen (inset 0) the label
+      // sat on the last pixel line of the display and its descenders were
+      // cut by the bezel. Measured: Create bottom 667.0 in a 667pt viewport,
+      // against 660.0 for every other column.
+      style={{
+        paddingBottom: "max(env(safe-area-inset-bottom, 0px), 0.375rem)",
+      }}
     >
       <div className="mx-auto flex h-14 w-full max-w-md items-center justify-around px-3">
         {items.map((item) => {

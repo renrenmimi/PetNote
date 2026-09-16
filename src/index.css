@@ -21,6 +21,23 @@
 }
 
 /*
+ * Room for the fixed bottom navigation, on any device.
+ *
+ * The six pages that show the tab bar each reserved a flat `pb-20` (80px) or
+ * `pb-24` (96px). The bar is 57px of chrome plus the home indicator's inset,
+ * so on a device that has one it is 91px tall and `pb-20` left the last 11px
+ * of the list underneath it — the final card's actions were unreachable
+ * without overscrolling. Measured on an iPhone 17 Pro: nav height 91.0,
+ * page padding-bottom 80px.
+ *
+ * Expressed as chrome plus inset so it is right on both: 72px on an SE-class
+ * screen, 106px where there is a home indicator.
+ */
+.pb-nav {
+  padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+/*
  * A full-screen iOS web view — the Capacitor shell, and the site added to the
  * home screen as a PWA — starts the page at the physical top of the display,
  * with no browser chrome above it. Every page header here is `sticky top-0`,
@@ -94,6 +111,7 @@ select {
  * to pass under.
  */
 .auth-shell {
+  --auth-edge: rgb(255 255 255 / 0.92);
   position: fixed;
   inset: 0;
   display: flex;
@@ -153,6 +171,34 @@ select {
   backdrop-filter: blur(16px) saturate(150%);
 }
 
+/*
+ * Reduce Transparency, honoured rather than ignored.
+ *
+ * Somebody who has asked the system to stop blurring things has usually done
+ * so because translucency is hard to read through, and a backdrop-filter that
+ * ignores the request is the exact thing they turned off. The strips become
+ * opaque, which keeps the edge — content still stops at a defined boundary —
+ * without the blur.
+ *
+ * Also covers the case where backdrop-filter is unsupported: the fallback is
+ * a solid edge, not a transparent one that lets text run into the clock.
+ */
+@media (prefers-reduced-transparency: reduce) {
+  .auth-shell::before,
+  .auth-shell::after {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--auth-edge, rgb(255 255 255 / 0.92));
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .auth-shell::before,
+  .auth-shell::after {
+    background: var(--auth-edge, rgb(255 255 255 / 0.92));
+  }
+}
+
 .auth-shell::before {
   top: 0;
   height: max(env(safe-area-inset-top, 0px), 0.75rem);
@@ -190,4 +236,8 @@ select {
   width: max(100%, 44px);
   height: max(100%, 44px);
   transform: translate(-50%, -50%);
+}
+
+.dark .auth-shell {
+  --auth-edge: rgb(15 23 42 / 0.92);
 }
