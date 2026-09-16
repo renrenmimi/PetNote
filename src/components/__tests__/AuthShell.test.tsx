@@ -122,6 +122,44 @@ describe("AuthShell", () => {
     expect((scrollBy.mock.calls[0][0] as ScrollToOptions).behavior).toBe("auto");
   });
 
+  it("does nothing when focus was given up before the timer fired", () => {
+    renderShell();
+    const { scroller, field } = stubRects(
+      { x: 0, y: 0, width: 390, height: 500 },
+      { x: 0, y: 450, width: 300, height: 44 }
+    );
+    const scrollBy = vi.spyOn(scroller, "scrollBy").mockImplementation(() => {});
+
+    act(() => {
+      field.focus();
+      field.blur();
+      vi.advanceTimersByTime(400);
+    });
+
+    // Scrolling to a field nobody is in is worse than doing nothing.
+    expect(scrollBy).not.toHaveBeenCalled();
+  });
+
+  it("does not move the page for a field removed while the timer was pending", () => {
+    renderShell();
+    const { scroller, field } = stubRects(
+      { x: 0, y: 0, width: 390, height: 500 },
+      { x: 0, y: 450, width: 300, height: 44 }
+    );
+    const scrollBy = vi.spyOn(scroller, "scrollBy").mockImplementation(() => {});
+
+    act(() => {
+      field.focus();
+      // The reset page swaps its email step for its code step exactly like
+      // this. A detached element measures as all zeroes, which used to read
+      // as "far above the fold" and threw the page upwards.
+      field.remove();
+      vi.advanceTimersByTime(400);
+    });
+
+    expect(scrollBy).not.toHaveBeenCalled();
+  });
+
   it("only reacts to focus inside its own scroller", () => {
     renderShell();
     const outside = document.createElement("input");

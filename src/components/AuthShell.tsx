@@ -29,16 +29,30 @@ export function AuthShell({ gradient, children }: AuthShellProps) {
 
     let timer = 0;
 
-    const revealFocusedField = () => {
+    const focusedFieldInside = (): HTMLElement | null => {
       const active = document.activeElement;
-      if (!(active instanceof HTMLElement) || !scroller.contains(active)) {
-        return;
-      }
+      if (!(active instanceof HTMLElement)) return null;
+      // isConnected as well as contains: a field can be removed from the
+      // document while the timer is pending — the reset page swaps its email
+      // step for its code step — and a detached element measures as all
+      // zeroes, which reads as "far above the fold" and would throw the page
+      // upwards for no reason.
+      if (!active.isConnected || !scroller.contains(active)) return null;
+      return active;
+    };
+
+    const revealFocusedField = () => {
+      if (!focusedFieldInside()) return;
       window.clearTimeout(timer);
       // The web view is resized *after* focus, so measuring straight away
       // measures the box the keyboard is about to replace.
       timer = window.setTimeout(() => {
-        const field = active.getBoundingClientRect();
+        // Re-read rather than trusting what was focused when this was
+        // scheduled. Focus may have been given up in the meantime, and
+        // scrolling to a field nobody is in is worse than doing nothing.
+        const current = focusedFieldInside();
+        if (!current) return;
+        const field = current.getBoundingClientRect();
         const view = scroller.getBoundingClientRect();
         // Enough to clear the frosted strip, the field's own label, and to
         // leave the control looking deliberate rather than wedged.
@@ -54,9 +68,10 @@ export function AuthShell({ gradient, children }: AuthShellProps) {
     };
 
     scroller.addEventListener("focusin", revealFocusedField);
-    // Fires when the plugin shrinks the web view for the keyboard, and again
-    // when it grows back — the second one re-centres a field that the
-    // dismissal left stranded.
+    // Fires when the plugin shrinks the web view for the keyboard. It also
+    // fires when the view grows back, but nothing is focused by then, so that
+    // one returns early — which is the wanted behaviour: dismissing the
+    // keyboard should leave the page where the person left it.
     window.addEventListener("resize", revealFocusedField);
 
     return () => {

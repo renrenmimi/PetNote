@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useScrollRestoration } from "../hooks/useScrollRestoration";
 import { Navbar } from "../components/Navbar";
 import { EmptyState } from "../components/EmptyState";
+import { LoadFailedState } from "../components/LoadFailedState";
 import FilterTag from "../components/FilterTag";
 import { useAuth } from "../hooks/useAuth";
 import { Calendar, MapPin, PawPrint, User } from "lucide-react";
@@ -71,6 +73,10 @@ const statusStyles: Record<string, string> = {
 };
 
 export function Meetups() {
+  const [loadError, setLoadError] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
+  // Come back to where you were, not to the top.
+  useScrollRestoration("meetups");
   const navigate = useNavigate();
   const { user } = useAuth();
   const [activeFilter, setActiveFilter] = useState<FilterKey>("nearby");
@@ -172,14 +178,17 @@ export function Meetups() {
           })
         );
         if (!ignore) {
+          setLoadError(false);
           setMeetups(updated);
         }
       } catch (error) {
         // Without this, a failed Firestore read left the skeleton up
-        // forever — there's no UI affordance for retry on this page.
+        // forever. The empty list that replaced it was its own problem: it
+        // claimed there were no meetups. There is a retry now.
         console.error("Failed to load meetups:", error);
         if (!ignore) {
           setMeetups([]);
+          setLoadError(true);
         }
       } finally {
         if (!ignore) setLoading(false);
@@ -189,7 +198,8 @@ export function Meetups() {
     return () => {
       ignore = true;
     };
-  }, [activeFilter, user, userLocation]);
+    // reloadToken is the retry button: bumping it re-runs this effect.
+  }, [activeFilter, user, userLocation, reloadToken]);
 
   useEffect(() => {
     let ignore = false;
@@ -273,6 +283,14 @@ export function Meetups() {
           <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-500">
             Loading meetups...
           </div>
+        ) : meetups.length === 0 && loadError ? (
+          <LoadFailedState
+            title="Could not load"
+            description="Something went wrong reaching PetNote. Check your connection and try again."
+            retryLabel="Try again"
+            retryingLabel="Trying..."
+            onRetry={() => setReloadToken((value) => value + 1)}
+          />
         ) : meetups.length === 0 ? (
           <EmptyState
             icon="📍"
