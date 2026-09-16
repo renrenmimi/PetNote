@@ -305,7 +305,7 @@ export function LocationRatingModal({
                 <button
                   type="button"
                   onClick={() => removePhoto(idx)}
-                  className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-[10px] text-white"
+                  className="tap-target absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-[10px] text-white"
                 >
                   ✕
                 </button>

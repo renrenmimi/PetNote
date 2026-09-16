@@ -25,7 +25,9 @@ export function PasswordVisibilityButton({
       // by keyboard, where taking focus is the correct behaviour.
       onMouseDown={(event) => event.preventDefault()}
       onClick={onToggle}
-      className="rounded-full p-1.5 text-slate-400 transition-all duration-200 hover:bg-slate-100 hover:text-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-purple-300"
+      // 44pt minimum, per Apple's Human Interface Guidelines. At p-1.5 around a
+      // 16px icon this was a 28px target, tapped mid-password.
+      className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-slate-400 transition-all duration-200 hover:bg-slate-100 hover:text-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-purple-300"
       aria-label={label}
       title={label}
     >
