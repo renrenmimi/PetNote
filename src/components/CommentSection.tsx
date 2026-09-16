@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { User } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import type { QueryDocumentSnapshot } from "firebase/firestore";
@@ -435,8 +436,8 @@ export function CommentSection({
               className="h-6 w-6"
             />
           ) : (
-            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-[10px] text-slate-500 dark:bg-slate-700 dark:text-slate-300">
-              👤
+            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-slate-400 dark:bg-slate-700 dark:text-slate-400">
+              <User size={13} strokeWidth={2} aria-hidden="true" />
             </div>
           )}
           <input

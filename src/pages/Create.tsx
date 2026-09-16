@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Camera, NotebookPen } from "lucide-react";
 import { isComposing } from "../hooks/useSubmitGuard";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { sendEmailVerification } from "firebase/auth";
@@ -935,7 +936,12 @@ export function Create() {
         {showDraftBanner && draft ? (
           <div className="flex items-center justify-between gap-3 rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-700 shadow-sm dark:bg-blue-900/20 dark:text-blue-200">
             <div className="flex items-start gap-2">
-              <span className="text-lg">📝</span>
+              <NotebookPen
+                size={18}
+                strokeWidth={1.9}
+                className="mt-0.5 shrink-0"
+                aria-hidden="true"
+              />
               {/* Names what is actually in the draft. Photos are only in there
                   if a previous attempt already uploaded them; ones that were
                   only selected cannot be stored in sessionStorage, so
@@ -1110,7 +1116,12 @@ export function Create() {
             </div>
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center space-y-2 px-4">
-              <div className="text-3xl">📷</div>
+              <Camera
+                size={30}
+                strokeWidth={1.7}
+                className="text-slate-400 dark:text-slate-500"
+                aria-hidden="true"
+              />
               <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
                 {converting ? "Converting image..." : "Tap to add photo or video"}
               </p>

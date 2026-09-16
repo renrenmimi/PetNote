@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Copy, MapPin, Search as SearchIcon } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useScrollRestoration } from "../hooks/useScrollRestoration";
 import { Navbar } from "../components/Navbar";
@@ -492,7 +493,12 @@ export function Search() {
         >
           <div className="rounded-2xl bg-white px-4 py-3 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
             <div className="flex items-center gap-2">
-              <span className="text-lg">🔍</span>
+              <SearchIcon
+                size={18}
+                strokeWidth={2}
+                className="shrink-0 text-slate-400 dark:text-slate-500"
+                aria-hidden="true"
+              />
               <input
                 type="text"
                 placeholder="Search people, pets, tags..."
@@ -587,8 +593,11 @@ export function Search() {
                             />
                           ) : null}
                           {post.media?.length && post.media.length > 1 ? (
-                            <span className="absolute right-2 top-2 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
-                              📚
+                            <span
+                              className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white"
+                              aria-label={`${post.media.length} photos`}
+                            >
+                              <Copy size={11} strokeWidth={2.4} aria-hidden="true" />
                             </span>
                           ) : null}
                           {media?.type === "video" ? (
@@ -702,8 +711,8 @@ export function Search() {
                           cloudinarySize="small"
                         />
                       ) : (
-                        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 text-white">
-                          📍
+                        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-purple-100 text-purple-500 dark:bg-purple-500/15 dark:text-purple-300">
+                          <MapPin size={20} strokeWidth={1.9} aria-hidden="true" />
                         </div>
                       )}
                       <div>

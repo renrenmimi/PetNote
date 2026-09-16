@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { MapPin } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import Avatar from "../components/Avatar";
 import { LoadFailedState } from "../components/LoadFailedState";
@@ -577,8 +578,11 @@ export function LocationDetail() {
                     cloudinarySize="thumbnail"
                   />
                   {item.source === "checkin" ? (
-                    <span className="absolute bottom-1 right-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
-                      📍
+                    <span
+                      className="absolute bottom-1 right-1 rounded-full bg-black/60 p-1 text-white"
+                      aria-label="From a check-in"
+                    >
+                      <MapPin size={11} strokeWidth={2.4} aria-hidden="true" />
                     </span>
                   ) : null}
                 </button>

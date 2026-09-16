@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Image as ImageIcon, Link2, Share2, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useModalBehavior } from "../hooks/useModalBehavior";
 import { useToast } from "../contexts/ToastContext";
@@ -130,7 +131,7 @@ export function ShareMenu({ open, onClose, postId, shareUrl, text, post }: Share
           onClick={handleCopy}
           className="flex w-full items-center gap-3 border-b border-slate-100 px-2 py-4 text-sm text-slate-700 dark:border-slate-700 dark:text-slate-200"
         >
-          <span className="text-lg">🔗</span>
+          <Link2 size={20} strokeWidth={1.9} aria-hidden="true" />
           Copy Link
         </button>
         {/* Adapter, not `navigator.share`: WKWebView defines that method
@@ -141,7 +142,7 @@ export function ShareMenu({ open, onClose, postId, shareUrl, text, post }: Share
             onClick={handleShare}
             className="flex w-full items-center gap-3 border-b border-slate-100 px-2 py-4 text-sm text-slate-700 dark:border-slate-700 dark:text-slate-200"
           >
-            <span className="text-lg">📤</span>
+            <Share2 size={20} strokeWidth={1.9} aria-hidden="true" />
             Share to...
           </button>
         ) : null}
@@ -152,7 +153,7 @@ export function ShareMenu({ open, onClose, postId, shareUrl, text, post }: Share
             disabled={sharingImage}
             className="flex w-full items-center gap-3 border-b border-slate-100 px-2 py-4 text-sm text-slate-700 disabled:opacity-60 dark:border-slate-700 dark:text-slate-200"
           >
-            <span className="text-lg">🖼️</span>
+            <ImageIcon size={20} strokeWidth={1.9} aria-hidden="true" />
             {sharingImage ? "Generating card..." : "Share as Image"}
           </button>
         ) : null}
@@ -161,7 +162,7 @@ export function ShareMenu({ open, onClose, postId, shareUrl, text, post }: Share
           onClick={onClose}
           className="flex w-full items-center gap-3 px-2 py-4 text-sm text-slate-500 dark:text-slate-300"
         >
-          <span className="text-lg">✕</span>
+          <X size={20} strokeWidth={1.9} aria-hidden="true" />
           Cancel
         </button>
       </div>

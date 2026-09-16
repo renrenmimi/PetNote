@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, X } from "lucide-react";
 import { useBodyScrollLock } from "../hooks/useBodyScrollLock";
 import { doc, getDoc, serverTimestamp } from "firebase/firestore";
 import Avatar from "./Avatar";
@@ -499,9 +500,19 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
                   usernameChecking ? (
                     <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-purple-500" />
                   ) : canContinueUsername ? (
-                    <span className="text-green-500">✓</span>
+                    <Check
+                      size={18}
+                      strokeWidth={2.6}
+                      className="text-green-500"
+                      aria-hidden="true"
+                    />
                   ) : (
-                    <span className="text-red-500">✕</span>
+                    <X
+                      size={18}
+                      strokeWidth={2.6}
+                      className="text-red-500"
+                      aria-hidden="true"
+                    />
                   )
                 ) : null}
               </div>

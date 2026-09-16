@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { MapPin } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Avatar from "../components/Avatar";
 import LazyImage from "../components/LazyImage";
@@ -527,8 +528,8 @@ export function Profile() {
                             cloudinarySize="small"
                           />
                         ) : (
-                          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 text-lg text-white">
-                            📍
+                          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-purple-100 text-purple-500 dark:bg-purple-500/15 dark:text-purple-300">
+                            <MapPin size={22} strokeWidth={1.9} aria-hidden="true" />
                           </div>
                         )}
                         <div className="flex-1">

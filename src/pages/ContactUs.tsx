@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Check } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../contexts/ToastContext";
@@ -173,7 +174,7 @@ export function ContactUs() {
         ) : (
           <div className="rounded-2xl bg-white p-6 text-center shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-              ✓
+              <Check size={28} strokeWidth={2.4} aria-hidden="true" />
             </div>
             <p className="mt-4 text-base font-semibold text-slate-900 dark:text-white">
               Thank you for your feedback!
