@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { InlineRetry } from "../components/InlineRetry";
 import { MapPin, PawPrint } from "lucide-react";
 import { signInReturnState } from "../utils/authNavigation";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -62,6 +63,7 @@ export function PetProfile() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [checkinsFailed, setCheckinsFailed] = useState(false);
   const [familyManageOpen, setFamilyManageOpen] = useState(false);
   // Bumped after a family change so the page refetches pet + family instead of
   // rendering a roster the server has already moved past.
@@ -86,6 +88,20 @@ export function PetProfile() {
           return;
         }
 
+        /*
+         * Check-ins are a tab on this page, not the page.
+         *
+         * `getCheckinsByPet` goes through a callable, so it fails for reasons
+         * the rest of the profile does not share — the function being cold,
+         * being unavailable, or in a local environment not being deployed at
+         * all. It was inside this `Promise.all` with no catch of its own, so
+         * one failing tab turned the whole pet into "Could not load this
+         * pet". Seen exactly that way during review: with the functions
+         * emulator not running, a pet whose name, photos, family and posts
+         * were all readable showed nothing but an error card.
+         *
+         * It now fails on its own, and the tab says so instead.
+         */
         const [petPosts, family, totalLikes, petCheckins] = await Promise.all([
           getPostsByPet(petId),
           getPetFamily(petId),
@@ -93,7 +109,7 @@ export function PetProfile() {
           // building) must not take the whole profile down to "Pet not
           // found".
           getPetTotalLikes(petId).catch(() => 0),
-          getCheckinsByPet(petId, { limitCount: 100 }),
+          getCheckinsByPet(petId, { limitCount: 100 }).catch(() => null),
         ]);
 
         const primaryOwnerId = petData.primaryOwnerId || petData.ownerId;
@@ -124,10 +140,15 @@ export function PetProfile() {
 
         const uniqueLocationIds = Array.from(
           new Set(
-            petCheckins.checkins.map((item) => item.locationId).filter(Boolean)
+            (petCheckins?.checkins ?? [])
+              .map((item) => item.locationId)
+              .filter(Boolean)
           )
         );
-        const locationMap = await batchGetLocations(uniqueLocationIds);
+        // Place names for the check-ins, and equally not the page.
+        const locationMap = await batchGetLocations(uniqueLocationIds).catch(
+          () => ({})
+        );
 
         if (!ignore) {
           setPet(petData);
@@ -135,7 +156,8 @@ export function PetProfile() {
           setPetLikes(totalLikes);
           setFamilyMembers(members);
           setViewerIsFamilyMember(isMember);
-          setCheckins(petCheckins.checkins);
+          setCheckins(petCheckins?.checkins ?? []);
+          setCheckinsFailed(petCheckins === null);
           setCheckinLocations(locationMap);
         }
       } catch (error) {
@@ -605,7 +627,18 @@ export function PetProfile() {
               </div>
             )
           ) : (
-            checkins.length === 0 ? (
+            /*
+              Three states, not two. "This pet has no check-ins" and "we could
+              not read the check-ins" are different facts, and saying the first
+              when the second happened is the mistake this whole round keeps
+              finding.
+            */
+            checkinsFailed ? (
+              <InlineRetry
+                label="Check-ins"
+                onRetry={() => setFamilyReloadKey((key) => key + 1)}
+              />
+            ) : checkins.length === 0 ? (
               <EmptyState
                 Icon={MapPin}
                 title="No check-ins with this pet"

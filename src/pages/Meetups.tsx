@@ -278,7 +278,7 @@ export function Meetups() {
       <main className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
         <div className="flex items-center justify-between">
           <h1 className="text-base font-semibold text-slate-900 dark:text-white">
-            Meetups 🐾
+            Meetups
           </h1>
           <button
             type="button"
