@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useModalBehavior } from "../hooks/useModalBehavior";
 import { useToast } from "../contexts/ToastContext";
 import type { Post } from "../services/posts";
 import { generateShareCard } from "./ShareCard";
@@ -17,6 +18,9 @@ type ShareMenuProps = {
 };
 
 export function ShareMenu({ open, onClose, postId, shareUrl, text, post }: ShareMenuProps) {
+  // A bottom action sheet is modal: it blocks the screen and has its own
+  // Cancel. Escape, the scroll lock and focus restoration all apply.
+  const panelRef = useModalBehavior({ open, onClose });
   // Computed once at mount rather than in an effect: both inputs — the
   // Capacitor platform and navigator.share — are fixed for the life of the
   // page, so there is nothing to synchronise with.
@@ -110,9 +114,14 @@ export function ShareMenu({ open, onClose, postId, shareUrl, text, post }: Share
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/50"
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Share"
     >
       <div
-        className="w-full max-w-md rounded-t-2xl bg-white px-4 py-4 shadow-[0_-20px_50px_-30px_rgba(15,23,42,0.4)] transition-all duration-300 dark:bg-slate-800"
+        ref={panelRef}
+        tabIndex={-1}
+        className="w-full max-w-md rounded-t-2xl bg-white px-4 pb-[max(env(safe-area-inset-bottom),1rem)] pt-4 shadow-[0_-20px_50px_-30px_rgba(15,23,42,0.4)] transition-all duration-300 dark:bg-slate-800"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-slate-200 dark:bg-slate-700" />

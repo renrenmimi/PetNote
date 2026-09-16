@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
+import { useBodyScrollLock } from "../hooks/useBodyScrollLock";
 import { useNavigate } from "react-router-dom";
 import type { Post } from "../services/posts";
 
@@ -36,6 +37,11 @@ export function QuickActionMenu({
   onEdit,
   onDelete,
 }: QuickActionMenuProps) {
+  // A menu, not a dialog: it keeps its own Escape handler and gets menu
+  // roles rather than dialog ones. The page must stop scrolling though —
+  // this menu is positioned against the card that was long-pressed, and
+  // scrolling the feed underneath left it pointing at nothing.
+  useBodyScrollLock(isOpen);
   const navigate = useNavigate();
 
   const menuStyle = useMemo(() => {
@@ -67,12 +73,14 @@ export function QuickActionMenu({
       onClick={onClose}
     >
       <div
+        role="menu"
         className="absolute w-56 origin-top-left rounded-2xl bg-white py-2 shadow-2xl transition-all duration-200 dark:bg-slate-800"
         style={menuStyle}
         onClick={(event) => event.stopPropagation()}
       >
         <button
           type="button"
+          role="menuitem"
           onClick={onLike}
           className="flex h-11 w-full items-center gap-2 px-4 text-sm text-slate-700 transition-all duration-200 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
         >
@@ -80,6 +88,7 @@ export function QuickActionMenu({
         </button>
         <button
           type="button"
+          role="menuitem"
           onClick={onBookmark}
           className="flex h-11 w-full items-center gap-2 px-4 text-sm text-slate-700 transition-all duration-200 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
         >
@@ -87,6 +96,7 @@ export function QuickActionMenu({
         </button>
         <button
           type="button"
+          role="menuitem"
           onClick={onShare}
           className="flex h-11 w-full items-center gap-2 px-4 text-sm text-slate-700 transition-all duration-200 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
         >
@@ -94,6 +104,7 @@ export function QuickActionMenu({
         </button>
         <button
           type="button"
+          role="menuitem"
           onClick={() => navigate(`/profile/${post.authorId}`)}
           className="flex h-11 w-full items-center gap-2 px-4 text-sm text-slate-700 transition-all duration-200 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
         >
@@ -103,6 +114,7 @@ export function QuickActionMenu({
           <>
             <button
               type="button"
+          role="menuitem"
               onClick={onEdit}
               className="flex h-11 w-full items-center gap-2 px-4 text-sm text-slate-700 transition-all duration-200 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
             >
@@ -110,6 +122,7 @@ export function QuickActionMenu({
             </button>
             <button
               type="button"
+          role="menuitem"
               onClick={onDelete}
               className="flex h-11 w-full items-center gap-2 px-4 text-sm text-red-500 transition-all duration-200 hover:bg-red-50 dark:hover:bg-red-500/10"
             >
@@ -120,6 +133,7 @@ export function QuickActionMenu({
           <>
             <button
               type="button"
+          role="menuitem"
               onClick={onReport}
               className="flex h-11 w-full items-center gap-2 px-4 text-sm text-slate-700 transition-all duration-200 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
             >
@@ -127,6 +141,7 @@ export function QuickActionMenu({
             </button>
             <button
               type="button"
+          role="menuitem"
               onClick={onBlock}
               className="flex h-11 w-full items-center gap-2 px-4 text-sm text-slate-700 transition-all duration-200 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
             >
