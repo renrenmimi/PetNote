@@ -13,6 +13,12 @@ import type { EmailSendResult } from "../email";
  * from anywhere, and enough to sort a list of addresses into "has an account"
  * and "does not".
  *
+ * Since sending moved to a Cloud Tasks queue the request path does identical
+ * work for every address, so what is left to hide is one extra Firestore read
+ * rather than a whole provider round trip — which is why the shipping floor
+ * is 400 ms rather than 1.5 s. The property under test is unchanged: no
+ * usable gap between an address with an account and one without.
+ *
  * This file is separate because the floor is read once at module load, so the
  * override has to be in place before `../passwordReset` is imported. The main
  * suite runs with the floor at zero — paying it in wall time on every request
@@ -46,6 +52,14 @@ vi.mock("../email", async (importOriginal) => {
     }),
   };
 });
+
+// Cloud Tasks is captured, not contacted: the request handler enqueues and
+// a real queue call here would fail and turn every sample into an error.
+vi.mock("firebase-admin/functions", () => ({
+  getFunctions: () => ({
+    taskQueue: () => ({ enqueue: async () => {} }),
+  }),
+}));
 
 const { admin, db } = await import("../platform");
 const { callAs, clearRateLimits } = await import("./helpers");

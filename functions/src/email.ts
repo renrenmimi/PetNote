@@ -98,6 +98,23 @@ function renderCodeEmail(code: string, expiresInMinutes: number) {
 }
 
 /**
+ * Whether the transport could send at all, without trying.
+ *
+ * A property of the environment, not of any address, so asking it costs
+ * nothing and tells a caller nothing about whose account exists. That matters
+ * now that the send itself happens on a queue: the request handler can no
+ * longer report a provider failure, but it can still refuse to invite
+ * somebody into a flow whose email was never configured — which is the
+ * failure that would otherwise be silent and permanent.
+ */
+export function emailTransportConfigured(): boolean {
+  return (
+    readSecret(TRANSACTIONAL_EMAIL_API_KEY).length > 0 &&
+    readSecret(TRANSACTIONAL_EMAIL_FROM).length > 0
+  );
+}
+
+/**
  * The one place that talks to the provider. Both templates go through it, so
  * they cannot drift on timeout, error handling or what gets logged.
  */
