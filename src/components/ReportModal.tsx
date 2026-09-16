@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useModalBehavior } from "../hooks/useModalBehavior";
 import { createPortal } from "react-dom";
 import { useAuth } from "../hooks/useAuth";
 import { reportContent, type ReportTargetType } from "../services/report";
@@ -26,6 +27,9 @@ export function ReportModal({
   targetType,
   targetId,
 }: ReportModalProps) {
+  // Scroll lock, Escape, and focus in and back out again. See the
+  // hook for what every dialog here was missing.
+  const panelRef = useModalBehavior({ open: open, onClose: onClose });
   const { user } = useAuth();
   const { showToast } = useToast();
   const [selected, setSelected] = useState<string>("");
@@ -84,8 +88,13 @@ export function ReportModal({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Report content"
     >
       <div
+        ref={panelRef}
+        tabIndex={-1}
         className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.5)] dark:bg-slate-800"
         onClick={(event) => event.stopPropagation()}
       >

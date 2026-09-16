@@ -41,6 +41,11 @@ export default function LazyImage({
   const [loaded, setLoaded] = useState(false);
   const [inView, setInView] = useState(priority);
   const [error, setError] = useState(false);
+  // Bumped to re-request the same URL after a failure. Without it the error
+  // state was terminal: one flaky response and that image stayed a grey box
+  // with a picture glyph for as long as the card was mounted, with no way to
+  // ask again short of leaving the page.
+  const [attempt, setAttempt] = useState(0);
   const imgRef = useRef<HTMLDivElement>(null);
   const resolvedSrc = cloudinarySize
     ? optimizeCloudinaryUrl(src, cloudinarySize)
@@ -81,13 +86,29 @@ export default function LazyImage({
       ) : null}
 
       {error ? (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-200 text-gray-400 dark:bg-gray-700 dark:text-gray-500">
-          🖼️
-        </div>
+        <button
+          type="button"
+          onClick={(event) => {
+            // The wrapper may carry an onClick that opens the post; retrying
+            // a broken image should not also navigate.
+            event.stopPropagation();
+            setError(false);
+            setLoaded(false);
+            setAttempt((value) => value + 1);
+          }}
+          className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
+          aria-label={alt ? `Retry loading ${alt}` : "Retry loading image"}
+        >
+          <span aria-hidden="true">🖼️</span>
+          <span className="text-xs font-medium">Tap to retry</span>
+        </button>
       ) : null}
 
       {inView && !error ? (
         <img
+          // The attempt counter is part of the key, not the URL: changing the
+          // src would defeat the HTTP cache for every successful reload too.
+          key={attempt}
           src={resolvedSrc}
           alt={alt}
           className={`h-full w-full ${imgClassName || "object-cover"} transition-opacity duration-300 ${

@@ -204,14 +204,21 @@ export function MediaCarousel({
           return (
             <div
               key={`${item.url}-${idx}`}
-              className="flex w-full flex-shrink-0 items-center justify-center bg-black/5 dark:bg-white/5"
+              // min-height, because `max-h` is a ceiling and reserves
+              // nothing: an unloaded slide was 0px tall, so every card in
+              // the feed snapped open as its photo arrived and pushed
+              // whatever you were reading down the screen. Posts carry no
+              // stored dimensions, so the true ratio cannot be known in
+              // advance; bounding the box turns an unbounded jump into a
+              // small one, and into none at all for the common ratios.
+              className="flex min-h-[260px] w-full flex-shrink-0 items-center justify-center bg-black/5 dark:bg-white/5"
               onDoubleClick={onDoubleTap}
             >
               {isVideo ? (
                 !isNearby ? (
                   // Same adjacency gating as images so a multi-video post
                   // doesn't fetch every video up front.
-                  <div className="max-h-[500px] w-full bg-slate-200 dark:bg-slate-700" />
+                  <div className="h-[260px] max-h-[500px] w-full bg-slate-200 dark:bg-slate-700" />
                 ) : !visible && !videoUnlocked[idx] ? (
                   // Off screen: show the Cloudinary frame-0 thumbnail — a
                   // transformed JPEG, kilobytes rather than the original
@@ -290,7 +297,7 @@ export function MediaCarousel({
                   <LazyImage
                     src={item.url}
                     alt="Post media"
-                    className="max-h-[500px] w-full"
+                    className="min-h-[260px] max-h-[500px] w-full"
                     // The max-height must live on the <img> itself: the
                     // wrapper has no definite height, so the img's h-full
                     // resolves to auto and a tall portrait photo was being
@@ -302,7 +309,7 @@ export function MediaCarousel({
                     priority={priority && isActive}
                   />
                 ) : (
-                  <div className="max-h-[500px] w-full bg-slate-200 dark:bg-slate-700" />
+                  <div className="h-[260px] max-h-[500px] w-full bg-slate-200 dark:bg-slate-700" />
                 )
               )}
             </div>

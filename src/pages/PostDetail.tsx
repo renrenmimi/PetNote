@@ -341,7 +341,8 @@ export function PostDetail() {
                   type="button"
                   onClick={handleLike}
                   className="text-2xl transition-all duration-200"
-                  aria-label="Like"
+                  aria-pressed={isLiked}
+                  aria-label={isLiked ? "Unlike" : "Like"}
                 >
                   <HeartIcon filled={isLiked} gradientId={heartGradientId} />
                 </button>
@@ -371,7 +372,8 @@ export function PostDetail() {
                 type="button"
                 onClick={handleBookmark}
                 className="text-2xl text-slate-500 transition-all duration-200 hover:scale-105 dark:text-slate-400"
-                aria-label="Save"
+                aria-pressed={isBookmarked}
+                aria-label={isBookmarked ? "Remove bookmark" : "Save"}
               >
                 <BookmarkIcon filled={isBookmarked} />
               </button>

@@ -7,6 +7,7 @@ import { EmailVerificationBanner } from "../components/EmailVerificationBanner";
 import { BirthdayCelebration } from "../components/BirthdayCelebration";
 import { PostCard } from "../components/PostCard";
 import { EmptyState } from "../components/EmptyState";
+import { LoadFailedState } from "../components/LoadFailedState";
 import PawIcon from "../components/PawIcon";
 import { SkeletonPostCard } from "../components/SkeletonPostCard";
 import { ErrorBoundary } from "../components/ErrorBoundary";
@@ -522,7 +523,21 @@ export function Feed() {
           </div>
         ) : null}
 
-        {!loading && filteredPosts.length === 0 ? (
+        {/*
+          A failed request is not an empty account. This used to fall through
+          to the welcome card, so being offline looked like having no posts.
+        */}
+        {!loading && filteredPosts.length === 0 && error ? (
+          <LoadFailedState
+            title={t("state.loadFailedTitle")}
+            description={t("state.loadFailedDescription")}
+            retryLabel={t("state.retry")}
+            retryingLabel={t("state.retrying")}
+            onRetry={refresh}
+          />
+        ) : null}
+
+        {!loading && filteredPosts.length === 0 && !error ? (
           activeTab === "following" && user && followingCount === 0 ? (
             <EmptyState
               icon="👥"

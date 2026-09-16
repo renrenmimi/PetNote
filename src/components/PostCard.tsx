@@ -686,7 +686,11 @@ function PostCardImpl({
               className={`text-2xl transition-all duration-200 ${
                 animating ? "scale-110" : "scale-100"
               } ${likedState ? "text-red-500" : "text-slate-500 dark:text-slate-400"}`}
-              aria-label="Like"
+              // The filled heart is the only other signal, and colour
+              // alone is not one. aria-pressed carries the state; the
+              // label says what the tap will do.
+              aria-pressed={likedState}
+              aria-label={likedState ? "Unlike" : "Like"}
             >
               <HeartIcon filled={likedState} />
             </button>
@@ -713,7 +717,8 @@ function PostCardImpl({
             className={`transition-all duration-200 ${
               bookmarkAnimating ? "scale-110" : "scale-100"
             }`}
-            aria-label="Save"
+            aria-pressed={isBookmarked}
+            aria-label={isBookmarked ? "Remove bookmark" : "Save"}
           >
             <BookmarkIcon filled={isBookmarked} />
           </button>

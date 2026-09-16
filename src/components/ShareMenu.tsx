@@ -3,6 +3,9 @@ import { createPortal } from "react-dom";
 import { useToast } from "../contexts/ToastContext";
 import type { Post } from "../services/posts";
 import { generateShareCard } from "./ShareCard";
+import { canShare, shareImage, shareLink } from "../services/share";
+
+const SHARE_TITLE = "Check out this cute pet on PetNote!";
 
 type ShareMenuProps = {
   open: boolean;
@@ -14,7 +17,10 @@ type ShareMenuProps = {
 };
 
 export function ShareMenu({ open, onClose, postId, shareUrl, text, post }: ShareMenuProps) {
-  const [canShare, setCanShare] = useState(false);
+  // Computed once at mount rather than in an effect: both inputs — the
+  // Capacitor platform and navigator.share — are fixed for the life of the
+  // page, so there is nothing to synchronise with.
+  const [shareAvailable] = useState(canShare);
   const [sharingImage, setSharingImage] = useState(false);
   const mountedRef = useRef(true);
   const { showToast } = useToast();
@@ -25,10 +31,6 @@ export function ShareMenu({ open, onClose, postId, shareUrl, text, post }: Share
     if (postId) return `${window.location.origin}/post/${postId}`;
     return window.location.href;
   }, [postId, shareUrl]);
-
-  useEffect(() => {
-    setCanShare(typeof navigator !== "undefined" && !!navigator.share);
-  }, []);
 
   useEffect(() => {
     // Re-arm on each mount so StrictMode's double-effect cycle doesn't
@@ -52,57 +54,54 @@ export function ShareMenu({ open, onClose, postId, shareUrl, text, post }: Share
   };
 
   const handleShare = async () => {
-    if (!navigator.share) return;
-    try {
-      await navigator.share({
-        title: "Check out this cute pet on PetNote!",
-        text: text ? text.slice(0, 100) : "",
-        url: postUrl,
-      });
-    } catch (error) {
-      // navigator.share rejects with AbortError when the user dismisses
-      // the share sheet — that's a normal interaction, not an error
-      // worth surfacing or logging. Anything else we still want to see
-      // in the console.
-      if (!(error instanceof DOMException && error.name === "AbortError")) {
-        console.warn("Share failed:", error);
-      }
+    const outcome = await shareLink({
+      title: SHARE_TITLE,
+      text: text ? text.slice(0, 100) : "",
+      url: postUrl,
+    });
+    if (!mountedRef.current) return;
+    // Dismissing the sheet is a decision, not an error — say nothing.
+    if (outcome === "cancelled") return;
+    if (outcome === "shared") {
+      onClose();
+      return;
     }
+    // A real failure used to be a console.warn nobody would ever see.
+    showToast(
+      outcome === "unsupported"
+        ? "Sharing is not available here. Copy the link instead."
+        : "Could not open the share sheet. Copy the link instead.",
+      "error"
+    );
   };
 
   const handleShareImage = async () => {
-    if (!post) return;
+    if (!post || sharingImage) return;
     setSharingImage(true);
+    let blob: Blob;
     try {
-      const blob = await generateShareCard(post);
-      const file = new File([blob], "petnote-share.png", { type: "image/png" });
-      if (navigator.share && navigator.canShare?.({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: "Check out this cute pet on PetNote!",
-          text: text ? text.slice(0, 100) : "",
-        });
-      } else {
-        const url = URL.createObjectURL(blob);
-        try {
-          const link = document.createElement("a");
-          link.href = url;
-          link.download = "petnote-share.png";
-          document.body.appendChild(link);
-          link.click();
-          link.remove();
-        } finally {
-          URL.revokeObjectURL(url);
-        }
-        showToast("Share card downloaded", "success");
-      }
+      blob = await generateShareCard(post);
     } catch {
-      showToast("Failed to generate share card", "error");
-    } finally {
       if (mountedRef.current) {
         setSharingImage(false);
+        showToast("Could not build the share card", "error");
       }
+      return;
     }
+    const outcome = await shareImage({
+      blob,
+      fileName: "petnote-share.png",
+      title: SHARE_TITLE,
+      text: text ? text.slice(0, 100) : "",
+    });
+    if (!mountedRef.current) return;
+    setSharingImage(false);
+    if (outcome === "cancelled") return;
+    if (outcome === "shared") {
+      onClose();
+      return;
+    }
+    showToast("Could not share the image", "error");
   };
 
   // Portal to <body> so transformed ancestors (PostCard hover lift, page
@@ -125,7 +124,9 @@ export function ShareMenu({ open, onClose, postId, shareUrl, text, post }: Share
           <span className="text-lg">🔗</span>
           Copy Link
         </button>
-        {canShare ? (
+        {/* Adapter, not `navigator.share`: WKWebView defines that method
+            and then rejects every call, which is why this button was dead. */}
+        {shareAvailable ? (
           <button
             type="button"
             onClick={handleShare}

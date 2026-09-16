@@ -115,7 +115,9 @@ function FeedLikeParent({ serverCount = 10 }: { serverCount?: number }) {
   );
 }
 
-const likeButton = () => screen.getByLabelText("Like");
+// The label is deliberately not fixed: it states the action the tap will
+// perform, so the state is not carried by colour alone.
+const likeButton = () => screen.getByLabelText(/^(Like|Unlike)$/);
 
 /** PostCard renders the total as "<n> likes" below the actions. */
 const shownCount = () => {
@@ -156,6 +158,9 @@ describe("PostCard like, integrated with the real hook and a Feed-like parent", 
 
     expect(shownCount()).toBe("11");
     expect(heartIsFilled()).toBe(true);
+    // Colour is not the only signal any more.
+    expect(likeButton().getAttribute("aria-label")).toBe("Unlike");
+    expect(likeButton().getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByTestId("parent-liked").textContent).toBe("parent-liked");
     expect(elapsed).toBeLessThan(1000);
 
@@ -201,6 +206,7 @@ describe("PostCard like, integrated with the real hook and a Feed-like parent", 
 
     expect(shownCount()).toBe("4");
     expect(heartIsFilled()).toBe(false);
+    expect(likeButton().getAttribute("aria-pressed")).toBe("false");
     expect(screen.getByTestId("parent-liked").textContent).toBe("parent-not-liked");
     expect(showToast).toHaveBeenCalledWith(
       "Could not update like. Please try again.",
