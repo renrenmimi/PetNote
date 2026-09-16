@@ -105,8 +105,8 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
           setPosts(recent);
         }
       } catch {
-        // Spotlight is decorative — on failure show the empty state instead
-        // of leaving the skeleton pulsing forever.
+        // Decorative, and above the content somebody came for. A failure here
+        // renders nothing at all — see the note on the early return below.
         if (!ignore) setPosts([]);
       } finally {
         if (!ignore) setLoading(false);
@@ -134,9 +134,33 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
     });
   }, [posts, limitCount, seenPosts]);
 
+  /*
+   * Nothing to show means nothing rendered — no heading, no card, no space.
+   *
+   * This module sits above the feed, so anything it occupies is space the
+   * photos somebody came for do not get. It used to render a full-width card
+   * whose only content was "Share your pet to get featured!", which is a
+   * pseudo-empty state: it reads as a prompt the product is making, when in
+   * fact the popularity query returned nothing or failed. On a feed that
+   * already has posts that is simply wrong — the user is not short of
+   * content, the decoration is.
+   *
+   * The loading state is included in this. A skeleton that resolves to
+   * nothing has still taken the space and still moved the feed, so there is
+   * no skeleton: the strip appears if and when it has pets. An empty result
+   * and a failed query are deliberately the same silent outcome, because
+   * neither is something to ask the reader to act on.
+   */
+  if (loading || sortedPosts.length === 0) return null;
+
   return (
-    <section className="rounded-2xl bg-white px-4 py-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 transition-all duration-200 dark:bg-slate-800 dark:ring-slate-700">
-      <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+    /*
+     * A strip, not a card. Card chrome around a row of avatars put a border
+     * and a shadow between the reader and the first photo for no gain; the
+     * heading plus the row is the whole module.
+     */
+    <section aria-label="Popular pets">
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         Popular Pets
       </h2>
       <svg width="0" height="0" className="absolute">
@@ -147,21 +171,7 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
         </defs>
       </svg>
 
-      {loading ? (
-        <div className="mt-4 flex gap-3 overflow-x-auto overflow-y-visible pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {Array.from({ length: 5 }).map((_, index) => (
-            <div key={index} className="flex w-[72px] flex-col items-center gap-1.5">
-              <div className="h-16 w-16 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-700" />
-              <div className="h-3 w-12 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
-            </div>
-          ))}
-        </div>
-      ) : posts.length === 0 ? (
-        <p className="mt-4 text-sm text-slate-500 dark:text-slate-300">
-          Share your pet to get featured! 🐾
-        </p>
-      ) : (
-        <div className="mt-4 flex gap-3 overflow-x-auto overflow-y-visible pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="mt-2 flex gap-3 overflow-x-auto overflow-y-visible pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {sortedPosts.map((post) => {
             const isSeen = seenPosts.includes(post.id);
             const mediaUrl =
@@ -203,8 +213,7 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
               </button>
             );
           })}
-        </div>
-      )}
+      </div>
     </section>
   );
 }
