@@ -433,7 +433,10 @@ export function Search() {
       <Navbar />
 
       <main className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
-        <div className="sticky top-16 z-10">
+        <div
+          className="sticky z-10"
+          style={{ top: "calc(4rem + env(safe-area-inset-top, 0px))" }}
+        >
           <div className="rounded-2xl bg-white px-4 py-3 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
             <div className="flex items-center gap-2">
               <span className="text-lg">🔍</span>

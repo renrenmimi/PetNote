@@ -6,7 +6,10 @@ import { PasswordVisibilityButton } from "../components/PasswordVisibilityButton
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../contexts/ToastContext";
 import { useLanguage } from "../hooks/useLanguage";
+import { emailFieldProps, newPasswordFieldProps } from "../utils/formFields";
+import { mapAuthError } from "../utils/authErrors";
 import PawIcon from "../components/PawIcon";
+import { AuthShell } from "../components/AuthShell";
 import { PasswordStrengthIndicator } from "../components/PasswordStrengthIndicator";
 import { validatePassword } from "../utils/passwordValidator";
 
@@ -185,13 +188,17 @@ export function SignUp() {
           message: t("signup.emailSignUpDisabled"),
         });
       } else {
-        // Raw SDK strings as a last resort only. Mapping the codes above is
-        // what stops "Firebase: Error (auth/...)" reaching a person who can do
-        // nothing with it.
-        setNotice({
-          title: t("auth.genericErrorTitle"),
-          message: err instanceof Error ? err.message : t("signup.signUpFailed"),
-        });
+        // Shared mapping for everything sign-up has no special copy for. It
+        // never returns a raw SDK string, which is what used to reach this
+        // branch: "Firebase: Error (auth/...)" tells a person nothing they
+        // can act on.
+        const notice = mapAuthError(err);
+        if (notice) {
+          setNotice({
+            title: t(notice.titleKey),
+            message: t(notice.messageKey),
+          });
+        }
       }
     } finally {
       setLoading(false);
@@ -205,178 +212,179 @@ export function SignUp() {
       await signInWithGoogle();
       navigate("/", { replace: true });
     } catch (err) {
-      setNotice({
-        title: t("auth.genericErrorTitle"),
-        message: err instanceof Error ? err.message : t("signup.googleFailed"),
-      });
+      // null when the Google sheet was dismissed on purpose — no banner.
+      const notice = mapAuthError(err);
+      if (notice) {
+        setNotice({
+          title: t(notice.titleKey),
+          message: t(notice.messageKey),
+        });
+      }
     } finally {
       setGoogleLoading(false);
     }
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-sky-500 via-teal-400 to-emerald-400 px-4">
-      <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl dark:bg-slate-900">
-        <div className="mb-6 flex justify-end">
-          <LanguageSelector compact />
+    <AuthShell gradient="bg-gradient-to-br from-sky-500 via-teal-400 to-emerald-400">
+      <div className="mb-6 flex justify-end">
+        <LanguageSelector compact />
+      </div>
+      <div className="mb-8 text-center">
+        <div className="flex justify-center">
+          <PawIcon size={48} />
         </div>
-        <div className="mb-8 text-center">
-          <div className="flex justify-center">
-            <PawIcon size={48} />
-          </div>
-          <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
-            {t("common.appName")}
-          </h1>
-          <p className="mx-auto mt-3 inline-flex rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200">
-            {t("signup.badge")}
-          </p>
-          <h2 className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">
-            {t("signup.heading")}
-          </h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
-            {t("signup.tagline")}
-          </p>
-        </div>
-
-        {notice ? (
-          <div className="mb-4">
-            <AuthNotice
-              title={notice.title}
-              message={notice.message}
-              actionLabel={notice.actionLabel}
-              onAction={notice.action}
-              onDismiss={() => setNotice(null)}
-              closeLabel={t("auth.noticeClose")}
-            />
-          </div>
-        ) : null}
-
-        <form className="space-y-4" onSubmit={handleSubmit}>
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
-              {t("auth.email")}
-            </span>
-            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
-              <MailIcon />
-              <input
-                type="email"
-                placeholder={t("auth.emailPlaceholder")}
-                autoComplete="email"
-                className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                required
-              />
-            </div>
-          </label>
-
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
-              {t("auth.password")}
-            </span>
-            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
-              <LockIcon />
-              <input
-                type={showPassword ? "text" : "password"}
-                placeholder={t("signup.passwordPlaceholder")}
-                autoComplete="new-password"
-                className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-              />
-              <PasswordVisibilityButton
-                visible={showPassword}
-                onToggle={() => setShowPassword((prev) => !prev)}
-                showLabel={t("auth.show")}
-                hideLabel={t("auth.hide")}
-              />
-            </div>
-            <div className="mt-2">
-              <PasswordStrengthIndicator password={password} />
-            </div>
-          </label>
-
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
-              {t("signup.confirmPassword")}
-            </span>
-            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
-              <LockIcon />
-              <input
-                type={showConfirm ? "text" : "password"}
-                placeholder={t("signup.confirmPasswordPlaceholder")}
-                autoComplete="new-password"
-                className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                required
-              />
-              <PasswordVisibilityButton
-                visible={showConfirm}
-                onToggle={() => setShowConfirm((prev) => !prev)}
-                showLabel={t("auth.show")}
-                hideLabel={t("auth.hide")}
-              />
-            </div>
-          </label>
-
-          {!passwordsMatch && confirmPassword ? (
-            <p className="text-xs text-red-500">{t("signup.passwordMismatch")}</p>
-          ) : null}
-
-          <button
-            type="submit"
-            disabled={!canSubmit}
-            className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {loading ? t("signup.creatingAccount") : t("signup.signUp")}
-          </button>
-          <p className="text-center text-xs text-gray-500 dark:text-gray-400">
-            {t("signup.agreePrefix")}{" "}
-            <Link
-              to="/terms"
-              className="font-semibold text-purple-600 underline underline-offset-2"
-            >
-              {t("settings.terms")}
-            </Link>{" "}
-            {t("signup.and")}{" "}
-            <Link
-              to="/privacy"
-              className="font-semibold text-purple-600 underline underline-offset-2"
-            >
-              {t("settings.privacy")}
-            </Link>
-          </p>
-        </form>
-
-        <div className="my-6 flex items-center gap-3 text-xs text-slate-400 dark:text-slate-500">
-          <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
-          {t("common.or")}
-          <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
-        </div>
-
-        <button
-          type="button"
-          onClick={handleGoogle}
-          disabled={googleLoading}
-          className="flex w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-all duration-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-        >
-          <GoogleIcon />
-          {googleLoading ? t("login.connecting") : t("login.continueWithGoogle")}
-        </button>
-
-        <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-300">
-          {t("signup.haveAccount")}
-          <Link
-            to="/login"
-            state={fromLocation ? { from: fromLocation } : undefined}
-            className="ml-1 font-semibold text-purple-600 hover:text-purple-500"
-          >
-            {t("signup.loginCta")}
-          </Link>
+        <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
+          {t("common.appName")}
+        </h1>
+        <p className="mx-auto mt-3 inline-flex rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200">
+          {t("signup.badge")}
+        </p>
+        <h2 className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">
+          {t("signup.heading")}
+        </h2>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
+          {t("signup.tagline")}
         </p>
       </div>
-    </main>
+
+      {notice ? (
+        <div className="mb-4">
+          <AuthNotice
+            title={notice.title}
+            message={notice.message}
+            actionLabel={notice.actionLabel}
+            onAction={notice.action}
+            onDismiss={() => setNotice(null)}
+            closeLabel={t("auth.noticeClose")}
+          />
+        </div>
+      ) : null}
+
+      <form className="space-y-4" onSubmit={handleSubmit}>
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
+            {t("auth.email")}
+          </span>
+          <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
+            <MailIcon />
+            <input
+              {...emailFieldProps}
+              placeholder={t("auth.emailPlaceholder")}
+              className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+            />
+          </div>
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
+            {t("auth.password")}
+          </span>
+          <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
+            <LockIcon />
+            <input
+              type={showPassword ? "text" : "password"}
+              placeholder={t("signup.passwordPlaceholder")}
+              {...newPasswordFieldProps}
+              className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
+            <PasswordVisibilityButton
+              visible={showPassword}
+              onToggle={() => setShowPassword((prev) => !prev)}
+              showLabel={t("auth.show")}
+              hideLabel={t("auth.hide")}
+            />
+          </div>
+          <div className="mt-2">
+            <PasswordStrengthIndicator password={password} />
+          </div>
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
+            {t("signup.confirmPassword")}
+          </span>
+          <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
+            <LockIcon />
+            <input
+              type={showConfirm ? "text" : "password"}
+              placeholder={t("signup.confirmPasswordPlaceholder")}
+              {...newPasswordFieldProps}
+              className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              required
+            />
+            <PasswordVisibilityButton
+              visible={showConfirm}
+              onToggle={() => setShowConfirm((prev) => !prev)}
+              showLabel={t("auth.show")}
+              hideLabel={t("auth.hide")}
+            />
+          </div>
+        </label>
+
+        {!passwordsMatch && confirmPassword ? (
+          <p className="text-xs text-red-500">{t("signup.passwordMismatch")}</p>
+        ) : null}
+
+        <button
+          type="submit"
+          disabled={!canSubmit}
+          className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+        >
+          {loading ? t("signup.creatingAccount") : t("signup.signUp")}
+        </button>
+        <p className="text-center text-xs text-gray-500 dark:text-gray-400">
+          {t("signup.agreePrefix")}{" "}
+          <Link
+            to="/terms"
+            className="font-semibold text-purple-600 underline underline-offset-2"
+          >
+            {t("settings.terms")}
+          </Link>{" "}
+          {t("signup.and")}{" "}
+          <Link
+            to="/privacy"
+            className="font-semibold text-purple-600 underline underline-offset-2"
+          >
+            {t("settings.privacy")}
+          </Link>
+        </p>
+      </form>
+
+      <div className="my-6 flex items-center gap-3 text-xs text-slate-400 dark:text-slate-500">
+        <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+        {t("common.or")}
+        <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+      </div>
+
+      <button
+        type="button"
+        onClick={handleGoogle}
+        disabled={googleLoading}
+        className="flex w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-all duration-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+      >
+        <GoogleIcon />
+        {googleLoading ? t("login.connecting") : t("login.continueWithGoogle")}
+      </button>
+
+      <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-300">
+        {t("signup.haveAccount")}
+        <Link
+          to="/login"
+          state={fromLocation ? { from: fromLocation } : undefined}
+          className="ml-1 font-semibold text-purple-600 hover:text-purple-500"
+        >
+          {t("signup.loginCta")}
+        </Link>
+      </p>
+    </AuthShell>
   );
 }

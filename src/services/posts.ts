@@ -329,12 +329,27 @@ export async function getFollowingPosts(
   return { posts, lastDoc: nextLastDoc, hasMore };
 }
 
-export async function likePost(postId: string, userId: string): Promise<void> {
+/**
+ * What a like/unlike request actually did.
+ *
+ * `likePost` used to return void and `return` silently when the post was
+ * gone, which is indistinguishable from success at the call site — so a tap
+ * on a deleted post showed a filled heart and an incremented count that no
+ * write backed. The caller needs all three cases: the write happened, the
+ * server was already in the requested state (so the aggregate already counts
+ * it), or there is nothing to like.
+ */
+export type LikeMutationResult = "changed" | "unchanged" | "post-not-found";
+
+export async function likePost(
+  postId: string,
+  userId: string
+): Promise<LikeMutationResult> {
   const postRef = doc(db, "posts", postId);
   const likeRef = doc(db, "posts", postId, "likes", userId);
   const postSnap = await getDoc(postRef);
   if (!postSnap.exists()) {
-    return;
+    return "post-not-found";
   }
   let didLike = false;
 
@@ -364,16 +379,20 @@ export async function likePost(postId: string, userId: string): Promise<void> {
     didLike = true;
   });
 
-  if (!didLike) return;
+  return didLike ? "changed" : "unchanged";
 }
 
-export async function unlikePost(postId: string, userId: string): Promise<void> {
+export async function unlikePost(
+  postId: string,
+  userId: string
+): Promise<LikeMutationResult> {
   // Only delete the like doc. Count decrement is handled by
   // onLikeDeleted Cloud Function to avoid double-decrement.
   const likeRef = doc(db, "posts", postId, "likes", userId);
   const likeSnap = await getDoc(likeRef);
-  if (!likeSnap.exists()) return;
+  if (!likeSnap.exists()) return "unchanged";
   await deleteDoc(likeRef);
+  return "changed";
 }
 
 export async function checkIfLiked(

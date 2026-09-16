@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useModalBehavior } from "../hooks/useModalBehavior";
 import { createPortal } from "react-dom";
 import { useToast } from "../contexts/ToastContext";
 import { submitReview } from "../services/locations";
@@ -45,6 +46,9 @@ export function LocationRatingModal({
   meetupId,
   onSubmitted,
 }: LocationRatingModalProps) {
+  // Scroll lock, Escape, and focus in and back out again. See the
+  // hook for what every dialog here was missing.
+  const panelRef = useModalBehavior({ open: open, onClose: onClose });
   const { user, profile } = useAuth();
   const { showToast } = useToast();
   const [rating, setRating] = useState(0);
@@ -183,8 +187,17 @@ export function LocationRatingModal({
   // textarea exceed short phone viewports, and items-end would clip the
   // overall-rating header off the top with no way to scroll.
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-4 pb-6">
-      <div className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-xl dark:bg-slate-800">
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-4 pb-6"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Rate this place"
+    >
+      <div
+        ref={panelRef}
+        tabIndex={-1}
+        className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-xl dark:bg-slate-800"
+      >
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
             Rate this location 📍

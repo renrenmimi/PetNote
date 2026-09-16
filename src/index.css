@@ -19,3 +19,150 @@
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+
+/*
+ * A full-screen iOS web view — the Capacitor shell, and the site added to the
+ * home screen as a PWA — starts the page at the physical top of the display,
+ * with no browser chrome above it. Every page header here is `sticky top-0`,
+ * so without this the title row sits underneath the clock and the Dynamic
+ * Island.
+ *
+ * Padding rather than offsetting the header: the header keeps sticking at 0,
+ * so its own background still covers the status bar strip while content
+ * scrolls under it, and only its contents move clear. env() resolves to 0 in
+ * an ordinary browser tab, which is why this is inert on the web.
+ *
+ * Anything that sticks at a fixed offset *below* a header has to add the same
+ * inset or it slides underneath — see the feed's tab bar and the search field.
+ */
+header.sticky {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/*
+ * iOS zooms the whole page in when a focused field's computed font-size is
+ * below 16px, and it does not zoom back out on blur. Every form here uses
+ * Tailwind's text-sm (14px) or text-xs (12px), so one tap on an email,
+ * password or comment field left the app magnified and stuck that way.
+ *
+ * Set on the control itself rather than at ~70 call sites across 20 files:
+ * a per-site number is the kind of thing the next form forgets. An explicit
+ * list of text-entry types rather than a `:not()` chain, so nothing touches
+ * the metrics of buttons, checkboxes, range thumbs or file pickers — and
+ * because `input[type="text"]` already outranks a `.text-sm` utility on
+ * specificity, this does not depend on cascade-layer ordering.
+ *
+ * max() rather than a flat 16px so a larger root font size — accessibility
+ * text scaling — still wins. Visible label and body text is untouched; this
+ * only governs what the person types.
+ */
+input:not([type]),
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+input[type="tel"],
+input[type="url"],
+input[type="number"],
+input[type="date"],
+input[type="datetime-local"],
+input[type="month"],
+input[type="time"],
+input[type="week"],
+textarea,
+select {
+  font-size: max(16px, 1rem);
+}
+
+/*
+ * Shell for the three unauthenticated pages (login, sign up, forgot
+ * password).
+ *
+ * `position: fixed` rather than a viewport height unit, because measuring
+ * this in the simulator with the keyboard up showed 100dvh does not track the
+ * keyboard: window.innerHeight went 874 -> 498 while the shell stayed 874px,
+ * so the *document* overflowed and WebKit scrolled it, carrying the reserved
+ * inset up under the clock. A fixed element is sized to the layout viewport
+ * the keyboard plugin actually shrinks, and contributes no document height,
+ * so there is nothing for WebKit to scroll except .auth-scroll.
+ *
+ * The insets live on the scroll container rather than on the shell. Putting
+ * them on the shell clipped the card dead against the status bar and against
+ * the top of the keyboard — a razor cut straight through whichever control
+ * happened to be at the boundary. As padding inside the scroller, content
+ * can pass under those edges, and the frosted strips below give it something
+ * to pass under.
+ */
+.auth-shell {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.auth-scroll {
+  display: flex;
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: calc(env(safe-area-inset-top, 0px) + 1.5rem)
+    max(1rem, env(safe-area-inset-right, 0px))
+    calc(env(safe-area-inset-bottom, 0px) + 1.5rem)
+    max(1rem, env(safe-area-inset-left, 0px));
+  /*
+   * Where WebKit parks a field it has just scrolled into view. Without the
+   * bottom value the focused input landed flush against the keyboard with
+   * half of it cut off; 4rem keeps the whole control, and its label, clear.
+   */
+  scroll-padding-top: calc(env(safe-area-inset-top, 0px) + 1rem);
+  scroll-padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4rem);
+}
+
+.auth-scroll > .auth-card {
+  margin: auto;
+  width: 100%;
+  max-width: 28rem; /* unchanged from the previous max-w-md */
+}
+
+/*
+ * Frosted edges, top and bottom.
+ *
+ * Content scrolls under them instead of being clipped by them, which is the
+ * difference between "the card continues up there" and "the card has been
+ * guillotined". The bottom one sits directly above the keyboard, because the
+ * keyboard plugin makes the web view end exactly where the keyboard begins.
+ *
+ * Both are masked so the blur itself fades out — a blurred strip that stops
+ * on a hard line just moves the ugly edge a few pixels. pointer-events are
+ * off so neither can swallow a tap meant for the form.
+ *
+ * A minimum height keeps a soft edge even where there is no inset to
+ * reserve: `env(safe-area-inset-bottom)` collapses to 0 while the keyboard
+ * is up, which is exactly when the bottom edge matters most.
+ */
+.auth-shell::before,
+.auth-shell::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
+}
+
+.auth-shell::before {
+  top: 0;
+  height: max(env(safe-area-inset-top, 0px), 0.75rem);
+  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+}
+
+.auth-shell::after {
+  bottom: 0;
+  height: max(env(safe-area-inset-bottom, 0px), 1.25rem);
+  -webkit-mask-image: linear-gradient(to top, #000 55%, transparent 100%);
+  mask-image: linear-gradient(to top, #000 55%, transparent 100%);
+}

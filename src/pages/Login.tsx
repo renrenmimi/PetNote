@@ -5,7 +5,10 @@ import { LanguageSelector } from "../components/LanguageSelector";
 import { PasswordVisibilityButton } from "../components/PasswordVisibilityButton";
 import { useAuth } from "../hooks/useAuth";
 import { useLanguage } from "../hooks/useLanguage";
+import { emailFieldProps, currentPasswordFieldProps } from "../utils/formFields";
+import { mapAuthError } from "../utils/authErrors";
 import PawIcon from "../components/PawIcon";
+import { AuthShell } from "../components/AuthShell";
 
 function MailIcon() {
   return (
@@ -109,44 +112,16 @@ export function Login() {
       await signIn(normalizedEmail, password);
       navigate(redirectTo, { replace: true });
     } catch (err) {
-      const code =
-        err && typeof err === "object" && "code" in err
-          ? String((err as { code?: string }).code)
-          : "";
-
-      if (code.includes("invalid-email")) {
+      // One mapping for every code, shared with the Google path below and
+      // with sign-up. No branch falls back on err.message: the raw Firebase
+      // string used to end up on screen here. And no branch offers "create
+      // an account" — mistyping a password is not evidence of not having one,
+      // and the sign-up link is already on this page.
+      const notice = mapAuthError(err);
+      if (notice) {
         setNotice({
-          title: t("signup.invalidEmailTitle"),
-          message: t("signup.invalidEmailMessage"),
-        });
-      } else if (
-        code.includes("user-not-found") ||
-        code.includes("wrong-password") ||
-        code.includes("invalid-credential")
-      ) {
-        // Show a generic "invalid credentials" message with a sign-up
-        // CTA. We used to call fetchSignInMethodsForEmail here to figure
-        // out whether the email belonged to a Google-only account, but
-        // that API was deprecated by Firebase under Email Enumeration
-        // Protection (default since 2023-09) and now returns an empty
-        // array regardless. The "Continue with Google" button below
-        // covers the Google-only path without leaking account existence.
-        setNotice({
-          title: t("login.invalidTitle"),
-          message: t("login.invalidMessage"),
-          actionLabel: t("login.noAccountAction"),
-          action: () =>
-            navigate("/signup", {
-              state: {
-                email: normalizedEmail,
-                ...(fromLocation ? { from: fromLocation } : {}),
-              },
-            }),
-        });
-      } else {
-        setNotice({
-          title: t("auth.genericErrorTitle"),
-          message: err instanceof Error ? err.message : t("login.loginFailed"),
+          title: t(notice.titleKey),
+          message: t(notice.messageKey),
         });
       }
     } finally {
@@ -161,151 +136,153 @@ export function Login() {
       await signInWithGoogle();
       navigate(redirectTo, { replace: true });
     } catch (err) {
-      setNotice({
-        title: t("auth.genericErrorTitle"),
-        message: err instanceof Error ? err.message : t("login.googleFailed"),
-      });
+      // mapAuthError returns null when the person dismissed the Google
+      // sheet themselves; an error banner for that is noise.
+      const notice = mapAuthError(err);
+      if (notice) {
+        setNotice({
+          title: t(notice.titleKey),
+          message: t(notice.messageKey),
+        });
+      }
     } finally {
       setGoogleLoading(false);
     }
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 px-4">
-      <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl dark:bg-slate-900">
-        <div className="mb-6 flex justify-end">
-          <LanguageSelector compact />
+    <AuthShell gradient="bg-gradient-to-br from-purple-500 to-pink-500">
+      <div className="mb-6 flex justify-end">
+        <LanguageSelector compact />
+      </div>
+      <div className="mb-8 text-center">
+        <div className="flex justify-center">
+          <PawIcon size={48} />
         </div>
-        <div className="mb-8 text-center">
-          <div className="flex justify-center">
-            <PawIcon size={48} />
-          </div>
-          <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
-            {t("common.appName")}
-          </h1>
-          <p className="mx-auto mt-3 inline-flex rounded-full bg-purple-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-purple-600 dark:bg-purple-500/10 dark:text-purple-200">
-            {t("login.badge")}
-          </p>
-          <h2 className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">
-            {t("login.heading")}
-          </h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
-            {t("login.tagline")}
-          </p>
-        </div>
-
-        {notice ? (
-          <div className="mb-4">
-            <AuthNotice
-              title={notice.title}
-              message={notice.message}
-              actionLabel={notice.actionLabel}
-              onAction={notice.action}
-              onDismiss={() => setNotice(null)}
-              closeLabel={t("auth.noticeClose")}
-              tone={notice.tone}
-            />
-          </div>
-        ) : null}
-
-        <form className="space-y-4" onSubmit={handleSubmit}>
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
-              {t("auth.email")}
-            </span>
-            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
-              <MailIcon />
-              <input
-                type="email"
-                placeholder={t("auth.emailPlaceholder")}
-                autoComplete="email"
-                className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                required
-              />
-            </div>
-          </label>
-
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
-              {t("auth.password")}
-            </span>
-            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
-              <LockIcon />
-              <input
-                type={showPassword ? "text" : "password"}
-                placeholder={t("login.passwordPlaceholder")}
-                autoComplete="current-password"
-                className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-              />
-              <PasswordVisibilityButton
-                visible={showPassword}
-                onToggle={() => setShowPassword((prev) => !prev)}
-                showLabel={t("auth.show")}
-                hideLabel={t("auth.hide")}
-              />
-            </div>
-            <div className="mt-2 text-right">
-              <Link
-                to="/forgot-password"
-                className="text-xs text-slate-400 transition-all duration-200 hover:text-purple-500 dark:text-slate-500"
-              >
-                {t("login.forgotPassword")}
-              </Link>
-            </div>
-          </label>
-
-          <button
-            type="submit"
-            disabled={isDisabled}
-            className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {loading ? t("login.signingIn") : t("login.signIn")}
-          </button>
-        </form>
-
-        <div className="my-6 flex items-center gap-3 text-xs text-slate-400 dark:text-slate-500">
-          <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
-          {t("common.or")}
-          <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
-        </div>
-
-        <button
-          type="button"
-          onClick={handleGoogle}
-          disabled={googleLoading}
-          className="flex w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-all duration-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-        >
-          <GoogleIcon />
-          {googleLoading ? t("login.connecting") : t("login.continueWithGoogle")}
-        </button>
-
-        <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-300">
-          {t("login.noAccount")}
-          {/* Carries the destination across, so signing up from a deep link
-              still lands on the thing the person came for. */}
-          <Link
-            to="/signup"
-            state={fromLocation ? { from: fromLocation } : undefined}
-            className="ml-1 font-semibold text-purple-600 hover:text-purple-500"
-          >
-            {t("login.signUpCta")}
-          </Link>
+        <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
+          {t("common.appName")}
+        </h1>
+        <p className="mx-auto mt-3 inline-flex rounded-full bg-purple-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-purple-600 dark:bg-purple-500/10 dark:text-purple-200">
+          {t("login.badge")}
         </p>
-        <p className="mt-3 text-center text-xs text-slate-400 dark:text-slate-500">
-          <Link to="/terms" className="hover:text-slate-600 dark:hover:text-slate-300">
-            {t("settings.terms")}
-          </Link>{" "}
-          ·{" "}
-          <Link to="/privacy" className="hover:text-slate-600 dark:hover:text-slate-300">
-            {t("settings.privacy")}
-          </Link>
+        <h2 className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">
+          {t("login.heading")}
+        </h2>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
+          {t("login.tagline")}
         </p>
       </div>
-    </main>
+
+      {notice ? (
+        <div className="mb-4">
+          <AuthNotice
+            title={notice.title}
+            message={notice.message}
+            actionLabel={notice.actionLabel}
+            onAction={notice.action}
+            onDismiss={() => setNotice(null)}
+            closeLabel={t("auth.noticeClose")}
+            tone={notice.tone}
+          />
+        </div>
+      ) : null}
+
+      <form className="space-y-4" onSubmit={handleSubmit}>
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
+            {t("auth.email")}
+          </span>
+          <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
+            <MailIcon />
+            <input
+              {...emailFieldProps}
+              placeholder={t("auth.emailPlaceholder")}
+              className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+            />
+          </div>
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
+            {t("auth.password")}
+          </span>
+          <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all duration-200 focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
+            <LockIcon />
+            <input
+              type={showPassword ? "text" : "password"}
+              placeholder={t("login.passwordPlaceholder")}
+              {...currentPasswordFieldProps}
+              className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
+            <PasswordVisibilityButton
+              visible={showPassword}
+              onToggle={() => setShowPassword((prev) => !prev)}
+              showLabel={t("auth.show")}
+              hideLabel={t("auth.hide")}
+            />
+          </div>
+          <div className="mt-2 text-right">
+            <Link
+              to="/forgot-password"
+              className="text-xs text-slate-400 transition-all duration-200 hover:text-purple-500 dark:text-slate-500"
+            >
+              {t("login.forgotPassword")}
+            </Link>
+          </div>
+        </label>
+
+        <button
+          type="submit"
+          disabled={isDisabled}
+          className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+        >
+          {loading ? t("login.signingIn") : t("login.signIn")}
+        </button>
+      </form>
+
+      <div className="my-6 flex items-center gap-3 text-xs text-slate-400 dark:text-slate-500">
+        <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+        {t("common.or")}
+        <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+      </div>
+
+      <button
+        type="button"
+        onClick={handleGoogle}
+        disabled={googleLoading}
+        className="flex w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-all duration-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+      >
+        <GoogleIcon />
+        {googleLoading ? t("login.connecting") : t("login.continueWithGoogle")}
+      </button>
+
+      <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-300">
+        {t("login.noAccount")}
+        {/* Carries the destination across, so signing up from a deep link
+            still lands on the thing the person came for. */}
+        <Link
+          to="/signup"
+          state={fromLocation ? { from: fromLocation } : undefined}
+          className="ml-1 font-semibold text-purple-600 hover:text-purple-500"
+        >
+          {t("login.signUpCta")}
+        </Link>
+      </p>
+      <p className="mt-3 text-center text-xs text-slate-400 dark:text-slate-500">
+        <Link to="/terms" className="hover:text-slate-600 dark:hover:text-slate-300">
+          {t("settings.terms")}
+        </Link>{" "}
+        ·{" "}
+        <Link to="/privacy" className="hover:text-slate-600 dark:hover:text-slate-300">
+          {t("settings.privacy")}
+        </Link>
+      </p>
+    </AuthShell>
   );
 }

@@ -98,7 +98,17 @@ export function PostDetail() {
   const { isLiked, likeCount, toggleLike } = useLike(
     postId,
     user?.uid ?? null,
-    post?.likeCount ?? 0
+    post?.likeCount ?? 0,
+    undefined,
+    {
+      onFailure: (reason) =>
+        showToast(
+          reason === "post-missing"
+            ? "This post is no longer available"
+            : "Could not update like. Please try again.",
+          "error"
+        ),
+    }
   );
   const { isBookmarked, toggleBookmark } = useBookmark(
     postId,
@@ -195,11 +205,7 @@ export function PostDetail() {
     if (isBanned) {
       return;
     }
-    try {
-      await toggleLike();
-    } catch {
-      showToast("Failed to update like", "error");
-    }
+    toggleLike();
   };
 
   const handleBookmark = async () => {
@@ -335,7 +341,8 @@ export function PostDetail() {
                   type="button"
                   onClick={handleLike}
                   className="text-2xl transition-all duration-200"
-                  aria-label="Like"
+                  aria-pressed={isLiked}
+                  aria-label={isLiked ? "Unlike" : "Like"}
                 >
                   <HeartIcon filled={isLiked} gradientId={heartGradientId} />
                 </button>
@@ -365,7 +372,8 @@ export function PostDetail() {
                 type="button"
                 onClick={handleBookmark}
                 className="text-2xl text-slate-500 transition-all duration-200 hover:scale-105 dark:text-slate-400"
-                aria-label="Save"
+                aria-pressed={isBookmarked}
+                aria-label={isBookmarked ? "Remove bookmark" : "Save"}
               >
                 <BookmarkIcon filled={isBookmarked} />
               </button>

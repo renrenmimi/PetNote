@@ -30,6 +30,10 @@ import {
 import { LanguageSelector } from "../components/LanguageSelector";
 import { PasswordVisibilityButton } from "../components/PasswordVisibilityButton";
 import { useLanguage } from "../hooks/useLanguage";
+import {
+  currentPasswordFieldProps,
+  newPasswordFieldProps,
+} from "../utils/formFields";
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
@@ -374,6 +378,7 @@ export function Settings() {
                 <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
                   <input
                     type={showCurrentPassword ? "text" : "password"}
+                    {...currentPasswordFieldProps}
                     placeholder={t("settings.currentPassword")}
                     value={currentPassword}
                     onChange={(event) => setCurrentPassword(event.target.value)}
@@ -390,6 +395,7 @@ export function Settings() {
                 <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
                   <input
                     type={showNewPassword ? "text" : "password"}
+                    {...newPasswordFieldProps}
                     placeholder={t("settings.newPassword")}
                     value={newPassword}
                     onChange={(event) => setNewPassword(event.target.value)}
@@ -407,6 +413,7 @@ export function Settings() {
                 <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition focus-within:border-purple-400 focus-within:ring-2 focus-within:ring-purple-200 dark:border-slate-700 dark:bg-slate-800">
                   <input
                     type={showConfirmPassword ? "text" : "password"}
+                    {...newPasswordFieldProps}
                     placeholder={t("settings.confirmNewPassword")}
                     value={confirmPassword}
                     onChange={(event) => setConfirmPassword(event.target.value)}

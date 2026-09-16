@@ -86,7 +86,21 @@ function PostCardImpl({
     post.id,
     useMock ? null : user?.uid ?? null,
     post.likeCount ?? 0,
-    initialLiked
+    initialLiked,
+    {
+      // The hook owns both directions: the optimistic flip and the rollback
+      // after a failure. Telling the parent from here — rather than after an
+      // await in handleLike — is what keeps the feed's own liked-post set
+      // from disagreeing with the heart the person just tapped.
+      onLikedChange: (liked) => onLikeChanged?.(post.id, liked),
+      onFailure: (reason) =>
+        showToast(
+          reason === "post-missing"
+            ? "This post is no longer available"
+            : "Could not update like. Please try again.",
+          "error"
+        ),
+    }
   );
 
   const { isBookmarked, toggleBookmark } = useBookmark(
@@ -252,13 +266,9 @@ function PostCardImpl({
       return;
     }
 
-    try {
-      const nextLiked = !likedState;
-      await toggleLike();
-      onLikeChanged?.(post.id, nextLiked);
-    } catch {
-      // noop for now
-    }
+    // Fires and returns: the heart, the count and the parent's set all move
+    // now, and useLike reconciles with the server afterwards.
+    toggleLike();
   };
 
   const handleDoubleLike = async () => {
@@ -676,7 +686,11 @@ function PostCardImpl({
               className={`text-2xl transition-all duration-200 ${
                 animating ? "scale-110" : "scale-100"
               } ${likedState ? "text-red-500" : "text-slate-500 dark:text-slate-400"}`}
-              aria-label="Like"
+              // The filled heart is the only other signal, and colour
+              // alone is not one. aria-pressed carries the state; the
+              // label says what the tap will do.
+              aria-pressed={likedState}
+              aria-label={likedState ? "Unlike" : "Like"}
             >
               <HeartIcon filled={likedState} />
             </button>
@@ -703,7 +717,8 @@ function PostCardImpl({
             className={`transition-all duration-200 ${
               bookmarkAnimating ? "scale-110" : "scale-100"
             }`}
-            aria-label="Save"
+            aria-pressed={isBookmarked}
+            aria-label={isBookmarked ? "Remove bookmark" : "Save"}
           >
             <BookmarkIcon filled={isBookmarked} />
           </button>

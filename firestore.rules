@@ -444,6 +444,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Backend-only password reset challenges. Written with the Admin SDK by
+    // requestPasswordResetCode / confirmPasswordResetCode. A client that
+    // could read one would learn whether an address has an account (the uid
+    // field) and could count attempts; a client that could write one could
+    // hand itself a verified challenge. Unlisted collections are already
+    // denied by default here — this block is explicit because that default is
+    // the only thing standing between a code digest and the open internet.
+    match /passwordResetChallenges/{docId} {
+      allow read: if false;
+      allow write: if false;
+    }
+
     // Backend-only account-deletion tombstones. Written with the Admin SDK by
     // deleteUserAccount; profile create/update callables check them to block
     // resurrection of a deleted account. Never client-readable or writable.
