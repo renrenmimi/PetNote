@@ -10,12 +10,25 @@ import type { EmailSendResult } from "../email";
  * the callable's response, not in the challenge document, not in a log.
  */
 const sent: Array<{ to: string; code: string; expiresInMinutes: number }> = [];
+/** Google-only notices, captured separately: a different mail, to the same inbox. */
+const notices: Array<{ to: string }> = [];
 let nextSendResult: EmailSendResult = {
   sent: true,
   providerMessageId: "test-message",
   elapsedMs: 12,
 };
+let nextNoticeResult: EmailSendResult = {
+  sent: true,
+  providerMessageId: "test-notice",
+  elapsedMs: 9,
+};
 
+// Both senders are stubbed. Stubbing only one is not a smaller mistake: with
+// the API key and From address set in setup.ts the unstubbed one is
+// "configured", so it reaches `fetch` and the suite makes a real request to
+// the provider. That happened — a 401 from api.resend.com in the
+// google-only test — and it is why this mock lists every sender rather than
+// the one the test was thinking about.
 vi.mock("../email", async (importOriginal) => {
   const original = await importOriginal<typeof import("../email")>();
   return {
@@ -26,6 +39,10 @@ vi.mock("../email", async (importOriginal) => {
         return nextSendResult;
       }
     ),
+    sendGoogleOnlyNoticeEmail: vi.fn(async (args: { to: string }) => {
+      notices.push(args);
+      return nextNoticeResult;
+    }),
   };
 });
 
@@ -80,10 +97,16 @@ async function clearChallenges() {
 describe("password reset by numeric code", () => {
   beforeEach(async () => {
     sent.length = 0;
+    notices.length = 0;
     nextSendResult = {
       sent: true,
       providerMessageId: "test-message",
       elapsedMs: 12,
+    };
+    nextNoticeResult = {
+      sent: true,
+      providerMessageId: "test-notice",
+      elapsedMs: 9,
     };
     await clearRateLimits();
     await clearChallenges();
@@ -350,9 +373,98 @@ describe("password reset by numeric code", () => {
     await ensureUser(EMAIL, { password: null });
     sent.length = 0;
     const result = await request({ email: EMAIL });
-    // Neutral at request time — no mail, no disclosure.
+    // No code is minted, so no code can ever verify against this challenge.
     expect(sent).toHaveLength(0);
     expect(result.challengeId).toBeTypeOf("string");
+  });
+
+  it("tells a Google-only account how to sign in, in the mail rather than the response", async () => {
+    // The dead end this replaces: the response promised a code, none was
+    // minted, and the only reachable outcome was "that code is not correct".
+    // The "use Google" line lived in the confirm handler, behind a correct
+    // code they could never have.
+    await ensureUser(EMAIL, { password: null });
+    sent.length = 0;
+    notices.length = 0;
+
+    const result = await request({ email: EMAIL });
+
+    expect(sent).toHaveLength(0);
+    expect(notices).toEqual([{ to: EMAIL }]);
+    expect(result.challengeId).toBeTypeOf("string");
+    expect(result.expiresInSeconds).toBeGreaterThan(0);
+  });
+
+  it("answers a Google-only address exactly like an unknown one", async () => {
+    await ensureUser(EMAIL, { password: null });
+    const googleOnly = await request({ email: EMAIL });
+    const unknown = await request({ email: "nobody-at-all@example.com" });
+
+    // Same shape, same fields, same values apart from the opaque id.
+    expect(Object.keys(googleOnly).sort()).toEqual(Object.keys(unknown).sort());
+    expect(googleOnly.expiresInSeconds).toBe(unknown.expiresInSeconds);
+    expect(googleOnly.challengeId).not.toBe(unknown.challengeId);
+  });
+
+  it("does not report a failed Google-only notice to the caller", async () => {
+    // Saying "that send failed" would say the address exists and has no
+    // password, which is the thing the identical response protects.
+    await ensureUser(EMAIL, { password: null });
+    nextNoticeResult = { sent: false, reason: "provider-error", elapsedMs: 40 };
+
+    await expect(request({ email: EMAIL })).resolves.toMatchObject({
+      challengeId: expect.any(String),
+    });
+  });
+
+  it("refuses a challenge id that is not one it minted", async () => {
+    // The id used to go straight into a document path, so a slash addressed a
+    // nested document outside the collection that the rules and any TTL
+    // policy cover.
+    //
+    // ensureUser is not decoration: the test above leaves EMAIL as a
+    // passwordless account, so without this startFlow mints no code and the
+    // assertions below pass or fail on the wrong reason.
+    await ensureUser(EMAIL);
+    const { code } = await startFlow();
+    await expect(
+      confirm({
+        challengeId: "../../users/someone",
+        code,
+        newPassword: OTHER_PASSWORD,
+      })
+    ).rejects.toThrow();
+
+    const injected = await request({
+      email: EMAIL,
+      challengeId: "passwordResetChallenges/x/y",
+    });
+    // Treated as "no challenge supplied": a fresh, well-formed id.
+    expect(injected.challengeId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    );
+    const stray = await db.collection("passwordResetChallenges").doc("x").get();
+    expect(stray.exists).toBe(false);
+  });
+
+  it("keeps the original creation time when a code is resent", async () => {
+    await ensureUser(EMAIL);
+    const first = await request({ email: EMAIL });
+    const before = (
+      await db.doc(`passwordResetChallenges/${first.challengeId}`).get()
+    ).data()?.createdAt;
+
+    // Past the cooldown.
+    await db
+      .doc(`passwordResetChallenges/${first.challengeId}`)
+      .update({ lastSentAtMs: Date.now() - 61_000 });
+    await request({ email: EMAIL, challengeId: first.challengeId });
+
+    const after = (
+      await db.doc(`passwordResetChallenges/${first.challengeId}`).get()
+    ).data()?.createdAt;
+    // The old ternary had the same expression in both branches, so this moved.
+    expect(after?.toMillis?.()).toBe(before?.toMillis?.());
   });
 
   it("rejects a code bound to a different challenge", async () => {

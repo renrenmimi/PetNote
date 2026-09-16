@@ -5,9 +5,10 @@ import { logger } from "firebase-functions";
 import { admin, db, FieldValue, Timestamp } from "./platform";
 import { assertRateLimit, requestData, trimString } from "./shared";
 import {
+  EMAIL_SECRETS,
   PASSWORD_RESET_CODE_SECRET,
+  sendGoogleOnlyNoticeEmail,
   sendPasswordResetCodeEmail,
-  TRANSACTIONAL_EMAIL_API_KEY,
 } from "./email";
 
 /**
@@ -41,6 +42,41 @@ const CODE_TTL_MS = 10 * 60_000;
 const MAX_ATTEMPTS = 5;
 const MAX_SENDS_PER_CHALLENGE = 4;
 const RESEND_COOLDOWN_MS = 60_000;
+
+/**
+ * A floor on how long `requestPasswordResetCode` takes, whatever it decides.
+ *
+ * Answering identically is not enough if the two answers take visibly
+ * different amounts of time. A deliverable address costs a round trip to the
+ * email provider; an unknown one returned as soon as the lookup missed. That
+ * difference is hundreds of milliseconds and is measurable from anywhere,
+ * which made the endpoint an account-existence oracle by the clock even
+ * though every field of the response matched.
+ *
+ * This removes the coarse signal; it does not make the endpoint
+ * constant-time. A provider slower than the floor still shows through, and a
+ * determined attacker with many samples may still see the tail. Said plainly
+ * rather than claimed away.
+ *
+ * Overridable only so the test suite can run at zero — every request test
+ * would otherwise pay the floor in real time. Production never sets it, and
+ * the default is the value that ships.
+ */
+const MIN_REQUEST_MS = (() => {
+  const override = Number(process.env.PASSWORD_RESET_MIN_REQUEST_MS);
+  return Number.isFinite(override) && override >= 0 ? override : 1_500;
+})();
+
+/**
+ * Challenge ids are UUIDs this server minted. The client echoes one back to
+ * resend, and that value used to go straight into a document path — so an id
+ * containing a slash wrote to an arbitrary nested path under the collection,
+ * where neither the explicit `allow read/write: if false` rule nor a
+ * collection TTL policy reaches. Anything that is not a UUID is now treated
+ * as "no challenge supplied" rather than sanitised into a different one.
+ */
+const CHALLENGE_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 const SEND_RATE_LIMIT = { limit: 5, windowMs: 15 * 60_000 } as const;
 const CONFIRM_RATE_LIMIT = { limit: 15, windowMs: 15 * 60_000 } as const;
@@ -92,6 +128,14 @@ function digestsMatch(a: string, b: string): boolean {
   const right = Buffer.from(b, "utf8");
   if (left.length !== right.length) return false;
   return timingSafeEqual(left, right);
+}
+
+/** Holds the response back until `MIN_REQUEST_MS` has passed since `startedAt`. */
+async function holdUntilFloor(startedAt: number): Promise<void> {
+  const remaining = MIN_REQUEST_MS - (Date.now() - startedAt);
+  if (remaining > 0) {
+    await new Promise((resolve) => setTimeout(resolve, remaining));
+  }
 }
 
 function generateCode(): string {
@@ -170,27 +214,44 @@ async function lookupUser(
 }
 
 export const requestPasswordResetCodeCallable = onCall(
-  { secrets: [PASSWORD_RESET_CODE_SECRET, TRANSACTIONAL_EMAIL_API_KEY] },
+  // Spread rather than listed, so this cannot bind a subset of what
+  // email.ts reads — which is exactly how the From address came to be
+  // missing, leaving the flow permanently "not configured".
+  { secrets: [PASSWORD_RESET_CODE_SECRET, ...EMAIL_SECRETS] },
   async (request) => {
+    const startedAt = Date.now();
     // No auth requirement: this exists for people who cannot sign in. There
     // is deliberately no `request.auth` check and no emailVerified gate.
     const data = requestData(request.data);
     const email = normalizeEmail(data.email);
-    const existingChallengeId =
+    const rawChallengeId =
       typeof data.challengeId === "string" ? data.challengeId : null;
+    const existingChallengeId =
+      rawChallengeId && CHALLENGE_ID_PATTERN.test(rawChallengeId)
+        ? rawChallengeId
+        : null;
 
     const key = emailKey(email);
     // Keyed by the hashed address rather than a uid, because there is no
     // caller identity here. The subject slot in the shared limiter is just a
     // string; nothing reads it back as a user id.
+    // Not floored, and it does not need to be: this runs before any account
+    // lookup, so how long it takes is the same whether or not the address has
+    // an account. It is the one exit from this handler that skips the floor.
     await assertRateLimit(`pwreset_${key}`, "passwordResetSend", SEND_RATE_LIMIT);
 
     const user = await lookupUser(email);
     const eligibility = user ? await accountEligibility(user) : null;
-    // An ineligible account is treated exactly like an unknown one here. The
-    // reason is only ever disclosed at confirm time, to somebody who has
-    // already proved they received the mail.
+    // An ineligible account is treated exactly like an unknown one *in the
+    // response*. What differs is what lands in the inbox, which is a channel
+    // only the account holder can read.
     const deliverable = user !== null && eligibility === null;
+    // A Google-only account has nothing to reset, and used to be sent into a
+    // dead end: the response promised a code, none was ever minted for them,
+    // and the only reachable outcome was "that code is not correct". The
+    // "use Google" message lived in the confirm handler, which they could
+    // never reach. It is told in the mail instead.
+    const googleOnly = user !== null && eligibility === "no-password-provider";
 
     let challengeId = existingChallengeId ?? randomUUID();
     const now = Date.now();
@@ -211,12 +272,17 @@ export const requestPasswordResetCodeCallable = onCall(
         const lastSentAt =
           typeof existing.lastSentAtMs === "number" ? existing.lastSentAtMs : 0;
         if (now - lastSentAt < RESEND_COOLDOWN_MS) {
+          // Floored like every other exit: by this point an eligible account
+          // has cost one more Firestore read than an unknown one, and a
+          // refusal that returns faster for strangers is still a signal.
+          await holdUntilFloor(startedAt);
           throw new HttpsError(
             "resource-exhausted",
             "A code was just sent. Please wait a moment before asking for another."
           );
         }
         if ((existing.sendCount ?? 0) >= MAX_SENDS_PER_CHALLENGE) {
+          await holdUntilFloor(startedAt);
           throw new HttpsError(
             "resource-exhausted",
             "Too many codes requested. Start again in a few minutes."
@@ -249,16 +315,19 @@ export const requestPasswordResetCodeCallable = onCall(
         // housekeeping — expiry must not depend on a deletion running on time.
         expiresAt: Timestamp.fromMillis(expiresAtMs),
         lastSentAtMs: now,
-        createdAt: isResend ? (FieldValue.serverTimestamp() as never) : FieldValue.serverTimestamp(),
+        // Only on creation. The previous form was a ternary with the same
+        // expression in both branches, so every resend quietly reset the
+        // creation time of the challenge it was extending.
+        ...(isResend ? {} : { createdAt: FieldValue.serverTimestamp() }),
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true }
     );
 
+    // Outside any transaction, and after the challenge is durable: an email
+    // cannot be rolled back, so it must never be sent from something that may
+    // be retried.
     if (code && deliverable) {
-      // Outside any transaction, and after the challenge is durable: an email
-      // cannot be rolled back, so it must never be sent from something that
-      // may be retried.
       const result = await sendPasswordResetCodeEmail({
         to: email,
         code,
@@ -271,17 +340,36 @@ export const requestPasswordResetCodeCallable = onCall(
           reason: result.reason,
         });
         if (result.reason === "not-configured") {
+          await holdUntilFloor(startedAt);
           throw new HttpsError(
             "failed-precondition",
             "Email delivery is not configured for this environment."
           );
         }
+        await holdUntilFloor(startedAt);
         throw new HttpsError(
           "unavailable",
           "Could not send the code. Please try again."
         );
       }
+    } else if (googleOnly) {
+      // Failure here is deliberately not reported. Telling the caller that
+      // *this* send failed would say the address exists and has no password,
+      // which is the whole thing the identical response is protecting. The
+      // person is no worse off than before this branch existed, and the log
+      // line is how an operator finds out.
+      const result = await sendGoogleOnlyNoticeEmail({ to: email });
+      if (!result.sent) {
+        logger.warn("Google-only notice not delivered", {
+          challengeId,
+          reason: result.reason,
+        });
+      }
     }
+
+    // Every path leaves through the same floor, including the two throws
+    // above: an error that arrives faster than a success is its own signal.
+    await holdUntilFloor(startedAt);
 
     return {
       challengeId,
@@ -300,8 +388,18 @@ export const confirmPasswordResetCodeCallable = onCall(
     const code = trimString(data.code, "code").replace(/\D/g, "");
     const newPassword = assertPasswordAcceptable(data.newPassword);
 
+    // Checked before the id reaches a document path. The rate-limit key below
+    // was already being sanitised, which hid the fact that `challengeRef`
+    // next to it was not: a value with a slash addressed a nested document
+    // outside the collection the rules and the TTL policy cover. Anything
+    // that is not a UUID cannot be a challenge this server minted, so it is
+    // refused with the same message as a wrong code.
+    if (!CHALLENGE_ID_PATTERN.test(challengeId)) {
+      throw new HttpsError("invalid-argument", "That code is not correct.");
+    }
+
     await assertRateLimit(
-      `pwreset_confirm_${challengeId.replace(/[^A-Za-z0-9_-]/g, "_")}`,
+      `pwreset_confirm_${challengeId}`,
       "passwordResetConfirm",
       CONFIRM_RATE_LIMIT
     );
