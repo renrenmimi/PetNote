@@ -1,4 +1,13 @@
-import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHmac,
+  hkdfSync,
+  randomBytes,
+  randomInt,
+  randomUUID,
+  timingSafeEqual,
+} from "node:crypto";
 import { getFunctions } from "firebase-admin/functions";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { onTaskDispatched } from "firebase-functions/v2/tasks";
@@ -176,6 +185,107 @@ function codeDigest(challengeId: string, uid: string, code: string): string {
   return createHmac("sha256", PASSWORD_RESET_CODE_SECRET.value())
     .update(`${PURPOSE}:${challengeId}:${uid}:${code}`)
     .digest("hex");
+}
+
+/**
+ * The code, encrypted, so a retry of the same send can re-send the same code.
+ *
+ * This is the one thing "never store the code" cost, and the cost was real: a
+ * worker that could not recover the code it had already mailed had to mint a
+ * new one on every retry, which silently invalidated the code somebody was
+ * already holding. Bounding that and making the newest code the working one
+ * made it survivable, not correct — an automatic retry must not change the
+ * answer a person is typing.
+ *
+ * Boundaries, stated because encrypting an OTP at rest is a real trade:
+ *
+ * - **Key.** Derived with HKDF-SHA256 from `PASSWORD_RESET_CODE_SECRET`, the
+ *   same secret that keys the digest, under a distinct `info` so the two uses
+ *   cannot be confused. The key is never written anywhere; it exists only in
+ *   the function's memory, and is unavailable to anyone who can read
+ *   Firestore but not Secret Manager.
+ * - **Binding.** `${PURPOSE}:${challengeId}:${generation}` is the AEAD's
+ *   additional data, so a sealed blob cannot be moved to another challenge,
+ *   or replayed against a later generation of the same one. Decryption fails
+ *   rather than returning something plausible.
+ * - **Lifetime.** The seal lives exactly as long as the code: it is deleted
+ *   in the same write that marks the challenge consumed, and a challenge that
+ *   expires unused is swept by the TTL policy. Nothing refreshes it.
+ * - **A user-initiated resend never reuses a seal.** It is a new generation,
+ *   and the AAD makes the old seal undecryptable for it — the separation is
+ *   enforced by the cryptography rather than by remembering to check.
+ * - It is never logged, never returned to a caller, and never leaves the
+ *   worker except as the body of an email.
+ *
+ * What this does not defend against: someone who holds both the Firestore
+ * document and the secret. That person could already mint their own valid
+ * code, so the seal is not the weakest link.
+ */
+const SEAL_INFO = Buffer.from("petnote-reset-code-seal-v1");
+
+function sealKey(): Buffer {
+  return Buffer.from(
+    hkdfSync(
+      "sha256",
+      PASSWORD_RESET_CODE_SECRET.value(),
+      // No salt: the secret is already high-entropy and single-purpose, and a
+      // stored salt would have to be read back before the key could be
+      // derived, which is a failure mode for no gain here.
+      Buffer.alloc(0),
+      SEAL_INFO,
+      32
+    )
+  );
+}
+
+function sealAad(challengeId: string, generation: number): Buffer {
+  return Buffer.from(`${PURPOSE}:${challengeId}:${generation}`);
+}
+
+function sealCode(
+  challengeId: string,
+  generation: number,
+  code: string
+): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", sealKey(), iv, {
+    authTagLength: 16,
+  });
+  cipher.setAAD(sealAad(challengeId, generation));
+  const ct = Buffer.concat([cipher.update(code, "utf8"), cipher.final()]);
+  return [
+    iv.toString("base64"),
+    cipher.getAuthTag().toString("base64"),
+    ct.toString("base64"),
+  ].join(".");
+}
+
+/** Null rather than throwing: a seal that will not open is a seal to replace. */
+function openSeal(
+  challengeId: string,
+  generation: number,
+  sealed: unknown
+): string | null {
+  if (typeof sealed !== "string") return null;
+  const parts = sealed.split(".");
+  if (parts.length !== 3) return null;
+  try {
+    const [iv, tag, ct] = parts.map((part) => Buffer.from(part, "base64"));
+    const decipher = createDecipheriv("aes-256-gcm", sealKey(), iv, {
+      authTagLength: 16,
+    });
+    decipher.setAAD(sealAad(challengeId, generation));
+    decipher.setAuthTag(tag);
+    const code = Buffer.concat([
+      decipher.update(ct),
+      decipher.final(),
+    ]).toString("utf8");
+    return /^\d{6}$/.test(code) ? code : null;
+  } catch {
+    // Wrong key, wrong challenge, wrong generation, or tampering. All four
+    // mean the same thing here.
+    return null;
+  }
 }
 
 function digestsMatch(a: string, b: string): boolean {
@@ -719,9 +829,27 @@ export const deliverPasswordResetCodeTask = onTaskDispatched(
         typeof current.sendAttempts === "number" ? current.sendAttempts : 0;
       if (attempts >= MAX_SEND_ATTEMPTS) return null;
 
-      const code = generateCode();
+      /*
+       * A retry of *this* send re-sends *this* code.
+       *
+       * The seal is bound to this generation, so it only opens for a retry of
+       * the same delivery. A user-initiated resend is a new generation, the
+       * AAD will not match, and a fresh code is minted — which is the
+       * separation you asked for, enforced by the cryptography rather than by
+       * a flag somebody has to remember to set.
+       */
+      const reused = openSeal(challengeId, generation, current.codeSealed);
+      const code = reused ?? generateCode();
+
       transaction.update(ref, {
-        codeDigest: codeDigest(challengeId, uid, code),
+        // Unchanged when the code is reused: the digest already matches it,
+        // and rewriting it would be a chance to get it wrong.
+        ...(reused
+          ? {}
+          : {
+              codeDigest: codeDigest(challengeId, uid, code),
+              codeSealed: sealCode(challengeId, generation, code),
+            }),
         sendAttempts: attempts + 1,
         // Wall clock, not a server timestamp: the request handler compares it
         // against Date.now() to decide whether a delivery is still in flight,
@@ -729,7 +857,7 @@ export const deliverPasswordResetCodeTask = onTaskDispatched(
         claimedAtMs: Date.now(),
         updatedAt: FieldValue.serverTimestamp(),
       });
-      return { code };
+      return { code, reused: reused !== null };
     });
 
     if (claim === null) {
@@ -740,6 +868,13 @@ export const deliverPasswordResetCodeTask = onTaskDispatched(
       return;
     }
     const code = claim.code;
+    if (claim.reused) {
+      // Worth seeing in the log: a retry that re-sent rather than replaced.
+      logger.info("Delivery retry re-sending the same code", {
+        challengeId,
+        generation,
+      });
+    }
 
     const result = await sendPasswordResetCodeEmail({
       to: email,
@@ -923,8 +1058,11 @@ export const confirmPasswordResetCodeCallable = onCall(
       status: "consumed" satisfies ChallengeStatus,
       consumedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
-      // Nothing about the password, the code or the address is recorded.
+      // Nothing about the password, the code or the address is recorded. The
+      // seal goes in the same write as the digest — it is the code, and a
+      // spent challenge has no business holding it.
       codeDigest: FieldValue.delete(),
+      codeSealed: FieldValue.delete(),
     });
 
     return { ok: true as const };

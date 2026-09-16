@@ -224,49 +224,135 @@ describe("password reset: the provider accepted but we did not hear", () => {
     await Promise.all(snap.docs.map((d) => d.ref.delete()));
   });
 
-  it("a timeout reported after the provider accepted does not strand the code", async () => {
+  it("a timeout reported after the provider accepted keeps the delivered code valid", async () => {
     /*
-     * The worst shape: the mail is on its way, and the worker is told
-     * "timeout". It throws, Cloud Tasks retries, and the retry must not
-     * invalidate a code that is already in an inbox — because the inbox is
-     * the one place we cannot check.
+     * The worst shape, and the one that had to change: the mail is on its way
+     * and the worker is told "timeout". It throws, Cloud Tasks retries, and
+     * the retry must **not** change the code somebody is already holding —
+     * the inbox is the one place we cannot check, so replacing the answer
+     * they are typing is not a survivable trade, it is the bug.
      *
-     * The send is recorded here by the stub, which is what "the provider
-     * accepted" means; the *result* handed back is the timeout.
+     * The stub records the send, which is what "the provider accepted" means;
+     * the result handed back is the timeout.
      */
-    await request({ email: EMAIL });
+    const { challengeId } = await request({ email: EMAIL });
     nextSendResult = { sent: false, reason: "timeout", elapsedMs: 10_000 };
     await expect(runTask(enqueued[0])).rejects.toThrow();
-    const strandedCode = sent.at(-1)!.code;
-    expect(strandedCode).toMatch(/^\d{6}$/);
+    const deliveredCode = sent.at(-1)!.code;
+    expect(deliveredCode).toMatch(/^\d{6}$/);
 
     // Cloud Tasks retries. The provider is healthy this time.
     nextSendResult = { sent: true, providerMessageId: "i2", elapsedMs: 5 };
     await runTask(enqueued[0]);
-    const secondCode = sent.at(-1)!.code;
+    const retryCode = sent.at(-1)!.code;
 
-    // Two mails exist. This is the honest residual: the worker could not know
-    // the first one arrived, so it minted again — and the *newer* code is the
-    // one that works, which is the invariant that matters. The older one is
-    // dead rather than ambiguous.
-    expect(secondCode).not.toBe(strandedCode);
-    const challengeId = enqueued[0].challengeId;
-    expect(
-      await errorCodeOf(() =>
-        confirm({ challengeId, code: strandedCode, newPassword: NEW_PASSWORD })
-      )
-    ).toContain("invalid-argument");
+    // Same code, both times. Two mails may exist, and they say the same
+    // thing, so it does not matter which one the person opens.
+    expect(retryCode).toBe(deliveredCode);
     await expect(
-      confirm({ challengeId, code: secondCode, newPassword: NEW_PASSWORD })
+      confirm({ challengeId, code: deliveredCode, newPassword: NEW_PASSWORD })
     ).resolves.toMatchObject({ ok: true });
   });
 
-  it("a failed delivered-marker write does not invalidate the delivered code twice over", async () => {
+  it("re-sends the same code without rewriting the digest", async () => {
+    // The digest already matches the reused code; rewriting it would be a
+    // chance to get it wrong for no gain.
+    const { challengeId } = await request({ email: EMAIL });
+    nextSendResult = { sent: false, reason: "timeout", elapsedMs: 10_000 };
+    await expect(runTask(enqueued[0])).rejects.toThrow();
+    const first = await challenge(challengeId);
+
+    nextSendResult = { sent: true, providerMessageId: "i3", elapsedMs: 5 };
+    await runTask(enqueued[0]);
+    const second = await challenge(challengeId);
+
+    expect(second.codeDigest).toBe(first.codeDigest);
+    expect(second.codeSealed).toBe(first.codeSealed);
+    // But the attempt was still counted, so the budget is real.
+    expect(second.sendAttempts).toBe((first.sendAttempts as number) + 1);
+  });
+
+  it("a user-initiated resend gets a new code, and the old one dies", async () => {
     /*
-     * The narrow window the design comment names: the send succeeded, and the
-     * write that records it did not. The retry cannot know, so it mints again
-     * — but it must still be bounded, and the newest code must still be the
-     * working one rather than both being dead.
+     * The other half of the separation. A retry reuses; a resend replaces.
+     * The seal is bound to the generation, so this is enforced by the
+     * cryptography rather than by a flag: the old seal simply will not open
+     * for the new generation.
+     */
+    const { challengeId } = await request({ email: EMAIL });
+    await runTask(enqueued[0]);
+    const firstCode = sent.at(-1)!.code;
+    const firstSeal = (await challenge(challengeId)).codeSealed;
+
+    // Past the cooldown and with the delivery finished, so a resend is
+    // allowed rather than refused as overlapping.
+    await db
+      .doc(`passwordResetChallenges/${challengeId}`)
+      .update({ lastSentAtMs: Date.now() - 61_000 });
+    await request({ email: EMAIL, challengeId });
+    await runTask(enqueued[enqueued.length - 1]);
+    const resentCode = sent.at(-1)!.code;
+    const secondSeal = (await challenge(challengeId)).codeSealed;
+
+    expect(resentCode).not.toBe(firstCode);
+    expect(secondSeal).not.toBe(firstSeal);
+    expect(
+      await errorCodeOf(() =>
+        confirm({ challengeId, code: firstCode, newPassword: NEW_PASSWORD })
+      )
+    ).toContain("invalid-argument");
+    await expect(
+      confirm({ challengeId, code: resentCode, newPassword: NEW_PASSWORD })
+    ).resolves.toMatchObject({ ok: true });
+  });
+
+  it("the seal is gone once the challenge is spent", async () => {
+    const { challengeId } = await request({ email: EMAIL });
+    await runTask(enqueued[0]);
+    const code = sent.at(-1)!.code;
+    expect((await challenge(challengeId)).codeSealed).toBeTypeOf("string");
+
+    await confirm({ challengeId, code, newPassword: NEW_PASSWORD });
+    const spent = await challenge(challengeId);
+    expect(spent.codeSealed).toBeUndefined();
+    expect(spent.codeDigest).toBeUndefined();
+  });
+
+  it("a seal cannot be moved to another challenge", async () => {
+    // The AAD binds it. A blob lifted from one document is inert in another.
+    const a = await request({ email: EMAIL });
+    await runTask(enqueued[0]);
+    const stolenSeal = (await challenge(a.challengeId)).codeSealed;
+    const stolenCode = sent.at(-1)!.code;
+
+    await clearRateLimits();
+    const b = await request({ email: EMAIL });
+    await db
+      .doc(`passwordResetChallenges/${b.challengeId}`)
+      .update({ codeSealed: stolenSeal });
+    sent.length = 0;
+    await runTask(enqueued[enqueued.length - 1]);
+
+    // The worker could not open it, so it minted its own.
+    const freshCode = sent.at(-1)!.code;
+    expect(freshCode).not.toBe(stolenCode);
+    expect(
+      await errorCodeOf(() =>
+        confirm({
+          challengeId: b.challengeId,
+          code: stolenCode,
+          newPassword: NEW_PASSWORD,
+        })
+      )
+    ).toContain("invalid-argument");
+  });
+
+  it("a failed delivered-marker write does not change the code either", async () => {
+    /*
+     * The narrow window the design comment names: the send succeeded and the
+     * write that records it did not. The retry cannot know that, so it sends
+     * again — and now it sends the *same* code, so a duplicate mail is a
+     * duplicate rather than a contradiction.
      */
     const { challengeId } = await request({ email: EMAIL });
     await runTask(enqueued[0]);
@@ -278,17 +364,9 @@ describe("password reset: the provider accepted but we did not hear", () => {
       .update({ deliveredGeneration: admin.firestore.FieldValue.delete() });
 
     await runTask(enqueued[0]);
-    const secondCode = sent.at(-1)!.code;
-    expect(secondCode).not.toBe(firstCode);
-
-    // Exactly one of them works, and it is the newer one.
-    expect(
-      await errorCodeOf(() =>
-        confirm({ challengeId, code: firstCode, newPassword: NEW_PASSWORD })
-      )
-    ).toContain("invalid-argument");
+    expect(sent.at(-1)!.code).toBe(firstCode);
     await expect(
-      confirm({ challengeId, code: secondCode, newPassword: NEW_PASSWORD })
+      confirm({ challengeId, code: firstCode, newPassword: NEW_PASSWORD })
     ).resolves.toMatchObject({ ok: true });
   });
 
