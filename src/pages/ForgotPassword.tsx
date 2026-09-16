@@ -8,7 +8,6 @@ import { PasswordVisibilityButton } from "../components/PasswordVisibilityButton
 import { VerificationCodeInput } from "../components/VerificationCodeInput";
 import { useLanguage } from "../hooks/useLanguage";
 import type { TranslationKey } from "../i18n/messages";
-import PawIcon from "../components/PawIcon";
 import { AuthShell } from "../components/AuthShell";
 import { auth } from "../services/firebase";
 import { emailFieldProps, newPasswordFieldProps } from "../utils/formFields";
@@ -242,30 +241,20 @@ export function ForgotPassword() {
   const showSpamHint = status === "success" && !done;
 
   return (
-    <AuthShell gradient="bg-gradient-to-br from-purple-500 to-pink-500">
-        <div className="mb-6 flex justify-end">
-          <LanguageSelector compact />
-        </div>
-        <div className="mb-6 text-center">
-          <div className="flex justify-center">
-            <PawIcon size={48} />
-          </div>
-          <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
-            {t("common.appName")}
-          </h1>
-          <h2 className="mt-4 text-lg font-semibold text-slate-900 dark:text-white">
-            {step === "code" ? t("forgot.codeSentTitle") : t("forgot.title")}
-          </h2>
-          {step === "email" ? (
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
-              {t(
-                passwordResetOtpEnabled
-                  ? "forgot.subtitleCode"
-                  : "forgot.subtitle"
-              )}
-            </p>
-          ) : null}
-        </div>
+    <AuthShell
+      title={step === "code" ? t("forgot.codeSentTitle") : t("forgot.title")}
+      subtitle={
+        step === "email"
+          ? t(
+              passwordResetOtpEnabled
+                ? "forgot.subtitleCode"
+                : "forgot.subtitle"
+            )
+          : undefined
+      }
+      exitLabel={t("auth.backToBrowsing")}
+      topRight={<LanguageSelector compact />}
+    >
 
         {step === "email" ? (
           <form className="space-y-4" onSubmit={handleSubmit}>

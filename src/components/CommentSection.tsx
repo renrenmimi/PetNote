@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { User } from "lucide-react";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import type { QueryDocumentSnapshot } from "firebase/firestore";
 import { useAuth } from "../hooks/useAuth";
 import {
@@ -10,6 +10,7 @@ import {
   getComments,
   type Comment,
 } from "../services/posts";
+import { signInReturnState } from "../utils/authNavigation";
 import { timeAgo } from "../utils/timeAgo";
 import { useToast } from "../contexts/ToastContext";
 import Avatar from "./Avatar";
@@ -35,6 +36,23 @@ export function CommentSection({
 }: CommentSectionProps) {
   const { user, emailVerified, isBanned } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  /*
+   * One handler for both focus and click, and it carries the destination.
+   * It used to be two copies of the same two ifs, and the navigate had no
+   * `from`, so signing in to leave a comment landed on the feed and left
+   * somebody to find the post again.
+   */
+  const goToSignInIfNeeded = () => {
+    if (!user) {
+      navigate("/login", { state: signInReturnState(location) });
+      return;
+    }
+    if (!isEmailVerified) {
+      showToast("Please verify your email first", "warning");
+    }
+  };
   const { showToast } = useToast();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const inputWrapperRef = useRef<HTMLDivElement | null>(null);
@@ -443,30 +461,29 @@ export function CommentSection({
           <input
             ref={inputRef}
             type="text"
+            /*
+              Order matters, and it was wrong. `isEmailVerified` is
+              `!!user && emailVerified`, so it is false for a guest too — and
+              the unverified branch came before the `user` branch, which is
+              why somebody who had never signed in was told to verify an
+              email address the app had never asked them for.
+              Banned, then signed out, then signed in but unverified, then
+              ready.
+            */
             placeholder={
               isBanned
                 ? "Account suspended"
+                : !user
+                ? "Log in to comment"
                 : !isEmailVerified
                 ? "Verify your email to comment"
-                : user
-                ? "Add a comment..."
-                : "Login to comment"
+                : "Add a comment..."
             }
             className="flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-700 dark:text-white"
             value={text}
             readOnly={!user || isBanned || !isEmailVerified}
-            onFocus={() => {
-              if (!user) navigate("/login");
-              if (user && !isEmailVerified) {
-                showToast("Please verify your email first", "warning");
-              }
-            }}
-            onClick={() => {
-              if (!user) navigate("/login");
-              if (user && !isEmailVerified) {
-                showToast("Please verify your email first", "warning");
-              }
-            }}
+            onFocus={goToSignInIfNeeded}
+            onClick={goToSignInIfNeeded}
             onChange={(event) => setText(event.target.value)}
             maxLength={500}
             onKeyDown={(event) => {

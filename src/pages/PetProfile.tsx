@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { signInReturnState } from "../utils/authNavigation";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import Avatar from "../components/Avatar";
 import { EmptyState } from "../components/EmptyState";
 import { LoadFailedState } from "../components/LoadFailedState";
@@ -39,6 +40,7 @@ export function PetProfile() {
   >(null);
   const [reloadToken, setReloadToken] = useState(0);
   const navigate = useNavigate();
+  const location = useLocation();
   const { petId } = useParams();
   const { user, profile, isAdmin } = useAuth();
   const { showToast } = useToast();
@@ -415,17 +417,36 @@ export function PetProfile() {
               ) : null}
             </div>
           ) : (
+            /*
+              A guest used to get this button `disabled` with no explanation:
+              "no account" and "a write is in flight" were designed as the
+              same dead control. They are different states and only one of
+              them is a reason to do nothing — so a guest gets a working
+              button that says what it does and takes them to sign-in with
+              this pet as the destination, and `disabled` is reserved for the
+              request actually being in flight.
+            */
             <button
               type="button"
-              onClick={toggleFollow}
-              disabled={!user || followLoading}
-              className={`w-full rounded-full px-4 py-2 text-sm font-semibold transition-all duration-200 ${
+              onClick={() => {
+                if (!user) {
+                  navigate("/login", { state: signInReturnState(location) });
+                  return;
+                }
+                void toggleFollow();
+              }}
+              disabled={!!user && followLoading}
+              className={`w-full rounded-full px-4 py-2 text-sm font-semibold transition-all duration-200 disabled:opacity-70 ${
                 isFollowing
                   ? "border border-slate-200 text-slate-500 hover:border-red-300 hover:text-red-500 dark:border-slate-700 dark:text-slate-300"
                   : "bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-[0_10px_25px_-15px_rgba(168,85,247,0.7)]"
               }`}
             >
-              {isFollowing ? "Following" : "Follow"}
+              {!user
+                ? "Log in to follow"
+                : isFollowing
+                  ? "Following"
+                  : "Follow"}
             </button>
           )}
         </section>

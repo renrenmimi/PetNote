@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { MemoryRouter } from "react-router-dom";
+
 import { AuthShell } from "../AuthShell";
 
 /**
@@ -22,12 +24,61 @@ function stubRects(scrollBox: DOMRectInit, fieldBox: DOMRectInit) {
 
 function renderShell() {
   return render(
-    <AuthShell gradient="bg-test">
-      <label htmlFor="pw">Password</label>
-      <input id="pw" type="password" />
-    </AuthShell>
+    <MemoryRouter>
+      <AuthShell title="Sign in" exitLabel="Back to browsing">
+        <label htmlFor="pw">Password</label>
+        <input id="pw" type="password" />
+      </AuthShell>
+    </MemoryRouter>
   );
 }
+
+describe("AuthShell exit", () => {
+  it("offers a way back to browsing", () => {
+    // None of the three auth screens had one.
+    render(
+      <MemoryRouter>
+        <AuthShell title="Sign in" exitLabel="Back to browsing">
+          <span>form</span>
+        </AuthShell>
+      </MemoryRouter>
+    );
+    const exit = screen.getByRole("link", { name: /back to browsing/i });
+    expect(exit.getAttribute("href")).toBe("/");
+  });
+
+  it("returns to the page that sent you here", () => {
+    render(
+      <MemoryRouter
+        initialEntries={[
+          { pathname: "/login", state: { from: { pathname: "/pet/p1", search: "" } } },
+        ]}
+      >
+        <AuthShell title="Sign in" exitLabel="Back to browsing">
+          <span>form</span>
+        </AuthShell>
+      </MemoryRouter>
+    );
+    expect(
+      screen.getByRole("link", { name: /back to browsing/i }).getAttribute("href")
+    ).toBe("/pet/p1");
+  });
+
+  it("shows one heading and one brand mark, not five", () => {
+    // Each page used to stack a language selector, a paw, "PetNote", a
+    // coloured badge pill, a heading and a tagline before the first field.
+    render(
+      <MemoryRouter>
+        <AuthShell title="Welcome back" subtitle="Sign in to continue" exitLabel="Back">
+          <span>form</span>
+        </AuthShell>
+      </MemoryRouter>
+    );
+    expect(screen.getAllByRole("heading")).toHaveLength(1);
+    expect(screen.getByRole("heading", { name: "Welcome back" })).toBeTruthy();
+    expect(screen.getByText("PetNote")).toBeTruthy();
+  });
+});
 
 describe("AuthShell", () => {
   beforeEach(() => {

@@ -140,6 +140,7 @@ const en = {
   "forgot.doneBody":
     "Your new password is set, and anything still signed in elsewhere has been signed out.",
   "forgot.goToLogin": "Go to login",
+  "auth.backToBrowsing": "Back to browsing",
 
   "notFound.title": "Page not found",
   "notFound.description": "This page doesn't exist or has been removed.",
@@ -430,6 +431,7 @@ const zh = {
   "forgot.doneTitle": "密码已更新",
   "forgot.doneBody": "新密码已生效，其他设备上的登录状态也已经退出。",
   "forgot.goToLogin": "去登录",
+  "auth.backToBrowsing": "返回浏览",
 
   "notFound.title": "页面不存在",
   "notFound.description": "这个页面不存在，或已经被移除。",
