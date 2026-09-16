@@ -39,6 +39,19 @@ export async function searchTags(queryText: string): Promise<Hashtag[]> {
     .sort((a, b) => (b.postCount ?? 0) - (a.postCount ?? 0));
 }
 
+/**
+ * The most-used tags, all time.
+ *
+ * There is **no time window** here, and the name is older than the query.
+ * `postCount` is a lifetime total, so this answers "which tags have been used
+ * most since the app existed" — which on a small catalogue means tags with
+ * one or two posts. The Search screen therefore does not call the result
+ * "trending": see the heading there, which is derived from the actual counts.
+ *
+ * Adding a window would need a rolling per-tag count, which is a counter
+ * design question and not a label fix. Left as it is, named honestly at the
+ * point of display.
+ */
 export async function getTrendingTags(limitCount = 8): Promise<Hashtag[]> {
   const tagsRef = collection(db, "hashtags");
   const tagsQuery = query(

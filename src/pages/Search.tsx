@@ -179,6 +179,14 @@ function PetResultCard({ pet }: { pet: Pet }) {
   );
 }
 
+/**
+ * How many posts the most-used tag needs before "Popular" is a fair word.
+ *
+ * A judgement, not a measurement, and deliberately a named constant so it can
+ * be argued with rather than being an inline 5.
+ */
+const POPULAR_TAG_THRESHOLD = 5;
+
 export function Search() {
   // Come back to where you were, not to the top.
   useScrollRestoration("search");
@@ -530,8 +538,24 @@ export function Search() {
 
             {trendingTags.length > 0 ? (
               <section>
+                {/*
+                  getTrendingTags has no time window — it orders by a lifetime
+                  postCount — so "Trending" was a claim the query could not
+                  support, and on a small catalogue it sat above tags with one
+                  or two posts each. The heading is derived from what actually
+                  came back: if the most-used tag has enough behind it the word
+                  is earned, and otherwise this is simply a list of tags in use.
+                  The threshold is a judgement and not a measurement, which is
+                  why it is named and visible rather than buried.
+
+                  Nothing is padded to make the row look busier, and the count
+                  stays on every chip so the reader can see the weight of each
+                  one instead of inferring it from the heading.
+                */}
                 <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
-                  Trending Tags
+                  {(trendingTags[0]?.postCount ?? 0) >= POPULAR_TAG_THRESHOLD
+                    ? "Popular Tags"
+                    : "Tags in use"}
                 </h2>
                 <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
                   {trendingTags.map((tag) => (
@@ -539,7 +563,7 @@ export function Search() {
                       key={tag.name}
                       type="button"
                       onClick={() => handleTagClick(tag.name)}
-                      className="whitespace-nowrap rounded-full bg-gradient-to-r from-purple-100 to-pink-100 px-3 py-1 text-xs font-semibold text-purple-600 transition-all duration-200 hover:scale-105 dark:from-purple-500/20 dark:to-pink-500/20 dark:text-purple-200"
+                      className="min-h-9 whitespace-nowrap rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-700 transition-colors duration-200 hover:bg-purple-100 dark:bg-purple-500/15 dark:text-purple-200 dark:hover:bg-purple-500/25"
                     >
                       #{tag.name} · {tag.postCount}{" "}
                       {tag.postCount === 1 ? "post" : "posts"}

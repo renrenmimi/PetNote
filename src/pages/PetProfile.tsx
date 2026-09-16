@@ -48,7 +48,6 @@ export function PetProfile() {
   const [pet, setPet] = useState<Pet | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [petLikes, setPetLikes] = useState(0);
-  const [ownerName, setOwnerName] = useState<string | null>(null);
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [viewerIsFamilyMember, setViewerIsFamilyMember] = useState(false);
 
@@ -135,9 +134,6 @@ export function PetProfile() {
           setPetLikes(totalLikes);
           setFamilyMembers(members);
           setViewerIsFamilyMember(isMember);
-          setOwnerName(
-            primaryMember?.userName || fallbackOwnerProfile?.displayName || "Family"
-          );
           setCheckins(petCheckins.checkins);
           setCheckinLocations(locationMap);
         }
@@ -281,6 +277,15 @@ export function PetProfile() {
       </header>
 
       <main className="mx-auto w-full max-w-md space-y-6 px-4 py-6">
+        {/*
+          One header, not three cards.
+          A pet's own content used to start below an identity card, a stats
+          card and a family card — so the posts and check-ins somebody came
+          for were the fourth thing on the page, and the family appeared twice
+          because the identity card also carried a "Family: <name>" line.
+          Identity, the stats, the follow action and the family row are one
+          surface now, and the content starts straight after it.
+        */}
         <section className="rounded-3xl bg-white p-6 text-center shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
           <div className={`mx-auto w-fit rounded-full bg-gradient-to-r ${speciesMeta.gradient} p-1`}>
             {pet.avatarUrl ? (
@@ -301,8 +306,10 @@ export function PetProfile() {
           </h2>
 
           <div className="mt-2 flex flex-wrap items-center justify-center gap-2 text-sm text-slate-500 dark:text-slate-300">
-            <span>{speciesMeta.emoji}</span>
-            {pet.breed ? <span>{pet.breed}</span> : null}
+            {/* The species mark lives in the avatar when there is no photo,
+                where it is the content. A second copy next to the breed was
+                decoration. */}
+            {pet.breed ? <span>{pet.breed}</span> : <span>{speciesMeta.label}</span>}
             {pet.gender === "male" ? (
               <span className={`${genderSymbolClass} text-blue-500`}>♂</span>
             ) : pet.gender === "female" ? (
@@ -316,17 +323,16 @@ export function PetProfile() {
             <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{pet.bio}</p>
           ) : null}
 
-          <button
-            type="button"
-            onClick={() => navigate(`/profile/${primaryOwnerId}`)}
-            className="mt-3 text-xs text-slate-500 hover:text-purple-600 dark:text-slate-400"
-          >
-            Family: {ownerName}
-          </button>
-        </section>
+          {/*
+            "Family: <primary owner>" used to sit here. It named one member of
+            a family that can have several, directly under the pet's name —
+            which is the strongest position on the page — and the family row
+            below already lists everyone. Co-owners are equal in this product;
+            a line that reads like "this pet belongs to X" is not a neutral
+            summary of that.
+          */}
 
-        <section className="space-y-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
-          <div className="grid grid-cols-3 divide-x divide-slate-200 text-center dark:divide-slate-700">
+          <div className="mt-5 grid grid-cols-3 divide-x divide-slate-200 text-center dark:divide-slate-700">
             <button
               type="button"
               disabled={followersLoading}
@@ -451,9 +457,17 @@ export function PetProfile() {
           )}
         </section>
 
-        <section className="space-y-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
+        {/*
+          Compact, and no card of its own: this is identity context, so it
+          belongs with the header rather than as a third box between the
+          reader and the pet's actual posts. Management stays exactly where a
+          family member would look for it.
+        */}
+        <section className="space-y-2">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white">🏠 Family</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Family
+            </h3>
             {viewerIsFamilyMember ? (
               <div className="flex items-center gap-2">
                 <button
@@ -479,21 +493,33 @@ export function PetProfile() {
                 key={member.userId}
                 type="button"
                 onClick={() => navigate(`/profile/${member.userId}`)}
-                className="flex min-w-[96px] flex-col items-center text-center"
+                className="flex min-w-[84px] flex-col items-center text-center"
               >
                 <Avatar
                   src={member.userAvatar}
                   alt={member.userName}
                   userId={member.userId}
-                  size={48}
-                  className="h-12 w-12"
+                  size={40}
+                  className="h-10 w-10"
                 />
-                <span className="mt-2 line-clamp-1 text-xs font-semibold text-slate-900 dark:text-white">
+                <span className="mt-1.5 line-clamp-1 text-xs font-semibold text-slate-900 dark:text-white">
                   {member.userName}
-                  {member.role === "primary" ? " ★" : ""}
                 </span>
+                {/*
+                  The primary owner used to get a ★ after their name, which
+                  reads as "the real owner" beside people who are co-owners,
+                  not guests. The role is stated in the same pill everyone
+                  else's relationship uses, at the same weight — it is a
+                  different responsibility, not a higher rank. Nothing about
+                  the primary's server-side authority changed; this is only
+                  how it is presented.
+                */}
                 <span className="mt-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500 dark:bg-slate-700 dark:text-slate-300">
-                  {getRelationshipLabel(member.relationship, member.customRelationship)}
+                  {getRelationshipLabel(
+                    member.relationship,
+                    member.customRelationship
+                  )}
+                  {member.role === "primary" ? " · Primary" : ""}
                 </span>
               </button>
             ))}
