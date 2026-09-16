@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useScrollRestoration } from "../hooks/useScrollRestoration";
 import { Navbar } from "../components/Navbar";
 import { OnboardingFlow } from "../components/OnboardingFlow";
 import { PetSpotlight } from "../components/PetSpotlight";
@@ -36,6 +37,8 @@ const PULL_THRESHOLD = 64;
 const PULL_MAX = 96;
 
 export function Feed() {
+  // Come back to where you were, not to the top.
+  useScrollRestoration("feed");
   const navigate = useNavigate();
   const { t } = useLanguage();
   const { user, profile, profileLoading } = useAuth();

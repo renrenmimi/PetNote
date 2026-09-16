@@ -46,11 +46,41 @@ const createState = (): FeedState => ({
   ownerId: null,
 });
 
+type Feeds = { all: FeedState; following: FeedState };
+
+const createFeeds = (): Feeds => ({
+  all: createState(),
+  following: createState(),
+});
+
+/**
+ * The loaded pages, kept outside the component so they survive unmounting.
+ *
+ * Opening a post and coming back destroyed the feed: React unmounted it, the
+ * state went with it, and the next mount started again at page one. Somebody
+ * who had scrolled through four pages to find a photo was returned to the
+ * top of a feed that no longer contained what they had been looking at, and
+ * the round trip cost a fresh query every time.
+ *
+ * Keyed by account, because the "following" feed is per-person and a sign-in
+ * or sign-out must not inherit the previous account's pages. Nothing here is
+ * a substitute for refreshing — pull-to-refresh replaces it outright.
+ */
+let feedCache: { key: string; feeds: Feeds } | null = null;
+
+const cacheKeyFor = (userId?: string | null) => userId ?? "anonymous";
+
 export function usePosts(mode: FeedMode = "all", userId?: string | null): UsePostsResult {
-  const [feeds, setFeeds] = useState({
-    all: createState(),
-    following: createState(),
-  });
+  const cacheKey = cacheKeyFor(userId);
+  const [feeds, setFeeds] = useState<Feeds>(() =>
+    feedCache && feedCache.key === cacheKey ? feedCache.feeds : createFeeds()
+  );
+
+  // Mirrored rather than written through every setFeeds call: one place to
+  // keep in step instead of eleven.
+  useEffect(() => {
+    feedCache = { key: cacheKey, feeds };
+  }, [cacheKey, feeds]);
   const mountedRef = useRef(true);
   const requestIdRef = useRef<Record<FeedMode, number>>({
     all: 0,

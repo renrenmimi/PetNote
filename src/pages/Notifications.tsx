@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { useScrollRestoration } from "../hooks/useScrollRestoration";
 import { Navbar } from "../components/Navbar";
 import { EmptyState } from "../components/EmptyState";
 import Avatar from "../components/Avatar";
@@ -10,6 +11,8 @@ import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 import { timeAgo } from "../utils/timeAgo";
 
 export function Notifications() {
+  // Come back to where you were, not to the top.
+  useScrollRestoration("notifications");
   const navigate = useNavigate();
   const { user } = useAuth();
   const { t } = useLanguage();

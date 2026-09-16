@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useScrollRestoration } from "../hooks/useScrollRestoration";
 import { Navbar } from "../components/Navbar";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { EmptyState } from "../components/EmptyState";
+import { LoadFailedState } from "../components/LoadFailedState";
 import LazyImage from "../components/LazyImage";
 import FilterTag from "../components/FilterTag";
 import { useAuth } from "../hooks/useAuth";
@@ -92,6 +94,9 @@ const categoryFilters: Array<{
 ];
 
 export function Places() {
+  const [loadError, setLoadError] = useState(false);
+  // Come back to where you were, not to the top.
+  useScrollRestoration("places");
   const navigate = useNavigate();
   const { user } = useAuth();
   const [category, setCategory] = useState<PlaceCategory | "all">("all");
@@ -169,6 +174,7 @@ export function Places() {
         lastDoc: reset ? undefined : (lastDoc ?? undefined),
       });
       if (!mountedRef.current || requestIdRef.current !== requestId) return;
+      setLoadError(false);
       setPlaces((prev) => (reset ? result.places : [...prev, ...result.places]));
       setLastDoc(result.lastDoc);
       setHasMore(result.hasMore);
@@ -176,6 +182,10 @@ export function Places() {
       if (!mountedRef.current || requestIdRef.current !== requestId) return;
       if (reset) {
         setPlaces([]);
+        // Without this the page said "No places found nearby" — a statement
+        // about the world — when what had actually happened was a failed
+        // read.
+        setLoadError(true);
       }
       setHasMore(false);
     } finally {
@@ -334,6 +344,14 @@ export function Places() {
           <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-500">
             Loading places...
           </div>
+        ) : places.length === 0 && loadError ? (
+          <LoadFailedState
+            title="Could not load"
+            description="Something went wrong reaching PetNote. Check your connection and try again."
+            retryLabel="Try again"
+            retryingLabel="Trying..."
+            onRetry={() => loadPlaces(true)}
+          />
         ) : places.length === 0 ? (
           <EmptyState
             icon="📍"

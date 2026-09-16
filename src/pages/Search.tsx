@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useScrollRestoration } from "../hooks/useScrollRestoration";
 import { Navbar } from "../components/Navbar";
 import { PostCard } from "../components/PostCard";
 import { EmptyState } from "../components/EmptyState";
@@ -176,6 +177,8 @@ function PetResultCard({ pet }: { pet: Pet }) {
 }
 
 export function Search() {
+  // Come back to where you were, not to the top.
+  useScrollRestoration("search");
   const { user } = useAuth();
   const navigate = useNavigate();
   const { blockedUserIds } = useBlockedUsers(user?.uid ?? null);

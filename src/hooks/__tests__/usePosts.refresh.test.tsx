@@ -11,7 +11,13 @@ vi.mock("../../services/posts", () => ({
   getFollowingPosts: (...a: unknown[]) => getFollowingPosts(...a),
 }));
 
-const { usePosts } = await import("../usePosts");
+/**
+ * Re-imported for every test. usePosts keeps the loaded pages in a
+ * module-level cache so returning from a post detail does not throw them
+ * away — which also means the cache would otherwise carry from one test into
+ * the next.
+ */
+let usePosts: typeof import("../usePosts").usePosts;
 
 const post = (id: string) =>
   ({ id, authorId: "a", likeCount: 0, commentCount: 0 }) as unknown as Post;
@@ -38,9 +44,11 @@ function Harness() {
 const ids = () => screen.getByTestId("ids").textContent;
 
 describe("usePosts refresh", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     getPosts.mockReset();
     getFollowingPosts.mockReset();
+    vi.resetModules();
+    ({ usePosts } = await import("../usePosts"));
   });
 
   async function mountWithFirstPage() {
@@ -55,6 +63,33 @@ describe("usePosts refresh", () => {
     });
     expect(ids()).toBe("p1,p2");
   }
+
+  it("keeps the loaded pages when the list unmounts and comes back", async () => {
+    getPosts.mockResolvedValueOnce({
+      posts: [post("p1"), post("p2")],
+      lastDoc: null,
+      hasMore: false,
+    });
+    const first = render(<Harness />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(ids()).toBe("p1,p2");
+    expect(getPosts).toHaveBeenCalledTimes(1);
+
+    // Opening a post detail and coming back. Without the cache this started
+    // again at page one, so somebody four pages deep was returned to the top
+    // of a feed that no longer held what they were looking at.
+    first.unmount();
+    render(<Harness />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(ids()).toBe("p1,p2");
+    // And it cost nothing: no second query went out.
+    expect(getPosts).toHaveBeenCalledTimes(1);
+  });
 
   it("keeps the existing posts on screen while refreshing", async () => {
     await mountWithFirstPage();
