@@ -106,6 +106,30 @@ const DELIVERY_QUEUE = "deliverPasswordResetCodeTask";
  */
 const MAX_SEND_ATTEMPTS = 3;
 
+/**
+ * How long a claimed-but-unfinished delivery blocks a resend.
+ *
+ * The generation check stops a task that is *still queued* when a newer
+ * request arrives. It cannot stop one that already passed the check and is
+ * inside the provider call — and that window is reachable, not theoretical:
+ * a task may wait up to `dispatchDeadlineSeconds` (300) in the queue, so it
+ * can start at t=55s, the 60s resend cooldown can expire at t=60, the resend
+ * can deliver at t=61, and the first task's mail can land at t=63 carrying a
+ * code the resend has already superseded. The newest thing in the inbox is
+ * then the one that does not work.
+ *
+ * Reproduced: password-reset-delivery.test.ts (B2) fails without this, both
+ * with and without the generation check, which is how I found out the
+ * generation check alone was not enough.
+ *
+ * So a resend waits for the delivery in front of it. Comfortably longer than
+ * the provider timeout (10s) so a healthy send always finishes first, and
+ * short enough that a wedged one cannot block a person for long — past it the
+ * claim is treated as abandoned and the resend proceeds, which is the same
+ * trade the retry budget makes.
+ */
+const DELIVERY_IN_FLIGHT_MS = 20_000;
+
 const CHALLENGE_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -322,6 +346,31 @@ export const requestPasswordResetCodeCallable = onCall(
         // Do not say which of those it was.
         challengeId = randomUUID();
       } else {
+        /*
+         * Is the delivery for the current generation still going?
+         *
+         * `sendAttempts > 0` means a worker claimed it; no `deliveredGeneration`
+         * for that generation means it has not finished. Within
+         * DELIVERY_IN_FLIGHT_MS that is a send in progress, and starting a
+         * second one is what lets the older mail arrive last with a dead code.
+         */
+        const claimedAt =
+          typeof existing.claimedAtMs === "number" ? existing.claimedAtMs : 0;
+        const currentGen =
+          typeof existing.deliveryGeneration === "number"
+            ? existing.deliveryGeneration
+            : 0;
+        const deliveryUnfinished =
+          (existing.sendAttempts ?? 0) > 0 &&
+          existing.deliveredGeneration !== currentGen;
+        if (deliveryUnfinished && now - claimedAt < DELIVERY_IN_FLIGHT_MS) {
+          await holdUntilFloor(startedAt);
+          throw new HttpsError(
+            "resource-exhausted",
+            "A code is already on its way. Please wait a moment."
+          );
+        }
+
         const lastSentAt =
           typeof existing.lastSentAtMs === "number" ? existing.lastSentAtMs : 0;
         if (now - lastSentAt < RESEND_COOLDOWN_MS) {
@@ -674,6 +723,10 @@ export const deliverPasswordResetCodeTask = onTaskDispatched(
       transaction.update(ref, {
         codeDigest: codeDigest(challengeId, uid, code),
         sendAttempts: attempts + 1,
+        // Wall clock, not a server timestamp: the request handler compares it
+        // against Date.now() to decide whether a delivery is still in flight,
+        // and a sentinel it cannot read is no use for that.
+        claimedAtMs: Date.now(),
         updatedAt: FieldValue.serverTimestamp(),
       });
       return { code };

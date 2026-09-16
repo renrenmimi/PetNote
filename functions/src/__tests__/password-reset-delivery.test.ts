@@ -153,7 +153,7 @@ describe("password reset delivery under concurrency", () => {
     ).resolves.toMatchObject({ ok: true });
   });
 
-  it("B2: the newest email is the one that works", async () => {
+  it("B2: a resend cannot overtake a delivery that is already sending", async () => {
     // Two deliveries in flight: the first task is held open inside the
     // provider call while the person asks for a resend, so the two workers
     // interleave and the digest writes can land in either order.
@@ -168,23 +168,35 @@ describe("password reset delivery under concurrency", () => {
     }
     expect(parked).toBe(true);
 
-    // Past the cooldown, ask again. This is the generation that must win.
+    /*
+     * Ask again while that delivery is still in flight. The cooldown is
+     * cleared, which is what the *old* version of this test did to manufacture
+     * the overlap — and the overlap is reachable in production too, because a
+     * task may wait up to 300 s in the queue and so can still be sending when
+     * the 60 s cooldown expires.
+     *
+     * The resend must be refused. If it were allowed, its mail would land
+     * before the parked worker's and the newest thing in the inbox would be
+     * the dead code. That is the invariant, and it is enforced at the point
+     * where a second delivery would be created rather than after the fact.
+     */
     await db
       .doc(`passwordResetChallenges/${challengeId}`)
       .update({ lastSentAtMs: Date.now() - 61_000 });
-    await request({ email: EMAIL, challengeId });
-    const secondPayload = enqueued[enqueued.length - 1];
-    await runTask(secondPayload);
-    const newestCode = sent.at(-1)!.code;
+    expect(
+      await errorCodeOf(() => request({ email: EMAIL, challengeId }))
+    ).toContain("resource-exhausted");
 
-    // Now let the stale worker finish.
+    // Let the in-flight delivery finish.
     release!();
     await firstRun;
 
-    // Whatever order the writes landed in, the code from the newest email is
-    // the one that verifies.
+    // One mail, and the code in it is the one that works: there was never a
+    // second delivery to disagree with it.
+    expect(sent).toHaveLength(1);
+    const onlyCode = sent.at(-1)!.code;
     await expect(
-      confirm({ challengeId, code: newestCode, newPassword: NEW_PASSWORD })
+      confirm({ challengeId, code: onlyCode, newPassword: NEW_PASSWORD })
     ).resolves.toMatchObject({ ok: true });
   });
 
