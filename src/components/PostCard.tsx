@@ -538,23 +538,33 @@ function PostCardImpl({
                 {primaryName}
               </button>
             </div>
-            {hasPetContext ? (
-              <button
-                type="button"
-                onClick={() => navigate(`/profile/${post.authorId}`)}
-                className="block max-w-full truncate text-xs text-slate-500 transition-all duration-200 hover:text-purple-600 dark:text-slate-400"
-              >
-                by {authorName}
-              </button>
-            ) : null}
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              {timeLabel}
+            {/*
+              Two lines, not three. The name, the owner and the timestamp were
+              stacked at three sizes, so a card spent more vertical space
+              introducing itself than a photo needed to arrive. Owner and time
+              now share a line — they are both secondary, and reading them
+              together is how you read a byline.
+            */}
+            <div className="flex min-w-0 items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+              {hasPetContext ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/profile/${post.authorId}`)}
+                    className="max-w-[9rem] truncate transition-colors duration-200 hover:text-purple-600"
+                  >
+                    {authorName}
+                  </button>
+                  <span aria-hidden="true">·</span>
+                </>
+              ) : null}
+              <span className="shrink-0">{timeLabel}</span>
               {isBirthday ? (
-                <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-500/20 dark:text-amber-200">
-                  🎂 Birthday!
+                <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-500/20 dark:text-amber-200">
+                  Birthday
                 </span>
               ) : null}
-            </p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {user && post.authorId !== user.uid && post.petId ? (
@@ -565,7 +575,7 @@ function PostCardImpl({
                 className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-all duration-200 ${
                   isFollowingPet
                     ? "border border-slate-200 text-slate-500 hover:border-red-300 hover:text-red-500 dark:border-slate-700 dark:text-slate-300"
-                    : "bg-gradient-to-r from-purple-500 to-pink-500 text-white"
+                    : "bg-purple-600 text-white"
                 }`}
               >
                 {isFollowingPet ? "Following" : "Follow"}

@@ -428,7 +428,12 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
       //
       // Safe-area padding because there is no chrome up there to hide behind:
       // "Choose your username" was being clipped by the Dynamic Island.
-      className="fixed inset-0 z-[60] flex flex-col items-center justify-between overflow-y-auto bg-white px-6 text-center dark:bg-slate-900"
+      // justify-start, not justify-between. With a short step in a tall
+      // scrollable column, "between" left Skip and Continue floating around
+      // the middle of the screen above a large void. Content now starts at the
+      // top and the actions sink to the bottom with mt-auto, so every step has
+      // the same rhythm regardless of how much it contains.
+      className="fixed inset-0 z-[60] flex flex-col items-center justify-start overflow-y-auto bg-white px-6 text-center dark:bg-slate-900"
       style={{
         paddingTop: "calc(env(safe-area-inset-top, 0px) + 1.5rem)",
         paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 1.5rem)",
@@ -524,7 +529,7 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
               <p className="text-sm text-green-500">Username available</p>
             ) : null}
 
-            <div className="flex items-center justify-between">
+            <div className="mt-auto flex w-full items-center justify-between pt-8">
               <button
                 type="button"
                 onClick={handleNext}
@@ -742,7 +747,7 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
               </div>
             )}
 
-            <div className="flex items-center justify-between">
+            <div className="mt-auto flex w-full items-center justify-between pt-8">
               <button
                 type="button"
                 onClick={handleNext}
