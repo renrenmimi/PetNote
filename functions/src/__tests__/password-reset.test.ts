@@ -87,6 +87,13 @@ async function drain(): Promise<void> {
   }
 }
 
+/** The generation the request handler recorded, for hand-built payloads. */
+async function generationOf(challengeId: string): Promise<number> {
+  const snap = await db.doc(`passwordResetChallenges/${challengeId}`).get();
+  const value = snap.data()?.deliveryGeneration;
+  return typeof value === "number" ? value : 1;
+}
+
 const EMAIL = "reset-subject@example.com";
 /** Mirrors MAX_SENDS_PER_CHALLENGE in the handler. */
 const MAX_SENDS = 4;
@@ -643,7 +650,10 @@ describe("password reset by numeric code", () => {
     await db
       .doc(`passwordResetChallenges/${first.challengeId}`)
       .update({ sendCount: MAX_SENDS + 1 });
-    enqueued.push({ challengeId: first.challengeId });
+    enqueued.push({
+      challengeId: first.challengeId,
+      generation: await generationOf(first.challengeId),
+    });
     await drain();
 
     expect(sent).toHaveLength(0);
@@ -662,25 +672,27 @@ describe("password reset by numeric code", () => {
     expect(sent).toHaveLength(0);
   });
 
-  it("supersedes the old code when the worker runs again", async () => {
-    // At-least-once delivery: a second run mints a fresh code and overwrites
-    // the digest, so a duplicate mail means only the newer code works.
+  it("does not supersede a delivered code when the worker runs again", async () => {
+    /*
+     * This test asserted the opposite a commit ago, and the opposite was the
+     * defect. At-least-once delivery means a task whose acknowledgement was
+     * lost runs again; the worker used to mint a fresh code and overwrite the
+     * digest each time, so somebody holding a perfectly good email found it
+     * rejected. `deliveredGeneration` makes the duplicate a no-op.
+     * Reproduced and re-verified in password-reset-delivery.test.ts (B1).
+     */
     await ensureUser(EMAIL);
     const { challengeId, code: firstCode } = await startFlow();
+    const payload = { challengeId, generation: 1 };
 
-    enqueued.push({ challengeId });
+    sent.length = 0;
+    enqueued.push(payload);
     await drain();
-    const secondCode = sent.at(-1)?.code ?? "";
-    expect(secondCode).toMatch(/^\d{6}$/);
-    expect(secondCode).not.toBe(firstCode);
 
-    expect(
-      await errorCodeOf(() =>
-        confirm({ challengeId, code: firstCode, newPassword: GOOD_PASSWORD })
-      )
-    ).toContain("invalid-argument");
+    // No second mail, and the code in the inbox still works.
+    expect(sent).toHaveLength(0);
     await expect(
-      confirm({ challengeId, code: secondCode, newPassword: GOOD_PASSWORD })
+      confirm({ challengeId, code: firstCode, newPassword: GOOD_PASSWORD })
     ).resolves.toMatchObject({ ok: true });
   });
 
