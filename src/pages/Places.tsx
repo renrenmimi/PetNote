@@ -69,8 +69,16 @@ const featureIcons: Record<string, string> = {
   waste_bags: "🗑️",
 };
 
+/*
+ * "Nearby (recent)" was printed whether or not a centre existed. With no
+ * searched area and no stored location, `activeCenter` is null, the query
+ * cannot order by distance, and what comes back is simply the most recent —
+ * so the label said "Nearby" about a list that had nothing to do with where
+ * anybody was. The first option's label is derived from `activeCenter` at
+ * render time instead; this is the no-centre wording.
+ */
 const sortOptions = [
-  { key: "nearby", label: "Nearby (recent)" },
+  { key: "nearby", label: "Recent" },
   { key: "top_rated", label: "Top Rated" },
   { key: "most_reviewed", label: "Most Reviewed" },
   { key: "newest", label: "Newest" },
@@ -328,13 +336,16 @@ export function Places() {
                 key={option.key}
                 type="button"
                 onClick={() => setSortBy(option.key)}
-                className={`rounded-full px-2 py-1 text-[11px] font-semibold ${
+                className={`min-h-9 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                   sortBy === option.key
-                    ? "bg-purple-100 text-purple-600"
+                    ? "bg-purple-100 text-purple-600 dark:bg-purple-500/20 dark:text-purple-200"
                     : "text-slate-400 hover:text-slate-600 dark:text-slate-500"
                 }`}
               >
-                {option.label}
+                {/* Only claims distance when there is a centre to measure from. */}
+                {option.key === "nearby" && activeCenter
+                  ? "Nearby"
+                  : option.label}
               </button>
             ))}
           </div>
@@ -355,7 +366,15 @@ export function Places() {
         ) : places.length === 0 ? (
           <EmptyState
             icon="📍"
-            title="No places found nearby"
+            /* Same rule as the sort label: only a real centre licenses the
+               word. Without one this list was never scoped to anywhere. */
+            title={
+              activeCenter
+                ? "No places found in this area"
+                : category === "all"
+                  ? "No places yet"
+                  : "No places in this category yet"
+            }
             description="Be the first to recommend one!"
             actionText="Add a Place"
             onAction={() => navigate("/places/add")}
