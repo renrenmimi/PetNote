@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { PawPrint } from "lucide-react";
 import { getPopularPosts, type Post } from "../services/posts";
 import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 
@@ -38,6 +39,7 @@ const PawAvatar = ({
   name: string;
   seen: boolean;
 }) => {
+  const [broken, setBroken] = useState(false);
   return (
     <div
       className="relative h-[62px] w-[62px] active:scale-95 transition-transform"
@@ -47,25 +49,36 @@ const PawAvatar = ({
         className={`absolute inset-0 ${
           seen
             ? "bg-gray-200 dark:bg-gray-700"
-            : "bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400"
+            : // Two stops, matching the brand gradient used by every other
+              // accent surface. The third, orange stop appeared nowhere else
+              // in the app and read as a different product.
+              "bg-gradient-to-br from-purple-500 to-pink-500"
         }`}
       />
       <div className="absolute inset-[2.5px] bg-white dark:bg-gray-900" />
       <div className="absolute inset-[4px]">
-        {src ? (
+        {src && !broken ? (
           <img
-            src={src ? optimizeCloudinaryUrl(src, "spotlight") : src}
+            src={optimizeCloudinaryUrl(src, "spotlight")}
             alt={name}
+            // A heart-shaped clip around the browser's broken-image glyph
+            // reads as "this app is broken", not "this pet has no photo".
+            onError={() => setBroken(true)}
             className={`h-full w-full object-cover ${
               seen ? "opacity-70" : ""
             }`}
           />
         ) : (
+          // A pet with no photo gets a flat brand tint. It used to get the
+          // same gradient as the ring, which inside a heart-shaped clip read
+          // as a broken image rather than an empty one.
           <div
-            className={`h-full w-full bg-gradient-to-br from-purple-500 to-pink-500 ${
+            className={`flex h-full w-full items-center justify-center bg-purple-100 text-purple-500 dark:bg-purple-500/20 dark:text-purple-200 ${
               seen ? "opacity-70" : ""
             }`}
-          />
+          >
+            <PawPrint size={22} strokeWidth={1.8} aria-hidden="true" />
+          </div>
         )}
       </div>
     </div>
@@ -124,7 +137,7 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
   return (
     <section className="rounded-2xl bg-white px-4 py-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 transition-all duration-200 dark:bg-slate-800 dark:ring-slate-700">
       <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
-        ⭐ Popular Pets
+        Popular Pets
       </h2>
       <svg width="0" height="0" className="absolute">
         <defs>

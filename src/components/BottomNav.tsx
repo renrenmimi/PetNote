@@ -1,10 +1,18 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import {
+  Handshake,
+  Home,
+  MapPin,
+  Plus,
+  User,
+  type LucideIcon,
+} from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useLanguage } from "../hooks/useLanguage";
 
 type NavItem = {
   label: string;
-  icon: string;
+  Icon: LucideIcon;
   path?: string;
   action?: () => void;
 };
@@ -25,18 +33,29 @@ export function BottomNav() {
     navigate(path);
   };
 
+  /*
+   * Line icons rather than emoji.
+   *
+   * Emoji are full-colour bitmaps: they cannot take the tint that marks the
+   * selected tab, so the only thing distinguishing "Home" from the rest was
+   * the colour of the *label* underneath. They also sit on their own
+   * baselines and render at different optical weights, which is most of why
+   * the chrome read as a web page rather than an app.
+   *
+   * Emoji stay where they are content — a caption, a tag, somebody's post.
+   */
   const items: NavItem[] = [
-    { label: t("nav.home"), icon: "🏠", path: "/" },
-    { label: t("nav.places"), icon: "📍", path: "/places" },
+    { label: t("nav.home"), Icon: Home, path: "/" },
+    { label: t("nav.places"), Icon: MapPin, path: "/places" },
     {
       label: t("nav.create"),
-      icon: "+",
+      Icon: Plus,
       action: () => requireAuth("/create"),
     },
-    { label: t("nav.meetups"), icon: "🤝", path: "/meetups" },
+    { label: t("nav.meetups"), Icon: Handshake, path: "/meetups" },
     {
       label: t("nav.profile"),
-      icon: "👤",
+      Icon: User,
       path: "/profile",
       action: () => requireAuth("/profile"),
     },
@@ -70,11 +89,15 @@ export function BottomNav() {
                 }`}
               >
                 {item.label === t("nav.create") ? (
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-xl font-semibold text-white shadow-[0_12px_25px_-15px_rgba(168,85,247,0.8)] transition-all duration-200 hover:scale-105">
-                    {item.icon}
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-[0_10px_20px_-12px_rgba(168,85,247,0.9)] transition-transform duration-200 active:scale-95">
+                    <item.Icon size={20} strokeWidth={2.5} aria-hidden="true" />
                   </span>
                 ) : (
-                  <span className="text-xl">{item.icon}</span>
+                  <item.Icon
+                    size={22}
+                    strokeWidth={isActive ? 2.4 : 1.9}
+                    aria-hidden="true"
+                  />
                 )}
                 {item.label}
               </button>
@@ -85,11 +108,18 @@ export function BottomNav() {
             <Link
               key={item.label}
               to={item.path || "/"}
+              aria-current={isActive ? "page" : undefined}
               className={`flex flex-1 flex-col items-center gap-1 text-xs transition-all duration-200 active:scale-95 ${
                 isActive ? "text-purple-600" : "text-slate-500 dark:text-slate-400"
               }`}
             >
-              <span className="text-xl">{item.icon}</span>
+              {/* Weight as well as colour marks the selection, so it survives
+                  greyscale and does not rely on hue alone. */}
+              <item.Icon
+                size={22}
+                strokeWidth={isActive ? 2.4 : 1.9}
+                aria-hidden="true"
+              />
               {item.label}
             </Link>
           );

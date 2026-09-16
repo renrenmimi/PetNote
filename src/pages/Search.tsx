@@ -468,7 +468,7 @@ export function Search() {
             {trendingTags.length > 0 ? (
               <section>
                 <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
-                  Trending Tags 🔥
+                  Trending Tags
                 </h2>
                 <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
                   {trendingTags.map((tag) => (
@@ -478,7 +478,8 @@ export function Search() {
                       onClick={() => handleTagClick(tag.name)}
                       className="whitespace-nowrap rounded-full bg-gradient-to-r from-purple-100 to-pink-100 px-3 py-1 text-xs font-semibold text-purple-600 transition-all duration-200 hover:scale-105 dark:from-purple-500/20 dark:to-pink-500/20 dark:text-purple-200"
                     >
-                      #{tag.name} · {tag.postCount} posts
+                      #{tag.name} · {tag.postCount}{" "}
+                      {tag.postCount === 1 ? "post" : "posts"}
                     </button>
                   ))}
                 </div>
@@ -488,7 +489,7 @@ export function Search() {
             {filteredTrending.length > 0 || exploreLoading ? (
               <section>
                 <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-                  🔥 Trending Posts
+                  Trending Posts
                 </h3>
                 {exploreLoading ? (
                   <div className="mt-3 grid grid-cols-3 gap-1">
@@ -549,7 +550,7 @@ export function Search() {
             {suggestedPets.length > 0 ? (
               <section>
                 <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-                  🐾 Suggested Pets
+                  Suggested Pets
                 </h3>
                 <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
                   {suggestedPets.map((pet) => (
@@ -566,7 +567,7 @@ export function Search() {
             {popularPets.length > 0 ? (
               <section>
                 <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-                  🐾 Popular Pets
+                  Popular Pets
                 </h3>
                 <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
                   {popularPets.map((pet) => (
@@ -592,7 +593,7 @@ export function Search() {
                         </p>
                       ) : null}
                       <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">
-                        {pet.postCount} posts
+                        {pet.postCount} {pet.postCount === 1 ? "post" : "posts"}
                       </p>
                     </button>
                   ))}
@@ -808,7 +809,7 @@ export function Search() {
                     >
                       <span className="font-semibold text-purple-600">#{tag.name}</span>
                       <span className="text-xs text-slate-400 dark:text-slate-500">
-                        {tag.postCount} posts
+                        {tag.postCount} {tag.postCount === 1 ? "post" : "posts"}
                       </span>
                     </button>
                   ))}

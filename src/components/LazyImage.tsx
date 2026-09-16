@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ImageOff } from "lucide-react";
 import {
   optimizeCloudinaryUrl,
   type ImageSize,
@@ -46,6 +47,11 @@ export default function LazyImage({
   // with a picture glyph for as long as the card was mounted, with no way to
   // ask again short of leaving the page.
   const [attempt, setAttempt] = useState(0);
+  // Whether there is room for words. A grid of failed thumbnails all saying
+  // "Tap to retry" shouts louder than the content around it; at that size the
+  // icon alone is the honest amount of emphasis, with the label carried by
+  // the accessible name instead.
+  const [roomForLabel, setRoomForLabel] = useState(true);
   const imgRef = useRef<HTMLDivElement>(null);
   const resolvedSrc = cloudinarySize
     ? optimizeCloudinaryUrl(src, cloudinarySize)
@@ -67,6 +73,17 @@ export default function LazyImage({
     if (imgRef.current) observer.observe(imgRef.current);
     return () => observer.disconnect();
   }, [priority]);
+
+  useEffect(() => {
+    const node = imgRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const measure = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setRoomForLabel(width >= 180 && height >= 120);
+    });
+    measure.observe(node);
+    return () => measure.disconnect();
+  }, []);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -96,11 +113,17 @@ export default function LazyImage({
             setLoaded(false);
             setAttempt((value) => value + 1);
           }}
-          className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
+          className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-slate-100 text-slate-400 transition-colors hover:text-slate-500 dark:bg-slate-800 dark:text-slate-500"
           aria-label={alt ? `Retry loading ${alt}` : "Retry loading image"}
         >
-          <span aria-hidden="true">🖼️</span>
-          <span className="text-xs font-medium">Tap to retry</span>
+          <ImageOff
+            size={roomForLabel ? 26 : 18}
+            strokeWidth={1.6}
+            aria-hidden="true"
+          />
+          {roomForLabel ? (
+            <span className="text-xs font-medium">Tap to retry</span>
+          ) : null}
         </button>
       ) : null}
 

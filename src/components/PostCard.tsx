@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { MessageCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useLike } from "../hooks/useLike";
@@ -700,13 +701,16 @@ function PostCardImpl({
             >
               <HeartIcon filled={likedState} />
             </button>
+            {/* The only emoji in a row of line icons: it rendered as a
+                colour bitmap at a different weight and baseline from the
+                heart, the share arrow and the bookmark beside it. */}
             <button
               type="button"
-              className="text-2xl text-slate-500 transition-all duration-200 hover:scale-105 dark:text-slate-400"
+              className="flex min-h-11 min-w-11 items-center justify-center text-slate-600 transition-colors duration-200 hover:text-purple-500 dark:text-slate-300"
               aria-label="Comment"
               onClick={() => navigate(`/post/${post.id}`)}
             >
-              💬
+              <MessageCircle size={26} strokeWidth={1.8} aria-hidden="true" />
             </button>
             <button
               type="button"

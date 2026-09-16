@@ -4,6 +4,7 @@ import { CommentSection } from "../components/CommentSection";
 import { MediaCarousel } from "../components/MediaCarousel";
 import { ShareMenu } from "../components/ShareMenu";
 import { SkeletonPostCard } from "../components/SkeletonPostCard";
+import { LoadFailedState } from "../components/LoadFailedState";
 import Avatar from "../components/Avatar";
 import { useAuth } from "../hooks/useAuth";
 import { useBookmark } from "../hooks/useBookmark";
@@ -92,6 +93,10 @@ export function PostDetail() {
   const [authorName, setAuthorName] = useState<string | null>(null);
   const [authorAvatar, setAuthorAvatar] = useState<string | null>(null);
   const [commentCount, setCommentCount] = useState(0);
+  const [loadFailure, setLoadFailure] = useState<
+    "failed" | "denied" | null
+  >(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const [shareOpen, setShareOpen] = useState(false);
   const commentsRef = useRef<HTMLDivElement | null>(null);
 
@@ -126,6 +131,7 @@ export function PostDetail() {
 
     const load = async () => {
       setLoading(true);
+      setLoadFailure(null);
       try {
         const data = await getPostById(postId);
         if (!ignore) {
@@ -133,10 +139,21 @@ export function PostDetail() {
           setCommentCount(data?.commentCount ?? 0);
         }
       } catch (error) {
-        // Without this catch, getPostById's network/permission failure
-        // left the skeleton spinner up forever. Surface the failure so
-        // the user can refresh.
+        // Catching this stopped the skeleton spinning forever, but leaving
+        // `post` null then rendered "Post not found." — so a dropped
+        // connection, or a rule that refused the read, told the person the
+        // post did not exist. Verified against the emulator: a readable post
+        // whose fetch failed showed exactly that.
         console.error("Failed to load post:", error);
+        if (!ignore) {
+          const code =
+            error && typeof error === "object" && "code" in error
+              ? String((error as { code?: unknown }).code ?? "")
+              : "";
+          setLoadFailure(
+            code.includes("permission-denied") ? "denied" : "failed"
+          );
+        }
       } finally {
         if (!ignore) setLoading(false);
       }
@@ -146,7 +163,8 @@ export function PostDetail() {
     return () => {
       ignore = true;
     };
-  }, [postId]);
+    // reloadToken is the retry button.
+  }, [postId, reloadToken]);
 
   useEffect(() => {
     let ignore = false;
@@ -278,9 +296,28 @@ export function PostDetail() {
 
       <main className="mx-auto w-full max-w-md space-y-4 px-4 py-4 pb-24">
         {loading ? <SkeletonPostCard /> : null}
-        {!loading && !post ? (
+        {/* Three outcomes, three answers. "Not found" is only said when the
+            read succeeded and the post genuinely is not there. */}
+        {!loading && !post && loadFailure ? (
+          <LoadFailedState
+            title={
+              loadFailure === "denied"
+                ? "You cannot see this post"
+                : "Could not load this post"
+            }
+            description={
+              loadFailure === "denied"
+                ? "It may be private, or shared with a different account."
+                : "Something went wrong reaching PetNote. Check your connection and try again."
+            }
+            retryLabel="Try again"
+            retryingLabel="Trying..."
+            onRetry={() => setReloadToken((value) => value + 1)}
+          />
+        ) : null}
+        {!loading && !post && !loadFailure ? (
           <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-300">
-            Post not found.
+            This post has been deleted.
           </div>
         ) : null}
         {post ? (
