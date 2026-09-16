@@ -15,8 +15,15 @@ vi.mock("../Avatar", () => ({
   default: () => null,
 }));
 
-const post = (id: string, petName: string) =>
-  ({ id, petName, authorName: "someone", media: [] }) as unknown as Post;
+const post = (id: string, petName: string, petId = `pet-${petName}`) =>
+  ({
+    id,
+    petId,
+    petName,
+    authorId: `author-${petName}`,
+    authorName: "someone",
+    media: [],
+  }) as unknown as Post;
 
 /** Mounts and lets the load effect settle. */
 async function mount() {
@@ -84,6 +91,22 @@ describe("PetSpotlight", () => {
 
     expect(screen.getByRole("region", { name: /popular pets/i })).toBeTruthy();
     expect(screen.getByText("Mochi")).toBeTruthy();
+    expect(screen.getByText("Biscuit")).toBeTruthy();
+  });
+
+  it("lists one entry per pet, because the heading promises pets", async () => {
+    // The query returns popular *posts*. A pet with four of the five
+    // most-liked posts filled the strip with its own name four times, which
+    // reads either as a bug or as the app having exactly one pet.
+    getPopularPosts.mockResolvedValue([
+      post("p1", "Mochi"),
+      post("p2", "Mochi"),
+      post("p3", "Mochi"),
+      post("p4", "Biscuit"),
+    ]);
+    await mount();
+
+    expect(screen.getAllByText("Mochi")).toHaveLength(1);
     expect(screen.getByText("Biscuit")).toBeTruthy();
   });
 

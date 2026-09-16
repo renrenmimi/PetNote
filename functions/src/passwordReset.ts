@@ -94,6 +94,18 @@ type DeliveryOutcome = "code" | "google-only" | "none";
 
 const DELIVERY_QUEUE = "deliverPasswordResetCodeTask";
 
+/**
+ * How many times the worker may try to mail one generation.
+ *
+ * Counted by the worker, in the challenge document, because `sendCount` is
+ * not this: `sendCount` is incremented by the request handler, so it bounds
+ * how many times a *person* asked. Checking it in the worker bounded nothing
+ * about retries — one request could produce as many emails as Cloud Tasks
+ * chose to dispatch. Reproduced in password-reset-delivery.test.ts (B4),
+ * where `sendAttempts` came back `undefined`.
+ */
+const MAX_SEND_ATTEMPTS = 3;
+
 const CHALLENGE_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -349,6 +361,17 @@ export const requestPasswordResetCodeCallable = onCall(
         // new code is mailed would make the cap meaningless.
         ...(isResend ? {} : { attempts: 0 }),
         sendCount: FieldValue.increment(1),
+        /*
+         * Which delivery this is. Incremented per request, carried in the
+         * task payload, and compared by the worker — so a task dispatched
+         * for an earlier generation knows it is stale and refuses to send.
+         * Without it there was no task identity at all and an old dispatch
+         * could mail a code against the newest challenge state
+         * (password-reset-delivery.test.ts, B5).
+         */
+        deliveryGeneration: FieldValue.increment(1),
+        // Reset per generation: a new code deserves its own attempt budget.
+        sendAttempts: 0,
         expiresAtMs,
         // Checked in code on every verify. The TTL policy is only for
         // housekeeping — expiry must not depend on a deletion running on time.
@@ -372,11 +395,17 @@ export const requestPasswordResetCodeCallable = onCall(
     // A durable API call, not fire-and-forget: if the enqueue fails the
     // caller is told the request failed, rather than being sent to wait for
     // mail that was never scheduled.
+    let generation = 1;
     try {
+      // Read back what the increment landed on, so the payload carries the
+      // generation this request actually created rather than a guess.
+      const stored = await challengeRef(challengeId).get();
+      const value = stored.data()?.deliveryGeneration;
+      generation = typeof value === "number" ? value : 1;
       await getFunctions()
         .taskQueue(DELIVERY_QUEUE)
         .enqueue(
-          { challengeId },
+          { challengeId, generation },
           // Shorter than the code's own lifetime. A task still waiting to run
           // after the code has expired has nothing useful left to send.
           { dispatchDeadlineSeconds: 300 }
@@ -467,6 +496,10 @@ export const deliverPasswordResetCodeTask = onTaskDispatched(
       typeof request.data?.challengeId === "string"
         ? request.data.challengeId
         : "";
+    const generation =
+      typeof request.data?.generation === "number"
+        ? request.data.generation
+        : 0;
     if (!CHALLENGE_ID_PATTERN.test(challengeId)) {
       // Not retryable — a malformed id will still be malformed in ten
       // seconds. Returning rather than throwing takes it off the queue.
@@ -484,7 +517,53 @@ export const deliverPasswordResetCodeTask = onTaskDispatched(
     const challenge = snap.data() ?? {};
 
     if (challenge.purpose !== PURPOSE) return;
-    if (challenge.status === "consumed") return;
+    // "verifying" as well as "consumed": a confirm that is midway through
+    // setting the password has already accepted a code, so mailing another
+    // one is at best noise and at worst a second code arriving after the
+    // password changed.
+    if (challenge.status === "consumed" || challenge.status === "verifying") {
+      return;
+    }
+
+    /*
+     * Is this task still the current delivery?
+     *
+     * Cloud Tasks is at-least-once and does not order dispatches, so an old
+     * task can arrive after a newer request has already mailed a code. Before
+     * this check it would mint a fresh code, overwrite the digest, and send —
+     * which invalidated the code already sitting in somebody's inbox and made
+     * the *newest* email the one that did not work.
+     */
+    const currentGeneration =
+      typeof challenge.deliveryGeneration === "number"
+        ? challenge.deliveryGeneration
+        : 1;
+    if (generation !== currentGeneration) {
+      logger.info("Delivery task dropped: superseded by a newer request", {
+        challengeId,
+        generation,
+        currentGeneration,
+      });
+      return;
+    }
+
+    /*
+     * Already delivered this generation?
+     *
+     * This is the one that mattered most. A send can succeed and the task's
+     * acknowledgement still be lost, at which point Cloud Tasks runs the task
+     * again — and the old worker minted a *new* code every time it ran, so a
+     * person holding a perfectly good email found it rejected. Recording the
+     * delivery means a duplicate dispatch is a no-op rather than a silent
+     * invalidation. Reproduced in password-reset-delivery.test.ts (B1).
+     */
+    if (challenge.deliveredGeneration === generation) {
+      logger.info("Delivery task dropped: already delivered", {
+        challengeId,
+        generation,
+      });
+      return;
+    }
     // Expiry is the code's own clock, checked here as well as at verify time.
     // A task that waited out the queue has nothing worth mailing.
     if (
@@ -503,14 +582,13 @@ export const deliverPasswordResetCodeTask = onTaskDispatched(
     // there is nothing to send.
     if (outcome === "none" || outcome === undefined) return;
 
-    const sendCount =
-      typeof challenge.sendCount === "number" ? challenge.sendCount : 0;
-    if (sendCount > MAX_SENDS_PER_CHALLENGE) {
-      // Re-checked here, so retries cannot mail somebody more times than a
-      // person could have asked for.
-      logger.warn("Delivery task dropped: send cap already reached", {
+    const sendAttempts =
+      typeof challenge.sendAttempts === "number" ? challenge.sendAttempts : 0;
+    if (sendAttempts >= MAX_SEND_ATTEMPTS) {
+      logger.warn("Delivery task dropped: attempt budget spent", {
         challengeId,
-        sendCount,
+        generation,
+        sendAttempts,
       });
       return;
     }
@@ -559,14 +637,47 @@ export const deliverPasswordResetCodeTask = onTaskDispatched(
       return;
     }
 
-    // outcome === "code". Minted here, per attempt: the previous digest is
-    // superseded, so if a retry produces a second mail only the newer code
-    // verifies.
-    const code = generateCode();
-    await ref.update({
-      codeDigest: codeDigest(challengeId, uid, code),
-      updatedAt: FieldValue.serverTimestamp(),
+    /*
+     * outcome === "code". Minting and claiming the attempt happen together, in
+     * a transaction that re-reads the three things this decision rests on.
+     *
+     * The guards above were read outside it, so between them and here a
+     * confirm could have started, a newer request could have arrived, or
+     * another attempt of this same task could have claimed the slot. A plain
+     * `update` would have overwritten whatever those did. The transaction
+     * either claims this attempt or tells us somebody else has moved on, in
+     * which case there is nothing to send.
+     */
+    const claim = await db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(ref);
+      if (!snapshot.exists) return null;
+      const current = snapshot.data() ?? {};
+      if (current.status === "consumed" || current.status === "verifying") {
+        return null;
+      }
+      if ((current.deliveryGeneration ?? 1) !== generation) return null;
+      if (current.deliveredGeneration === generation) return null;
+      const attempts =
+        typeof current.sendAttempts === "number" ? current.sendAttempts : 0;
+      if (attempts >= MAX_SEND_ATTEMPTS) return null;
+
+      const code = generateCode();
+      transaction.update(ref, {
+        codeDigest: codeDigest(challengeId, uid, code),
+        sendAttempts: attempts + 1,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return { code };
     });
+
+    if (claim === null) {
+      logger.info("Delivery task dropped: challenge moved on before sending", {
+        challengeId,
+        generation,
+      });
+      return;
+    }
+    const code = claim.code;
 
     const result = await sendPasswordResetCodeEmail({
       to: email,
@@ -587,6 +698,22 @@ export const deliverPasswordResetCodeTask = onTaskDispatched(
       }
       throw new Error(`code send failed: ${result.reason}`);
     }
+
+    /*
+     * The mail is out. Recording it is what makes a duplicate dispatch
+     * harmless — and it is written *after* the send, because the only thing
+     * worth recording is a send that actually happened.
+     *
+     * If this write fails the send still happened and the task will be
+     * retried, which mints a new code and supersedes the delivered one. That
+     * is the residual case, it is much narrower than "the acknowledgement was
+     * lost", and it is bounded by MAX_SEND_ATTEMPTS.
+     */
+    await ref.update({
+      deliveredGeneration: generation,
+      deliveredAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
   }
 );
 

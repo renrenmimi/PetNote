@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { Bell } from "lucide-react";
 import { useScrollRestoration } from "../hooks/useScrollRestoration";
 import { Navbar } from "../components/Navbar";
 import { EmptyState } from "../components/EmptyState";
@@ -58,7 +59,7 @@ export function Notifications() {
 
         {!loading && notifications.length === 0 ? (
           <EmptyState
-            icon="🔔"
+            Icon={Bell}
             title={t("notifications.emptyTitle")}
             description={t("notifications.emptyDescription")}
           />

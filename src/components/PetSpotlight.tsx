@@ -124,7 +124,27 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
   }, []);
 
   const sortedPosts = useMemo(() => {
-    const list = posts.slice(0, limitCount);
+    /*
+     * One entry per pet, because the section is called "Popular Pets".
+     *
+     * The query returns popular *posts*, and a pet with four of the five
+     * most-liked posts filled the strip with its own name four times — which
+     * reads either as a bug or as the app having exactly one pet. Keeping the
+     * first occurrence keeps the ordering the query gave us; it just stops the
+     * same subject appearing twice under a heading that promises subjects.
+     *
+     * Posts with no pet fall back to the author for their label, so they are
+     * de-duplicated by author for the same reason.
+     */
+    const seen = new Set<string>();
+    const list: Post[] = [];
+    for (const post of posts) {
+      const subject = post.petId || post.authorId;
+      if (!subject || seen.has(subject)) continue;
+      seen.add(subject);
+      list.push(post);
+      if (list.length >= limitCount) break;
+    }
     return list.sort((a, b) => {
       const aSeen = seenPosts.includes(a.id);
       const bSeen = seenPosts.includes(b.id);

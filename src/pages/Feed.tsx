@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useScrollRestoration } from "../hooks/useScrollRestoration";
 import { Navbar } from "../components/Navbar";
@@ -546,7 +547,7 @@ export function Feed() {
         {!loading && filteredPosts.length === 0 && !error ? (
           activeTab === "following" && user && followingCount === 0 ? (
             <EmptyState
-              icon="👥"
+              Icon={Users}
               title={t("feed.emptyFollowingTitle")}
               description={t("feed.emptyFollowingDescription")}
               actionText={t("feed.discoverPets")}

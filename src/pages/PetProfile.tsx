@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { MapPin, PawPrint } from "lucide-react";
 import { signInReturnState } from "../utils/authNavigation";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import Avatar from "../components/Avatar";
@@ -555,7 +556,7 @@ export function PetProfile() {
           {activeTab === "posts" ? (
             posts.length === 0 ? (
               <EmptyState
-                icon="🐾"
+                Icon={PawPrint}
                 title="No posts with this pet"
                 description="Tag this pet when posting to show posts here"
               />
@@ -606,7 +607,7 @@ export function PetProfile() {
           ) : (
             checkins.length === 0 ? (
               <EmptyState
-                icon="📍"
+                Icon={MapPin}
                 title="No check-ins with this pet"
                 description="Check in at places when this pet is with you"
               />

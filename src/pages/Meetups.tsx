@@ -351,7 +351,7 @@ export function Meetups() {
           />
         ) : meetups.length === 0 ? (
           <EmptyState
-            icon="📍"
+            Icon={Calendar}
             title={
               activeFilter === "mine"
                 ? "No meetups of yours yet"

@@ -709,7 +709,7 @@ export function Search() {
               <section>
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-                    📍 Top Rated Places
+                    Top Rated Places
                   </h3>
                   <button
                     type="button"
@@ -812,7 +812,7 @@ export function Search() {
 
             {!searching && !searchFailed && searchCompleted && !hasAnyResult ? (
               <EmptyState
-                icon="🔍"
+                Icon={SearchIcon}
                 title={`No results for "${normalizedQuery}"`}
                 description="Try different keywords"
               />

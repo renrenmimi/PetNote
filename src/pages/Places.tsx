@@ -8,7 +8,7 @@ import { LoadFailedState } from "../components/LoadFailedState";
 import LazyImage from "../components/LazyImage";
 import FilterTag from "../components/FilterTag";
 import { useAuth } from "../hooks/useAuth";
-import { Coffee, Leaf, Mountain, PawPrint, ShoppingBag, Stethoscope, Trees, Waves } from "lucide-react";
+import { Coffee, Leaf, MapPin, Mountain, PawPrint, ShoppingBag, Stethoscope, Trees, Waves } from "lucide-react";
 import { type QueryDocumentSnapshot } from "firebase/firestore";
 import {
   getPlaces,
@@ -365,7 +365,7 @@ export function Places() {
           />
         ) : places.length === 0 ? (
           <EmptyState
-            icon="📍"
+            Icon={MapPin}
             /* Same rule as the sort label: only a real centre licenses the
                word. Without one this list was never scoped to anywhere. */
             title={

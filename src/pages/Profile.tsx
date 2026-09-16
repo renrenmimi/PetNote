@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { MapPin } from "lucide-react";
+import { Bookmark, MapPin, PawPrint } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Avatar from "../components/Avatar";
 import LazyImage from "../components/LazyImage";
@@ -351,7 +351,7 @@ export function Profile() {
             {activeTab === "pets" ? (
               pets.length === 0 ? (
                 <EmptyState
-                  icon="🐾"
+                  Icon={PawPrint}
                   title={t("profile.emptyPetsTitle")}
                   description={t("profile.emptyPetsDescription")}
                   actionText={t("profile.addPet")}
@@ -432,7 +432,7 @@ export function Profile() {
                 </div>
               ) : savedPosts.length === 0 ? (
                 <EmptyState
-                  icon="🔖"
+                  Icon={Bookmark}
                   title={t("profile.emptySavedTitle")}
                   description={t("profile.emptySavedDescription")}
                 />
@@ -502,7 +502,7 @@ export function Profile() {
                 />
               ) : checkins.length === 0 ? (
                 <EmptyState
-                  icon="📍"
+                  Icon={MapPin}
                   title={t("profile.emptyCheckinsTitle")}
                   description={t("profile.emptyCheckinsDescription")}
                 />
