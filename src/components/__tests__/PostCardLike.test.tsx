@@ -20,6 +20,16 @@ const unlikePost = vi.fn<(postId: string, userId: string) => Promise<LikeMutatio
 const checkIfLiked = vi.fn<(postId: string, userId: string) => Promise<boolean>>();
 const showToast = vi.fn();
 
+// PostCard -> ReportModal -> services/report -> services/firebase, which
+// throws by design when the Vite env vars are absent. That made this suite
+// pass locally only because a developer happens to have .env.local, and fail
+// in CI. No unit test should be constructing the real Firebase app.
+vi.mock("../../services/firebase", () => ({
+  auth: {},
+  db: {},
+  functions: {},
+}));
+
 vi.mock("../../services/posts", () => ({
   likePost: (...a: [string, string]) => likePost(...a),
   unlikePost: (...a: [string, string]) => unlikePost(...a),
