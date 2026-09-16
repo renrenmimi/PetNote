@@ -161,10 +161,19 @@ function digestsMatch(a: string, b: string): boolean {
   return timingSafeEqual(left, right);
 }
 
-/** Holds the response back until `MIN_REQUEST_MS` has passed since `startedAt`. */
+/**
+ * Holds the response back until `MIN_REQUEST_MS` has passed since `startedAt`.
+ *
+ * Loops rather than sleeping once, because `setTimeout` is allowed to fire
+ * early and does: CI caught a request returning in 399 ms against a 400 ms
+ * floor. One millisecond does not weaken the mitigation, but a floor that can
+ * undershoot is not a floor, and a test asserting one would be flaky for ever.
+ * Bounded so a clock that never advances cannot hang the handler.
+ */
 async function holdUntilFloor(startedAt: number): Promise<void> {
-  const remaining = MIN_REQUEST_MS - (Date.now() - startedAt);
-  if (remaining > 0) {
+  for (let i = 0; i < 8; i += 1) {
+    const remaining = MIN_REQUEST_MS - (Date.now() - startedAt);
+    if (remaining <= 0) return;
     await new Promise((resolve) => setTimeout(resolve, remaining));
   }
 }

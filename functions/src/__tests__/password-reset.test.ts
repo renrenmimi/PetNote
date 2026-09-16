@@ -57,13 +57,20 @@ vi.mock("../email", async (importOriginal) => {
  * needs a code now says explicitly where the code comes from — which is also
  * the property under test: the request path does not send.
  */
-const enqueued: Array<{ challengeId: string }> = [];
+/**
+ * Task payloads, as the queue would hold them.
+ *
+ * `generation` joined `challengeId` when the delivery worker gained a task
+ * identity, so a payload is no longer just an id — and the tests that build
+ * one by hand have to carry it or the worker correctly treats them as stale.
+ */
+const enqueued: Array<{ challengeId: string; generation?: number }> = [];
 let enqueueFails = false;
 
 vi.mock("firebase-admin/functions", () => ({
   getFunctions: () => ({
     taskQueue: () => ({
-      enqueue: async (payload: { challengeId: string }) => {
+      enqueue: async (payload: { challengeId: string; generation?: number }) => {
         if (enqueueFails) throw new Error("queue unavailable");
         enqueued.push(payload);
       },
