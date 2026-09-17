@@ -53,6 +53,7 @@ export default function LazyImage({
   // the accessible name instead.
   const [roomForLabel, setRoomForLabel] = useState(true);
   const imgRef = useRef<HTMLDivElement>(null);
+  const imgElRef = useRef<HTMLImageElement | null>(null);
   const resolvedSrc = cloudinarySize
     ? optimizeCloudinaryUrl(src, cloudinarySize)
     : src;
@@ -89,7 +90,33 @@ export default function LazyImage({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoaded(false);
     setError(false);
-  }, [resolvedSrc]);
+
+    /*
+     * Ask the element, rather than waiting to be told.
+     *
+     * `loaded` used to be set only by `onLoad`, and an <img> can finish
+     * before React attaches that handler — served from the HTTP cache, or
+     * decoded straight away. The event then never fires, `loaded` stays
+     * false, and because the <img> is `opacity-0` until it flips, a photo
+     * that downloaded perfectly well is rendered invisible under a pulsing
+     * grey placeholder, permanently.
+     *
+     * Seen on the device and nowhere else: a 464pt slab of pulsing gray-700
+     * still there 25 s after launch, while the same feed in a browser was
+     * fine. A diagnostic build settled it — `img[2] complete=true
+     * natural=800x1003` sitting in the same wrapper as a live placeholder.
+     * Repeated launches had warmed the WebView cache, which is exactly the
+     * condition that loses the event.
+     *
+     * `naturalWidth` distinguishes the two ways an image can be complete:
+     * decoded, or finished and broken.
+     */
+    const node = imgElRef.current;
+    if (node?.complete) {
+      if (node.naturalWidth > 0) setLoaded(true);
+      else setError(true);
+    }
+  }, [resolvedSrc, attempt, inView]);
 
   return (
     <div
@@ -132,6 +159,7 @@ export default function LazyImage({
           // The attempt counter is part of the key, not the URL: changing the
           // src would defeat the HTTP cache for every successful reload too.
           key={attempt}
+          ref={imgElRef}
           src={resolvedSrc}
           alt={alt}
           className={`h-full w-full ${imgClassName || "object-cover"} transition-opacity duration-300 ${
