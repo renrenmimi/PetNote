@@ -14,11 +14,14 @@ import {
 } from "../services/users";
 import { useToast } from "../contexts/ToastContext";
 import Avatar from "../components/Avatar";
+import { useRevealOnFocus } from "../hooks/useRevealOnFocus";
 
 const MAX_BIO = 150;
 const MAX_NAME = 30;
 
 export function EditProfile() {
+  useRevealOnFocus();
+
   const { tryAcquire, release } = useSubmitGuard();
   const navigate = useNavigate();
   const { user } = useAuth();

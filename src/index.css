@@ -1,6 +1,47 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * A background on the document, which sounds redundant and is not.
+ *
+ * Every page paints its own background on its root element, so the app looked
+ * finished in a browser and in the simulator. `body` itself had no
+ * background-color at all, which means anything the page's root does not
+ * cover falls through to the native view underneath — and that view is
+ * black. Two places show it on a real device and in neither did a static
+ * screenshot catch it:
+ *
+ *   - rubber-band overscroll at the top or bottom of a list;
+ *   - the strip vacated by the web view when the keyboard opens. With
+ *     `KeyboardResize.Native` the web view frame shrinks immediately while
+ *     the keyboard slides up over ~250 ms, so for that quarter second there
+ *     is a bare native rectangle where the keyboard is about to be.
+ *
+ * It also gives `Keyboard.autoBackdropColor: 'dom'` something to read: the
+ * plugin derives the backdrop from the body background every time the
+ * keyboard is about to show, and documents that it leaves the backdrop
+ * untouched when there is nothing resolvable there. Unset background meant
+ * the option would have appeared not to work.
+ *
+ * Literal sRGB rather than `var(--color-slate-900)`: the value is read by
+ * native code parsing a computed colour string, and Tailwind v4 expresses
+ * its palette in `oklch`. #0f172a is that same slate-900 in a form anything
+ * can parse. `--app-backdrop` is the hook a surface uses when its own
+ * background is not the document's — see `.auth-shell`.
+ */
+:root {
+  --app-backdrop: #ffffff;
+}
+
+.dark {
+  --app-backdrop: #0f172a;
+}
+
+html,
+body {
+  background-color: var(--app-backdrop);
+}
+
 @keyframes heart-pop {
   0% {
     transform: scale(0);

@@ -4,6 +4,8 @@ import { ChevronLeft } from "lucide-react";
 
 import PawIcon from "./PawIcon";
 import { browseExitTarget } from "../utils/authNavigation";
+import { useRevealOnFocus } from "../hooks/useRevealOnFocus";
+import { setKeyboardBackdrop } from "../utils/keyboard";
 
 type AuthShellProps = {
   /** What this screen is for. The only heading on it. */
@@ -47,8 +49,16 @@ type AuthShellProps = {
  * resizing that view, is exactly the top of the keyboard. Measured in the
  * simulator: the focused password field sat half under the frosted edge with
  * its lower half cut off. `scroll-padding-bottom` on the scroller does not
- * change where WebKit puts it, so the field is moved here instead, after the
- * resize has settled.
+ * change where WebKit puts it, so the field has to be moved in script.
+ *
+ * That now lives in `useRevealOnFocus`, shared with every other screen that
+ * takes text. What was here was a 320 ms timer started at `focusin`, which is
+ * the one shape of this that cannot work on a real device: a Chinese input
+ * method raises its candidate bar after the keyboard has already settled, and
+ * the timer has long since fired. The shell keeps only what is specific to
+ * it — an inner scroller, because `position: fixed` leaves the document with
+ * nothing to scroll, and a backdrop colour, because its background is a
+ * gradient rather than the document's.
  */
 export function AuthShell({
   title,
@@ -60,63 +70,13 @@ export function AuthShell({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const location = useLocation();
 
-  useEffect(() => {
-    const scroller = scrollRef.current;
-    if (!scroller) return;
+  useRevealOnFocus(scrollRef);
 
-    let timer = 0;
+  // The gradient's far end, so the strip under the keyboard continues the
+  // screen instead of interrupting it. Light and dark share it: the gradient
+  // does not change with the theme, and neither should what sits beneath it.
+  useEffect(() => setKeyboardBackdrop("#ec4899"), []);
 
-    const focusedFieldInside = (): HTMLElement | null => {
-      const active = document.activeElement;
-      if (!(active instanceof HTMLElement)) return null;
-      // isConnected as well as contains: a field can be removed from the
-      // document while the timer is pending — the reset page swaps its email
-      // step for its code step — and a detached element measures as all
-      // zeroes, which reads as "far above the fold" and would throw the page
-      // upwards for no reason.
-      if (!active.isConnected || !scroller.contains(active)) return null;
-      return active;
-    };
-
-    const revealFocusedField = () => {
-      if (!focusedFieldInside()) return;
-      window.clearTimeout(timer);
-      // The web view is resized *after* focus, so measuring straight away
-      // measures the box the keyboard is about to replace.
-      timer = window.setTimeout(() => {
-        // Re-read rather than trusting what was focused when this was
-        // scheduled. Focus may have been given up in the meantime, and
-        // scrolling to a field nobody is in is worse than doing nothing.
-        const current = focusedFieldInside();
-        if (!current) return;
-        const field = current.getBoundingClientRect();
-        const view = scroller.getBoundingClientRect();
-        // Enough to clear the frosted strip, the field's own label, and to
-        // leave the control looking deliberate rather than wedged.
-        const margin = 72;
-        const belowBy = field.bottom - (view.bottom - margin);
-        const aboveBy = view.top + margin - field.top;
-        const delta = belowBy > 0 ? belowBy : aboveBy > 0 ? -aboveBy : 0;
-        if (delta === 0) return;
-        const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)")
-          .matches;
-        scroller.scrollBy({ top: delta, behavior: smooth ? "smooth" : "auto" });
-      }, 320);
-    };
-
-    scroller.addEventListener("focusin", revealFocusedField);
-    // Fires when the plugin shrinks the web view for the keyboard. It also
-    // fires when the view grows back, but nothing is focused by then, so that
-    // one returns early — which is the wanted behaviour: dismissing the
-    // keyboard should leave the page where the person left it.
-    window.addEventListener("resize", revealFocusedField);
-
-    return () => {
-      window.clearTimeout(timer);
-      scroller.removeEventListener("focusin", revealFocusedField);
-      window.removeEventListener("resize", revealFocusedField);
-    };
-  }, []);
 
   return (
     <main className="auth-shell bg-gradient-to-br from-purple-500 to-pink-500">

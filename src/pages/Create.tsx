@@ -24,6 +24,7 @@ import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 import { getSpeciesMeta } from "../utils/petHelpers";
 import { useToast } from "../contexts/ToastContext";
 import { FILTER_MAP, ImageFilter, type FilterName } from "../components/ImageFilter";
+import { useRevealOnFocus } from "../hooks/useRevealOnFocus";
 
 const MAX_CHARS = 2000;
 
@@ -87,6 +88,11 @@ type PublishPhase =
   | { kind: "failed"; stage: "upload" | "publish" };
 
 export function Create() {
+  // The caption and the tag field sit low on a tall form; the document is the
+  // scroller here, so no ref. See `useRevealOnFocus` for why this is not left
+  // to WebKit alone.
+  useRevealOnFocus();
+
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user, emailVerified, isBanned } = useAuth();

@@ -14,6 +14,7 @@ import { signInReturnState } from "../utils/authNavigation";
 import { timeAgo } from "../utils/timeAgo";
 import { useToast } from "../contexts/ToastContext";
 import Avatar from "./Avatar";
+import { useRevealOnFocus } from "../hooks/useRevealOnFocus";
 
 type CommentSectionProps = {
   postId: string;
@@ -37,6 +38,15 @@ export function CommentSection({
   const { user, emailVerified, isBanned } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  /*
+   * Needed for the inline mode, not the sticky one. A `sticky bottom-0`
+   * composer lands just above the keyboard on its own once the plugin has
+   * shrunk the web view, so there the reveal measures a delta of zero and
+   * does nothing. In a list, where the composer sits in normal flow, it can
+   * be below the fold and there is nothing else to move it.
+   */
+  useRevealOnFocus();
 
   /*
    * One handler for both focus and click, and it carries the destination.
