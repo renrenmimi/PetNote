@@ -4,20 +4,25 @@ import { Keyboard } from "@capacitor/keyboard";
 /**
  * One place that knows when the keyboard moved.
  *
- * Before this, three surfaces each guessed separately and the rest did
- * nothing at all: AuthShell waited a fixed 320 ms after `focusin` and then
- * measured; CommentSection compensated with `visualViewport`, which
- * `KeyboardResize.Native` degrades to a no-op; Create and EditProfile had no
- * keyboard code whatsoever. Whether a field stayed visible therefore depended
- * on which screen you were typing on, which is not a behaviour anyone chose.
+ * Each surface used to handle this separately, and differently: AuthShell
+ * measured a fixed 320 ms after `focusin`; CommentSection compensated with
+ * `visualViewport`, which `KeyboardResize.Native` degrades to a no-op; Create
+ * and EditProfile relied on WebKit alone. That divergence is the reason for
+ * one module — not, by itself, evidence of the reported fault. Which of these
+ * paths produces the occlusion seen on the device is a separate question, and
+ * one only the device can answer.
  *
- * The fixed delay is the part that cannot be repaired by tuning. A Chinese
- * input method raises its candidate bar *after* the keyboard has already
- * appeared, and password autofill adds its own bar; both change the keyboard's
- * height hundreds of milliseconds later. A timer started at `focusin` has
- * long since fired. So this module does not time anything — it reacts to
- * every viewport change and settles a short moment after the last one, which
- * makes a late second change just another change rather than a missed one.
+ * What can be said about the fixed delay without a device: it has no way to
+ * see a change that arrives after it. A Chinese input method raises its
+ * candidate bar *after* the keyboard has appeared, and password autofill adds
+ * its own bar; both change the keyboard's height hundreds of milliseconds
+ * later, by which time a timer started at `focusin` has fired and will not
+ * fire again for that focus.
+ *
+ * This module is still time-based — a 50 ms trailing debounce, below — but
+ * the timer measures the gap *since the last change* rather than counting
+ * down from an event. Every new change restarts it, so a late change is
+ * another change rather than something arriving after the deadline.
  */
 
 export type KeyboardGeometry = {
@@ -43,13 +48,14 @@ export type KeyboardGeometry = {
 };
 
 /**
- * How long after the last viewport change to consider it settled.
+ * Trailing debounce: how quiet the viewport has to go before a report.
  *
- * Short on purpose. This is not a guess at how long the keyboard takes — it
- * is the gap that says "no further change is coming", and each new change
- * restarts it. 50 ms is below the threshold where a person notices the
- * adjustment as a separate event, and well under one 60 Hz frame budget of
- * risk if a platform coalesces its resizes.
+ * Not a guess at how long the keyboard takes to animate. It is the gap that
+ * stands in for "no further change is coming", and each change restarts it,
+ * so the total wait is unbounded while changes keep arriving and is 50 ms
+ * after the last one. The cost of it being too short is a report against a
+ * mid-animation layout, followed by another once things stop; the cost of too
+ * long is a visible delay before the field moves.
  */
 const SETTLE_MS = 50;
 
