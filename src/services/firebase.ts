@@ -133,10 +133,24 @@ export const functions = getFunctions(app);
  * Point the SDK at the local emulator suite, for acceptance testing a branch
  * whose backend is not deployed anywhere.
  *
- * Opt-in and development-only. `import.meta.env.DEV` is statically false in a
- * production build, so Vite drops this whole block from the shipped bundle —
- * it cannot be switched on by an environment variable in production. Set
- * VITE_FIREBASE_EMULATORS=1 in a local .env to use it. See
+ * Opt-in, and impossible to reach in production. `import.meta.env.MODE` is
+ * statically replaced with the build's mode, so in a production build this
+ * reads `"production" !== "production"` and Vite drops the whole block —
+ * an environment variable cannot switch it back on. Every build path that
+ * ships (`npm run build`, and `ios:sync` through it) uses the default
+ * production mode. Verified by grepping the shipped bundle for
+ * connectAuthEmulator and for the banner string below; see
+ * evidence/iphone-polish-round2/package-audit.txt.
+ *
+ * The gate used to be `import.meta.env.DEV`, which Vite ties to the *command*
+ * rather than the mode: it is false in `vite build` no matter what mode is
+ * asked for. That made the emulator reachable only from the dev server, so
+ * the one artefact worth measuring — the bundle that actually ships inside
+ * the app — could only ever be pointed at real Firebase. Keying on the mode
+ * keeps the production guarantee and makes `vite build --mode development`
+ * usable for acceptance and timing runs against isolated data.
+ *
+ * Set VITE_FIREBASE_EMULATORS=1 in a local .env to use it. See
  * docs/acceptance-environment.md.
  *
  * Port 5101 is the Firebase functions emulator (firebase.json pins it there so
@@ -149,14 +163,24 @@ export const functions = getFunctions(app);
  * the real Cloudinary API, with whatever credentials the backend was started
  * with.
  */
-if (import.meta.env.DEV && import.meta.env.VITE_FIREBASE_EMULATORS === "1") {
+if (
+  import.meta.env.MODE !== "production" &&
+  import.meta.env.VITE_FIREBASE_EMULATORS === "1"
+) {
   const host = import.meta.env.VITE_EMULATOR_HOST || "127.0.0.1";
   connectAuthEmulator(auth, `http://${host}:9099`, { disableWarnings: true });
   connectFirestoreEmulator(db, host, 8088);
   connectFunctionsEmulator(functions, host, 5101);
   // Loud on purpose: nobody should be unsure which backend they just tested.
   // Scoped on purpose too: this says nothing about Cloudinary or Geoapify.
-  console.info(
+  //
+  // console.warn rather than console.info because vite.config.ts lists
+  // console.info as pure, so any `vite build` drops it — which silently
+  // removed this banner from exactly the case that needs it most, a bundled
+  // acceptance build where there is no dev-server URL to give the backend
+  // away. Production never reaches this line at all; the block above is
+  // eliminated there.
+  console.warn(
     `[PetNote] Firebase emulators: auth :9099, firestore :8088, callables :5101 (host ${host}). No production Firebase project is reachable. Cloudinary and Geoapify are NOT emulated.`
   );
 }

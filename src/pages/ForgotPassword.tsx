@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { Check } from "lucide-react";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { LanguageSelector } from "../components/LanguageSelector";
 import { PasswordStrengthIndicator } from "../components/PasswordStrengthIndicator";
@@ -7,7 +8,6 @@ import { PasswordVisibilityButton } from "../components/PasswordVisibilityButton
 import { VerificationCodeInput } from "../components/VerificationCodeInput";
 import { useLanguage } from "../hooks/useLanguage";
 import type { TranslationKey } from "../i18n/messages";
-import PawIcon from "../components/PawIcon";
 import { AuthShell } from "../components/AuthShell";
 import { auth } from "../services/firebase";
 import { emailFieldProps, newPasswordFieldProps } from "../utils/formFields";
@@ -241,26 +241,20 @@ export function ForgotPassword() {
   const showSpamHint = status === "success" && !done;
 
   return (
-    <AuthShell gradient="bg-gradient-to-br from-purple-500 to-pink-500">
-        <div className="mb-6 flex justify-end">
-          <LanguageSelector compact />
-        </div>
-        <div className="mb-6 text-center">
-          <div className="flex justify-center">
-            <PawIcon size={48} />
-          </div>
-          <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
-            {t("common.appName")}
-          </h1>
-          <h2 className="mt-4 text-lg font-semibold text-slate-900 dark:text-white">
-            {step === "code" ? t("forgot.codeSentTitle") : t("forgot.title")}
-          </h2>
-          {step === "email" ? (
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
-              {t("forgot.subtitle")}
-            </p>
-          ) : null}
-        </div>
+    <AuthShell
+      title={step === "code" ? t("forgot.codeSentTitle") : t("forgot.title")}
+      subtitle={
+        step === "email"
+          ? t(
+              passwordResetOtpEnabled
+                ? "forgot.subtitleCode"
+                : "forgot.subtitle"
+            )
+          : undefined
+      }
+      exitLabel={t("auth.backToBrowsing")}
+      topRight={<LanguageSelector compact />}
+    >
 
         {step === "email" ? (
           <form className="space-y-4" onSubmit={handleSubmit}>
@@ -286,7 +280,13 @@ export function ForgotPassword() {
               disabled={loading || !trimmedEmail}
               className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
             >
-              {loading ? t("forgot.sending") : t("forgot.sendReset")}
+              {loading
+                ? t("forgot.sending")
+                : t(
+                    passwordResetOtpEnabled
+                      ? "forgot.sendCode"
+                      : "forgot.sendReset"
+                  )}
             </button>
           </form>
         ) : null}
@@ -299,6 +299,27 @@ export function ForgotPassword() {
               void submitCode();
             }}
           >
+            {/*
+              A password manager will not offer to save a new password unless
+              it can tell which account the password belongs to, and the only
+              signal it has is a username field in the same form. This one is
+              not for the person to read or edit — the address was entered on
+              the previous step — so it is hidden from sight and from the
+              accessibility tree, and left readOnly so nothing here can change
+              it. Without it, iOS Keychain and 1Password save an orphan entry
+              or nothing at all.
+            */}
+            <input
+              type="email"
+              name="username"
+              autoComplete="username"
+              value={trimmedEmail}
+              readOnly
+              tabIndex={-1}
+              aria-hidden="true"
+              className="sr-only"
+            />
+
             <VerificationCodeInput
               value={code}
               onChange={setCode}
@@ -352,7 +373,33 @@ export function ForgotPassword() {
           </form>
         ) : null}
 
-        {status !== "idle" ? (
+        {done ? (
+          <div className="rounded-2xl bg-emerald-50 p-5 text-center dark:bg-emerald-500/10">
+            <Check
+              size={32}
+              strokeWidth={2.4}
+              className="mx-auto text-emerald-600 dark:text-emerald-300"
+              aria-hidden="true"
+            />
+            <h3 className="mt-2 text-base font-semibold text-emerald-700 dark:text-emerald-200">
+              {t("forgot.doneTitle")}
+            </h3>
+            {/* Says the sessions were revoked, because they were: the server
+                calls revokeRefreshTokens, and somebody who has just reset a
+                password usually wants to know that. */}
+            <p className="mt-1 text-sm text-emerald-600 dark:text-emerald-300">
+              {t("forgot.doneBody")}
+            </p>
+            <Link
+              to="/login"
+              className="mt-4 inline-block w-full rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:brightness-110"
+            >
+              {t("forgot.goToLogin")}
+            </Link>
+          </div>
+        ) : null}
+
+        {status !== "idle" && !done ? (
           <div
             role="status"
             aria-live="polite"
@@ -362,7 +409,6 @@ export function ForgotPassword() {
                 : "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-300"
             }`}
           >
-            {status === "success" ? "📧 " : ""}
             {message}
           </div>
         ) : null}
@@ -411,14 +457,16 @@ export function ForgotPassword() {
           </div>
         ) : null}
 
-        <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-300">
-          <Link
-            to="/login"
-            className="font-semibold text-purple-600 hover:text-purple-500"
-          >
-            {t("forgot.backToLogin")}
-          </Link>
-        </p>
+        {!done ? (
+          <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-300">
+            <Link
+              to="/login"
+              className="font-semibold text-purple-600 hover:text-purple-500"
+            >
+              {t("forgot.backToLogin")}
+            </Link>
+          </p>
+        ) : null}
     </AuthShell>
   );
 }

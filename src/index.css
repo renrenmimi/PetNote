@@ -1,6 +1,47 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * A background on the document, which sounds redundant and is not.
+ *
+ * Every page paints its own background on its root element, so the app looked
+ * finished in a browser and in the simulator. `body` itself had no
+ * background-color at all, which means anything the page's root does not
+ * cover falls through to the native view underneath — and that view is
+ * black. Two places show it on a real device and in neither did a static
+ * screenshot catch it:
+ *
+ *   - rubber-band overscroll at the top or bottom of a list;
+ *   - the strip vacated by the web view when the keyboard opens. With
+ *     `KeyboardResize.Native` the web view frame shrinks immediately while
+ *     the keyboard slides up over ~250 ms, so for that quarter second there
+ *     is a bare native rectangle where the keyboard is about to be.
+ *
+ * It also gives `Keyboard.autoBackdropColor: 'dom'` something to read: the
+ * plugin derives the backdrop from the body background every time the
+ * keyboard is about to show, and documents that it leaves the backdrop
+ * untouched when there is nothing resolvable there. Unset background meant
+ * the option would have appeared not to work.
+ *
+ * Literal sRGB rather than `var(--color-slate-900)`: the value is read by
+ * native code parsing a computed colour string, and Tailwind v4 expresses
+ * its palette in `oklch`. #0f172a is that same slate-900 in a form anything
+ * can parse. `--app-backdrop` is the hook a surface uses when its own
+ * background is not the document's — see `.auth-shell`.
+ */
+:root {
+  --app-backdrop: #ffffff;
+}
+
+.dark {
+  --app-backdrop: #0f172a;
+}
+
+html,
+body {
+  background-color: var(--app-backdrop);
+}
+
 @keyframes heart-pop {
   0% {
     transform: scale(0);
@@ -18,6 +59,23 @@
 
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/*
+ * Room for the fixed bottom navigation, on any device.
+ *
+ * The six pages that show the tab bar each reserved a flat `pb-20` (80px) or
+ * `pb-24` (96px). The bar is 57px of chrome plus the home indicator's inset,
+ * so on a device that has one it is 91px tall and `pb-20` left the last 11px
+ * of the list underneath it — the final card's actions were unreachable
+ * without overscrolling. Measured on an iPhone 17 Pro: nav height 91.0,
+ * page padding-bottom 80px.
+ *
+ * Expressed as chrome plus inset so it is right on both: 72px on an SE-class
+ * screen, 106px where there is a home indicator.
+ */
+.pb-nav {
+  padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
 }
 
 /*
@@ -94,6 +152,7 @@ select {
  * to pass under.
  */
 .auth-shell {
+  --auth-edge: rgb(255 255 255 / 0.92);
   position: fixed;
   inset: 0;
   display: flex;
@@ -153,6 +212,34 @@ select {
   backdrop-filter: blur(16px) saturate(150%);
 }
 
+/*
+ * Reduce Transparency, honoured rather than ignored.
+ *
+ * Somebody who has asked the system to stop blurring things has usually done
+ * so because translucency is hard to read through, and a backdrop-filter that
+ * ignores the request is the exact thing they turned off. The strips become
+ * opaque, which keeps the edge — content still stops at a defined boundary —
+ * without the blur.
+ *
+ * Also covers the case where backdrop-filter is unsupported: the fallback is
+ * a solid edge, not a transparent one that lets text run into the clock.
+ */
+@media (prefers-reduced-transparency: reduce) {
+  .auth-shell::before,
+  .auth-shell::after {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--auth-edge, rgb(255 255 255 / 0.92));
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .auth-shell::before,
+  .auth-shell::after {
+    background: var(--auth-edge, rgb(255 255 255 / 0.92));
+  }
+}
+
 .auth-shell::before {
   top: 0;
   height: max(env(safe-area-inset-top, 0px), 0.75rem);
@@ -190,4 +277,8 @@ select {
   width: max(100%, 44px);
   height: max(100%, 44px);
   transform: translate(-50%, -50%);
+}
+
+.dark .auth-shell {
+  --auth-edge: rgb(15 23 42 / 0.92);
 }

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import { Bookmark, MapPin, PawPrint } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Avatar from "../components/Avatar";
 import LazyImage from "../components/LazyImage";
 import { EmptyState } from "../components/EmptyState";
+import { InlineRetry } from "../components/InlineRetry";
 import { SkeletonProfile } from "../components/SkeletonProfile";
 import { useAuth } from "../hooks/useAuth";
 import { useAdmin } from "../hooks/useAdmin";
@@ -49,6 +51,11 @@ export function Profile() {
 
   const [checkins, setCheckins] = useState<Checkin[]>([]);
   const [checkinsLoading, setCheckinsLoading] = useState(false);
+  // The check-ins tab is one module of this page. A refused or dropped read
+  // used to empty it and show "no check-ins yet", which is a claim about the
+  // person's history rather than about the request.
+  const [checkinsFailed, setCheckinsFailed] = useState(false);
+  const [checkinsToken, setCheckinsToken] = useState(0);
   const [checkinLocations, setCheckinLocations] = useState<Record<string, Location | null>>(
     {}
   );
@@ -138,11 +145,13 @@ export function Profile() {
         if (ignore) return;
 
         setCheckinLocations(mapping);
+        setCheckinsFailed(false);
       } catch (error) {
         console.warn("Permission error while loading check-ins:", error);
         if (!ignore) {
           setCheckins([]);
           setCheckinLocations({});
+          setCheckinsFailed(true);
         }
       } finally {
         if (!ignore) {
@@ -155,7 +164,7 @@ export function Profile() {
     return () => {
       ignore = true;
     };
-  }, [activeTab, user]);
+  }, [activeTab, user, checkinsToken]);
 
   const joinedDate = useMemo(() => {
     const created = user?.metadata?.creationTime;
@@ -187,7 +196,7 @@ export function Profile() {
   }
 
   return (
-    <div className="min-h-screen bg-white pb-24 dark:bg-slate-900">
+    <div className="min-h-screen bg-white pb-nav dark:bg-slate-900">
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-3">
           <h1 className="text-base font-semibold text-slate-900 dark:text-white">
@@ -342,7 +351,7 @@ export function Profile() {
             {activeTab === "pets" ? (
               pets.length === 0 ? (
                 <EmptyState
-                  icon="🐾"
+                  Icon={PawPrint}
                   title={t("profile.emptyPetsTitle")}
                   description={t("profile.emptyPetsDescription")}
                   actionText={t("profile.addPet")}
@@ -423,7 +432,7 @@ export function Profile() {
                 </div>
               ) : savedPosts.length === 0 ? (
                 <EmptyState
-                  icon="🔖"
+                  Icon={Bookmark}
                   title={t("profile.emptySavedTitle")}
                   description={t("profile.emptySavedDescription")}
                 />
@@ -486,9 +495,14 @@ export function Profile() {
                     />
                   ))}
                 </div>
+              ) : checkinsFailed && checkins.length === 0 ? (
+                <InlineRetry
+                  label="Check-ins"
+                  onRetry={() => setCheckinsToken((value) => value + 1)}
+                />
               ) : checkins.length === 0 ? (
                 <EmptyState
-                  icon="📍"
+                  Icon={MapPin}
                   title={t("profile.emptyCheckinsTitle")}
                   description={t("profile.emptyCheckinsDescription")}
                 />
@@ -514,8 +528,8 @@ export function Profile() {
                             cloudinarySize="small"
                           />
                         ) : (
-                          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 text-lg text-white">
-                            📍
+                          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-purple-100 text-purple-500 dark:bg-purple-500/15 dark:text-purple-300">
+                            <MapPin size={22} strokeWidth={1.9} aria-hidden="true" />
                           </div>
                         )}
                         <div className="flex-1">

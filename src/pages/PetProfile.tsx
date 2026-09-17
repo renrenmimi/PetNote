@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { InlineRetry } from "../components/InlineRetry";
+import { MapPin, PawPrint } from "lucide-react";
+import { signInReturnState } from "../utils/authNavigation";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import Avatar from "../components/Avatar";
 import { EmptyState } from "../components/EmptyState";
+import { LoadFailedState } from "../components/LoadFailedState";
 import { FamilyManageModal } from "../components/FamilyManageModal";
 import { InviteCodeModal } from "../components/InviteCodeModal";
 import LazyImage from "../components/LazyImage";
@@ -31,7 +35,14 @@ import { timeAgo } from "../utils/timeAgo";
 const genderSymbolClass = "text-lg font-bold";
 
 export function PetProfile() {
+  // A refused or dropped read used to render the same sentence as a
+  // genuinely missing record. Three outcomes, three answers.
+  const [loadFailure, setLoadFailure] = useState<
+    "failed" | "denied" | null
+  >(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const navigate = useNavigate();
+  const location = useLocation();
   const { petId } = useParams();
   const { user, profile, isAdmin } = useAuth();
   const { showToast } = useToast();
@@ -39,7 +50,6 @@ export function PetProfile() {
   const [pet, setPet] = useState<Pet | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [petLikes, setPetLikes] = useState(0);
-  const [ownerName, setOwnerName] = useState<string | null>(null);
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [viewerIsFamilyMember, setViewerIsFamilyMember] = useState(false);
 
@@ -53,6 +63,7 @@ export function PetProfile() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [checkinsFailed, setCheckinsFailed] = useState(false);
   const [familyManageOpen, setFamilyManageOpen] = useState(false);
   // Bumped after a family change so the page refetches pet + family instead of
   // rendering a roster the server has already moved past.
@@ -77,6 +88,20 @@ export function PetProfile() {
           return;
         }
 
+        /*
+         * Check-ins are a tab on this page, not the page.
+         *
+         * `getCheckinsByPet` goes through a callable, so it fails for reasons
+         * the rest of the profile does not share — the function being cold,
+         * being unavailable, or in a local environment not being deployed at
+         * all. It was inside this `Promise.all` with no catch of its own, so
+         * one failing tab turned the whole pet into "Could not load this
+         * pet". Seen exactly that way during review: with the functions
+         * emulator not running, a pet whose name, photos, family and posts
+         * were all readable showed nothing but an error card.
+         *
+         * It now fails on its own, and the tab says so instead.
+         */
         const [petPosts, family, totalLikes, petCheckins] = await Promise.all([
           getPostsByPet(petId),
           getPetFamily(petId),
@@ -84,7 +109,7 @@ export function PetProfile() {
           // building) must not take the whole profile down to "Pet not
           // found".
           getPetTotalLikes(petId).catch(() => 0),
-          getCheckinsByPet(petId, { limitCount: 100 }),
+          getCheckinsByPet(petId, { limitCount: 100 }).catch(() => null),
         ]);
 
         const primaryOwnerId = petData.primaryOwnerId || petData.ownerId;
@@ -115,10 +140,15 @@ export function PetProfile() {
 
         const uniqueLocationIds = Array.from(
           new Set(
-            petCheckins.checkins.map((item) => item.locationId).filter(Boolean)
+            (petCheckins?.checkins ?? [])
+              .map((item) => item.locationId)
+              .filter(Boolean)
           )
         );
-        const locationMap = await batchGetLocations(uniqueLocationIds);
+        // Place names for the check-ins, and equally not the page.
+        const locationMap = await batchGetLocations(uniqueLocationIds).catch(
+          () => ({})
+        );
 
         if (!ignore) {
           setPet(petData);
@@ -126,10 +156,8 @@ export function PetProfile() {
           setPetLikes(totalLikes);
           setFamilyMembers(members);
           setViewerIsFamilyMember(isMember);
-          setOwnerName(
-            primaryMember?.userName || fallbackOwnerProfile?.displayName || "Family"
-          );
-          setCheckins(petCheckins.checkins);
+          setCheckins(petCheckins?.checkins ?? []);
+          setCheckinsFailed(petCheckins === null);
           setCheckinLocations(locationMap);
         }
       } catch (error) {
@@ -137,6 +165,13 @@ export function PetProfile() {
         // permission glitch on a private subcollection) left the page
         // stuck on "Loading pet profile..." with no recovery.
         console.error("Failed to load pet profile:", error);
+        const failureCode =
+          error && typeof error === "object" && "code" in error
+            ? String((error as { code?: unknown }).code ?? "")
+            : "";
+        setLoadFailure(
+          failureCode.includes("permission-denied") ? "denied" : "failed"
+        );
         if (!ignore) {
           showToast(
             error instanceof Error
@@ -155,9 +190,10 @@ export function PetProfile() {
       ignore = true;
     };
     // showToast comes from a stable context value; the effect should
-    // re-run only when petId, the viewer, or a family change require it.
+    // re-run only when petId, the viewer, a family change, or the retry
+    // button (reloadToken) require it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [petId, user, familyReloadKey]);
+  }, [petId, user, familyReloadKey, reloadToken]);
 
   const speciesMeta = useMemo(
     () => getSpeciesMeta(pet?.species),
@@ -201,9 +237,27 @@ export function PetProfile() {
     return (
       <div className="min-h-screen bg-white pb-10 dark:bg-slate-900">
         <main className="mx-auto w-full max-w-md px-4 py-6">
-          <div className="rounded-2xl bg-slate-50 p-6 text-center text-sm text-slate-500 dark:bg-slate-800 dark:text-slate-300">
-            Pet not found.
-          </div>
+          {loadFailure ? (
+            <LoadFailedState
+              title={
+                loadFailure === "denied"
+                  ? "This pet is not visible to you"
+                  : "Could not load this pet"
+              }
+              description={
+                loadFailure === "denied"
+                  ? "It may be private, or shared with a different account."
+                  : "Something went wrong reaching PetNote. Check your connection and try again."
+              }
+              retryLabel="Try again"
+              retryingLabel="Trying..."
+              onRetry={() => setReloadToken((value) => value + 1)}
+            />
+          ) : (
+            <div className="rounded-2xl bg-slate-50 p-6 text-center text-sm text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+              This pet no longer exists.
+            </div>
+          )}
         </main>
       </div>
     );
@@ -246,6 +300,15 @@ export function PetProfile() {
       </header>
 
       <main className="mx-auto w-full max-w-md space-y-6 px-4 py-6">
+        {/*
+          One header, not three cards.
+          A pet's own content used to start below an identity card, a stats
+          card and a family card — so the posts and check-ins somebody came
+          for were the fourth thing on the page, and the family appeared twice
+          because the identity card also carried a "Family: <name>" line.
+          Identity, the stats, the follow action and the family row are one
+          surface now, and the content starts straight after it.
+        */}
         <section className="rounded-3xl bg-white p-6 text-center shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
           <div className={`mx-auto w-fit rounded-full bg-gradient-to-r ${speciesMeta.gradient} p-1`}>
             {pet.avatarUrl ? (
@@ -266,8 +329,10 @@ export function PetProfile() {
           </h2>
 
           <div className="mt-2 flex flex-wrap items-center justify-center gap-2 text-sm text-slate-500 dark:text-slate-300">
-            <span>{speciesMeta.emoji}</span>
-            {pet.breed ? <span>{pet.breed}</span> : null}
+            {/* The species mark lives in the avatar when there is no photo,
+                where it is the content. A second copy next to the breed was
+                decoration. */}
+            {pet.breed ? <span>{pet.breed}</span> : <span>{speciesMeta.label}</span>}
             {pet.gender === "male" ? (
               <span className={`${genderSymbolClass} text-blue-500`}>♂</span>
             ) : pet.gender === "female" ? (
@@ -281,17 +346,16 @@ export function PetProfile() {
             <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{pet.bio}</p>
           ) : null}
 
-          <button
-            type="button"
-            onClick={() => navigate(`/profile/${primaryOwnerId}`)}
-            className="mt-3 text-xs text-slate-500 hover:text-purple-600 dark:text-slate-400"
-          >
-            Family: {ownerName}
-          </button>
-        </section>
+          {/*
+            "Family: <primary owner>" used to sit here. It named one member of
+            a family that can have several, directly under the pet's name —
+            which is the strongest position on the page — and the family row
+            below already lists everyone. Co-owners are equal in this product;
+            a line that reads like "this pet belongs to X" is not a neutral
+            summary of that.
+          */}
 
-        <section className="space-y-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
-          <div className="grid grid-cols-3 divide-x divide-slate-200 text-center dark:divide-slate-700">
+          <div className="mt-5 grid grid-cols-3 divide-x divide-slate-200 text-center dark:divide-slate-700">
             <button
               type="button"
               disabled={followersLoading}
@@ -382,24 +446,51 @@ export function PetProfile() {
               ) : null}
             </div>
           ) : (
+            /*
+              A guest used to get this button `disabled` with no explanation:
+              "no account" and "a write is in flight" were designed as the
+              same dead control. They are different states and only one of
+              them is a reason to do nothing — so a guest gets a working
+              button that says what it does and takes them to sign-in with
+              this pet as the destination, and `disabled` is reserved for the
+              request actually being in flight.
+            */
             <button
               type="button"
-              onClick={toggleFollow}
-              disabled={!user || followLoading}
-              className={`w-full rounded-full px-4 py-2 text-sm font-semibold transition-all duration-200 ${
+              onClick={() => {
+                if (!user) {
+                  navigate("/login", { state: signInReturnState(location) });
+                  return;
+                }
+                void toggleFollow();
+              }}
+              disabled={!!user && followLoading}
+              className={`w-full rounded-full px-4 py-2 text-sm font-semibold transition-all duration-200 disabled:opacity-70 ${
                 isFollowing
                   ? "border border-slate-200 text-slate-500 hover:border-red-300 hover:text-red-500 dark:border-slate-700 dark:text-slate-300"
                   : "bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-[0_10px_25px_-15px_rgba(168,85,247,0.7)]"
               }`}
             >
-              {isFollowing ? "Following" : "Follow"}
+              {!user
+                ? "Log in to follow"
+                : isFollowing
+                  ? "Following"
+                  : "Follow"}
             </button>
           )}
         </section>
 
-        <section className="space-y-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
+        {/*
+          Compact, and no card of its own: this is identity context, so it
+          belongs with the header rather than as a third box between the
+          reader and the pet's actual posts. Management stays exactly where a
+          family member would look for it.
+        */}
+        <section className="space-y-2">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white">🏠 Family</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Family
+            </h3>
             {viewerIsFamilyMember ? (
               <div className="flex items-center gap-2">
                 <button
@@ -425,21 +516,33 @@ export function PetProfile() {
                 key={member.userId}
                 type="button"
                 onClick={() => navigate(`/profile/${member.userId}`)}
-                className="flex min-w-[96px] flex-col items-center text-center"
+                className="flex min-w-[84px] flex-col items-center text-center"
               >
                 <Avatar
                   src={member.userAvatar}
                   alt={member.userName}
                   userId={member.userId}
-                  size={48}
-                  className="h-12 w-12"
+                  size={40}
+                  className="h-10 w-10"
                 />
-                <span className="mt-2 line-clamp-1 text-xs font-semibold text-slate-900 dark:text-white">
+                <span className="mt-1.5 line-clamp-1 text-xs font-semibold text-slate-900 dark:text-white">
                   {member.userName}
-                  {member.role === "primary" ? " ★" : ""}
                 </span>
+                {/*
+                  The primary owner used to get a ★ after their name, which
+                  reads as "the real owner" beside people who are co-owners,
+                  not guests. The role is stated in the same pill everyone
+                  else's relationship uses, at the same weight — it is a
+                  different responsibility, not a higher rank. Nothing about
+                  the primary's server-side authority changed; this is only
+                  how it is presented.
+                */}
                 <span className="mt-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500 dark:bg-slate-700 dark:text-slate-300">
-                  {getRelationshipLabel(member.relationship, member.customRelationship)}
+                  {getRelationshipLabel(
+                    member.relationship,
+                    member.customRelationship
+                  )}
+                  {member.role === "primary" ? " · Primary" : ""}
                 </span>
               </button>
             ))}
@@ -475,7 +578,7 @@ export function PetProfile() {
           {activeTab === "posts" ? (
             posts.length === 0 ? (
               <EmptyState
-                icon="🐾"
+                Icon={PawPrint}
                 title="No posts with this pet"
                 description="Tag this pet when posting to show posts here"
               />
@@ -524,9 +627,20 @@ export function PetProfile() {
               </div>
             )
           ) : (
-            checkins.length === 0 ? (
+            /*
+              Three states, not two. "This pet has no check-ins" and "we could
+              not read the check-ins" are different facts, and saying the first
+              when the second happened is the mistake this whole round keeps
+              finding.
+            */
+            checkinsFailed ? (
+              <InlineRetry
+                label="Check-ins"
+                onRetry={() => setFamilyReloadKey((key) => key + 1)}
+              />
+            ) : checkins.length === 0 ? (
               <EmptyState
-                icon="📍"
+                Icon={MapPin}
                 title="No check-ins with this pet"
                 description="Check in at places when this pet is with you"
               />
