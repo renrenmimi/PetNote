@@ -14,6 +14,7 @@ import { signInReturnState } from "../utils/authNavigation";
 import { timeAgo } from "../utils/timeAgo";
 import { useToast } from "../contexts/ToastContext";
 import Avatar from "./Avatar";
+import { Capacitor } from "@capacitor/core";
 
 type CommentSectionProps = {
   postId: string;
@@ -152,8 +153,35 @@ export function CommentSection({
     }
   };
 
+  /*
+   * Lifting the composer above the keyboard is a browser-only job.
+   *
+   * In a browser the layout viewport does not shrink for the keyboard, so a
+   * `sticky bottom-0` bar stays pinned to a viewport bottom that is now
+   * behind the keyboard, and the visual viewport is the only way to know by
+   * how much. On the device `KeyboardResize.Native` shrinks the web view
+   * itself, so the bar is already above the keyboard and any offset applied
+   * on top of that lifts it for nothing.
+   *
+   * Measured in the browser, the offset is 0 here, so this gate is not what
+   * closed the gap the phone showed — that was 176px of bottom padding on
+   * PostDetail for a tab bar it does not show. The gate stays because it is
+   * still the right shape: on native the plugin has already done this job,
+   * and an offset applied on top of it would lift the bar for nothing. What
+   * the offset actually reports on the device has not been measured.
+   *
+   * Worth recording while here: `stickyInput` does not pin the bar at all.
+   * A sticky element cannot leave its parent's box, and the parent section
+   * measured 503-698 against the bar's 595-686 — twelve pixels of travel.
+   * So the composer scrolls away with the comments. Not changed here.
+   */
   useEffect(() => {
-    if (!stickyInput || !window.visualViewport) return;
+    if (!stickyInput) return;
+    if (Capacitor.isNativePlatform()) {
+      setViewportOffset(0);
+      return;
+    }
+    if (!window.visualViewport) return;
     const viewport = window.visualViewport;
     const handleResize = () => {
       const offset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);

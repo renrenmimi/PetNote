@@ -182,7 +182,17 @@ export function PostDetail() {
 
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20 dark:bg-slate-900">
+    /*
+     * No bottom padding for a navigation bar this page does not show.
+     *
+     * The root reserved pb-20 and <main> pb-24, 176px between the comment
+     * composer and the end of the document, for a tab bar that `showBottomNav`
+     * excludes on /post/:postId. Measured with the keyboard up on the phone it
+     * read as a band of empty page below the composer; in the browser, at the
+     * bottom of the scroll, the document was 1090px against an 874px viewport
+     * and the last 176px of it was padding.
+     */
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur dark:border-slate-800 dark:bg-slate-900/80">
         <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-3">
           <button
@@ -235,7 +245,7 @@ export function PostDetail() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-md space-y-4 px-4 py-4 pb-24">
+      <main className="mx-auto w-full max-w-md space-y-4 px-4 pt-4 pb-2">
         {loading ? <SkeletonPostCard /> : null}
         {/* Three outcomes, three answers. "Not found" is only said when the
             read succeeded and the post genuinely is not there. */}
