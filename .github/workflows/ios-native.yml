@@ -90,8 +90,11 @@ jobs:
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
           xcrun simctl list devices available | grep -m1 iPhone
 
+      # Not -quiet, and the count is asserted: a green job must not be able to
+      # mean "zero tests ran". A scheme misconfiguration does exactly that.
       - name: Unit tests
         run: |
+          set -o pipefail
           xcodebuild test \
             -project PetNoteApp.xcodeproj \
             -scheme PetNote-Emulator \
@@ -99,4 +102,10 @@ jobs:
             -only-testing:PetNoteAppTests \
             -derivedDataPath build/dd \
             -clonedSourcePackagesDirPath build/spm \
-            -quiet
+            | tee test.log | grep -E '^(✔|✘)|Test run with|TEST (SUCCEEDED|FAILED)' || true
+          COUNT=$(grep -oE 'Test run with ([0-9]+) tests' test.log | grep -oE '[0-9]+' | head -1)
+          echo "tests executed: ${COUNT:-0}"
+          if [ "${COUNT:-0}" -lt 1 ]; then
+            echo "::error::No tests were executed; the suite did not run."
+            exit 1
+          fi
