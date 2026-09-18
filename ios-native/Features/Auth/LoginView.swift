@@ -49,7 +49,7 @@ struct LoginView: View {
                 .buttonStyle(.borderedProminent)
                 .accessibilityIdentifier("login.submit")
 
-                Text("Stage 1 build — emulator only.")
+                Text(buildStamp)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("login.envNote")
@@ -62,6 +62,15 @@ struct LoginView: View {
         // web client's 320ms guess is exactly what this avoids (§6.3).
         .scrollDismissesKeyboard(.interactively)
         .background(Color(.systemBackground))
+    }
+
+    /// On screen so a device screenshot says which build and backend produced
+    /// it. A screenshot of an unknown build is not evidence about the source.
+    private var buildStamp: String {
+        let info = Bundle.main.infoDictionary
+        let backend = info?["PetNoteBackend"] as? String ?? "?"
+        let stamp = info?["PetNoteBuildStamp"] as? String ?? "?"
+        return "\(backend) · \(stamp)"
     }
 
     private var header: some View {

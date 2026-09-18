@@ -17,8 +17,22 @@ BUNDLE_ID="dev.local.petnote.native"
 OUT="${1:?usage: device-screenshot.sh <out.png> [--no-launch]}"
 LAUNCH="${2:-}"
 
-UDID=$(xcrun devicectl list devices --quiet 2>/dev/null \
-  | awk '/iPhone/ && /available|connected/ {for (i=1;i<=NF;i++) if ($i ~ /^[0-9A-F]{8}-/) print $i; exit}')
+# Parsed from JSON rather than the table: the table now also lists simulators,
+# and macOS awk does not support the {n} interval that matching a UDID by shape
+# would need.
+UDID=$(xcrun devicectl list devices --json-output - 2>/dev/null | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for d in data.get('result', {}).get('devices', []):
+    props = d.get('deviceProperties', {})
+    hw = d.get('hardwareProperties', {})
+    if hw.get('deviceType') != 'iPhone' or hw.get('reality') != 'physical':
+        continue
+    if d.get('connectionProperties', {}).get('tunnelState') == 'unavailable':
+        continue
+    print(hw.get('udid', ''))
+    break
+")
 if [ -z "${UDID}" ]; then
   echo "No connected iPhone. devicectl says:" >&2
   xcrun devicectl list devices >&2
