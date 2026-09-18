@@ -1,0 +1,102 @@
+# Builds and unit-tests the native iOS client.
+#
+# Path-filtered on purpose: the Swift project shares a repository with the web
+# client so the backend contract and its client evolve in one history, and the
+# cost of that is that every web change would otherwise start a macOS runner
+# (billed at 10x). XCUITest is deliberately absent — it needs a booted
+# simulator and is slow, so it runs locally and at acceptance time instead
+# (engineering spec §15.4).
+name: ios-native
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ios-native/**"
+      - ".github/workflows/ios-native.yml"
+  pull_request:
+    paths:
+      - "ios-native/**"
+      - ".github/workflows/ios-native.yml"
+
+concurrency:
+  group: ios-native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: build + unit tests
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: ios-native
+    steps:
+      - uses: actions/checkout@v7
+
+      # The runner's Xcode is not this machine's Xcode 27.0, so record what it
+      # actually is: a CI failure caused by a toolchain gap should be readable
+      # as that and not mistaken for a code problem.
+      - name: Record toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          xcodebuild -showsdks | sed -n '/iOS SDKs/,/^$/p'
+
+      # firebase-ios-sdk pulls 13 transitive packages; resolving them from
+      # scratch is the slowest step in this job.
+      - name: Cache SwiftPM checkouts
+        uses: actions/cache@v4
+        with:
+          path: ios-native/build/spm
+          key: spm-${{ runner.os }}-${{ hashFiles('ios-native/PetNoteApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Resolve dependencies
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project PetNoteApp.xcodeproj \
+            -scheme PetNote-Emulator \
+            -clonedSourcePackagesDirPath build/spm
+
+      # Signing is a personal credential and is not in the repository, so CI
+      # builds unsigned. That covers L1 (compiles) and L4 (asserted logic);
+      # L2 (installs) and L5 (looks and behaves right) need the device and
+      # stay local by design.
+      - name: Build for device (unsigned)
+        run: |
+          xcodebuild build \
+            -project PetNoteApp.xcodeproj \
+            -scheme PetNote-Emulator \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/dd \
+            -clonedSourcePackagesDirPath build/spm \
+            CODE_SIGNING_ALLOWED=NO \
+            -quiet
+
+      # The simulator model list differs between runner images, so pick whatever
+      # iPhone the runner has rather than pinning a name that may not exist.
+      - name: Pick a simulator
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys
+          data=json.load(sys.stdin)['devices']
+          for runtime, devices in sorted(data.items()):
+              for d in devices:
+                  if 'iPhone' in d['name'] and d.get('isAvailable'):
+                      print(d['udid']); raise SystemExit
+          raise SystemExit('no available iPhone simulator')
+          ")
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl list devices available | grep -m1 iPhone
+
+      - name: Unit tests
+        run: |
+          xcodebuild test \
+            -project PetNoteApp.xcodeproj \
+            -scheme PetNote-Emulator \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -only-testing:PetNoteAppTests \
+            -derivedDataPath build/dd \
+            -clonedSourcePackagesDirPath build/spm \
+            -quiet
