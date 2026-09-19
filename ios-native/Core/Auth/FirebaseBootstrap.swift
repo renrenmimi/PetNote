@@ -52,6 +52,8 @@ enum FirebaseBootstrap {
         switch environment.backend {
         case .emulator:
             plistName = "GoogleService-Info-Emulator"
+        case .testCloud:
+            plistName = "GoogleService-Info-Test"
         case .production:
             plistName = "GoogleService-Info"
         }
@@ -71,6 +73,9 @@ enum FirebaseBootstrap {
             )
         }
         FirebaseApp.configure(options: options)
+        // Before anything reads or writes: a build pointed at the wrong project
+        // stops here rather than finding out later.
+        EnvironmentGuard.enforce(environment)
 
         guard environment.backend == .emulator else {
             log.info("Firebase configured against production, read-only")

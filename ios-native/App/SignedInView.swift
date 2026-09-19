@@ -30,6 +30,13 @@ struct SignedInView: View {
         NavigationStack(path: $path) {
             FeedView(model: feedModel, path: $path)
                 .environment(video)
+                .task {
+                    // Only under the probe flag: it is a diagnostic, and a
+                    // per-second task in the app a person uses is waste.
+                    if ProcessInfo.processInfo.arguments.contains("-petnote-video-probe") {
+                        video.startPlaybackClockLogging()
+                    }
+                }
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {

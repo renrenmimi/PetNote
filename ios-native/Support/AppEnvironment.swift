@@ -12,6 +12,9 @@ import Foundation
 struct AppEnvironment: Sendable {
     enum Backend: String, Sendable {
         case emulator
+        /// The independent test Firebase project: a real project over HTTPS,
+        /// separate from production, used for device acceptance.
+        case testCloud = "testcloud"
         case production
     }
 
@@ -20,6 +23,8 @@ struct AppEnvironment: Sendable {
     /// simulator overrides it — see `emulatorHost`.
     let configuredEmulatorHost: String
     let buildStamp: String
+    /// What project this build must be talking to. Empty for emulator builds.
+    let expectedProjectID: String
 
     /// Where to reach the emulator.
     ///
@@ -54,6 +59,8 @@ struct AppEnvironment: Sendable {
     /// for the reason above, so the UI can say so instead of showing a
     /// misleading "sign in" message.
     var supportsCallables: Bool {
+        // The test project is HTTPS, so the SDK's plaintext-token refusal does
+        // not apply — which is the whole reason for having it.
         guard backend == .emulator else { return true }
         #if targetEnvironment(simulator)
         return true
@@ -69,12 +76,13 @@ struct AppEnvironment: Sendable {
         let raw = info?["PetNoteBackend"] as? String ?? ""
         backend = Backend(rawValue: raw) ?? .emulator
         configuredEmulatorHost = (info?["PetNoteEmulatorHost"] as? String) ?? "127.0.0.1"
+        expectedProjectID = (info?["PetNoteExpectedProject"] as? String) ?? ""
         buildStamp = (info?["PetNoteBuildStamp"] as? String) ?? "unknown"
     }
 
-    /// Stage 1 writes only to the emulator. Production configurations are
-    /// read-only, and this is what the repositories check before a write.
-    var allowsWrites: Bool { backend == .emulator }
+    /// Stage 1 writes to the emulator and to the independent test project.
+    /// Production stays read-only.
+    var allowsWrites: Bool { backend == .emulator || backend == .testCloud }
 
     var firestoreHost: String { "\(emulatorHost):8088" }
     var authHost: String { "\(emulatorHost):9099" }

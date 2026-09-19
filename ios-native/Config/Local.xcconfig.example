@@ -3,3 +3,7 @@
 // belongs in the repository.
 DEVELOPMENT_TEAM = YOUR_TEAM_ID
 PETNOTE_EMULATOR_HOST = 192.168.x.x
+
+// The independent test Firebase project, once it exists. Kept out of the
+// repository until it is approved and created.
+PETNOTE_TEST_PROJECT_ID = petnote-test-xxxxx

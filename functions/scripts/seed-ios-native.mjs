@@ -38,23 +38,65 @@ const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const functionsRoot = path.resolve(here, "..");
 
-if (!process.env.FIRESTORE_EMULATOR_HOST) {
-  process.env.FIRESTORE_EMULATOR_HOST = "127.0.0.1:8088";
-}
-if (!process.env.FIREBASE_AUTH_EMULATOR_HOST) {
-  process.env.FIREBASE_AUTH_EMULATOR_HOST = "127.0.0.1:9099";
+// Only defaulted for the emulator; the cloud branch below refuses to run with
+// these set at all.
+if (!process.env.PETNOTE_TEST_PROJECT || process.env.GCLOUD_PROJECT === "petnote-test") {
+  if (!process.env.FIRESTORE_EMULATOR_HOST) {
+    process.env.FIRESTORE_EMULATOR_HOST = "127.0.0.1:8088";
+  }
+  if (!process.env.FIREBASE_AUTH_EMULATOR_HOST) {
+    process.env.FIREBASE_AUTH_EMULATOR_HOST = "127.0.0.1:9099";
+  }
 }
 
-// The project id is checked exactly, not by prefix: an emulator host can be set
-// and still point at something real, and this script writes hundreds of docs.
-const PROJECT = process.env.GCLOUD_PROJECT || "petnote-test";
-if (PROJECT !== "petnote-test") {
+// Where this may write, and nowhere else.
+//
+// `petnote-test` is the local emulator. A second entry is allowed for the
+// independent test Firebase project, but only when it is named explicitly via
+// PETNOTE_TEST_PROJECT — there is no wildcard, and production is refused by
+// name as well as by omission, because a typo that happened to match a prefix
+// would be an expensive way to find out this check was loose.
+const PRODUCTION_PROJECT = "petnote-a9dac";
+const EMULATOR_PROJECT = "petnote-test";
+const TEST_CLOUD_PROJECT = process.env.PETNOTE_TEST_PROJECT || "";
+
+const PROJECT = process.env.GCLOUD_PROJECT || EMULATOR_PROJECT;
+
+if (PROJECT === PRODUCTION_PROJECT) {
   console.error(
-    `Refusing to seed project "${PROJECT}". This script is for the local ` +
-      `emulator only, and only for petnote-test.`
+    `Refusing to seed ${PRODUCTION_PROJECT}: that is production. This script ` +
+      `only ever writes to the emulator or to a named test project.`
   );
   process.exit(1);
 }
+
+const allowed = [EMULATOR_PROJECT, TEST_CLOUD_PROJECT].filter(Boolean);
+if (!allowed.includes(PROJECT)) {
+  console.error(
+    `Refusing to seed project "${PROJECT}". Allowed: ${allowed.join(", ")}.\n` +
+      `To seed the independent test project, set PETNOTE_TEST_PROJECT to its ` +
+      `id as well as GCLOUD_PROJECT.`
+  );
+  process.exit(1);
+}
+
+// Writing to a real project means no emulator hosts: if those are set the
+// Admin SDK will quietly send everything to the emulator instead, and the run
+// will look successful while the project stays empty.
+const targetingCloud = PROJECT !== EMULATOR_PROJECT;
+if (targetingCloud) {
+  for (const key of ["FIRESTORE_EMULATOR_HOST", "FIREBASE_AUTH_EMULATOR_HOST"]) {
+    if (process.env[key]) {
+      console.error(
+        `${key} is set while targeting ${PROJECT}. Unset it, or the writes go ` +
+          `to the emulator and this project stays empty.`
+      );
+      process.exit(1);
+    }
+  }
+  console.log(`Seeding the CLOUD project ${PROJECT} — not the emulator.`);
+}
+
 process.env.GCLOUD_PROJECT = PROJECT;
 
 const admin = require(path.join(functionsRoot, "node_modules", "firebase-admin"));
@@ -274,7 +316,9 @@ function textFor(index) {
 }
 
 async function main() {
-  console.log(`Seeding ${PROJECT} via ${process.env.FIRESTORE_EMULATOR_HOST}`);
+  console.log(
+    `Seeding ${PROJECT} via ${process.env.FIRESTORE_EMULATOR_HOST || "the real backend"}`
+  );
 
   const uidA = await upsertUser({ email: "accept-a@example.com", name: "Accept A", verified: true });
   const uidB = await upsertUser({ email: "accept-b@example.com", name: "Accept B", verified: true });
