@@ -1,0 +1,16 @@
+# Personal signing identity and machine-specific host. See README.md.
+Config/Local.xcconfig
+
+# Production Firebase options. Never in this repository — the emulator one
+# (Support/GoogleService-Info-Emulator.plist) holds only placeholders and is.
+Support/GoogleService-Info.plist
+
+# Python bytecode from the measurement scripts
+__pycache__/
+*.pyc
+
+# Xcode user state and build output
+xcuserdata/
+*.xcuserstate
+build/
+DerivedData/
