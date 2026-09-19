@@ -47,8 +47,18 @@ Functions SDK 不会把 Auth / FCM / AppCheck 的 token 通过**明文 HTTP** �
 ## 当前处理
 
 `AppEnvironment.emulatorHost` 按目标环境分开：模拟器强制 `127.0.0.1`，真机用
-配置的局域网地址。`AppEnvironment.supportsCallables` 在"真机 + emulator"这个
-组合下为 false，供 UI 据此说明，而不是显示一句误导人的"请先登录"。
+配置的局域网地址。
+
+`AppEnvironment.supportsCallables` 在"真机 + emulator"这个组合下为 false。
+
+**但这一行到 2026-09-19 为止是死代码 —— 全工程零引用。** 本文件此前写的是
+"供 UI 据此说明"，那句话不成立：界面从来没有读过这个标志。真机上发评论时，
+Functions SDK 的原始错误（`com.firebase.functions code=16`）会直接冒出来，
+没有任何一层把它翻译成人能看懂的话。
+
+写下来是因为：一个定义了却没人用的标志，比没有这个标志更糟 ——
+它让读代码的人以为这种情况已经被处理过了。已派给负责评论失败分支的人接上，
+按"确定失败、不重试"处理（重试一百次也不会成功），且**不以禁用输入框的方式绕过**。
 
 ## 如果将来要在真机上跑通 callable
 
