@@ -79,19 +79,31 @@ final class FeedViewModel {
     /// off, and the screen disagrees with the server until a reload. Deriving
     /// the number instead makes every intermediate state self-correcting — the
     /// same shape the web client's useLike uses (baseCount + pending).
+    /// Per post, the three separate facts that were previously squeezed into
+    /// one counter — and each of which failed differently for it.
+    ///
+    ///   - **what the server holds** (`serverLiked`): the like document's
+    ///     existence, which the batch query reports and a successful write
+    ///     changes. Authoritative and immediate.
+    ///   - **what the person asked for** (`intendedLiked`): drives the heart.
+    ///   - **what the server's *count* has not caught up with**
+    ///     (`unreflectedDelta`): `likeCount` is maintained by a trigger that
+    ///     runs after the write, so a write can be confirmed while the
+    ///     aggregate still holds the old number.
+    ///
+    /// `inFlight` counts unsettled requests. It goes down as well as up, which
+    /// the old `intent` never did — so "has a tap ever happened" was being read
+    /// as "is a tap still happening", and every later refresh was ignored.
     private struct LikeState {
-        /// What the server held when `post.likeCount` was read.
-        var confirmedLiked: Bool
-        /// What the person has asked for since.
+        var serverLiked: Bool
         var intendedLiked: Bool
-        /// How much the server's count has moved since that read, from writes
-        /// this client made and the server confirmed as `.changed`.
-        ///
-        /// Without it, confirming a like makes the pending +1 disappear while
-        /// `post.likeCount` still holds the pre-like number, so a successful
-        /// like reads as no change at all.
-        var confirmedDelta: Int
-        var intent: Int
+        /// Net change this client has had confirmed but which `snapshotCount`
+        /// may not include yet.
+        var unreflectedDelta: Int
+        /// The count from the last server read, which `unreflectedDelta` is
+        /// measured against.
+        var snapshotCount: Int
+        var inFlight: Int
     }
     private var likeStates: [String: LikeState] = [:]
     private var likeTasks: [String: Task<Void, Never>] = [:]
@@ -183,35 +195,51 @@ final class FeedViewModel {
 
     /// The batch query is the authority for the ids it was asked about: present
     /// means liked, absent means not liked. Both halves are applied.
+    /// The batch query is authoritative for the ids it was asked about:
+    /// present means liked, absent means not liked. Both halves are applied.
     private func refreshLikeStatus(for newPosts: [Post], generation thisGeneration: Int) async {
         guard !newPosts.isEmpty else { return }
         let asked = Set(newPosts.map(\.id))
+        let counts = Dictionary(newPosts.map { ($0.id, $0.likeCount) }, uniquingKeysWith: { a, _ in a })
         do {
             let liked = try await likes.likedPostIDs(among: Array(asked))
             guard thisGeneration == generation else { return }
             for id in asked {
-                let isLiked = liked.contains(id)
-                if var existing = likeStates[id] {
-                    existing.confirmedLiked = isLiked
-                    // **The delta resets here.** `post.likeCount` has just been
-                    // re-read, so the server's number already contains every
-                    // change this client had confirmed. Carrying the delta over
-                    // would add those changes a second time: like a post
-                    // (5 → 6), refresh (server says 6), and the screen would
-                    // show 7 and stay wrong until the app restarted.
-                    existing.confirmedDelta = 0
-                    // A tap that has not settled keeps its intent; otherwise the
-                    // server's answer is the intent.
-                    if existing.intent == 0 { existing.intendedLiked = isLiked }
-                    likeStates[id] = existing
-                } else {
+                let serverSaysLiked = liked.contains(id)
+                let freshCount = counts[id] ?? 0
+
+                guard var existing = likeStates[id] else {
                     likeStates[id] = LikeState(
-                        confirmedLiked: isLiked,
-                        intendedLiked: isLiked,
-                        confirmedDelta: 0,
-                        intent: 0
+                        serverLiked: serverSaysLiked,
+                        intendedLiked: serverSaysLiked,
+                        unreflectedDelta: 0,
+                        snapshotCount: freshCount,
+                        inFlight: 0
                     )
+                    continue
                 }
+
+                if serverSaysLiked != existing.serverLiked {
+                    // Someone else changed it — another device, moderation, a
+                    // cascade. Whatever this client had outstanding against the
+                    // old state no longer describes anything.
+                    existing.unreflectedDelta = 0
+                } else if hasCaughtUp(
+                    from: existing.snapshotCount, to: freshCount, delta: existing.unreflectedDelta
+                ) {
+                    // The aggregate has moved at least as far as our confirmed
+                    // writes, so keeping the delta would count them twice.
+                    existing.unreflectedDelta = 0
+                }
+                // Otherwise the trigger has not run yet and the delta is still
+                // the only thing making the count right.
+
+                existing.serverLiked = serverSaysLiked
+                existing.snapshotCount = freshCount
+                // Only adopt the server's answer as the intent when nothing is
+                // in flight; a tap that has not been answered still owns it.
+                if existing.inFlight == 0 { existing.intendedLiked = serverSaysLiked }
+                likeStates[id] = existing
             }
             // Ids for rows that are gone would otherwise accumulate for the
             // lifetime of the session.
@@ -226,6 +254,19 @@ final class FeedViewModel {
         }
     }
 
+    /// Whether the server's count has moved at least as far, and in the same
+    /// direction, as the writes this client has had confirmed.
+    ///
+    /// Not equality: somebody else's like can land in the same window, so the
+    /// count may have moved further than ours alone would explain. What must
+    /// not happen is treating "has not moved at all" as "has caught up".
+    private func hasCaughtUp(from old: Int, to fresh: Int, delta: Int) -> Bool {
+        guard delta != 0 else { return true }
+        let moved = fresh - old
+        guard moved.signum() == delta.signum() else { return false }
+        return abs(moved) >= abs(delta)
+    }
+
     func rememberScrollAnchor(_ postID: String) { scrollAnchor = postID }
     func clearScrollAnchor() { scrollAnchor = nil }
 
@@ -233,27 +274,29 @@ final class FeedViewModel {
         likeStates[post.id]?.intendedLiked ?? false
     }
 
-    /// The number to draw: the server's count, adjusted only by the difference
-    /// between what the server has and what the person has asked for.
+    /// The number to draw.
+    ///
+    ///   server's count
+    ///   + what our confirmed writes have added that the count has not caught
+    ///     up with yet
+    ///   + one for a tap that has not been answered
     func displayLikeCount(for post: Post) -> Int {
         guard let state = likeStates[post.id] else { return post.likeCount }
-        // Confirmed movement since the read, plus one for a tap that has not
-        // been answered yet.
-        let pending = state.intendedLiked == state.confirmedLiked
+        let pending = state.intendedLiked == state.serverLiked
             ? 0
             : (state.intendedLiked ? 1 : -1)
-        return max(0, post.likeCount + state.confirmedDelta + pending)
+        return max(0, post.likeCount + state.unreflectedDelta + pending)
     }
 
     func toggleLike(_ post: Post) {
         let postID = post.id
         var state = likeStates[postID] ?? LikeState(
-            confirmedLiked: false, intendedLiked: false, confirmedDelta: 0, intent: 0
+            serverLiked: false, intendedLiked: false,
+            unreflectedDelta: 0, snapshotCount: post.likeCount, inFlight: 0
         )
         let shouldLike = !state.intendedLiked
         state.intendedLiked = shouldLike
-        state.intent += 1
-        let intent = state.intent
+        state.inFlight += 1
         likeStates[postID] = state
         likedPostIDs = Set(likeStates.filter(\.value.intendedLiked).map(\.key))
 
@@ -261,32 +304,38 @@ final class FeedViewModel {
         likeTasks[postID] = Task { [weak self] in
             await previous?.value
             guard let self else { return }
-            await self.applyLike(postID: postID, shouldLike: shouldLike, intent: intent)
+            await self.applyLike(postID: postID, shouldLike: shouldLike)
         }
     }
 
-    private func applyLike(postID: String, shouldLike: Bool, intent: Int) async {
+    private func applyLike(postID: String, shouldLike: Bool) async {
+        defer {
+            if var state = likeStates[postID] {
+                state.inFlight = max(0, state.inFlight - 1)
+                likeStates[postID] = state
+            }
+        }
+
         do {
             let result = shouldLike
                 ? try await likes.like(postID: postID)
                 : try await likes.unlike(postID: postID)
-
             guard var state = likeStates[postID] else { return }
 
             switch result {
             case .changed:
-                // The server's count moved, and post.likeCount is the number
-                // from before it did — so record the movement.
-                guard state.intent == intent else { return }
-                state.confirmedDelta += shouldLike ? 1 : -1
-                state.confirmedLiked = shouldLike
+                // **Recorded unconditionally.** The server's count really did
+                // move, whether or not a later tap has since superseded this
+                // request. Discarding it because the intent moved on is how a
+                // like-then-unlike pair lost its +1 and kept its -1, leaving
+                // the screen one below the truth for the rest of the session.
+                state.unreflectedDelta += shouldLike ? 1 : -1
+                state.serverLiked = shouldLike
                 likeStates[postID] = state
             case .unchanged:
-                // The server was ALREADY in this state, so its count already
-                // accounts for it and nothing moved. Only the belief about what
-                // the server holds is corrected, which drops the pending +1.
-                guard state.intent == intent else { return }
-                state.confirmedLiked = shouldLike
+                // The server was already in this state: nothing moved, and the
+                // count already accounts for it. Only the belief is corrected.
+                state.serverLiked = shouldLike
                 likeStates[postID] = state
             case .postNotFound:
                 posts.removeAll { $0.id == postID }
@@ -296,12 +345,14 @@ final class FeedViewModel {
             }
         } catch {
             guard var state = likeStates[postID] else { return }
-            // A later tap has already asked for something else; its own request
-            // is what decides. Nothing to undo — the intent is the state.
-            guard state.intent == intent else { return }
-            state.intendedLiked = state.confirmedLiked
-            likeStates[postID] = state
-            likedPostIDs = Set(likeStates.filter(\.value.intendedLiked).map(\.key))
+            // Nothing was written, so nothing is owed to the count. The intent
+            // goes back to what the server holds — but only if this is the last
+            // request outstanding, because a later tap owns the intent.
+            if state.inFlight <= 1 {
+                state.intendedLiked = state.serverLiked
+                likeStates[postID] = state
+                likedPostIDs = Set(likeStates.filter(\.value.intendedLiked).map(\.key))
+            }
             likeFailureMessage = "Could not update the like. Try again."
         }
     }

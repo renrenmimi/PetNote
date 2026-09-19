@@ -36,6 +36,66 @@ struct VideoPlaybackTests {
         #expect(coordinator.livePlayerCount == 1)
     }
 
+    /// **Regression.** The first video to appear must actually be told to play.
+    ///
+    /// The view reports visibility before it asks for a player, so on a first
+    /// appearance `reconcile` ran with no players at all. It skipped `play()`,
+    /// claimed `playingID` anyway, and every later call returned early on
+    /// `winner == playingID`. `playingID` was right and nothing ever played.
+    ///
+    /// So this asserts the player's own state, not the coordinator's belief.
+    @Test func theFirstVideoToAppearIsActuallyToldToPlay() {
+        let coordinator = VideoPlaybackCoordinator()
+        // Exactly the order a view uses.
+        coordinator.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 0)
+        let player = coordinator.player(for: "a", url: a)
+
+        #expect(player != nil)
+        #expect(coordinator.playingID == "a", "the coordinator believes it is playing")
+        #expect(
+            coordinator.isActuallyPlaying(id: "a"),
+            "and the player agrees — timeControlStatus is not .paused"
+        )
+    }
+
+    /// `playingID` must not be claimed by a video that has no player, because
+    /// the claim is what stops the next attempt.
+    @Test func aWinnerWithNoPlayerDoesNotClaimPlayingID() {
+        let coordinator = VideoPlaybackCoordinator()
+        // Visible enough to win, but never granted a player.
+        coordinator.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 0)
+        #expect(coordinator.playingID == nil, "nothing is playing until something plays")
+
+        // And the claim is available the moment a player exists.
+        _ = coordinator.player(for: "a", url: a)
+        #expect(coordinator.playingID == "a")
+        #expect(coordinator.isActuallyPlaying(id: "a"))
+    }
+
+    @Test func theVideoThatLosesTheCentreIsActuallyPaused() {
+        let coordinator = VideoPlaybackCoordinator()
+        coordinator.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 10)
+        _ = coordinator.player(for: "a", url: a)
+        #expect(coordinator.isActuallyPlaying(id: "a"))
+
+        coordinator.reportVisibility(id: "b", fraction: 0.9, distanceFromCentre: 0)
+        _ = coordinator.player(for: "b", url: b)
+
+        #expect(coordinator.isActuallyPlaying(id: "b"))
+        #expect(!coordinator.isActuallyPlaying(id: "a"), "the old one really stopped")
+    }
+
+    @Test func suspendingActuallyPausesThePlayerNotJustTheBelief() {
+        let coordinator = VideoPlaybackCoordinator()
+        coordinator.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 0)
+        _ = coordinator.player(for: "a", url: a)
+        #expect(coordinator.isActuallyPlaying(id: "a"))
+
+        coordinator.suspendAll(reason: "test")
+        #expect(!coordinator.isActuallyPlaying(id: "a"))
+        #expect(coordinator.playingID == nil)
+    }
+
     /// 5D.1: among eligible videos, the one nearest the middle plays — and it
     /// is exactly one.
     @Test func onlyTheMostCentredEligibleVideoPlays() {

@@ -9,6 +9,7 @@ import SwiftUI
 struct FeedView: View {
     @State private var model: FeedViewModel
     @Binding private var path: [Route]
+    @Environment(VideoPlaybackCoordinator.self) private var video
 
     init(model: FeedViewModel, path: Binding<[Route]>) {
         _model = State(initialValue: model)
@@ -28,10 +29,42 @@ struct FeedView: View {
         }
         .navigationTitle("PetNote")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .principal) { videoProbe } }
         .background(Palette.background)
         .task { await model.loadFirstPageIfNeeded() }
         .refreshable { await model.reload() }
         .overlay(alignment: .bottom) { likeFailureBanner }
+    }
+
+    /// Publishes the coordinator's real state for UI tests: how many players
+    /// exist, which one is playing, and that player's clock.
+    ///
+    /// Behind a launch argument and zero-sized, so it changes nothing about the
+    /// app a person sees. It exists because the alternative — asserting the
+    /// coordinator's own `playingID` from a unit test — is exactly what let a
+    /// video that never played look correct.
+    @ViewBuilder
+    private var videoProbe: some View {
+        if ProcessInfo.processInfo.arguments.contains("-petnote-video-probe") {
+            // No TimelineView, and that matters more than where it lives: a
+            // periodic redraw means the app never reports itself idle, and
+            // XCUITest waits for idle before every query. With a half-second
+            // tick a single run spent 1070 seconds waiting and then gave up.
+            // The probe redraws when the coordinator changes, which is what
+            // @Observable already gives us.
+            //
+            // Playback time is not published here — it changes continuously by
+            // definition. It is written to the log instead, where sampling it
+            // costs the app nothing.
+            Text(probeReading)
+                .font(Typography.caption)
+                .opacity(0.001)
+                .accessibilityIdentifier("video.probe")
+        }
+    }
+
+    private var probeReading: String {
+        "players=\(video.livePlayerCount) playing=\(video.playingID ?? "none")"
     }
 
     private var loading: some View {

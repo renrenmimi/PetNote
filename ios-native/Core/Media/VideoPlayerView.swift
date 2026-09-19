@@ -18,8 +18,16 @@ struct VideoPlayerView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var player: AVPlayer?
-    @State private var failed = false
+    @State private var failure: String?
     @State private var attempt = 0
+    /// Watches the player item so a real load failure reaches the UI.
+    ///
+    /// The previous version had a failure branch that nothing could ever
+    /// enter: `failed` was only ever assigned `false`. A broken video showed a
+    /// poster frame and a play button forever, and the retry button — which
+    /// also did nothing, because `attempt` drove no reload — was unreachable
+    /// anyway. An error state that cannot be produced is not error handling.
+    @State private var statusObservation: NSKeyValueObservation?
 
     var body: some View {
         GeometryReader { geometry in
@@ -30,6 +38,7 @@ struct VideoPlayerView: View {
                 }
                 .onDisappear {
                     coordinator.reportOffscreen(id: id)
+                    statusObservation = nil
                     player = nil
                 }
         }
@@ -45,8 +54,8 @@ struct VideoPlayerView: View {
 
     @ViewBuilder
     private var content: some View {
-        if failed {
-            retryable
+        if let failure {
+            retryable(failure)
         } else if let player {
             ZStack(alignment: .bottomTrailing) {
                 VideoPlayer(player: player)
@@ -88,15 +97,20 @@ struct VideoPlayerView: View {
         .accessibilityLabel(coordinator.isMuted ? "Unmute video" : "Mute video")
     }
 
-    private var retryable: some View {
+    private func retryable(_ message: String) -> some View {
         Button {
-            failed = false
+            // A real reload: the coordinator is told to forget this video, the
+            // observation is torn down, and the next visibility report builds a
+            // fresh player. Bumping a counter on its own changed nothing.
+            failure = nil
             attempt += 1
+            statusObservation = nil
             player = nil
+            coordinator.reportOffscreen(id: id)
         } label: {
             VStack(spacing: Spacing.s) {
                 Image(systemName: "arrow.clockwise")
-                Text("Video failed to load. Tap to retry.")
+                Text(message)
                     .font(Typography.caption)
                     .multilineTextAlignment(.center)
             }
@@ -132,7 +146,28 @@ struct VideoPlayerView: View {
             distanceFromCentre: reading.distance
         )
         let granted = coordinator.player(for: id, url: url)
-        if granted !== player { player = granted }
+        if granted !== player {
+            player = granted
+            observeFailures(of: granted)
+        }
+    }
+
+    /// AVPlayer reports a load failure on its *item*, asynchronously, and does
+    /// not throw. Without watching for it the view has no way to know.
+    private func observeFailures(of player: AVPlayer?) {
+        statusObservation = nil
+        guard let item = player?.currentItem else { return }
+        statusObservation = item.observe(\.status, options: [.new]) { item, _ in
+            guard item.status == .failed else { return }
+            let reason = item.error?.localizedDescription ?? "Video failed to load."
+            Task { @MainActor in
+                // Keep our own words, not the framework's: the message is shown
+                // to a person.
+                _ = reason
+                failure = "Video failed to load. Tap to retry."
+                coordinator.reportOffscreen(id: id)
+            }
+        }
     }
 }
 

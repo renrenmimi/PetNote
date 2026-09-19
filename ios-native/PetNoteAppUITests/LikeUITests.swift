@@ -25,6 +25,54 @@ final class LikeUITests: XCTestCase {
         return app
     }
 
+    /// Which post the first row is, so the test can name it when checking the
+    /// backend afterwards. The seed puts the index in every post's text.
+    private func firstPostIndex(_ app: XCUIApplication) -> String? {
+        let text = app.staticTexts.matching(identifier: "post.text").firstMatch
+        guard text.waitForExistence(timeout: 20) else { return nil }
+        guard let range = text.label.range(of: #"\[#(\d+)\]"#, options: .regularExpression) else { return nil }
+        return String(text.label[range].dropFirst(2).dropLast())
+    }
+
+    /// Like, then unlike, checking the button state and the displayed count at
+    /// each step — and writing the post id out so the run can be reconciled
+    /// against the emulator afterwards.
+    ///
+    /// Three things have to agree and this covers two of them; the third (the
+    /// like document and the aggregate on the server) is checked by the script
+    /// that reads the emulator after this test, because XCUITest cannot.
+    func testLikeThenUnlikeLeavesButtonAndCountWhereTheyStarted() {
+        let app = signedIn()
+        let like = app.buttons.matching(identifier: "post.like").firstMatch
+        XCTAssertTrue(waitUntilHittable(like, in: app, timeout: 30))
+        let index = firstPostIndex(app) ?? "?"
+        print("MEASURED target post index: \(index)")
+
+        let startLabel = like.label
+        let startValue = like.value as? String ?? "?"
+        print("MEASURED start: label=\(startLabel) value=\(startValue)")
+
+        like.tap()
+        Thread.sleep(forTimeInterval: 3)
+        let afterLike = app.buttons.matching(identifier: "post.like").firstMatch
+        let likedLabel = afterLike.label
+        let likedValue = afterLike.value as? String ?? "?"
+        print("MEASURED after like: label=\(likedLabel) value=\(likedValue)")
+        XCTAssertNotEqual(likedLabel, startLabel, "the button did not change state")
+
+        afterLike.tap()
+        Thread.sleep(forTimeInterval: 3)
+        let afterUnlike = app.buttons.matching(identifier: "post.like").firstMatch
+        print("MEASURED after unlike: label=\(afterUnlike.label) value=\(afterUnlike.value as? String ?? "?")")
+
+        XCTAssertEqual(afterUnlike.label, startLabel, "the button did not come back")
+        XCTAssertEqual(
+            afterUnlike.value as? String, startValue,
+            "the count did not come back: \(startValue) → \(afterUnlike.value as? String ?? "?")"
+        )
+        print("MEASURED RECONCILE post=ios-post-\(index.count == 3 ? index : "0" + index) expect=unliked")
+    }
+
     func testTappingTheHeartLikesThePost() {
         let app = signedIn()
         let like = app.buttons.matching(identifier: "post.like").firstMatch
