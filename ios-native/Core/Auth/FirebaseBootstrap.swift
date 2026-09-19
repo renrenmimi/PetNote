@@ -18,9 +18,34 @@ enum FirebaseBootstrap {
     /// happens once, from the app's init, on the main actor.
     @MainActor private static var isConfigured = false
 
+    /// True when this process was launched by XCTest to host unit tests.
+    ///
+    /// Unit tests are pure logic over fakes — decoding, routing, palette,
+    /// view models — and none of them touch Firebase. They run in-process in
+    /// the app, though, so without this the app's init configures Firebase and
+    /// points it at an emulator that is not there. On CI that crashed the test
+    /// runner with a SIGTRAP before a single test ran.
+    ///
+    /// UI tests are unaffected: they launch the app as its own process, which
+    /// has no XCTest configuration in its environment, so it configures
+    /// normally and really does talk to the emulator.
+    private static var isUnitTestHost: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
+    /// False in a unit-test host, where nothing that needs a running app
+    /// should start.
+    @MainActor
+    static var isConfiguredForRunning: Bool { !isUnitTestHost }
+
     @MainActor
     static func configure(_ environment: AppEnvironment = .current) {
         guard !isConfigured else { return }
+        guard !isUnitTestHost else {
+            log.info("unit-test host: skipping Firebase configuration")
+            isConfigured = true
+            return
+        }
         isConfigured = true
 
         let plistName: String

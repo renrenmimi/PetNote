@@ -10,14 +10,28 @@ struct PetNoteApp: App {
         // Before any Firestore or Functions instance exists: emulator settings
         // are ignored once the first request has gone out.
         FirebaseBootstrap.configure()
-        ImageLoader.shared.observeMemoryWarnings()
+        if FirebaseBootstrap.isConfiguredForRunning {
+            ImageLoader.shared.observeMemoryWarnings()
+        }
     }
 
     var body: some Scene {
         WindowGroup {
-            RootView()
-                .environment(session)
-                .task { session.start() }
+            // Unit tests are hosted inside this app but are pure logic over
+            // fakes — none of them touch Firebase or a session. Starting the
+            // real app for them means configuring Firebase against an emulator
+            // that is not running, and on CI that took the test runner down
+            // with a SIGTRAP before a single test executed.
+            //
+            // UI tests are unaffected: they launch this app as its own process,
+            // which has no XCTest configuration in its environment.
+            if FirebaseBootstrap.isConfiguredForRunning {
+                RootView()
+                    .environment(session)
+                    .task { session.start() }
+            } else {
+                Color.clear.accessibilityIdentifier("app.unitTestHost")
+            }
         }
     }
 }
