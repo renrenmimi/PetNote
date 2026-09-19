@@ -10,6 +10,7 @@ struct PetNoteApp: App {
         // Before any Firestore or Functions instance exists: emulator settings
         // are ignored once the first request has gone out.
         FirebaseBootstrap.configure()
+        ImageLoader.shared.observeMemoryWarnings()
     }
 
     var body: some Scene {

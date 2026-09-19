@@ -19,6 +19,20 @@ struct Post: Sendable, Equatable, Identifiable {
     let tags: [String]
 }
 
+extension Post {
+    /// The optimistic like offset is the only field the client ever changes on
+    /// a post it did not create, so it is the only copy helper that exists.
+    func withLikeCount(_ count: Int) -> Post {
+        Post(
+            id: id, authorID: authorID, authorName: authorName,
+            authorAvatarURL: authorAvatarURL, text: text, media: media,
+            petID: petID, petName: petName, petAvatarURL: petAvatarURL,
+            createdAt: createdAt, likeCount: count, commentCount: commentCount,
+            tags: tags
+        )
+    }
+}
+
 struct MediaItem: Sendable, Equatable {
     enum Kind: String, Sendable {
         case image

@@ -86,10 +86,16 @@ final class SessionStore {
     }
 
     /// Drops caches and paging state. Called on sign-out and on account switch.
+    ///
+    /// The image cache is dropped explicitly here. It is a process-wide actor,
+    /// not something the scope owns, so "throw the scope away" does not reach
+    /// it — and a cached photo from the previous account surviving a sign-out
+    /// is exactly what §7.3 is about.
     private func resetScope() {
         scope.tearDown()
         scope = SessionScope()
-        log.info("session scope reset")
+        Task { await ImageLoader.shared.clearMemoryCache() }
+        log.info("session scope reset; image cache cleared")
     }
 
     /// Removes the auth listener.
