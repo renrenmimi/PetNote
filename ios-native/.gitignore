@@ -4,6 +4,10 @@ Config/Local.xcconfig
 # Production Firebase options. Never in this repository — the emulator one
 # (Support/GoogleService-Info-Emulator.plist) holds only placeholders and is.
 Support/GoogleService-Info.plist
+# The independent test project's plist. Not a secret in the sense a key is,
+# but committing it lets anyone with the repo write to the test backend, and
+# it is the file whose absence makes a build fall back to something else.
+Support/GoogleService-Info-Test.plist
 
 # Python bytecode from the measurement scripts
 __pycache__/

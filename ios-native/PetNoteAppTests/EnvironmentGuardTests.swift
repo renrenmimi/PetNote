@@ -93,6 +93,87 @@ struct EnvironmentGuardTests {
         #expect(environment(backend: "testcloud", expectedProject: "p").allowsWrites)
         #expect(!environment(backend: "production", expectedProject: "p").allowsWrites)
     }
+
+    // MARK: - Identity is not enough
+
+    /// The confusion this whole naming rule exists to prevent: the emulator
+    /// runs as `petnote-test`, so a *cloud* project may never be given that
+    /// id. If one were, a green cloud run and a green local run would be
+    /// indistinguishable in every log we have.
+    @Test func aCloudBuildWearingTheEmulatorsIdentityIsRefused() {
+        let verdict = EnvironmentGuard.verdict(
+            environment: environment(backend: "testcloud", expectedProject: "petnote-test"),
+            actualProjectID: EnvironmentGuard.emulatorProjectID
+        )
+        #expect(verdict == .confusedWithEmulator(backend: "testcloud"))
+    }
+
+    /// And the other direction: an emulator build that somehow loaded a cloud
+    /// project's plist.
+    @Test func anEmulatorBuildWearingACloudIdentityIsRefused() {
+        let verdict = EnvironmentGuard.verdict(
+            environment: environment(backend: "emulator", expectedProject: ""),
+            actualProjectID: "petnote-devtest-7"
+        )
+        #expect(verdict == .confusedWithEmulator(backend: "emulator"))
+    }
+
+    // MARK: - Where the bytes actually go
+
+    /// An emulator build whose host settings did not take. The id is right,
+    /// and every read and write goes to the real cloud.
+    @Test func anEmulatorBuildTalkingToTheCloudIsRefused() {
+        let verdict = EnvironmentGuard.verdict(
+            environment: environment(backend: "emulator", expectedProject: ""),
+            actualProjectID: EnvironmentGuard.emulatorProjectID,
+            actualFirestoreHost: EnvironmentGuard.cloudFirestoreHost
+        )
+        #expect(verdict == .wrongTransport(
+            backend: "emulator",
+            expected: "127.0.0.1:8088",
+            actual: EnvironmentGuard.cloudFirestoreHost
+        ))
+    }
+
+    /// The reverse, which is quieter and worse: a build that reports "tested
+    /// against the cloud test project" having never left this machine.
+    @Test func aCloudBuildStillPointedAtTheEmulatorIsRefused() {
+        let verdict = EnvironmentGuard.verdict(
+            environment: environment(backend: "testcloud", expectedProject: "petnote-devtest-7"),
+            actualProjectID: "petnote-devtest-7",
+            actualFirestoreHost: "127.0.0.1:8088"
+        )
+        #expect(verdict == .wrongTransport(
+            backend: "testcloud",
+            expected: EnvironmentGuard.cloudFirestoreHost,
+            actual: "127.0.0.1:8088"
+        ))
+    }
+
+    @Test func theRightIdOverTheRightHostPasses() {
+        #expect(EnvironmentGuard.verdict(
+            environment: environment(backend: "testcloud", expectedProject: "petnote-devtest-7"),
+            actualProjectID: "petnote-devtest-7",
+            actualFirestoreHost: EnvironmentGuard.cloudFirestoreHost
+        ) == .ok(projectID: "petnote-devtest-7"))
+
+        #expect(EnvironmentGuard.verdict(
+            environment: environment(backend: "emulator", expectedProject: ""),
+            actualProjectID: EnvironmentGuard.emulatorProjectID,
+            actualFirestoreHost: "127.0.0.1:8088"
+        ) == .unchecked)
+    }
+
+    /// A host we could not read is not a host we may assume is correct — but
+    /// it is also not evidence of a fault. Skipped, not guessed.
+    @Test func anUnreadableHostSkipsTheTransportCheck() {
+        let verdict = EnvironmentGuard.verdict(
+            environment: environment(backend: "testcloud", expectedProject: "petnote-devtest-7"),
+            actualProjectID: "petnote-devtest-7",
+            actualFirestoreHost: nil
+        )
+        #expect(verdict == .ok(projectID: "petnote-devtest-7"))
+    }
 }
 
 /// A Bundle whose infoDictionary is whatever the test says it is.

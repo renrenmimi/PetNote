@@ -38,6 +38,23 @@ struct SignedInView: View {
                     }
                 }
                 .toolbar {
+                    // A screenshot from a device has to say for itself which
+                    // backend produced it. Without this, "verified on device"
+                    // and "verified against production by mistake" look
+                    // identical in a photo. Hidden in production builds, where
+                    // it would just be clutter for a real user.
+                    if AppEnvironment.current.backend != .production {
+                        ToolbarItem(placement: .topBarLeading) {
+                            // Text, not a Button: it must not add a control to
+                            // the bar, and the touch-target audit enumerates
+                            // app.buttons.
+                            Text(EnvironmentGuard.displayLabel)
+                                .font(.caption2)
+                                .monospaced()
+                                .foregroundStyle(.secondary)
+                                .accessibilityIdentifier("env.badge")
+                        }
+                    }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
                             try? session.signOut()
@@ -46,11 +63,15 @@ struct SignedInView: View {
                             // and vertical padding were measured here and the
                             // reported height stayed 36pt: a navigation bar is
                             // 44pt tall and lays its items out inside that, so
-                            // the label cannot be made to fill it. The button is
-                            // hittable — UIKit's bar extends the touch area past
-                            // the label — which is why the touch-target test
-                            // checks bar buttons for hittability and content
-                            // controls for size. See PetNoteAppUITests.
+                            // the label cannot be made to fill it.
+                            //
+                            // The reported frame is therefore not the hit area.
+                            // Measured on the simulator: a tap 22pt above this
+                            // label's centre still activates it, so the region
+                            // extends past the frame upwards. How far it
+                            // extends downwards, and whether the total is 44pt,
+                            // has not been measured and is not claimed. See
+                            // PetNoteAppUITests/TouchTargetUITests.
                             Text("Sign out")
                         }
                         .accessibilityIdentifier("session.signOut")

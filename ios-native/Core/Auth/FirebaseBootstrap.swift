@@ -73,12 +73,14 @@ enum FirebaseBootstrap {
             )
         }
         FirebaseApp.configure(options: options)
-        // Before anything reads or writes: a build pointed at the wrong project
-        // stops here rather than finding out later.
-        EnvironmentGuard.enforce(environment)
 
         guard environment.backend == .emulator else {
-            log.info("Firebase configured against production, read-only")
+            // Nothing to redirect: a cloud configuration talks to the cloud.
+            // Checked here rather than before the guard below so that both
+            // halves of the check — which project, and which host — always
+            // run against the settings the app will actually use.
+            EnvironmentGuard.enforce(environment)
+            log.info("Firebase configured against \(environment.backend.rawValue, privacy: .public)")
             return
         }
 
@@ -93,6 +95,11 @@ enum FirebaseBootstrap {
         Firestore.firestore().settings = settings
 
         Functions.functions().useEmulator(withHost: environment.emulatorHost, port: environment.functionsPort)
+
+        // After the redirect, not before. Checking the transport before the
+        // emulator settings are applied would only ever read the default
+        // cloud host, which is what this is supposed to catch.
+        EnvironmentGuard.enforce(environment)
 
         log.info("Firebase configured against emulator at \(environment.emulatorHost, privacy: .public)")
     }
