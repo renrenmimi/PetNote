@@ -53,6 +53,11 @@ final class FeedViewModel {
     /// A like that could not be applied. Shown inline and cleared by the view.
     var likeFailureMessage: String?
 
+    /// The row the person left from, so returning restores position by identity
+    /// rather than by offset. Survives a reload as long as that post is still
+    /// in the list.
+    private(set) var scrollAnchor: String?
+
     private let feed: any FeedRepository
     private let likes: any LikeRepository
     private let log = Logger(subsystem: "dev.local.petnote.native", category: "feed")
@@ -213,6 +218,9 @@ final class FeedViewModel {
             log.error("like status failed: \(error.localizedDescription, privacy: .public)")
         }
     }
+
+    func rememberScrollAnchor(_ postID: String) { scrollAnchor = postID }
+    func clearScrollAnchor() { scrollAnchor = nil }
 
     func isLiked(_ post: Post) -> Bool {
         likeStates[post.id]?.intendedLiked ?? false

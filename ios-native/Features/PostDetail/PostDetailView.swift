@@ -228,6 +228,10 @@ private struct CommentRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Layout.pageInset)
         .accessibilityElement(children: .combine)
+        // One element per comment, and it is addressable. Without this a test
+        // counting "how many comments contain this text" also counts the inner
+        // Text views and reports two comments where there is one.
+        .accessibilityIdentifier("comment.row")
         .opacity(comment.isPending ? 0.6 : 1)
     }
 }

@@ -16,10 +16,51 @@ struct AppEnvironment: Sendable {
     }
 
     let backend: Backend
-    /// The Mac's LAN address when running against the emulator. A device cannot
-    /// reach 127.0.0.1, which is why this is configured rather than assumed.
-    let emulatorHost: String
+    /// The Mac's LAN address, as configured. Used as-is on a device; the
+    /// simulator overrides it — see `emulatorHost`.
+    let configuredEmulatorHost: String
     let buildStamp: String
+
+    /// Where to reach the emulator.
+    ///
+    /// **The simulator uses loopback even though a LAN address would also
+    /// reach the Mac.** The Functions SDK refuses to attach an auth token to
+    /// an HTTP request bound for anything that is not loopback — measured, it
+    /// fails the call locally with
+    ///
+    ///     com.firebase.functions code=16
+    ///     "Refusing to send Auth, FCM, and AppCheck tokens over HTTP to
+    ///      non-loopback host."
+    ///
+    /// and never sends a request at all. The server then never sees the
+    /// caller, so every gate reports "Must be logged in", which looks exactly
+    /// like a sign-in bug and is not one.
+    ///
+    /// The simulator shares the Mac's network stack, so 127.0.0.1 reaches the
+    /// same emulator and keeps callables working.
+    ///
+    /// **A real device cannot do this.** It has to use the LAN address, which
+    /// means callables — comments — cannot work against the emulator on a
+    /// device over plain HTTP. See docs/device-emulator-limits.md.
+    var emulatorHost: String {
+        #if targetEnvironment(simulator)
+        "127.0.0.1"
+        #else
+        configuredEmulatorHost
+        #endif
+    }
+
+    /// False on a device against the emulator: callables are unreachable there
+    /// for the reason above, so the UI can say so instead of showing a
+    /// misleading "sign in" message.
+    var supportsCallables: Bool {
+        guard backend == .emulator else { return true }
+        #if targetEnvironment(simulator)
+        return true
+        #else
+        return false
+        #endif
+    }
 
     static let current = AppEnvironment(bundle: .main)
 
@@ -27,7 +68,7 @@ struct AppEnvironment: Sendable {
         let info = bundle.infoDictionary
         let raw = info?["PetNoteBackend"] as? String ?? ""
         backend = Backend(rawValue: raw) ?? .emulator
-        emulatorHost = (info?["PetNoteEmulatorHost"] as? String) ?? "127.0.0.1"
+        configuredEmulatorHost = (info?["PetNoteEmulatorHost"] as? String) ?? "127.0.0.1"
         buildStamp = (info?["PetNoteBuildStamp"] as? String) ?? "unknown"
     }
 

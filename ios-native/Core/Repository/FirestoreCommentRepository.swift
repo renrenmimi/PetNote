@@ -1,3 +1,4 @@
+import FirebaseAuth
 import FirebaseFirestore
 import FirebaseFunctions
 import Foundation
@@ -76,6 +77,13 @@ actor FirestoreCommentRepository: CommentRepository {
         if let replyTo { payload["replyToCommentId"] = replyTo }
 
         do {
+            let user = Auth.auth().currentUser
+            let token = try? await user?.getIDToken()
+            log.info("""
+                create: uid=\(user?.uid.prefix(6) ?? "nil", privacy: .public) \
+                verified=\(user?.isEmailVerified == true) \
+                tokenLength=\(token?.count ?? 0)
+                """)
             let result = try await functions.httpsCallable("createCommentCallable").call(payload)
             guard let data = result.data as? [String: Any], let id = data["id"] as? String else {
                 // The call succeeded but the shape is not what the contract
@@ -88,6 +96,13 @@ actor FirestoreCommentRepository: CommentRepository {
         } catch let error as CommentError {
             throw error
         } catch {
+            let nsError = error as NSError
+            log.error("""
+                create failed: domain=\(nsError.domain, privacy: .public) \
+                code=\(nsError.code) \
+                desc=\(nsError.localizedDescription, privacy: .public) \
+                keys=\(nsError.userInfo.keys.map(String.init(describing:)).joined(separator: ","), privacy: .public)
+                """)
             throw Self.map(error)
         }
     }

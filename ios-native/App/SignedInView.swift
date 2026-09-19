@@ -12,6 +12,10 @@ struct SignedInView: View {
     @Environment(SessionStore.self) private var session
     @State private var path: [Route] = []
     @State private var feedModel: FeedViewModel
+    /// One coordinator for the whole signed-in tree: the player ceiling and
+    /// "only the most visible one plays" are global properties, and a per-view
+    /// owner could not enforce either.
+    @State private var video = VideoPlaybackCoordinator()
     private let repositories: Repositories
 
     init(user: UserSession, repositories: Repositories = .live) {
@@ -25,6 +29,7 @@ struct SignedInView: View {
     var body: some View {
         NavigationStack(path: $path) {
             FeedView(model: feedModel, path: $path)
+                .environment(video)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
@@ -47,16 +52,24 @@ struct SignedInView: View {
                 .navigationDestination(for: Route.self) { route in
                     switch route {
                     case .feed:
-                        FeedView(model: feedModel, path: $path)
+                        FeedView(model: feedModel, path: $path).environment(video)
                     case .postDetail(let postID):
                         PostDetailView(
                             model: PostDetailViewModel(
                                 postID: postID,
                                 feed: repositories.feed,
-                                comments: repositories.comments
+                                comments: repositories.comments,
+                                likes: repositories.likes
                             )
                         )
+                        .environment(video)
                     }
+                }
+                // Navigating away releases every player. Without this the feed
+                // keeps decoding behind the detail screen, which is both the
+                // leak §5D.6 forbids and a waste of battery nobody can see.
+                .onChange(of: path) { _, newPath in
+                    video.releaseAll(reason: newPath.isEmpty ? "returned to feed" : "navigated away")
                 }
         }
     }

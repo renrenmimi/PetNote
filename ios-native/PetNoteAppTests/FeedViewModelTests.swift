@@ -169,7 +169,10 @@ struct FeedViewModelTests {
         await model.loadFirstPageIfNeeded()
 
         // Page 2 is requested, then the list is replaced before it lands.
-        async let pending: Void = model.loadMoreIfNeeded(currentItem: model.posts.last)
+        // Read before starting the task, for the same reason: an `async let`
+        // evaluates its right-hand side inside the new task.
+        let last = model.posts.last
+        async let pending: Void = model.loadMoreIfNeeded(currentItem: last)
         feed.pages = [[Self.post("new1")]]
         await model.reload()
         await pending

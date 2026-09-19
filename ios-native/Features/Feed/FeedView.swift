@@ -65,8 +65,15 @@ struct FeedView: View {
     }
 
     private var list: some View {
-        List {
-            ForEach(model.posts) { post in
+        // ScrollViewReader so returning from a detail screen can put the same
+        // row back under the reader's eye. §4 says not to rely on the system's
+        // own restoration: the list is rebuilt when the stack pops, and what it
+        // restores is a content offset, which is wrong as soon as a row above
+        // has changed height (an image arriving, a like count widening).
+        // Anchoring to an identity survives that.
+        ScrollViewReader { proxy in
+            List {
+                ForEach(model.posts) { post in
                 PostCard(
                     post: post.withLikeCount(model.displayLikeCount(for: post)),
                     isLiked: model.isLiked(post),
@@ -77,27 +84,43 @@ struct FeedView: View {
                 .listRowSeparator(.hidden)
                 .listRowBackground(Palette.background)
                 .contentShape(.rect)
-                .onTapGesture { path.append(.postDetail(postID: post.id)) }
+                .onTapGesture {
+                    // Remember where we were before leaving, so coming back is
+                    // a restore rather than a guess.
+                    model.rememberScrollAnchor(post.id)
+                    path.append(.postDetail(postID: post.id))
+                }
                 .task { await model.loadMoreIfNeeded(currentItem: post) }
+                .id(post.id)
             }
 
             // A lost page is shown where it happened, with its own retry. A
             // modal would interrupt reading to report something that did not
             // affect what is already on screen.
-            if let failure = model.pagingFailure {
-                pagingFailureRow(failure)
-            } else if model.isLoadingMore {
-                HStack {
-                    Spacer()
-                    ProgressView().accessibilityLabel("Loading more posts")
-                    Spacer()
+                if let failure = model.pagingFailure {
+                    pagingFailureRow(failure)
+                } else if model.isLoadingMore {
+                    HStack {
+                        Spacer()
+                        ProgressView().accessibilityLabel("Loading more posts")
+                        Spacer()
+                    }
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Palette.background)
                 }
-                .listRowSeparator(.hidden)
-                .listRowBackground(Palette.background)
+            }
+            .listStyle(.plain)
+            .accessibilityIdentifier("feed.list")
+            .onChange(of: path.isEmpty) { _, isAtFeed in
+                // Popped back to the feed: put the row we left from back where
+                // it was. `anchor: .center` rather than .top because the row
+                // the person tapped was somewhere in the middle of the screen,
+                // not pinned to its edge.
+                guard isAtFeed, let anchor = model.scrollAnchor else { return }
+                proxy.scrollTo(anchor, anchor: .center)
+                model.clearScrollAnchor()
             }
         }
-        .listStyle(.plain)
-        .accessibilityIdentifier("feed.list")
     }
 
     private func pagingFailureRow(_ failure: FeedViewModel.FailureKind) -> some View {

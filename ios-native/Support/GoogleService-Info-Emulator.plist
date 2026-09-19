@@ -31,8 +31,15 @@
 	<false/>
 	<key>IS_GCM_ENABLED</key>
 	<false/>
+	<!--
+	  True, and it matters: with sign-in disabled the Auth component does not
+	  register itself for other SDKs to find, so Functions sends callables with
+	  no ID token and every one of them comes back "Must be logged in." — even
+	  though the user is signed in and the emulator accepts the same token from
+	  curl.
+	-->
 	<key>IS_SIGNIN_ENABLED</key>
-	<false/>
+	<true/>
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 </dict>
