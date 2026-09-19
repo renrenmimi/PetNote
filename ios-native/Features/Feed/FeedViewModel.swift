@@ -193,6 +193,13 @@ final class FeedViewModel {
                 let isLiked = liked.contains(id)
                 if var existing = likeStates[id] {
                     existing.confirmedLiked = isLiked
+                    // **The delta resets here.** `post.likeCount` has just been
+                    // re-read, so the server's number already contains every
+                    // change this client had confirmed. Carrying the delta over
+                    // would add those changes a second time: like a post
+                    // (5 → 6), refresh (server says 6), and the screen would
+                    // show 7 and stay wrong until the app restarted.
+                    existing.confirmedDelta = 0
                     // A tap that has not settled keeps its intent; otherwise the
                     // server's answer is the intent.
                     if existing.intent == 0 { existing.intendedLiked = isLiked }

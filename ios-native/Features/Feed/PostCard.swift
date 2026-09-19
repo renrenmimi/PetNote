@@ -18,16 +18,51 @@ struct PostCard: View {
     /// The detail screen draws the photo edge to edge and wants the larger
     /// rendition, matching the web client's imageSize="large" there.
     var mediaSize: CloudinaryURL.Size = .medium
+    /// Set on the detail screen, where tapping a photo opens it in full. Nil in
+    /// the feed, where a tap opens the post.
+    var onOpenImage: ((URL) -> Void)?
+    /// Set in the feed: tapping the card's *content* opens the post.
+    ///
+    /// It lives here rather than on the List row because a row-level
+    /// `.contentShape(.rect)` + `.onTapGesture` swallows the taps meant for the
+    /// buttons inside it — measured: the like button could not be activated at
+    /// all, by a test or by a finger, and no like ever reached the emulator.
+    /// Keeping the gesture off the actions row is what makes both work.
+    var onOpenPost: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.m) {
-            identity
-            if !post.text.isEmpty { text }
-            if let media = post.media.first { MediaView(item: media, size: mediaSize) }
+            content
             actions
         }
         .padding(.vertical, Spacing.m)
         .background(Palette.background)
+    }
+
+    /// Everything that is not a control. Tappable as one piece in the feed.
+    private var content: some View {
+        VStack(alignment: .leading, spacing: Spacing.m) {
+            identity
+            if !post.text.isEmpty { text }
+            if let media = post.media.first {
+                MediaView(item: media, size: mediaSize)
+                    .onTapGesture {
+                        // On the detail screen a photo opens full size; in the
+                        // feed the whole card opens the post. One gesture, one
+                        // meaning, depending on where you are.
+                        if media.kind == .image, let onOpenImage {
+                            onOpenImage(media.url)
+                        } else {
+                            onOpenPost?()
+                        }
+                    }
+                if MediaView.frame(for: media.url).isCropped, onOpenImage != nil {
+                    croppedHint
+                }
+            }
+        }
+        .contentShape(.rect)
+        .onTapGesture { onOpenPost?() }
     }
 
     private var identity: some View {
@@ -62,6 +97,20 @@ struct PostCard: View {
             .accessibilityIdentifier("post.text")
     }
 
+    /// Says the frame is not the whole picture, and what to do about it.
+    /// Shown only where there is somewhere to go.
+    private var croppedHint: some View {
+        HStack(spacing: Spacing.xs) {
+            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                .accessibilityHidden(true)
+            Text("Tap photo to see all of it")
+        }
+        .font(Typography.caption)
+        .foregroundStyle(Palette.secondaryText)
+        .padding(.horizontal, Layout.pageInset)
+        .accessibilityIdentifier("post.croppedHint")
+    }
+
     private var actions: some View {
         HStack(spacing: Spacing.xl) {
             Button(action: onLike) {
@@ -76,6 +125,12 @@ struct PostCard: View {
                 .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget, alignment: .leading)
                 .contentShape(.rect)
             }
+            // .borderless, and it is not cosmetic: inside a List the default
+            // button style makes the whole row one target, so several buttons
+            // in a row either all fire or — as happened here — none do. The
+            // like button could not be activated at all and no like ever
+            // reached the emulator.
+            .buttonStyle(.borderless)
             .accessibilityIdentifier("post.like")
             .accessibilityLabel(isLiked ? "Unlike" : "Like")
             .accessibilityValue("\(post.likeCount) likes")
@@ -92,6 +147,7 @@ struct PostCard: View {
                 .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget, alignment: .leading)
                 .contentShape(.rect)
             }
+            .buttonStyle(.borderless)
             .accessibilityIdentifier("post.comments")
             .accessibilityLabel("Comments")
             .accessibilityValue("\(post.commentCount)")

@@ -78,18 +78,14 @@ struct FeedView: View {
                     post: post.withLikeCount(model.displayLikeCount(for: post)),
                     isLiked: model.isLiked(post),
                     onLike: { model.toggleLike(post) },
-                    onOpenComments: { path.append(.postDetail(postID: post.id)) }
+                    onOpenComments: { open(post) },
+                    // The gesture is inside the card, on its content only. A
+                    // row-level tap gesture swallowed every button in the card.
+                    onOpenPost: { open(post) }
                 )
                 .listRowInsets(EdgeInsets())
                 .listRowSeparator(.hidden)
                 .listRowBackground(Palette.background)
-                .contentShape(.rect)
-                .onTapGesture {
-                    // Remember where we were before leaving, so coming back is
-                    // a restore rather than a guess.
-                    model.rememberScrollAnchor(post.id)
-                    path.append(.postDetail(postID: post.id))
-                }
                 .task { await model.loadMoreIfNeeded(currentItem: post) }
                 .id(post.id)
             }
@@ -121,6 +117,13 @@ struct FeedView: View {
                 model.clearScrollAnchor()
             }
         }
+    }
+
+    /// Remember where we were before leaving, so coming back is a restore
+    /// rather than a guess.
+    private func open(_ post: Post) {
+        model.rememberScrollAnchor(post.id)
+        path.append(.postDetail(postID: post.id))
     }
 
     private func pagingFailureRow(_ failure: FeedViewModel.FailureKind) -> some View {

@@ -65,6 +65,11 @@ actor FirestoreLikeRepository: LikeRepository {
             ])
             return .changed
         } catch {
+            let nsError = error as NSError
+            log.error("""
+                like write failed: domain=\(nsError.domain, privacy: .public) \
+                code=\(nsError.code) desc=\(nsError.localizedDescription, privacy: .public)
+                """)
             // Lost a race with another client: the document now exists, so the
             // write became an update and was denied. The server is in the state
             // the caller wanted, and the count already reflects it.

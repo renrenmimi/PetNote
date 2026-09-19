@@ -48,6 +48,8 @@ struct FeedViewModelTests {
         var likeResult: LikeMutationResult = .changed
         var unlikeResult: LikeMutationResult = .changed
         var likeError: Error?
+        var unlikeError: Error?
+        var batchError: Error?
         var likeCalls: [String] = []
         var batchCalls: [[String]] = []
         var alreadyLiked: Set<String> = []
@@ -63,12 +65,14 @@ struct FeedViewModelTests {
 
         func unlike(postID: String) async throws -> LikeMutationResult {
             likeCalls.append("unlike:\(postID)")
+            if let unlikeError { throw unlikeError }
             if let likeError { throw likeError }
             return unlikeResult
         }
 
         func likedPostIDs(among postIDs: [String]) async throws -> Set<String> {
             batchCalls.append(postIDs)
+            if let batchError { throw batchError }
             return alreadyLiked.intersection(postIDs)
         }
     }
@@ -330,6 +334,155 @@ struct FeedViewModelTests {
         #expect(!model.isLiked(Self.post("a")))
         #expect(model.displayLikeCount(for: model.posts[0]) == 4, "the count returns to the server's")
         #expect(model.likeFailureMessage != nil)
+    }
+
+    // MARK: - Convergence with the server
+
+    /// A failed batch read must not be read as "nothing is liked".
+    ///
+    /// This is the path that made `.unchanged` dangerous: the query fails, every
+    /// row renders unliked, and the first tap on an already-liked post answers
+    /// `.unchanged`. What must not happen is the count drifting because of it.
+    @Test func aFailedStatusReadDoesNotInventAnUnlikedState() async {
+        let feed = FakeFeed()
+        feed.pages = [[Self.post("a", likeCount: 5)]]
+        let likes = FakeLikes()
+        likes.batchError = NSError(domain: "test", code: 14)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        await model.loadFirstPageIfNeeded()
+
+        // Unknown, so the heart renders unset — but the count is untouched.
+        #expect(!model.isLiked(Self.post("a")))
+        #expect(model.displayLikeCount(for: model.posts[0]) == 5, "an unknown status must not move the count")
+
+        // The person taps; the server says it was already liked.
+        likes.likeResult = .unchanged
+        model.toggleLike(model.posts[0])
+        await model.waitForPendingLikes()
+
+        #expect(model.isLiked(Self.post("a")), "the heart is now right")
+        #expect(
+            model.displayLikeCount(for: model.posts[0]) == 5,
+            "and the count still matches the server, with no phantom like"
+        )
+    }
+
+    /// A later server snapshot must not double-count a local increment that the
+    /// server has already applied.
+    @Test func aRefreshAfterAConfirmedLikeDoesNotDoubleCount() async {
+        let feed = FakeFeed()
+        feed.pages = [[Self.post("a", likeCount: 5)]]
+        let likes = FakeLikes()
+        likes.likeResult = .changed
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        await model.loadFirstPageIfNeeded()
+
+        model.toggleLike(model.posts[0])
+        await model.waitForPendingLikes()
+        #expect(model.displayLikeCount(for: model.posts[0]) == 6, "server 5 + our confirmed like")
+
+        // The server's own count now includes it, and a refresh brings that
+        // number back. The confirmed local delta must not be added on top.
+        feed.pages = [[Self.post("a", likeCount: 6)]]
+        likes.alreadyLiked = ["a"]
+        await model.reload()
+
+        #expect(
+            model.displayLikeCount(for: model.posts[0]) == 6,
+            "got \(model.displayLikeCount(for: model.posts[0])) — the confirmed delta was applied twice"
+        )
+        #expect(model.isLiked(Self.post("a")))
+    }
+
+    /// Responses arriving out of order must not leave the display disagreeing
+    /// with the last thing the person asked for.
+    @Test func outOfOrderResponsesSettleOnTheLastIntent() async {
+        let feed = FakeFeed()
+        feed.pages = [[Self.post("a", likeCount: 5)]]
+        let likes = FakeLikes()
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        await model.loadFirstPageIfNeeded()
+
+        // like, unlike, like — three intents, settled in order by the model's
+        // own serialisation, whatever order the fake answers in.
+        likes.likeResult = .changed
+        likes.unlikeResult = .changed
+        model.toggleLike(model.posts[0])
+        model.toggleLike(model.posts[0])
+        model.toggleLike(model.posts[0])
+        await model.waitForPendingLikes()
+
+        #expect(model.isLiked(Self.post("a")), "three taps from unliked ends liked")
+        #expect(
+            model.displayLikeCount(for: model.posts[0]) == 6,
+            "got \(model.displayLikeCount(for: model.posts[0]))"
+        )
+    }
+
+    /// Offline: the display goes back to what the server last said, and says so.
+    @Test func anOfflineFailureConvergesBackToTheServersState() async {
+        let feed = FakeFeed()
+        feed.pages = [[Self.post("a", likeCount: 5)]]
+        let likes = FakeLikes()
+        likes.alreadyLiked = ["a"]
+        likes.unlikeError = NSError(domain: NSURLErrorDomain, code: -1009)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        await model.loadFirstPageIfNeeded()
+        #expect(model.isLiked(Self.post("a")))
+
+        model.toggleLike(model.posts[0])   // try to unlike, offline
+        await model.waitForPendingLikes()
+
+        #expect(model.isLiked(Self.post("a")), "still liked, because the server still has it")
+        #expect(model.displayLikeCount(for: model.posts[0]) == 5)
+        #expect(model.likeFailureMessage != nil, "and the person is told")
+    }
+
+    /// Switching accounts must not leave the previous account's likes behind.
+    ///
+    /// The feed model is session-scoped and thrown away on sign-out, so this
+    /// asserts the property a fresh model has: it starts from the server's
+    /// answer for the new account, not from anything remembered.
+    @Test func aNewSessionStartsFromTheServerNotFromMemory() async {
+        let feed = FakeFeed()
+        feed.pages = [[Self.post("a", likeCount: 5)]]
+
+        // Account one has liked it.
+        let first = FakeLikes()
+        first.alreadyLiked = ["a"]
+        let firstModel = FeedViewModel(feed: feed, likes: first, pageSize: 1)
+        await firstModel.loadFirstPageIfNeeded()
+        #expect(firstModel.isLiked(Self.post("a")))
+
+        // Account two has not. A new model is what sign-out produces.
+        let second = FakeLikes()
+        second.alreadyLiked = []
+        let secondModel = FeedViewModel(feed: feed, likes: second, pageSize: 1)
+        await secondModel.loadFirstPageIfNeeded()
+
+        #expect(!secondModel.isLiked(Self.post("a")), "the new account sees its own state")
+        #expect(secondModel.displayLikeCount(for: secondModel.posts[0]) == 5)
+    }
+
+    /// A page that arrives after the list has been replaced must not be spliced
+    /// in — and neither must the like status that came with it.
+    @Test func aStalePagesLikeStatusIsDiscardedToo() async {
+        let feed = FakeFeed()
+        feed.pages = [[Self.post("old")], [Self.post("stale")]]
+        let likes = FakeLikes()
+        likes.alreadyLiked = ["stale"]
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        await model.loadFirstPageIfNeeded()
+
+        let trigger = model.posts.last
+        async let paging: Void = model.loadMoreIfNeeded(currentItem: trigger)
+        feed.pages = [[Self.post("fresh")]]
+        likes.alreadyLiked = []
+        await model.reload()
+        await paging
+
+        #expect(model.posts.map(\.id) == ["fresh"])
+        #expect(!model.likedPostIDs.contains("stale"), "a discarded page left its like state behind")
     }
 
     /// 5A.8: five taps in a row settle on the last intent and never go negative.

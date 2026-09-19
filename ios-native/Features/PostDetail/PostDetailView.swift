@@ -1,8 +1,14 @@
 import SwiftUI
 
+/// So a URL can drive `.fullScreenCover(item:)`.
+extension URL: @retroactive Identifiable {
+    public var id: String { absoluteString }
+}
+
 /// A post and its comments, with the composer pinned above the keyboard.
 struct PostDetailView: View {
     @State private var model: PostDetailViewModel
+    @State private var fullImageURL: URL?
     @Environment(SessionStore.self) private var session
 
     init(model: PostDetailViewModel) {
@@ -28,6 +34,9 @@ struct PostDetailView: View {
         .navigationTitle("Post")
         .navigationBarTitleDisplayMode(.inline)
         .task { await model.load() }
+        .fullScreenCover(item: $fullImageURL) { url in
+            FullImageView(url: url)
+        }
     }
 
     private var deletedState: some View {
@@ -64,7 +73,8 @@ struct PostDetailView: View {
                         onLike: { model.toggleLike() },
                         onOpenComments: {},
                         textLineLimit: nil,
-                        mediaSize: .large
+                        mediaSize: .large,
+                        onOpenImage: { fullImageURL = $0 }
                     )
 
                     Divider().overlay(Palette.separator)
