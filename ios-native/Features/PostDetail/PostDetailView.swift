@@ -46,9 +46,13 @@ struct PostDetailView: View {
     }
 
     private func loaded(_ post: Post) -> some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: Spacing.l) {
+        // safeAreaInset rather than a VStack: with a stacked composer the
+        // scroll view has no idea the bar is there, so the last thing in the
+        // post — the like and comment row — ends up underneath it. An inset
+        // makes the composer part of the safe area, so content scrolls clear of
+        // it and the keyboard still pushes it up.
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: Spacing.l) {
                     // No line clamp here: a post has to be readable in full
                     // somewhere, and the feed is where the clamp belongs.
                     // The like state is the model's, not a hardcoded false —
@@ -67,12 +71,10 @@ struct PostDetailView: View {
 
                     commentsSection
                 }
-                .padding(.vertical, Spacing.m)
-            }
-            .refreshable { await model.loadComments(reset: true) }
-
-            composer
+            .padding(.vertical, Spacing.m)
         }
+        .refreshable { await model.loadComments(reset: true) }
+        .safeAreaInset(edge: .bottom, spacing: 0) { composer }
     }
 
     @ViewBuilder

@@ -1,3 +1,4 @@
+import OSLog
 import SwiftUI
 
 /// An image from the network, with the three states it can be in.
@@ -76,6 +77,8 @@ struct RemoteImage: View {
 
     private func load(width: CGFloat) async {
         guard let url, width > 0 else { return }
+        Logger(subsystem: "dev.local.petnote.native", category: "media")
+            .debug("load \(url.lastPathComponent, privacy: .public) @\(Int(width))pt")
         let optimized = CloudinaryURL.optimized(url, size: size)
         let pixels = width * displayScale
         do {

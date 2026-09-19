@@ -45,7 +45,8 @@ actor ImageLoader {
     /// - Parameter maxPixelSize: the largest edge, in *pixels*, the caller will
     ///   actually draw. Decoding to the display size rather than the full image
     ///   is where the memory saving is.
-    func image(for url: URL, maxPixelSize: CGFloat) async throws -> UIImage {
+    func image(for url: URL, maxPixelSize requested: CGFloat) async throws -> UIImage {
+        let maxPixelSize = Self.quantize(requested)
         let key = Self.cacheKey(url: url, maxPixelSize: maxPixelSize)
         if let cached = cache.object(forKey: key as NSString) { return cached }
 
@@ -150,6 +151,24 @@ actor ImageLoader {
         // for a detail view are different images. Cloudinary's version segment
         // is already in the URL, so a re-uploaded asset gets a new key for free.
         "\(url.absoluteString)|\(Int(maxPixelSize))"
+    }
+
+    /// Rounds a requested size up to a step.
+    ///
+    /// Measured: the same photo was fetched at 401pt and at 402pt — a layout
+    /// difference of one point, from a safe-area inset, produced two cache
+    /// keys, two downloads and two decoded copies in memory. The step makes
+    /// near-identical requests share an entry; decoding slightly larger than
+    /// needed costs far less than decoding twice.
+    private nonisolated static func quantize(_ size: CGFloat) -> CGFloat {
+        let step: CGFloat = 128
+        return max(step, (size / step).rounded(.up) * step)
+    }
+
+    /// Test-facing view of the key, so the quantisation can be asserted without
+    /// reaching into the cache.
+    nonisolated static func cacheKeyForTesting(url: URL, maxPixelSize: CGFloat) -> String {
+        cacheKey(url: url, maxPixelSize: quantize(maxPixelSize))
     }
 
     private nonisolated static func cost(of image: UIImage) -> Int {
