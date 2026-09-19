@@ -22,7 +22,9 @@ struct SignedInView: View {
         self.user = user
         self.repositories = repositories
         _feedModel = State(
-            initialValue: FeedViewModel(feed: repositories.feed, likes: repositories.likes)
+            initialValue: FeedViewModel(
+                feed: repositories.feed, likes: repositories.likes, accountID: user.uid
+            )
         )
     }
 
@@ -30,6 +32,20 @@ struct SignedInView: View {
         NavigationStack(path: $path) {
             FeedView(model: feedModel, path: $path)
                 .environment(video)
+                // An account *switch* keeps this view's identity — SwiftUI sees
+                // the same SignedInView in the same place — so every piece of
+                // @State here survives it, and all three of them are the
+                // previous person's. Signing out is not this case: it replaces
+                // the whole session scope and gets a fresh model for free.
+                //
+                // Ordered deliberately: the feed first, because it owns the
+                // like state whose stale offset is the one that shows the
+                // wrong number to the wrong person.
+                .task(id: user.uid) {
+                    feedModel.prepare(for: user.uid)
+                    path = []
+                    video.releaseAll(reason: "account switched")
+                }
                 .task {
                     // Only under the probe flag: it is a diagnostic, and a
                     // per-second task in the app a person uses is waste.

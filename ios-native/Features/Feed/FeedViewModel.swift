@@ -70,15 +70,9 @@ final class FeedViewModel {
     /// generation is dropped — it describes a list that no longer exists.
     private var generation = 0
 
-    /// Per post: what the server last told us, and what the person has asked
-    /// for since. The displayed count is derived from the two rather than being
-    /// nudged up and down.
-    ///
-    /// Incremental offsets plus rollbacks drift: when one tap's failure is
-    /// skipped because a later tap superseded it, its +1 is never taken back
-    /// off, and the screen disagrees with the server until a reload. Deriving
-    /// the number instead makes every intermediate state self-correcting — the
-    /// same shape the web client's useLike uses (baseCount + pending).
+    /// Which account this model is showing. See `prepare(for:)`.
+    private var accountID: String?
+
     /// Per post, the three separate facts that were previously squeezed into
     /// one counter — and each of which failed differently for it.
     ///
@@ -98,22 +92,96 @@ final class FeedViewModel {
         var serverLiked: Bool
         var intendedLiked: Bool
         /// Net change this client has had confirmed but which `snapshotCount`
-        /// may not include yet.
+        /// may not include yet. An optimistic guess with a shelf life; see
+        /// `reconcile(_:against:)`.
         var unreflectedDelta: Int
         /// The count from the last server read, which `unreflectedDelta` is
         /// measured against.
         var snapshotCount: Int
         var inFlight: Int
+        /// How many server reads have looked at `unreflectedDelta` and been
+        /// unable to confirm it. Bounded by `unconfirmedReadLimit`.
+        var unconfirmedReads = 0
+        /// `writeSequence` as of this post's last answered write. A status read
+        /// issued before that number cannot describe the result of the write.
+        var lastWriteSequence = 0
     }
     private var likeStates: [String: LikeState] = [:]
     private var likeTasks: [String: Task<Void, Never>] = [:]
 
-    private let pageSize: Int
+    /// Bumped by every like write that comes back with an answer, so a status
+    /// read can be compared against it and discarded when it is older.
+    private var writeSequence = 0
 
-    init(feed: any FeedRepository, likes: any LikeRepository, pageSize: Int = 20) {
+    /// How many server reads an unconfirmed optimistic offset survives before
+    /// the server's number is taken as it stands. See `reconcile(_:against:)`
+    /// for why this cannot be "until it is confirmed".
+    private static let unconfirmedReadLimit = 3
+
+    private let pageSize: Int
+    private let likeDeadline: Duration
+    private let sleeper: @Sendable (Duration) async throws -> Void
+
+    init(
+        feed: any FeedRepository,
+        likes: any LikeRepository,
+        /// The account this model starts out bound to.
+        ///
+        /// Supplying it at construction is what makes the first `prepare(for:)`
+        /// a no-op. Without it, the call that binds the model would also reset
+        /// it — and it races the feed's own first-page task, so whether that
+        /// reset lands before or after the first page arrives is undefined.
+        accountID: String? = nil,
+        pageSize: Int = 20,
+        likeDeadline: Duration = .seconds(12),
+        sleeper: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    ) {
         self.feed = feed
         self.likes = likes
+        self.accountID = accountID
         self.pageSize = pageSize
+        self.likeDeadline = likeDeadline
+        self.sleeper = sleeper
+    }
+
+    /// Binds this model to a signed-in account, discarding everything it holds
+    /// for a different one.
+    ///
+    /// Signing *out* replaces the whole session scope, so a fresh model is the
+    /// normal case and needs nothing. An account *switch* is not that: the view
+    /// that owns this model keeps its `@State` across a change of user, because
+    /// the view's identity has not changed — so the previous account's rows,
+    /// its filled hearts, and (the one that hides) its unconfirmed like offset
+    /// are all still here when the next person's feed draws.
+    ///
+    /// The offset is the one worth spelling out. Account A likes a post whose
+    /// trigger has not run; account B has already liked that same post, so B's
+    /// status read also says "liked". Nothing contradicts A's stale offset —
+    /// same post, same answer — and B is shown A's +1 on top of a count that
+    /// already contains B's own like.
+    func prepare(for accountID: String) {
+        guard self.accountID != accountID else { return }
+        self.accountID = accountID
+
+        // Anything still in flight belongs to the person who left.
+        for task in likeTasks.values { task.cancel() }
+        likeTasks.removeAll()
+        // And anything still on its way back is now from an older list.
+        generation += 1
+
+        posts = []
+        likedPostIDs = []
+        likeStates.removeAll()
+        writeSequence = 0
+        state = .idle
+        isLoadingMore = false
+        hasMore = true
+        pagingFailure = nil
+        likeFailureMessage = nil
+        scrollAnchor = nil
+        nextCursor = nil
+        requestedCursors.removeAll()
+        didRequestFirstPage = false
     }
 
     func loadFirstPageIfNeeded() async {
@@ -125,6 +193,9 @@ final class FeedViewModel {
     func reload() async {
         generation += 1
         let thisGeneration = generation
+        // Sampled before the read goes out, so a write that lands while it is
+        // in flight can be recognised as newer than the answer.
+        let readSequence = writeSequence
 
         state = .loadingFirstPage
         requestedCursors.removeAll()
@@ -139,7 +210,9 @@ final class FeedViewModel {
             nextCursor = page.next
             hasMore = page.hasMore
             state = .loaded
-            await refreshLikeStatus(for: page.items, generation: thisGeneration)
+            await refreshLikeStatus(
+                for: page.items, generation: thisGeneration, readSequence: readSequence
+            )
         } catch {
             guard thisGeneration == generation else { return }
             log.error("feed first page failed: \(error.localizedDescription, privacy: .public)")
@@ -160,6 +233,7 @@ final class FeedViewModel {
         requestedCursors.insert(cursor)
 
         let thisGeneration = generation
+        let readSequence = writeSequence
         isLoadingMore = true
         defer { if thisGeneration == generation { isLoadingMore = false } }
 
@@ -177,7 +251,9 @@ final class FeedViewModel {
             posts.append(contentsOf: fresh)
             nextCursor = page.next
             hasMore = page.hasMore
-            await refreshLikeStatus(for: fresh, generation: thisGeneration)
+            await refreshLikeStatus(
+                for: fresh, generation: thisGeneration, readSequence: readSequence
+            )
         } catch {
             guard thisGeneration == generation else { return }
             log.error("feed page failed: \(error.localizedDescription, privacy: .public)")
@@ -193,64 +269,132 @@ final class FeedViewModel {
         await loadMoreIfNeeded(currentItem: nil)
     }
 
-    /// The batch query is the authority for the ids it was asked about: present
+    /// The batch query is authoritative for the ids it was asked about: present
     /// means liked, absent means not liked. Both halves are applied.
-    /// The batch query is authoritative for the ids it was asked about:
-    /// present means liked, absent means not liked. Both halves are applied.
-    private func refreshLikeStatus(for newPosts: [Post], generation thisGeneration: Int) async {
+    ///
+    /// Two things it is *not* allowed to be authoritative about:
+    ///
+    ///   - **anything newer than itself.** A read that sampled the server
+    ///     before a write this client has since had answered cannot describe
+    ///     the result of that write. Applying it anyway is how a pull-to-refresh
+    ///     answered late unliked a post under the finger that had just liked it.
+    ///   - **the count, when it did not run.** A failed status read still
+    ///     arrives alongside a fresh `likeCount` from the feed query, and the
+    ///     optimistic offset has to keep being measured against the newest
+    ///     count we have seen. Skipping that left the baseline behind while the
+    ///     displayed number moved on, and the offset was then added to a count
+    ///     that already contained it.
+    private func refreshLikeStatus(
+        for newPosts: [Post], generation thisGeneration: Int, readSequence: Int
+    ) async {
         guard !newPosts.isEmpty else { return }
-        let asked = Set(newPosts.map(\.id))
-        let counts = Dictionary(newPosts.map { ($0.id, $0.likeCount) }, uniquingKeysWith: { a, _ in a })
-        do {
-            let liked = try await likes.likedPostIDs(among: Array(asked))
-            guard thisGeneration == generation else { return }
-            for id in asked {
-                let serverSaysLiked = liked.contains(id)
-                let freshCount = counts[id] ?? 0
 
-                guard var existing = likeStates[id] else {
-                    likeStates[id] = LikeState(
+        var liked: Set<String>?
+        do {
+            liked = try await likes.likedPostIDs(among: newPosts.map(\.id))
+        } catch {
+            // Not fatal: hearts render unset and tapping still works. It does
+            // mean a first tap on an already-liked post answers `.unchanged`,
+            // which is precisely why that path must not keep an offset.
+            log.error("like status failed: \(error.localizedDescription, privacy: .public)")
+        }
+        guard thisGeneration == generation else { return }
+
+        for post in newPosts {
+            let freshCount = post.likeCount
+
+            guard var existing = likeStates[post.id] else {
+                // Nothing is known about this post, so there is nothing to
+                // reconcile — and only an answer we actually received can seed
+                // a belief about it.
+                if let liked {
+                    let serverSaysLiked = liked.contains(post.id)
+                    likeStates[post.id] = LikeState(
                         serverLiked: serverSaysLiked,
                         intendedLiked: serverSaysLiked,
                         unreflectedDelta: 0,
                         snapshotCount: freshCount,
                         inFlight: 0
                     )
-                    continue
                 }
+                continue
+            }
 
+            if existing.lastWriteSequence > readSequence {
+                // This read is older than a write we have since had answered.
+                // It describes a world that no longer exists; the next read
+                // will describe this one.
+                continue
+            }
+
+            if let liked {
+                let serverSaysLiked = liked.contains(post.id)
                 if serverSaysLiked != existing.serverLiked {
                     // Someone else changed it — another device, moderation, a
                     // cascade. Whatever this client had outstanding against the
                     // old state no longer describes anything.
                     existing.unreflectedDelta = 0
-                } else if hasCaughtUp(
-                    from: existing.snapshotCount, to: freshCount, delta: existing.unreflectedDelta
-                ) {
-                    // The aggregate has moved at least as far as our confirmed
-                    // writes, so keeping the delta would count them twice.
-                    existing.unreflectedDelta = 0
+                    existing.unconfirmedReads = 0
+                } else {
+                    reconcile(&existing, against: freshCount)
                 }
-                // Otherwise the trigger has not run yet and the delta is still
-                // the only thing making the count right.
-
                 existing.serverLiked = serverSaysLiked
-                existing.snapshotCount = freshCount
                 // Only adopt the server's answer as the intent when nothing is
                 // in flight; a tap that has not been answered still owns it.
                 if existing.inFlight == 0 { existing.intendedLiked = serverSaysLiked }
-                likeStates[id] = existing
+            } else {
+                reconcile(&existing, against: freshCount)
             }
-            // Ids for rows that are gone would otherwise accumulate for the
-            // lifetime of the session.
-            let present = Set(posts.map(\.id))
-            likeStates = likeStates.filter { present.contains($0.key) }
-            likedPostIDs = Set(likeStates.filter(\.value.intendedLiked).map(\.key))
-        } catch {
-            // Not fatal: hearts render unset and tapping still works. It does
-            // mean a first tap on an already-liked post answers `.unchanged`,
-            // which is precisely why that path must not keep an offset.
-            log.error("like status failed: \(error.localizedDescription, privacy: .public)")
+
+            existing.snapshotCount = freshCount
+            likeStates[post.id] = existing
+        }
+
+        // Ids for rows that are gone would otherwise accumulate for the
+        // lifetime of the session.
+        let present = Set(posts.map(\.id))
+        likeStates = likeStates.filter { present.contains($0.key) }
+        likedPostIDs = Set(likeStates.filter(\.value.intendedLiked).map(\.key))
+    }
+
+    /// Measures the optimistic offset against the newest count the server has
+    /// given us, and gives up on it when it cannot be confirmed.
+    ///
+    /// **Whether a particular aggregate includes our own write cannot be
+    /// decided from what the backend exposes.** `likeCount` is a single
+    /// integer with no provenance: "it went up by one" does not say whose like
+    /// did that. Two consequences, and they point opposite ways:
+    ///
+    ///   - a stranger's like landing in the same window is credited to us, and
+    ///     our offset comes off one read early — one too few, for one read,
+    ///     self-correcting;
+    ///   - a stranger's *unlike* cancelling our like leaves the count exactly
+    ///     where it was, so "has it caught up?" can never answer yes. Held
+    ///     without a limit, that offset is wrong on every reading of that post
+    ///     for the rest of the session.
+    ///
+    /// The second is the one that has to be bounded, and the bound is what this
+    /// does: the offset survives `unconfirmedReadLimit` server reads, and after
+    /// that the server's number is taken as it stands. A number that is briefly
+    /// wrong and then right is recoverable; one that is quietly wrong forever
+    /// is not.
+    private func reconcile(_ state: inout LikeState, against freshCount: Int) {
+        guard state.unreflectedDelta != 0 else {
+            state.unconfirmedReads = 0
+            return
+        }
+        if hasCaughtUp(from: state.snapshotCount, to: freshCount, delta: state.unreflectedDelta) {
+            // The aggregate has moved at least as far as our confirmed writes,
+            // so keeping the offset would count them twice.
+            state.unreflectedDelta = 0
+            state.unconfirmedReads = 0
+            return
+        }
+        state.unconfirmedReads += 1
+        if state.unconfirmedReads >= Self.unconfirmedReadLimit {
+            log.debug("dropping a like offset the aggregate never confirmed")
+            state.unreflectedDelta = 0
+            state.unconfirmedReads = 0
         }
     }
 
@@ -260,6 +404,9 @@ final class FeedViewModel {
     /// Not equality: somebody else's like can land in the same window, so the
     /// count may have moved further than ours alone would explain. What must
     /// not happen is treating "has not moved at all" as "has caught up".
+    ///
+    /// This is a heuristic and cannot be anything else — see
+    /// `reconcile(_:against:)` for what it gets wrong and what bounds it.
     private func hasCaughtUp(from old: Int, to fresh: Int, delta: Int) -> Bool {
         guard delta != 0 else { return true }
         let moved = fresh - old
@@ -308,6 +455,54 @@ final class FeedViewModel {
         }
     }
 
+    /// What came back from one like write.
+    ///
+    /// `timedOut` is not `failed`. A failure means nothing was written and
+    /// nothing is owed to the count; a timeout means *we do not know*, and the
+    /// difference has to reach the person as different words and reach the
+    /// state as "believe the next read", not "assume it did not happen".
+    private enum LikeOutcome: Sendable {
+        case answered(LikeMutationResult)
+        case failed(String)
+        case timedOut
+    }
+
+    /// Runs one like write under a deadline.
+    ///
+    /// Not "slow": slow is fine, and the intent stays optimistic while a
+    /// request is in flight. This is the request that goes out and nothing
+    /// comes back — no result, no error — which wedges the post three ways at
+    /// once: later taps queue behind it forever, every refresh declines to
+    /// adopt the server's state because a tap still owns the intent, and the
+    /// screen keeps an optimistic like nothing will ever confirm.
+    ///
+    /// The work runs in its own unstructured task and is *abandoned*, not
+    /// awaited, when the deadline passes. A structured child would have to be
+    /// awaited at scope exit, and Firestore's async calls do not promise to
+    /// return early on cancellation — so waiting for it is exactly the wait
+    /// this is here to end. The point is that the screen stops waiting, not
+    /// that the network does.
+    private func answer(
+        for operation: @escaping @Sendable () async throws -> LikeMutationResult
+    ) async -> LikeOutcome {
+        let (outcomes, send) = AsyncStream<LikeOutcome>.makeStream()
+        let work = Task {
+            do { send.yield(.answered(try await operation())) }
+            catch { send.yield(.failed(error.localizedDescription)) }
+        }
+        let timer = Task { [sleeper, likeDeadline] in
+            try? await sleeper(likeDeadline)
+            send.yield(.timedOut)
+        }
+        defer {
+            work.cancel()
+            timer.cancel()
+        }
+        // Buffered, so whichever finishes first cannot be missed.
+        var outcome = outcomes.makeAsyncIterator()
+        return await outcome.next() ?? .timedOut
+    }
+
     private func applyLike(postID: String, shouldLike: Bool) async {
         defer {
             if var state = likeStates[postID] {
@@ -316,11 +511,22 @@ final class FeedViewModel {
             }
         }
 
-        do {
-            let result = shouldLike
-                ? try await likes.like(postID: postID)
-                : try await likes.unlike(postID: postID)
-            guard var state = likeStates[postID] else { return }
+        let likes = self.likes
+        let outcome = await answer {
+            if shouldLike {
+                return try await likes.like(postID: postID)
+            } else {
+                return try await likes.unlike(postID: postID)
+            }
+        }
+        guard var state = likeStates[postID] else { return }
+
+        switch outcome {
+        case .answered(let result):
+            // The server has told us something about this post that is newer
+            // than any read already in flight.
+            writeSequence += 1
+            state.lastWriteSequence = writeSequence
 
             switch result {
             case .changed:
@@ -330,6 +536,7 @@ final class FeedViewModel {
                 // like-then-unlike pair lost its +1 and kept its -1, leaving
                 // the screen one below the truth for the rest of the session.
                 state.unreflectedDelta += shouldLike ? 1 : -1
+                state.unconfirmedReads = 0
                 state.serverLiked = shouldLike
                 likeStates[postID] = state
             case .unchanged:
@@ -343,18 +550,30 @@ final class FeedViewModel {
                 likedPostIDs.remove(postID)
                 likeFailureMessage = "That post no longer exists."
             }
-        } catch {
-            guard var state = likeStates[postID] else { return }
+
+        case .failed(let description):
+            log.error("like write failed: \(description, privacy: .public)")
             // Nothing was written, so nothing is owed to the count. The intent
             // goes back to what the server holds — but only if this is the last
             // request outstanding, because a later tap owns the intent.
-            if state.inFlight <= 1 {
-                state.intendedLiked = state.serverLiked
-                likeStates[postID] = state
-                likedPostIDs = Set(likeStates.filter(\.value.intendedLiked).map(\.key))
-            }
+            rollBackIntent(&state, postID: postID)
             likeFailureMessage = "Could not update the like. Try again."
+
+        case .timedOut:
+            log.error("like request for \(postID, privacy: .public) was never answered")
+            // No offset is recorded and `lastWriteSequence` is not moved: we do
+            // not know whether the write landed, so the next server read is
+            // allowed to be the authority on both the heart and the count.
+            rollBackIntent(&state, postID: postID)
+            likeFailureMessage = "Could not confirm that. Pull down to refresh."
         }
+    }
+
+    private func rollBackIntent(_ state: inout LikeState, postID: String) {
+        guard state.inFlight <= 1 else { return }
+        state.intendedLiked = state.serverLiked
+        likeStates[postID] = state
+        likedPostIDs = Set(likeStates.filter(\.value.intendedLiked).map(\.key))
     }
 
     private static func kind(of error: Error) -> FailureKind {
