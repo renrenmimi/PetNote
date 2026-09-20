@@ -53,10 +53,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             with LOCK:
                 STATE["healed"] = path == "/a2-heal"
             self.simple(200, b"ok", "text/plain", with_body)
+            self.note(200, 2)
             return
 
         if path == "/a2-missing.mp4":
             self.simple(404, b"no such clip", "text/plain", with_body)
+            self.note(404, 0)
             return
 
         if path == "/a2-slow.mp4":
@@ -71,6 +73,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 healed = STATE["healed"]
             if not healed:
                 self.simple(404, b"not yet", "text/plain", with_body)
+                self.note(404, 0)
                 return
             path = "/a2-clip.mp4"
 
@@ -78,6 +81,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         full = os.path.join(DIRECTORY, name)
         if not os.path.isfile(full):
             self.simple(404, b"missing", "text/plain", with_body)
+            self.note(404, 0)
             return
 
         with open(full, "rb") as handle:
@@ -99,6 +103,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             if with_body:
                 self.wfile.write(chunk)
+            self.note(206, len(chunk))
             return
 
         self.send_response(200)
@@ -108,6 +113,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         if with_body:
             self.wfile.write(data)
+        self.note(200, len(data))
+
+    def note(self, status, length):
+        """One line per request, on stderr, so a failing run can be read back.
+
+        `server in tests are green` and `the app asked for a single byte` are
+        different claims, and only this can tell them apart: a run that scrolled
+        eight times while the first page was still loading reported a playback
+        defect and never made a request at all.
+        """
+        sys.stderr.write(
+            "%.3f %s %s range=%s -> %s %s bytes\n" % (
+                time.time(), self.command, self.path,
+                self.headers.get("Range") or "-", status, length,
+            )
+        )
+        sys.stderr.flush()
 
     def simple(self, status, body, ctype, with_body):
         self.send_response(status)

@@ -308,6 +308,18 @@ final class VideoPlaybackUITests: XCTestCase {
             "retry did not rebuild anything: \(recovered)"
         )
         XCTAssertFalse(app.buttons["video.retry"].firstMatch.exists)
+
+        // And it *plays*. A picture size only says the decoder opened the
+        // track; clearing the error and showing a still frame would satisfy
+        // everything above it. The boundary observer is reset by `retry`, so
+        // this flag can only be true because the clock moved again after the
+        // tap.
+        let movingAgain = waitForState(app, contains: "advanced=true", timeout: 20)
+        print("MEASURED state once the retried video is running: \(movingAgain)")
+        XCTAssertTrue(
+            movingAgain.contains("advanced=true"),
+            "the retry cleared the error but nothing ever played: \(movingAgain)"
+        )
         Self.reachMediaServer(path: "/a2-break")
     }
 
@@ -403,8 +415,27 @@ final class VideoPlaybackUITests: XCTestCase {
         XCTAssertTrue(before.contains("advanced=true"), before)
 
         // In the feed, tapping the card's content — including the video —
-        // opens the post.
-        try XCTUnwrap(playingSurface(app)?.element).tap()
+        // opens the post. **By coordinate, not `element.tap()`.**
+        //
+        // `AVPlayerViewController` publishes an accessibility frame that is
+        // the aspect-*fill* rectangle of the clip at the row's height, not the
+        // rectangle it actually drew: a 320x240 clip in a 402pt-wide row was
+        // reported as 670pt wide starting at x = -134, hanging off both edges
+        // of a 402pt screen and below its bottom. XCUITest calls an element
+        // shaped like that unhittable and refuses to tap it, which was read
+        // once as "the video swallows taps". It does not — a finger in the
+        // middle of the picture opens the post, measured. What is drawn is
+        // 402x300, letterboxed and centred inside the 402x502.7 media area;
+        // only the reported frame is wrong, and it belongs to AVKit.
+        //
+        // So: tap where the picture really is. This asserts the same thing the
+        // element tap was meant to assert, with the instrument that matches
+        // what a person does.
+        let target = try XCTUnwrap(playingSurface(app)?.element)
+        let visible = app.windows.firstMatch.frame.intersection(target.frame)
+        app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: visible.midX, dy: visible.midY))
+            .tap()
         XCTAssertTrue(
             app.navigationBars.buttons.element(boundBy: 0).waitForExistence(timeout: 20),
             "the post never opened"
@@ -448,8 +479,16 @@ final class VideoPlaybackUITests: XCTestCase {
                 let now = surfaces(app)
                 if let opening = now.first(where: { $0.state.contains("state=opening") }) {
                     sawOpening = true
-                    openingColour = Self.centreColour(of: opening.element, in: app)
-                    break outer
+                    // Only stop once the photograph exists. Detecting the
+                    // state and photographing it are two moments, and the
+                    // window can close between them — this broke off after
+                    // the first detection and then failed to unwrap a
+                    // screenshot that was never taken. Seeing the state is
+                    // not evidence; the picture is.
+                    if let colour = Self.centreColour(of: opening.element, in: app) {
+                        openingColour = colour
+                        break outer
+                    }
                 }
                 if now.contains(where: { $0.state.contains("state=picture") }) { break }
                 Thread.sleep(forTimeInterval: 0.2)

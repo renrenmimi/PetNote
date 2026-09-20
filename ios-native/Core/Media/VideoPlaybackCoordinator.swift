@@ -52,12 +52,25 @@ final class VideoPlaybackCoordinator {
         var statusObservation: NSKeyValueObservation?
         var sizeObservation: NSKeyValueObservation?
         var timeObserver: Any?
+        /// Kept for the same reason as the others: a notification observer
+        /// outlives the object it was made for unless it is removed.
+        var endObserver: (any NSObjectProtocol)?
     }
 
     /// Players by video id, most recently used last.
     private var entries: [Entry] = []
     /// Visible fraction and centre distance, reported by each video view.
     private var visibility: [String: (fraction: CGFloat, distanceFromCentre: CGFloat)] = [:]
+    /// Which view instance most recently spoke for each id.
+    ///
+    /// Needed because `onDisappear` is not ordered against the next view's
+    /// first visibility report. Coming back to the feed from a post, the
+    /// rebuilt row reported itself visible, was given a player and started
+    /// playing — and *then*, half a second later, the row it replaced ran its
+    /// `onDisappear` and tore that player down. Nothing moves after that, so
+    /// no further visibility report ever arrives and the feed sits there with
+    /// every video dead. An id alone cannot tell those two views apart.
+    private var reporters: [String: UUID] = [:]
     /// The URL each id was last asked to play, so a retry can rebuild without
     /// the view having to hand it back.
     private var sources: [String: URL] = [:]
@@ -110,12 +123,28 @@ final class VideoPlaybackCoordinator {
 
     // MARK: - Visibility
 
-    func reportVisibility(id: String, fraction: CGFloat, distanceFromCentre: CGFloat) {
+    /// `reporter` identifies the view instance speaking. Optional so the rule
+    /// tests, which have no views, can go on calling this with three arguments.
+    func reportVisibility(
+        id: String,
+        fraction: CGFloat,
+        distanceFromCentre: CGFloat,
+        reporter: UUID? = nil
+    ) {
+        if let reporter { reporters[id] = reporter }
         visibility[id] = (fraction, distanceFromCentre)
         reconcile()
     }
 
-    func reportOffscreen(id: String) {
+    func reportOffscreen(id: String, reporter: UUID? = nil, reason: String = "unsaid") {
+        // A view that has already been replaced may not close the row that
+        // replaced it. See `reporters`.
+        if let reporter, let current = reporters[id], current != reporter {
+            log.debug("video: stale offscreen for \(id, privacy: .public) ignored (\(reason, privacy: .public))")
+            return
+        }
+        log.debug("video: offscreen \(id, privacy: .public) (\(reason, privacy: .public))")
+        reporters[id] = nil
         visibility[id] = nil
         // Gone, not merely hidden: release the decoder rather than holding a
         // paused player for a row that is far away.
@@ -134,6 +163,7 @@ final class VideoPlaybackCoordinator {
         for entry in entries { release(entry) }
         entries.removeAll()
         visibility.removeAll()
+        reporters.removeAll()
         presentationSizes.removeAll()
         advanced.removeAll()
         playingID = nil
@@ -296,10 +326,20 @@ final class VideoPlaybackCoordinator {
             }
         } ?? "noitem"
         let size = presentationSizes[playing] ?? .zero
+        // Buffered and duration too. "The clock is not moving" has three very
+        // different causes — nothing downloaded, downloaded but not decoding,
+        // and *the clip is simply over* — and t alone matches all three.
+        let buffered = entry.player.currentItem?.loadedTimeRanges
+            .map { $0.timeRangeValue }
+            .map { String(format: "%.1f-%.1f", $0.start.seconds, ($0.start + $0.duration).seconds) }
+            .joined(separator: ",") ?? "-"
+        let duration = entry.player.currentItem?.duration.seconds ?? .nan
         log.info("""
             video clock: t=\(String(format: "%.2f", time), privacy: .public) \
+            of=\(String(format: "%.2f", duration), privacy: .public) \
             status=\(status, privacy: .public) waiting=\(reason, privacy: .public) \
             item=\(itemStatus, privacy: .public) \
+            buffered=\(buffered, privacy: .public) \
             size=\(Int(size.width))x\(Int(size.height), privacy: .public)
             """)
     }
@@ -341,6 +381,46 @@ final class VideoPlaybackCoordinator {
                 self?.markAdvanced(id: id)
             }
         }
+        // **A feed video that reaches its end goes back to the beginning.**
+        //
+        // Without this, an `AVPlayer` pauses on the last frame it decoded and
+        // stays there: the picture stops changing and never starts again,
+        // there is no play control over a row that already has a picture, and
+        // scrolling away and back tears the player down rather than replaying
+        // it. From the outside that is indistinguishable from a decoder that
+        // died — which is exactly how it was reported. Clips in this feed are
+        // seconds long, so "played once, then frozen" is the state a row
+        // spends almost all of its time in.
+        //
+        // Registered against this item specifically: a notification for
+        // another row's item must not restart this one.
+        entry.endObserver = NotificationCenter.default.addObserver(
+            forName: AVPlayerItem.didPlayToEndTimeNotification,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.restartFromTheBeginning(id: id) }
+        }
+    }
+
+    /// Back to zero, and playing again only if this is still the chosen video.
+    ///
+    /// The seek happens either way, so a row that is paused at its end is left
+    /// showing its first frame rather than its last — that is the frame its
+    /// poster stands in for, and the one it should show if it is asked to play
+    /// again. The `play()` is conditional: a video that lost the centre, an
+    /// app in the background and a phone call in progress all leave
+    /// `playingID` pointing somewhere else or nowhere, and none of them may be
+    /// overridden by a clip happening to run out at that moment.
+    private func restartFromTheBeginning(id: String) {
+        guard let entry = entries.first(where: { $0.id == id }) else { return }
+        entry.player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
+        guard playingID == id, !isInterrupted else {
+            log.debug("video: \(id, privacy: .public) reached its end while not the chosen one")
+            return
+        }
+        entry.player.play()
+        log.info("video: \(id, privacy: .public) looped")
     }
 
     private func markFailed(id: String, reason: String) {
@@ -406,6 +486,9 @@ final class VideoPlaybackCoordinator {
         entry.sizeObservation?.invalidate()
         if let token = entry.timeObserver {
             entry.player.removeTimeObserver(token)
+        }
+        if let endObserver = entry.endObserver {
+            NotificationCenter.default.removeObserver(endObserver)
         }
         entry.player.replaceCurrentItem(with: nil)
     }

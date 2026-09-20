@@ -32,6 +32,14 @@ struct VideoPlayerView: View {
     /// not fire again on its own.
     @State private var lastReading: VisibilityReading?
 
+    /// Identifies this view instance to the coordinator.
+    ///
+    /// A new one whenever SwiftUI builds fresh state for this row, which is
+    /// exactly when a row has been replaced rather than updated — and that is
+    /// the case the coordinator has to be able to recognise. See `reporters`
+    /// there.
+    @State private var instance = UUID()
+
     var body: some View {
         GeometryReader { geometry in
             content
@@ -40,7 +48,7 @@ struct VideoPlayerView: View {
                     report(new)
                 }
                 .onDisappear {
-                    coordinator.reportOffscreen(id: id)
+                    coordinator.reportOffscreen(id: id, reporter: instance, reason: "onDisappear")
                 }
         }
         .aspectRatio(aspectRatio, contentMode: .fit)
@@ -192,13 +200,14 @@ struct VideoPlayerView: View {
     private func report(_ reading: VisibilityReading) {
         lastReading = reading
         guard reading.fraction > 0 else {
-            coordinator.reportOffscreen(id: id)
+            coordinator.reportOffscreen(id: id, reporter: instance, reason: "fraction 0")
             return
         }
         coordinator.reportVisibility(
             id: id,
             fraction: reading.fraction,
-            distanceFromCentre: reading.distance
+            distanceFromCentre: reading.distance,
+            reporter: instance
         )
         _ = coordinator.player(for: id, url: url)
     }

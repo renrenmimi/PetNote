@@ -335,6 +335,156 @@ struct VideoPlaybackTests {
         #expect(!first.colour.isCloseTo(expectedLater), "the picture must actually change")
     }
 
+    // MARK: - Rows being replaced
+
+    /// **A row that has been replaced cannot close the row that replaced it.**
+    ///
+    /// `onDisappear` is not ordered against the next view's first visibility
+    /// report. Measured coming back to the feed from a post: the rebuilt row
+    /// reported itself visible, was given a player and played for half a
+    /// second, and then the row it replaced ran its `onDisappear`. Keyed by id
+    /// alone that tore down a player that was on screen and playing — and
+    /// since nothing moves afterwards, no further visibility report ever
+    /// arrived and every video in the feed stayed dead until it was scrolled.
+    @Test func aDisappearFromAReplacedRowDoesNotCloseTheRowThatReplacedIt() async throws {
+        let url = try await clip()
+        let coordinator = VideoPlaybackCoordinator()
+        let replaced = UUID()
+        let live = UUID()
+
+        coordinator.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 0, reporter: replaced)
+        _ = coordinator.player(for: "a", url: url)
+        // The row is rebuilt; a different view now speaks for the same id.
+        coordinator.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 0, reporter: live)
+        _ = coordinator.player(for: "a", url: url)
+        try await waitUntil("playback to advance") { coordinator.advanced.contains("a") }
+
+        // ...and only now does the view it replaced get round to disappearing.
+        coordinator.reportOffscreen(id: "a", reporter: replaced, reason: "onDisappear")
+
+        #expect(coordinator.livePlayerCount == 1, "a replaced row tore down the live one")
+        #expect(coordinator.playingID == "a")
+        #expect(coordinator.isActuallyPlaying(id: "a"))
+
+        // And the row that really is on screen can still close itself, or the
+        // fix would just be a leak.
+        coordinator.reportOffscreen(id: "a", reporter: live, reason: "onDisappear")
+        #expect(coordinator.livePlayerCount == 0)
+        #expect(coordinator.playingID == nil)
+    }
+
+    // MARK: - Reaching the end
+
+    /// **A clip that runs out goes back to the beginning instead of freezing.**
+    ///
+    /// This is the defect the whole suite was built to catch and still missed:
+    /// every other real-media test samples the first two or three seconds, and
+    /// the fixture is four seconds long, so nothing here ever watched what
+    /// happens when it ends. On screen it ended like this — the clock stopped
+    /// at 4.00, `timeControlStatus` went to `paused`, and the last decoded
+    /// frame stayed on the glass for as long as anyone looked at it. A feed row
+    /// in that state has no picture that moves and no control to restart it,
+    /// which is not "finished", it is "broken".
+    @Test func aClipThatRunsOutGoesBackToTheBeginningRatherThanFreezing() async throws {
+        let url = try await clip()
+        let coordinator = VideoPlaybackCoordinator()
+        coordinator.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 0)
+        let player = try #require(coordinator.player(for: "a", url: url))
+        let item = try #require(player.currentItem)
+
+        let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+        ])
+        item.add(output)
+
+        // All the way to the last second...
+        try await waitUntil("the clip to reach its final second", timeout: 30, describe: {
+            "t=\(coordinator.currentTime(of: "a") ?? -1)"
+        }) { (coordinator.currentTime(of: "a") ?? 0) >= TestVideoFixture.duration - 0.5 }
+
+        // ...and round again. A clock that is merely still would sit at 4.00
+        // forever, which is exactly what it did before.
+        try await waitUntil("the clock to wrap back to the start", timeout: 15, describe: {
+            "t=\(coordinator.currentTime(of: "a") ?? -1) status=\(player.timeControlStatus.rawValue)"
+        }) { (coordinator.currentTime(of: "a") ?? .greatestFiniteMagnitude) < 1.0 }
+
+        #expect(player.timeControlStatus == .playing, "it wrapped but stopped playing")
+        #expect(coordinator.playingID == "a")
+
+        // And the picture really is the first block again, not a still frame
+        // left over from the end.
+        var replayed: Colour?
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline, replayed == nil {
+            let now = player.currentTime()
+            if now.seconds < 1.0,
+               output.hasNewPixelBuffer(forItemTime: now),
+               let buffer = output.copyPixelBuffer(forItemTime: now, itemTimeForDisplay: nil) {
+                replayed = Colour(averageOf: buffer)
+            }
+            try await Task.sleep(for: .milliseconds(60))
+        }
+        let frame = try #require(replayed, "no frame decoded after the clip wrapped")
+        #expect(
+            frame.isCloseTo(TestVideoFixture.colour(atSecond: 0)),
+            "after wrapping, the first second should be the red block again, measured \(frame)"
+        )
+    }
+
+    /// Looping belongs to the chosen video only.
+    ///
+    /// The end of a clip must not be a way to take the screen back. A row that
+    /// has lost the centre is paused, and if its clip happened to run out at
+    /// the moment it lost it, the naive fix — "on end, play again" — would
+    /// restart it behind the row that legitimately won. The notification is
+    /// posted here by hand, which is the same thing AVFoundation does and the
+    /// only way to put a losing row at its end on purpose.
+    @Test func aVideoThatIsNoLongerTheChosenOneDoesNotRestartItself() async throws {
+        let url = try await clip()
+        let coordinator = VideoPlaybackCoordinator()
+        coordinator.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 0)
+        let first = try #require(coordinator.player(for: "a", url: url))
+        let firstItem = try #require(first.currentItem)
+        try await waitUntil("the first video to be playing") { coordinator.advanced.contains("a") }
+
+        // The list moves: "b" is now nearest the middle.
+        coordinator.reportVisibility(id: "b", fraction: 0.9, distanceFromCentre: 0)
+        coordinator.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 400)
+        _ = coordinator.player(for: "b", url: url)
+        try await waitUntil("the second video to take over") { coordinator.playingID == "b" }
+        #expect(!coordinator.isActuallyPlaying(id: "a"), "the one that lost the centre is paused")
+
+        NotificationCenter.default.post(
+            name: AVPlayerItem.didPlayToEndTimeNotification, object: firstItem
+        )
+        try await Task.sleep(for: .milliseconds(400))
+
+        #expect(coordinator.playingID == "b", "a clip running out stole the screen back")
+        #expect(!coordinator.isActuallyPlaying(id: "a"), "a row that is not chosen started playing again")
+    }
+
+    /// Backgrounding wins over the end of a clip.
+    ///
+    /// `suspendAll` is what §5D.6 rests on, and it would be worth very little
+    /// if a clip that ran out a moment later could undo it silently.
+    @Test func aClipRunningOutWhileSuspendedDoesNotStartPlaybackAgain() async throws {
+        let url = try await clip()
+        let coordinator = VideoPlaybackCoordinator()
+        coordinator.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 0)
+        let player = try #require(coordinator.player(for: "a", url: url))
+        let item = try #require(player.currentItem)
+        try await waitUntil("playback to advance") { coordinator.advanced.contains("a") }
+
+        coordinator.suspendAll(reason: "test background")
+        NotificationCenter.default.post(
+            name: AVPlayerItem.didPlayToEndTimeNotification, object: item
+        )
+        try await Task.sleep(for: .milliseconds(400))
+
+        #expect(coordinator.playingID == nil)
+        #expect(!coordinator.isActuallyPlaying(id: "a"), "the app is in the background and a video is playing")
+    }
+
     // MARK: - Failure and retry (5D.8)
 
     @Test func aMissingFileBecomesARetryableFailure() async throws {
