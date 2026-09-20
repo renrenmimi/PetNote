@@ -82,7 +82,34 @@ struct AppEnvironment: Sendable {
 
     /// Stage 1 writes to the emulator and to the independent test project.
     /// Production stays read-only.
-    var allowsWrites: Bool { backend == .emulator || backend == .testCloud }
+    /// Whether this build may write.
+    ///
+    /// Not `backend != .production`. Widening a rule that said "emulator only"
+    /// into one that says "anything that is not production" is how a guard
+    /// stops guarding: a test-cloud build with no project pinned would pass
+    /// it, and what such a build actually talks to is whatever plist it
+    /// happened to find.
+    ///
+    /// So the test cloud is allowed *by having been named*. An id has to be
+    /// compiled in, and it has to not be production's. EnvironmentGuard then
+    /// checks that the id Firebase really loaded matches, and that the traffic
+    /// really goes where that id lives.
+    ///
+    /// Honest note: nothing in the app reads this yet. It is asserted in tests
+    /// and is the rule the seed script enforces independently. Saying so here
+    /// because a flag that looks load-bearing and is not — `supportsCallables`
+    /// was exactly that — misleads the next person more than its absence would.
+    var allowsWrites: Bool {
+        switch backend {
+        case .emulator:
+            return true
+        case .testCloud:
+            return !expectedProjectID.isEmpty
+                && expectedProjectID != EnvironmentGuard.productionProjectID
+        case .production:
+            return false
+        }
+    }
 
     var firestoreHost: String { "\(emulatorHost):8088" }
     var authHost: String { "\(emulatorHost):9099" }

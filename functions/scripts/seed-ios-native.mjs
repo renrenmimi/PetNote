@@ -646,7 +646,19 @@ async function main() {
     if (!ok) failed += 1;
   }
   if (failed) {
+    // The run stays in the register, with what it wrote, so the next run can
+    // remove exactly this namespace. Not publishing `current` keeps a bad
+    // dataset from becoming the baseline; it must not also make the leftovers
+    // untraceable, which would be the worse of the two failures.
+    await db.doc(`${RUN_REGISTRY}/${RUN_ID}`).set({
+      runId: RUN_ID,
+      postIdPrefix: POST_ID_PREFIX,
+      failedAt: Timestamp.now(),
+      failedChecks: checks.filter(([, ok]) => !ok).map(([label]) => label),
+      complete: false,
+    });
     console.error(`\n${failed} seed self-check(s) failed; the dataset does not match the acceptance matrix.`);
+    console.error(`Run ${RUN_ID} stays registered at ${RUN_REGISTRY}/${RUN_ID}; its ${POST_ID_PREFIX}* posts are cleanable.`);
     process.exit(1);
   }
 
@@ -691,7 +703,18 @@ async function main() {
 
 main()
   .then(() => process.exit(0))
-  .catch((error) => {
+  .catch(async (error) => {
     console.error("Seed failed:", error);
+    // Same reasoning as the self-check failure path: a run that died halfway
+    // has written documents, and the register is the only record of which
+    // ones. Best effort — if this write also fails there is nothing further
+    // to be done, and the legacy sweep remains as a backstop.
+    await db.doc(`${RUN_REGISTRY}/${RUN_ID}`).set({
+      runId: RUN_ID,
+      postIdPrefix: POST_ID_PREFIX,
+      crashedAt: Timestamp.now(),
+      error: String(error?.message ?? error).slice(0, 500),
+      complete: false,
+    }).catch(() => {});
     process.exit(1);
   });

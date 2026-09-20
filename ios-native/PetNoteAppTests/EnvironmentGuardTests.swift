@@ -90,8 +90,17 @@ struct EnvironmentGuardTests {
     /// The test project is allowed to be written to; production is not.
     @Test func onlyNonProductionBackendsAllowWrites() {
         #expect(environment(backend: "emulator", expectedProject: "").allowsWrites)
-        #expect(environment(backend: "testcloud", expectedProject: "p").allowsWrites)
+        #expect(environment(backend: "testcloud", expectedProject: "petnote-devtest").allowsWrites)
         #expect(!environment(backend: "production", expectedProject: "p").allowsWrites)
+
+        // The two cases that make this a rule rather than a rephrasing of
+        // "not production": a test-cloud build that was never told which
+        // project it is for, and one that was told production's.
+        #expect(!environment(backend: "testcloud", expectedProject: "").allowsWrites)
+        #expect(!environment(
+            backend: "testcloud",
+            expectedProject: EnvironmentGuard.productionProjectID
+        ).allowsWrites)
     }
 
     // MARK: - Identity is not enough

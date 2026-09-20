@@ -386,7 +386,13 @@ final class TouchTargetUITests: XCTestCase {
         let like = app.buttons.matching(identifier: "post.like").firstMatch
         XCTAssertTrue(waitUntilHittable(like, in: app, timeout: 30))
         print("MEASURED like button frame: \(like.frame.size)")
-        XCTAssertGreaterThanOrEqual(like.frame.height, 44, "content controls are sized by us")
+        // A hair of tolerance, and the reason is not sloppiness: this
+        // assertion failed at 43.99999999999997. The button is laid out at
+        // exactly 44 and the frame arrives through a float round trip, so a
+        // strict >= 44 fails on arithmetic rather than on anything about the
+        // control. Half a point is far below the resolution of any tap and
+        // cannot hide a real shortfall — the next size down would be 40.
+        XCTAssertGreaterThanOrEqual(like.frame.height, 43.5, "content controls are sized by us")
 
         let inside = probeLike(app, dx: 0, dy: -18)
         print("MEASURED control group inside (-18pt): \(inside.rawValue)")

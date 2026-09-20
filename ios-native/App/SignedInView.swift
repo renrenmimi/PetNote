@@ -82,24 +82,24 @@ struct SignedInView: View {
                         Button {
                             try? session.signOut()
                         } label: {
-                            // Plain, deliberately. Both .frame(minHeight: 44)
-                            // and vertical padding were measured here and the
-                            // reported height stayed 36pt: a navigation bar is
-                            // 44pt tall and lays its items out inside that, so
-                            // the label cannot be made to fill it.
+                            // The bar is 44pt tall and lays its items out
+                            // inside that, so the reported frame stays 36pt
+                            // however this is written.
                             //
-                            // The reported frame is therefore not the hit area.
-                            // All four directions have now been measured on the
-                            // simulator, and the result contradicts what was
-                            // inferred from the first one: upwards a tap 22pt
-                            // from centre activates, downwards 22pt does not —
-                            // the lower boundary is between 21 and 22. So the
-                            // region is not symmetric, and "22pt above works,
-                            // therefore it is at least 44pt tall" was not a
-                            // valid step. The span happens to be ~43-44pt,
-                            // which meets the requirement, but by measurement
-                            // rather than by that argument.
-                            // See PetNoteAppUITests/TouchTargetUITests.
+                            // Padding plus an explicit .contentShape was tried
+                            // here and measured: the hit region did not grow.
+                            // A tap 22pt below the centre still did nothing,
+                            // exactly as before. The bar clips it, so there is
+                            // no margin to be had at this call site and the
+                            // padding was only making the label bigger to no
+                            // effect. Recorded rather than left in.
+                            //
+                            // The size question is therefore settled by
+                            // measuring the region's absolute boundaries —
+                            // see TouchTargetUITests — rather than by
+                            // measuring outwards from the centre, which
+                            // conflates where the centre sits with how tall
+                            // the region is.
                             Text("Sign out")
                         }
                         .accessibilityIdentifier("session.signOut")

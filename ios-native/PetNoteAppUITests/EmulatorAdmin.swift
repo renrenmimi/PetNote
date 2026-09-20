@@ -57,9 +57,34 @@ enum EmulatorAdmin {
         func post(index: Int) -> String { postIdPrefix + String(format: "%03d", index) }
     }
 
-    /// Reads `seedRuns/current`, which the seed writes only after its own
-    /// checks have passed.
+    /// Read once per test process and then reused.
+    ///
+    /// `seedRuns/current` is a moving target: a reseed replaces it, and two
+    /// suites running side by side would otherwise disagree about which run
+    /// they are testing — one of them halfway through. Pinning it at first
+    /// use means every assertion in a process refers to the same dataset, and
+    /// a reseed during a run shows up as tests failing against data that is
+    /// gone rather than as tests quietly changing their subject.
+    private static let pinned = ManifestBox()
+
+    final class ManifestBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: SeedManifest?
+        func resolve(_ make: () throws -> SeedManifest) throws -> SeedManifest {
+            lock.lock(); defer { lock.unlock() }
+            if let value { return value }
+            let fresh = try make()
+            value = fresh
+            return fresh
+        }
+    }
+
+    /// The manifest this process is pinned to.
     static func seedManifest() throws -> SeedManifest {
+        try pinned.resolve { try readCurrentManifest() }
+    }
+
+    private static func readCurrentManifest() throws -> SeedManifest {
         let url = "\(firestore)/v1/projects/\(projectID)/databases/(default)/documents/seedRuns/current"
         let document = try get(url, owner: true)
         guard let fields = document["fields"] as? [String: Any],
