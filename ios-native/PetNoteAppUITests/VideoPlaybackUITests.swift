@@ -479,13 +479,20 @@ final class VideoPlaybackUITests: XCTestCase {
                 let now = surfaces(app)
                 if let opening = now.first(where: { $0.state.contains("state=opening") }) {
                     sawOpening = true
-                    // Only stop once the photograph exists. Detecting the
-                    // state and photographing it are two moments, and the
-                    // window can close between them — this broke off after
-                    // the first detection and then failed to unwrap a
-                    // screenshot that was never taken. Seeing the state is
-                    // not evidence; the picture is.
-                    if let colour = Self.centreColour(of: opening.element, in: app) {
+                    // The sample only counts if the state is still `opening`
+                    // *after* the photograph is taken.
+                    //
+                    // Detecting the state and photographing it are two
+                    // moments. Requiring only that the picture exists was not
+                    // enough: run on its own the window was wide and this
+                    // passed, run in the full suite the asset was warm and the
+                    // photograph came back as the clip's first frame — a red
+                    // that says nothing about the poster, from a moment when
+                    // the state had already moved on.
+                    if let colour = Self.centreColour(of: opening.element, in: app),
+                       surfaces(app).contains(where: {
+                           $0.state.contains("state=opening")
+                       }) {
                         openingColour = colour
                         break outer
                     }

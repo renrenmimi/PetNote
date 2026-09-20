@@ -63,8 +63,36 @@ struct PostCard: View {
         }
         .contentShape(.rect)
         .onTapGesture { onOpenPost?() }
+        // A tap gesture on a container is invisible to VoiceOver. The
+        // subviews are each their own element, none of them is a button, and
+        // nothing in the card said it could be opened — so the only way in was
+        // the Comments button, and "Tap photo" in the cropped hint pointed at
+        // an action that could not be reached.
+        //
+        // The way in for VoiceOver is the identity row, not this container.
+        // A tap gesture here is invisible to it, and a custom action would be
+        // right and uncheckable — XCUITest cannot enumerate custom actions, so
+        // that fix would ship with no way to tell if it later stopped working.
     }
 
+    /// The pet or author line, and the way into the post for VoiceOver.
+    ///
+    /// Tapping anywhere on the card opens it visually, but a tap gesture on a
+    /// container is invisible to VoiceOver: every subview was its own element,
+    /// none of them was a button, and nothing in the card said it could be
+    /// opened. The only way in was the Comments button, and the cropped
+    /// hint's "Tap photo" named an action that could not be reached at all.
+    ///
+    /// Here rather than on the body text for two reasons. Every post has an
+    /// identity row and not every post has text. And putting `.isButton` on
+    /// `post.text` changes that element's type from static text to button,
+    /// which silently unmatched twenty queries across the test suite — a fix
+    /// whose cost is rewriting the tests that watch it is worth looking at
+    /// twice.
+    ///
+    /// The name and the timestamp are combined deliberately: "Mochi, 2 hours
+    /// ago" is one thought, and hearing it as one utterance followed by
+    /// "button" is how this reads on other feeds.
     private var identity: some View {
         HStack(spacing: Spacing.s) {
             Avatar(url: post.petAvatarURL ?? post.authorAvatarURL)
@@ -83,8 +111,23 @@ struct PostCard: View {
             Spacer(minLength: Spacing.s)
         }
         .padding(.horizontal, Layout.pageInset)
+        // Making this row activatable also makes it a control, and controls
+        // have a size to meet. It laid out at 40pt and the touch-target audits
+        // failed it the first time they saw it — which is the audits working:
+        // a new control appeared and was measured before anyone had to
+        // remember to measure it.
+        //
+        // The frame and the contentShape together, because the frame alone
+        // changes the layout without changing what responds to a finger. That
+        // mistake shipped the sign-out button at 20pt once already.
+        .frame(minHeight: Layout.minTouchTarget)
+        .contentShape(.rect)
         // Author, pet and time read as one phrase.
         .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Opens the post")
+        .accessibilityAction { onOpenPost?() }
+        .accessibilityIdentifier("post.open")
     }
 
     private var text: some View {

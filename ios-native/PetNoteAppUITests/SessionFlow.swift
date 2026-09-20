@@ -122,8 +122,32 @@ extension XCTestCase {
 
     /// Back to the feed from a pushed screen, via the navigation bar.
     func popToFeed(_ app: XCUIApplication) {
-        let back = app.navigationBars.buttons.element(boundBy: 0)
-        XCTAssertTrue(waitUntilHittable(back, in: app, timeout: 20), "no back button")
+        // The pushed screen's own bar, not `app.navigationBars` as a whole.
+        //
+        // That query spans every bar in the tree, and index 0 of it is
+        // whichever one the tree happens to list first. The feed's bar is
+        // still there underneath, and it carries the sign-out button — so
+        // "no back button" was sometimes a report about the wrong bar, and
+        // tapping index 0 could have ended the session instead of going back.
+        // The same mistake, in the touch-target measurement, did exactly that.
+        let bar = app.navigationBars.allElementsBoundByIndex
+            .filter { $0.exists && $0.identifier != "PetNote" && !$0.frame.isEmpty }
+            .first ?? app.navigationBars.firstMatch
+        let back = bar.buttons.allElementsBoundByIndex
+            .filter { $0.exists && !$0.frame.isEmpty }
+            .min { $0.frame.minX < $1.frame.minX } ?? bar.buttons.firstMatch
+        XCTAssertTrue(
+            waitUntilHittable(back, in: app, timeout: 20),
+            """
+            no back button on the pushed screen.
+            bars: \(app.navigationBars.allElementsBoundByIndex.map { $0.identifier })
+            buttons on \(bar.identifier): \(bar.buttons.allElementsBoundByIndex.map {
+                "\($0.identifier.isEmpty ? $0.label : $0.identifier)@\($0.frame) hittable=\($0.isHittable)"
+            })
+            full-image close still present: \(app.buttons["fullImage.close"].exists)
+            covers: \(app.otherElements.allElementsBoundByIndex.filter { $0.exists && $0.frame.height > 600 }.count)
+            """
+        )
         back.tap()
         XCTAssertTrue(
             waitForExistence(of: app.navigationBars["PetNote"], in: app, timeout: 30),

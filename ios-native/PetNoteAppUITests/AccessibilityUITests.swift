@@ -439,19 +439,32 @@ final class AccessibilityUITests: XCTestCase {
 
         func auditControls(_ context: String) {
             let window = app.windows.firstMatch.frame
-            let controls = app.buttons.allElementsBoundByIndex.filter {
-                $0.exists && !$0.identifier.isEmpty && !$0.frame.isEmpty
-                    && window.intersects($0.frame)
-            }
+            // Read identifier, label and frame in the same pass that selects
+            // the element, and keep the values rather than the element.
+            //
+            // A feed row resizes as its image arrives, so the list of buttons
+            // is not the same list a moment later. Holding XCUIElements across
+            // that and reading `.label` afterwards asks the app to resolve an
+            // index into a tree that has moved: "No matches found for Element
+            // at index 4", which reads like a missing control and is really a
+            // stale query.
+            let controls: [(id: String, label: String)] = app.buttons
+                .allElementsBoundByIndex
+                .compactMap { button in
+                    guard button.exists, !button.identifier.isEmpty else { return nil }
+                    let frame = button.frame
+                    guard !frame.isEmpty, window.intersects(frame) else { return nil }
+                    return (button.identifier, button.label)
+                }
             XCTAssertFalse(controls.isEmpty, "\(context): no controls to audit")
             for control in controls {
                 XCTAssertFalse(
                     control.label.trimmingCharacters(in: .whitespaces).isEmpty,
-                    "\(context): \(control.identifier) has no accessibility label"
+                    "\(context): \(control.id) has no accessibility label"
                 )
                 XCTAssertFalse(
-                    control.label.contains(control.identifier),
-                    "\(context): \(control.identifier) announces its own identifier"
+                    control.label.contains(control.id),
+                    "\(context): \(control.id) announces its own identifier"
                 )
             }
         }
@@ -497,9 +510,20 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(waitForExistence(of: text, in: app, timeout: 60), "the feed never loaded")
         waitForQuietUI(app)
 
-        // Everything in the first card, by geometry: from its text down to the
-        // action row below it.
-        let cardTop = text.frame.minY
+        // Everything in the first card, by geometry: from its identity row —
+        // the pet's name and the timestamp — down to the action row below it.
+        //
+        // The text was the top of this window until the way into the post
+        // turned out to sit *above* it. The window then excluded the very
+        // element it was looking for, and reported that the card offered no
+        // way in while the card was sitting there offering one. A window
+        // drawn from one of the things it is searching for is not a window
+        // around the card.
+        let header = app.descendants(matching: .any)
+            .matching(identifier: "post.open").allElementsBoundByIndex
+            .filter { $0.exists && !$0.frame.isEmpty && $0.frame.minY < text.frame.minY }
+            .max { $0.frame.minY < $1.frame.minY }
+        let cardTop = header?.frame.minY ?? text.frame.minY
         let nextLike = app.buttons.matching(identifier: "post.like").allElementsBoundByIndex
             .filter { $0.exists && $0.frame.minY > cardTop }
             .min { $0.frame.minY < $1.frame.minY }

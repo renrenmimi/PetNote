@@ -103,6 +103,29 @@ final class ImageUITests: XCTestCase {
         // reads exactly like a button that does nothing.
         XCTAssertTrue(waitUntilHittable(close, in: app, timeout: 15),
                       "the close control never became tappable")
+        // Two taps, and which one works is the finding.
+        //
+        // `close.tap()` alone left the cover on screen — measured: the detail
+        // screen's back button was present at the right place and not
+        // hittable, and `fullImage.close` still existed twenty seconds later.
+        // That is either dismiss() not firing or the tap not reaching the
+        // button, and those need different fixes, so the test distinguishes
+        // them instead of retrying until something works.
+        // The frame is asserted, not just tapped, because tapping alone could
+        // not tell these apart. `.accessibilityAction` on the container above
+        // merged its children into it, so this element resolved to 603pt wide
+        // at x=-100 on a 402pt screen — every tap landed in the middle of the
+        // photo and the cover stayed up. It read as "dismiss is broken"; the
+        // tap had simply never arrived.
+        //
+        // A coordinate fallback was here while that was being diagnosed and is
+        // deliberately gone: it would let the element tap silently stop
+        // working again and still leave this test green.
+        print("MEASURED close button frame: \(close.frame)")
+        XCTAssertLessThan(
+            close.frame.width, 100,
+            "the close button reports \(close.frame.size) — something above it has swallowed its element"
+        )
         close.tap()
 
         // Closed means *the screen underneath works again*, which is a

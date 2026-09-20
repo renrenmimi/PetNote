@@ -59,7 +59,19 @@ struct FullImageView: View {
         }
         .statusBarHidden()
         .onTapGesture(count: 2) { toggleZoom() }
-        .accessibilityAction(named: "Close") { dismiss() }
+        // No `.accessibilityAction(named: "Close")` here.
+        //
+        // Adding an action to this container promoted it to an accessibility
+        // element and merged its children into it — so `fullImage.close`
+        // resolved to an element 603pt wide at x=-100 on a 402pt screen,
+        // covering the whole photo. A tap on it landed in the middle of the
+        // picture, never on the X in the corner, and the cover stayed up.
+        // dismiss() was never the problem; the tap never arrived.
+        //
+        // The same shape as the container-identifier trap this project has
+        // hit three times: a modifier on a container quietly taking over what
+        // its children report. The close button below already offers Close on
+        // its own, so nothing is lost by not repeating it here.
     }
 
     private var closeButton: some View {
