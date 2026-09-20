@@ -16,9 +16,16 @@ actor FirestoreCommentRepository: CommentRepository {
     private let log = Logger(subsystem: "dev.local.petnote.native", category: "comment")
     private var resumePoints: [PageCursor: DocumentSnapshot] = [:]
 
-    init(db: Firestore = .firestore(), functions: Functions = .functions()) {
+    private let environment: AppEnvironment
+
+    init(
+        db: Firestore = .firestore(),
+        functions: Functions = .functions(),
+        environment: AppEnvironment = .current
+    ) {
         self.db = db
         self.functions = functions
+        self.environment = environment
     }
 
     func comments(postID: String, after cursor: PageCursor?, limit: Int) async throws -> Page<Comment> {
@@ -72,9 +79,52 @@ actor FirestoreCommentRepository: CommentRepository {
         return Page(items: comments, next: next)
     }
 
+    /// Fault injection for the two send outcomes that cannot be produced by
+    /// asking the server for them.
+    ///
+    /// §5C.10 asks for an *injected* lost response, and there is no other way
+    /// to get one: the server either answers or it does not, and a test cannot
+    /// make a successful answer go missing on the wire. `loseResponseAfterWrite`
+    /// is the honest shape of that — the write really happens, and the client
+    /// really never learns the outcome — which is what makes "did it land?"
+    /// checkable against the server afterwards.
+    ///
+    /// Debug-only and argument-gated, like `-petnote-start-signed-out`: a
+    /// release build has no code that can reach these, and nothing in the app's
+    /// own UI passes them.
+    #if DEBUG
+    enum Fault: String, CaseIterable {
+        /// Let the callable run, then throw the answer away.
+        case loseResponseAfterWrite = "-petnote-comment-lose-response"
+        /// Fail before anything is sent, the way no connection does.
+        case neverSend = "-petnote-comment-offline"
+    }
+
+    private static var injectedFault: Fault? {
+        let arguments = ProcessInfo.processInfo.arguments
+        return Fault.allCases.first { arguments.contains($0.rawValue) }
+    }
+    #endif
+
     func create(postID: String, text: String, replyTo: String?) async throws -> String {
         var payload: [String: Any] = ["postId": postID, "text": text]
         if let replyTo { payload["replyToCommentId"] = replyTo }
+
+        // Known in advance for a device pointed at a local emulator: the
+        // request cannot carry credentials, so it cannot succeed. Refused here
+        // rather than sent and misreported. The composer stays usable — the
+        // person gets a reason, not a disabled control.
+        guard environment.supportsCallables else {
+            log.error("callables are unreachable from this build; refusing to send")
+            throw CommentError.transport(Transport.unavailable)
+        }
+
+        #if DEBUG
+        if Self.injectedFault == .neverSend {
+            log.info("fault: refusing to send, as if there were no connection")
+            throw Self.map(NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet))
+        }
+        #endif
 
         do {
             let user = Auth.auth().currentUser
@@ -92,6 +142,14 @@ actor FirestoreCommentRepository: CommentRepository {
                 log.error("createCommentCallable returned an unexpected shape")
                 throw CommentError.outcomeUnknown
             }
+            #if DEBUG
+            if Self.injectedFault == .loseResponseAfterWrite {
+                // The comment exists. We are throwing away the only thing that
+                // said so, which is exactly what a dropped response does.
+                log.info("fault: discarding a successful createCommentCallable response")
+                throw CommentError.outcomeUnknown
+            }
+            #endif
             return id
         } catch let error as CommentError {
             throw error
@@ -107,6 +165,63 @@ actor FirestoreCommentRepository: CommentRepository {
         }
     }
 
+    /// Detail strings carried by `CommentError.transport`.
+    ///
+    /// `transport` already exists to carry a machine-readable reason for logs;
+    /// this names the one the UI also has different words for. It is not a gate
+    /// in the callable, so it is not a case of its own in `CommentError` —
+    /// being offline is a transport fact, which is exactly what this case is.
+    enum Transport {
+        /// The request never left the device, and the send is therefore a
+        /// certain failure that is safe to repeat.
+        static let offline = "offline"
+
+        /// This build cannot reach the callables at all.
+        ///
+        /// The Functions SDK refuses to put an auth token on a plaintext HTTP
+        /// request to a non-loopback host, so a device talking to a local
+        /// emulator over its LAN address never sends the request — it throws
+        /// `unauthenticated` with the SDK's own words. A simulator is
+        /// unaffected because it reaches the emulator on 127.0.0.1.
+        ///
+        /// A **certain** failure, and never retryable: the same build on the
+        /// same network will refuse again, every time. Reporting it as a
+        /// session problem, as `unauthenticated` otherwise would, sends the
+        /// person to sign in again over and over for something that is not
+        /// about them.
+        static let unavailable = "callables-unavailable"
+    }
+
+    /// The SDK's own message when it refuses to attach tokens. Matched because
+    /// the code it throws — `unauthenticated` — is the same one a genuinely
+    /// signed-out caller gets, and the two need opposite handling.
+    /// See Functions.swift `shouldAttachTokens`.
+    private static let plaintextTokenRefusal = "refusing to send auth"
+
+    /// URL errors that mean nothing was ever put on the wire.
+    ///
+    /// The distinction is the whole reason this list is explicit rather than
+    /// "any NSURLError": a send that never left the device did not create a
+    /// comment and can be repeated safely, while a send whose *response* was
+    /// lost may have created one and must not be. The excluded codes are the
+    /// ambiguous ones, and they stay ambiguous:
+    ///
+    ///   - `-1005` networkConnectionLost — the request may already have been
+    ///     delivered and only the answer lost;
+    ///   - `-1001` timedOut (the Functions SDK turns this into
+    ///     `.deadlineExceeded` before we see it) — same;
+    ///   - `-999` cancelled — we do not know how far it got.
+    private static let neverSentURLErrorCodes: Set<Int> = [
+        NSURLErrorNotConnectedToInternet,
+        NSURLErrorCannotConnectToHost,
+        NSURLErrorCannotFindHost,
+        NSURLErrorDNSLookupFailed,
+        NSURLErrorInternationalRoamingOff,
+        NSURLErrorDataNotAllowed,
+        NSURLErrorCallIsActive,
+        NSURLErrorSecureConnectionFailed,
+    ]
+
     /// Maps the callable's failures onto the gates in functions/src/posts.ts.
     ///
     /// The message is matched only where the same code means two different
@@ -116,6 +231,18 @@ actor FirestoreCommentRepository: CommentRepository {
         let nsError = error as NSError
         guard nsError.domain == FunctionsErrorDomain,
               let code = FunctionsErrorCode(rawValue: nsError.code) else {
+            // The Functions SDK only rewrites two kinds of failure into its own
+            // domain — a GTMSessionFetcher status, and NSURLErrorTimedOut into
+            // `.deadlineExceeded` (Functions.swift `processedError`). Everything
+            // else arrives here in its original domain, which is how a plain
+            // "not connected to the internet" used to land in the branch below
+            // and be reported as an outcome we could not determine. It is not:
+            // the request never went out, so nothing was created and repeating
+            // it cannot duplicate anything.
+            if nsError.domain == NSURLErrorDomain,
+               neverSentURLErrorCodes.contains(nsError.code) {
+                return .transport(Transport.offline)
+            }
             // No response at all. Not retryable automatically: the callable has
             // no idempotency key, so a resend can post twice.
             return .outcomeUnknown
@@ -124,6 +251,12 @@ actor FirestoreCommentRepository: CommentRepository {
 
         switch code {
         case .unauthenticated:
+            // Told apart by the message, because the SDK reports "this build
+            // cannot send credentials at all" with the same code as "you are
+            // not signed in".
+            if message.contains(plaintextTokenRefusal) {
+                return .transport(Transport.unavailable)
+            }
             return .notSignedIn
         case .permissionDenied:
             if message.contains("verify") { return .emailNotVerified }

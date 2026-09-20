@@ -8,58 +8,36 @@ private func saveScreenshot(_ app: XCUIApplication, named name: String) {
     try? data.write(to: url)
 }
 
-/// Acceptance 4.1, 4.5, 4.6 at the UI level, against the emulator.
+/// Acceptance 4.1, 4.3–4.6 and 6.9 at the UI level, against the emulator.
 ///
 /// L4: these assert the behaviour that is asserted. They say nothing about how
 /// the screen looks on a phone, or about the keyboard — the keyboard cannot be
 /// raised programmatically on iOS at all, so that evidence is L5 and needs a
 /// person to tap once.
+///
+/// 4.3 and 4.4 are written as **L5** in the matrix because they are about a
+/// device. What is here is the same behaviour asserted one layer down; it does
+/// not discharge the L5 requirement and is not claimed to.
 final class AuthUITests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
     }
 
-    private func launchSignedOut() -> XCUIApplication {
-        let app = XCUIApplication()
-        app.launchArguments = ["-petnote-start-signed-out"]
-        app.launch()
-        XCTAssertTrue(app.staticTexts["login.title"].waitForExistence(timeout: 15),
-                      "Sign-in screen did not appear")
-        return app
-    }
-
-    /// Signed in means the feed's navigation bar is up.
-    ///
-    /// Not the sign-out button and not the list: the button is inside a
-    /// toolbar whose tree settles late, and the list needs a round trip to the
-    /// emulator first. The navigation bar is there as soon as the session
-    /// resolves, which is the thing being asserted.
-    private func reachedFeed(_ app: XCUIApplication, timeout: TimeInterval = 40) -> Bool {
-        waitForExistence(of: app.navigationBars["PetNote"], in: app, timeout: timeout)
-    }
-
-    private func signIn(_ app: XCUIApplication, email: String, password: String) {
-        let emailField = app.textFields["login.email"]
-        emailField.tap()
-        emailField.typeText(email)
-        let passwordField = app.secureTextFields["login.password"]
-        passwordField.tap()
-        passwordField.typeText(password)
-        app.buttons["login.submit"].tap()
+    override func tearDown() {
+        EmulatorAdmin.cleanUpCreatedAccounts()
+        super.tearDown()
     }
 
     /// 4.1 — a seeded, verified account reaches the signed-in state.
     func testSignInWithSeededAccount() {
-        let app = launchSignedOut()
-        signIn(app, email: "accept-a@example.com", password: "Passw0rd!x")
-
-        XCTAssertTrue(reachedFeed(app), "Did not reach the feed.\n\(app.debugDescription)")
+        let app = launchOnSignIn()
+        signIn(app, email: "accept-a@example.com")
     }
 
     /// 4.5 — the wrong password produces our words, never the SDK's.
     func testWrongPasswordShowsOurMessageNotTheSDKs() {
-        let app = launchSignedOut()
-        signIn(app, email: "accept-a@example.com", password: "definitely-not-the-password")
+        let app = launchOnSignIn()
+        typeCredentials(app, email: "accept-a@example.com", password: "definitely-not-the-password")
 
         let error = app.staticTexts["login.error"]
         XCTAssertTrue(waitForExistence(of: error, in: app), "No error was shown")
@@ -76,8 +54,8 @@ final class AuthUITests: XCTestCase {
     /// The same message for a nonexistent account: telling the two apart would
     /// be an account-enumeration oracle.
     func testUnknownAccountShowsTheSameMessage() {
-        let app = launchSignedOut()
-        signIn(app, email: "nobody-here@example.com", password: "Passw0rd!x")
+        let app = launchOnSignIn()
+        typeCredentials(app, email: "nobody-here@example.com", password: "Passw0rd!x")
 
         let error = app.staticTexts["login.error"]
         XCTAssertTrue(waitForExistence(of: error, in: app))
@@ -91,23 +69,179 @@ final class AuthUITests: XCTestCase {
     /// half of 4.6 — a comment from this account being refused with the right
     /// words — belongs with the comment tests.
     func testUnverifiedAccountSignsIn() {
-        let app = launchSignedOut()
-        signIn(app, email: "accept-new@example.com", password: "Passw0rd!x")
+        let app = launchOnSignIn()
+        signIn(app, email: "accept-new@example.com")
+    }
 
+    // MARK: - 4.3 Restoring a session
+
+    /// A cold start with a session must not show the sign-in screen on the way.
+    ///
+    /// The assertion is the *absence*: waiting for the feed and then declaring
+    /// success would pass just as happily on a build that flashed sign-in for
+    /// half a second first, which is the thing 4.3 is about.
+    func testColdStartRestoresTheSessionWithoutShowingSignIn() {
+        let app = launchOnSignIn()
+        signIn(app, email: "accept-a@example.com")
+
+        app.terminate()
+        // No -petnote-start-signed-out this time: this is what a person's
+        // second launch looks like.
+        app.launchArguments = []
+        app.launch()
+
+        let deadline = Date().addingTimeInterval(60)
+        var sawFeed = false
+        while Date() < deadline {
+            dismissSavePasswordSheetIfPresent(app)
+            if app.staticTexts["login.title"].exists {
+                saveScreenshot(app, named: "cold-start-showed-signin")
+                XCTFail("The sign-in screen appeared during a restore.\n\(app.debugDescription)")
+                return
+            }
+            if app.navigationBars["PetNote"].exists { sawFeed = true; break }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        XCTAssertTrue(sawFeed, "Never reached the feed on a cold start.\n\(app.debugDescription)")
+    }
+
+    // MARK: - 4.4 Signing out, and the next account
+
+    /// 4.4 — signing out returns to the sign-in screen.
+    func testSignOutReturnsToSignIn() {
+        let app = launchOnSignIn()
+        signIn(app, email: "accept-a@example.com")
+
+        let signOut = app.buttons["session.signOut"]
+        if !waitUntilHittable(signOut, in: app) {
+            saveScreenshot(app, named: "signout-not-hittable")
+            XCTFail("""
+                Sign out button is not hittable.
+                frame: \(signOut.frame)
+                window: \(app.windows.firstMatch.frame)
+                \(app.debugDescription)
+                """)
+        }
+        signOut.tap()
         XCTAssertTrue(
-            reachedFeed(app),
-            "Unverified account did not reach the feed.\n\(app.debugDescription)"
+            waitForExistence(of: app.staticTexts["login.title"], in: app, timeout: 20),
+            "Did not return to sign-in after signing out.\n\(app.debugDescription)"
+        )
+        XCTAssertFalse(app.buttons["session.signOut"].exists,
+                       "Still in the signed-in state after signing out")
+        // Someone who tapped "sign out" knows why they are here. Saying their
+        // session ended would be telling them something untrue.
+        XCTAssertFalse(app.staticTexts["login.sessionExpired"].exists,
+                       "A deliberate sign-out was reported as an expired session")
+    }
+
+    /// 4.4's second half: nothing of the previous account survives into the
+    /// next one — not the screen it was on, and not what was typed into it.
+    func testTheNextAccountInheritsNothingFromTheLastOne() {
+        let app = launchOnSignIn()
+        signIn(app, email: "accept-a@example.com")
+        openFirstPost(app)
+
+        let draft = "TEST CONTENT a3 draft that must not travel"
+        let field = app.textFields["composer.field"]
+        field.tap()
+        field.typeText(draft)
+        popToFeed(app)
+
+        let signOut = app.buttons["session.signOut"]
+        XCTAssertTrue(waitUntilHittable(signOut, in: app, timeout: 20), "sign out is not reachable")
+        signOut.tap()
+        XCTAssertTrue(waitForExistence(of: app.staticTexts["login.title"], in: app, timeout: 20))
+
+        signIn(app, email: "accept-b@example.com")
+
+        // The stack is back at its root: the previous account's screen is gone.
+        XCTAssertFalse(
+            app.textFields["composer.field"].exists,
+            "the previous account's post detail was still on the stack"
+        )
+
+        openFirstPost(app)
+        let value = app.textFields["composer.field"].value as? String
+        XCTAssertEqual(
+            value, "Add a comment",
+            "the previous account's draft came along: \(String(describing: value))"
+        )
+        XCTAssertEqual(
+            commentRows(in: app, containing: draft).count, 0,
+            "an unsent draft from the previous account was posted"
         )
     }
+
+    // MARK: - 6.9 A session revoked on the server
+
+    /// The server takes the session away while the app is in the background,
+    /// and the app finds out when it comes back.
+    ///
+    /// Disabling the account rather than deleting it, because the uid has to
+    /// survive: the place the person was is only given back to the same
+    /// account, so deleting and recreating would be testing a different
+    /// person. It is created here and removed in tearDown — the seeded
+    /// accounts are shared and are not touched.
+    ///
+    /// Why backgrounding is the trigger: a cached ID token stays valid for an
+    /// hour, and neither Firestore nor the callables ask whether the account
+    /// behind it still exists. Nothing notices until something forces a
+    /// refresh, and coming back to the app is where that now happens.
+    func testARevokedSessionEndsTheSessionAndGivesTheScreenBack() throws {
+        let email = "a3-expire@example.com"
+        let uid = try EmulatorAdmin.createVerifiedAccount(email: email, password: "Passw0rd!x")
+
+        let app = launchOnSignIn()
+        signIn(app, email: email)
+        openFirstPost(app)
+        let postText = app.staticTexts["post.text"].firstMatch.label
+        XCTAssertFalse(postText.isEmpty, "could not identify which post is open")
+
+        XCUIDevice.shared.press(.home)
+        try EmulatorAdmin.setAccountDisabled(uid: uid, true)
+        app.activate()
+
+        XCTAssertTrue(
+            waitForExistence(of: app.staticTexts["login.title"], in: app, timeout: 60),
+            "A revoked session left the app usable.\n\(app.debugDescription)"
+        )
+        XCTAssertTrue(
+            app.staticTexts["login.sessionExpired"].exists,
+            "The app dropped to sign-in without saying why.\n\(app.debugDescription)"
+        )
+        XCTAssertFalse(
+            app.textFields["composer.field"].exists,
+            "the signed-in screen was still reachable behind sign-in"
+        )
+
+        // Signing in again puts them back where they were.
+        try EmulatorAdmin.setAccountDisabled(uid: uid, false)
+        signIn(app, email: email, expectFeed: false)
+
+        XCTAssertTrue(
+            waitForExistence(of: app.textFields["composer.field"], in: app, timeout: 60),
+            "The screen the session ended on was not given back.\n\(app.debugDescription)"
+        )
+        XCTAssertEqual(
+            app.staticTexts["post.text"].firstMatch.label, postText,
+            "came back to a different post than the one the session ended on"
+        )
+        XCTAssertFalse(
+            app.staticTexts["login.sessionExpired"].exists,
+            "the expiry notice outlived the expiry"
+        )
+    }
+
+    // MARK: - Touch targets on the signed-in screen
 
     /// Every control on the signed-in screen, not just the one a test happens
     /// to tap. The sign-out button shipped 20pt tall and untappable because
     /// .frame(minHeight:) was on the Button rather than its label; a check that
     /// names one button would have missed the next one.
     func testEveryControlMeetsTheMinimumTouchTarget() {
-        let app = launchSignedOut()
-        signIn(app, email: "accept-a@example.com", password: "Passw0rd!x")
-        XCTAssertTrue(reachedFeed(app))
+        let app = launchOnSignIn()
+        signIn(app, email: "accept-a@example.com")
         waitForQuietUI(app)
 
         // Only our own controls: a control is ours if we gave it an identifier.
@@ -164,30 +298,5 @@ final class AuthUITests: XCTestCase {
                 XCTAssertTrue(button.isHittable, "\(button.identifier) is not hittable")
             }
         }
-    }
-
-    /// 4.4 — signing out returns to the sign-in screen.
-    func testSignOutReturnsToSignIn() {
-        let app = launchSignedOut()
-        signIn(app, email: "accept-a@example.com", password: "Passw0rd!x")
-        XCTAssertTrue(reachedFeed(app))
-
-        let signOut = app.buttons["session.signOut"]
-        if !waitUntilHittable(signOut, in: app) {
-            saveScreenshot(app, named: "signout-not-hittable")
-            XCTFail("""
-                Sign out button is not hittable.
-                frame: \(signOut.frame)
-                window: \(app.windows.firstMatch.frame)
-                \(app.debugDescription)
-                """)
-        }
-        signOut.tap()
-        XCTAssertTrue(
-            waitForExistence(of: app.staticTexts["login.title"], in: app, timeout: 10),
-            "Did not return to sign-in after signing out.\n\(app.debugDescription)"
-        )
-        XCTAssertFalse(app.buttons["session.signOut"].exists,
-                       "Still in the signed-in state after signing out")
     }
 }

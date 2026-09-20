@@ -32,6 +32,7 @@ struct LoginView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.l) {
                 header
+                sessionEndedNotice
                 fields
                 submitButton
                 errorMessage
@@ -59,6 +60,27 @@ struct LoginView: View {
             Text("Sign in to continue")
                 .font(Typography.body)
                 .foregroundStyle(Palette.secondaryText)
+        }
+    }
+
+    /// Says why they are here, when they did not ask to be.
+    ///
+    /// A session revoked on the server drops the app back to this screen with
+    /// no explanation at all otherwise, which reads as the app having forgotten
+    /// them. Only shown for an expiry: someone who tapped "sign out" knows.
+    @ViewBuilder
+    private var sessionEndedNotice: some View {
+        if session.endedReason == .expired {
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
+                Image(systemName: "clock.arrow.circlepath").accessibilityHidden(true)
+                // The identifier goes on the Text, not the HStack: an
+                // identifier on a container overwrites every descendant's, the
+                // way root.signedIn once did to a whole screen.
+                Text("Your session ended. Sign in again to pick up where you left off.")
+                    .accessibilityIdentifier("login.sessionExpired")
+            }
+            .font(Typography.caption)
+            .foregroundStyle(Palette.warning)
         }
     }
 

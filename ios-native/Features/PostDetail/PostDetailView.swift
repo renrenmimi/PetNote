@@ -34,8 +34,52 @@ struct PostDetailView: View {
         .navigationTitle("Post")
         .navigationBarTitleDisplayMode(.inline)
         .task { await model.load() }
+        // Where the person is, told to the session as they arrive. If a
+        // session ends while this screen is up, this is the place §6.9 gives
+        // back after signing in again.
+        .onAppear { session.noteCurrentRoute(.postDetail(postID: model.postID)) }
+        .onDisappear { session.noteCurrentRoute(.feed) }
+        // The server said this caller is not authenticated. Rather than telling
+        // a signed-in person to sign in, ask whether the session is still real;
+        // if it is not, SessionStore ends it and the app returns to sign-in
+        // with this screen remembered.
+        .onChange(of: model.sendFailure) { _, failure in
+            guard failure?.needsReauthentication == true else { return }
+            Task { await session.revalidate() }
+        }
         .fullScreenCover(item: $fullImageURL) { url in
             FullImageView(url: url)
+        }
+        .overlay(alignment: .bottom) { likeFailureBanner }
+    }
+
+    /// A like that could not be applied, or could not be confirmed.
+    ///
+    /// It has somewhere to go, which is the point: the model sets this on a
+    /// failed or timed-out write, and state nothing renders is state nobody
+    /// can act on.
+    @ViewBuilder
+    private var likeFailureBanner: some View {
+        if let message = model.likeFailureMessage {
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
+                Image(systemName: "exclamationmark.circle.fill").accessibilityHidden(true)
+                Text(message)
+                    .font(Typography.caption)
+                    .accessibilityIdentifier("detail.likeError")
+                Spacer(minLength: Spacing.s)
+                Button {
+                    model.likeFailureMessage = nil
+                } label: {
+                    Text("Dismiss")
+                        .font(Typography.caption)
+                        .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget)
+                        .contentShape(.rect)
+                }
+                .accessibilityIdentifier("detail.likeErrorDismiss")
+            }
+            .foregroundStyle(Palette.danger)
+            .padding(.horizontal, Layout.pageInset)
+            .background(Palette.secondaryBackground)
         }
     }
 
@@ -84,6 +128,22 @@ struct PostDetailView: View {
             .padding(.vertical, Spacing.m)
         }
         .refreshable { await model.loadComments(reset: true) }
+        // Without this there is no way off the keyboard on this screen at all:
+        // the composer is a vertical-axis TextField, so its return key inserts
+        // a newline rather than submitting, and there is no toolbar and no
+        // background to tap.
+        //
+        // `.immediately` rather than `.interactively`, and the reason is the
+        // `.refreshable` directly above. Interactive dismissal follows a
+        // *downward* drag, which at the top of the list is the same gesture
+        // pull-to-refresh claims — so it never engaged, and the keyboard
+        // stayed up. Measured: with `.interactively` the keyboard was still
+        // present ten seconds after the drag.
+        //
+        // No fixed delay anywhere, here or below: the web client's 320ms wait
+        // for the keyboard to "settle" is what the Chinese candidate bar
+        // walked straight past.
+        .scrollDismissesKeyboard(.immediately)
         .safeAreaInset(edge: .bottom, spacing: 0) { composer }
     }
 
@@ -141,10 +201,30 @@ struct PostDetailView: View {
         VStack(spacing: Spacing.s) {
             if let failure = model.sendFailure {
                 HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
-                    Image(systemName: "exclamationmark.circle.fill").accessibilityHidden(true)
+                    Image(
+                        systemName: failure.tone == .resolved
+                            ? "checkmark.circle.fill"
+                            : "exclamationmark.circle.fill"
+                    )
+                    .accessibilityHidden(true)
                     Text(failure.message)
                         .accessibilityIdentifier("composer.error")
                     Spacer(minLength: Spacing.s)
+                    // Only when repeating the request is worth something. It is
+                    // deliberately absent while an outcome is unknown: the
+                    // callable has no idempotency key, so a button to press by
+                    // reflex there is a button that posts the comment twice.
+                    if failure.canRetry {
+                        Button {
+                            guard case .signedIn(let user) = session.state else { return }
+                            Task { await model.send(authorID: user.uid, authorName: user.email) }
+                        } label: {
+                            Text("Try again")
+                                .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget)
+                                .contentShape(.rect)
+                        }
+                        .accessibilityIdentifier("composer.retry")
+                    }
                     Button {
                         model.dismissFailure()
                     } label: {
@@ -155,7 +235,9 @@ struct PostDetailView: View {
                     .accessibilityIdentifier("composer.dismiss")
                 }
                 .font(Typography.caption)
-                .foregroundStyle(Palette.danger)
+                // A success reported in the colour of a failure is its own
+                // small lie.
+                .foregroundStyle(failure.tone == .resolved ? Palette.success : Palette.danger)
                 .padding(.horizontal, Layout.pageInset)
             }
 
@@ -226,9 +308,12 @@ private struct CommentRow: View {
                     .font(Typography.caption)
                     .foregroundStyle(Palette.secondaryText)
                 if comment.isPending {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .accessibilityHidden(true)
                     Text("Sending…")
                         .font(Typography.caption)
-                        .foregroundStyle(Palette.tertiaryText)
+                        .foregroundStyle(Palette.secondaryText)
                 }
             }
             Text(comment.text)
@@ -242,6 +327,10 @@ private struct CommentRow: View {
         // counting "how many comments contain this text" also counts the inner
         // Text views and reports two comments where there is one.
         .accessibilityIdentifier("comment.row")
-        .opacity(comment.isPending ? 0.6 : 1)
+        // No blanket opacity. Dimming the whole row to 0.6 took the author
+        // name and the body text below 4.5:1 — measured by
+        // PaletteContrastTests.pendingCommentRowStaysReadable — to say
+        // something the explicit "Sending…" label already says at full
+        // strength, and says to VoiceOver as well.
     }
 }

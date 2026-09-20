@@ -10,6 +10,12 @@ struct FeedView: View {
     @State private var model: FeedViewModel
     @Binding private var path: [Route]
     @Environment(VideoPlaybackCoordinator.self) private var video
+    @Environment(SessionStore.self) private var session
+    /// Read here rather than in the detail screen because the feed is the root
+    /// of the signed-in stack: it stays in the hierarchy whatever is pushed on
+    /// top of it, so it sees every foreground, not only the ones that happen
+    /// while it is the visible screen.
+    @Environment(\.scenePhase) private var scenePhase
 
     init(model: FeedViewModel, path: Binding<[Route]>) {
         _model = State(initialValue: model)
@@ -32,8 +38,29 @@ struct FeedView: View {
         .toolbar { ToolbarItem(placement: .principal) { videoProbe } }
         .background(Palette.background)
         .task { await model.loadFirstPageIfNeeded() }
+        .task { returnToWhereTheSessionEnded() }
         .refreshable { await model.reload() }
         .overlay(alignment: .bottom) { likeFailureBanner }
+        // A session can be revoked while the app is in the background, and
+        // nothing about a cached ID token notices: it stays valid for an hour
+        // and neither Firestore nor the callables ask whether the account
+        // behind it still exists. So the question gets asked at a predictable
+        // moment — coming back to the app — instead of an arbitrary one.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task { await session.revalidate() }
+        }
+    }
+
+    /// Puts the person back on the screen a revoked session took them off.
+    ///
+    /// Only for the same account, and only once: `consumeResume` drops the
+    /// stored place if a different uid signs in, because restoring the previous
+    /// account's screen is exactly the leak §4.4 forbids.
+    private func returnToWhereTheSessionEnded() {
+        guard case .signedIn(let user) = session.state, path.isEmpty else { return }
+        guard let route = session.consumeResume(for: user.uid) else { return }
+        path.append(route)
     }
 
     /// Publishes the coordinator's real state for UI tests: how many players

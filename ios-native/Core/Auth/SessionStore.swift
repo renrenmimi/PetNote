@@ -18,6 +18,27 @@ final class SessionStore {
         case signedIn(UserSession)
     }
 
+    /// Why there is no session right now.
+    ///
+    /// The distinction is the whole of §6.9: a person who tapped "sign out"
+    /// knows why they are looking at the sign-in screen, and a person whose
+    /// session was revoked underneath them does not. Only the second one needs
+    /// to be told, and only the second one gets their place back.
+    enum EndReason: Equatable {
+        case signedOut
+        case expired
+    }
+
+    /// Where the person was when a session ended, and whose session it was.
+    ///
+    /// The uid is carried so the place is only ever given back to the account
+    /// that left it. Restoring account A's screen because account B happened to
+    /// sign in next is how "state from the previous account" gets in (§4.4).
+    struct Resume: Equatable {
+        let route: Route
+        let uid: String
+    }
+
     private(set) var state: State = .restoring
 
     /// Everything owned by the current session. Replaced wholesale on sign-out,
@@ -25,8 +46,27 @@ final class SessionStore {
     /// account survives into the next one.
     private(set) var scope = SessionScope()
 
+    private(set) var endedReason: EndReason?
+    private(set) var pendingResume: Resume?
+
+    /// Where the person is right now, reported by the screens themselves.
+    ///
+    /// The navigation path lives in `SignedInView`, which is out of reach from
+    /// here; the two screens that can be on it tell the session as they arrive.
+    /// It is only ever read at the moment a session ends, so a missed update
+    /// costs a restored screen, never correctness.
+    private(set) var currentRoute: Route = .feed
+
     private let log = Logger(subsystem: "dev.local.petnote.native", category: "auth")
     private var listener: AuthStateDidChangeListenerHandle?
+
+    /// Set by `signOut()` and consumed by the state listener.
+    ///
+    /// Not reset in a `defer`: `Auth.signOut()` notifies its listeners
+    /// asynchronously, so a flag cleared on the way out of this function would
+    /// already be false by the time the listener asks, and every deliberate
+    /// sign-out would be reported as an expiry.
+    private var signOutWasDeliberate = false
 
     func start() {
         guard listener == nil else { return }
@@ -35,6 +75,7 @@ final class SessionStore {
         // a release build has no way to reach this, and nothing in the app's
         // own UI passes the flag.
         if ProcessInfo.processInfo.arguments.contains("-petnote-start-signed-out") {
+            signOutWasDeliberate = true
             try? Auth.auth().signOut()
         }
         #endif
@@ -51,9 +92,26 @@ final class SessionStore {
 
     private func apply(_ user: User?) {
         guard let user else {
-            if case .signedIn = state { resetScope() }
+            if case .signedIn(let existing) = state {
+                // The SDK signs a user out by itself when a refresh comes back
+                // with userNotFound / userDisabled / invalidUserToken /
+                // userTokenExpired (FirebaseAuth User.signOutIfTokenIsInvalid).
+                // That arrives here as a plain sign-out and is indistinguishable
+                // from a deliberate one unless we say which we asked for.
+                if signOutWasDeliberate {
+                    endedReason = .signedOut
+                    pendingResume = nil
+                } else {
+                    endedReason = .expired
+                    pendingResume = Resume(route: currentRoute, uid: existing.uid)
+                    log.info("session: expired underneath \(existing.shortID, privacy: .public)")
+                }
+                resetScope()
+            }
+            signOutWasDeliberate = false
+            currentRoute = .feed
             state = .signedOut
-            log.info("session: signed out")
+            log.info("session: signed out, reason=\(String(describing: self.endedReason), privacy: .public)")
             return
         }
         let session = UserSession(
@@ -65,7 +123,11 @@ final class SessionStore {
             // Account switch without an explicit sign-out still has to drop
             // everything the previous account loaded.
             resetScope()
+            pendingResume = nil
+            currentRoute = .feed
         }
+        signOutWasDeliberate = false
+        endedReason = nil
         state = .signedIn(session)
         log.info("session: signed in as \(session.shortID, privacy: .public), verified=\(session.isEmailVerified)")
     }
@@ -81,9 +143,111 @@ final class SessionStore {
     }
 
     func signOut() throws {
-        try Auth.auth().signOut()
+        signOutWasDeliberate = true
+        do {
+            try Auth.auth().signOut()
+        } catch {
+            signOutWasDeliberate = false
+            throw error
+        }
         resetScope()
     }
+
+    // MARK: - Is this session still real?
+
+    /// Asks the server whether the session is still good, and returns whether
+    /// it is.
+    ///
+    /// A cached ID token stays valid for an hour, and neither Firestore nor the
+    /// callables check whether the account behind it still exists — so an
+    /// account revoked on the server keeps working until something forces a
+    /// refresh. Nothing in the app forces one, which is why §6.9 had no
+    /// behaviour at all before this: the person went on using an app they were
+    /// no longer allowed in, and found out at an arbitrary later moment.
+    ///
+    /// The force-refresh is one small request per foreground. That is the price
+    /// of the question being answered at a predictable moment rather than an
+    /// arbitrary one.
+    ///
+    /// **A failure that is not about this account is not an expiry.** Signing
+    /// someone out because their train went into a tunnel is the worse of the
+    /// two mistakes, so only the four codes the SDK itself treats as a dead
+    /// token end the session.
+    @discardableResult
+    func revalidate() async -> Bool {
+        guard case .signedIn(let session) = state else { return false }
+        guard let user = Auth.auth().currentUser else {
+            // The SDK has no user but we still think we do. That is an expiry
+            // we missed; report it rather than leaving the two disagreeing.
+            expire(uid: session.uid)
+            return false
+        }
+        do {
+            _ = try await user.getIDToken(forcingRefresh: true)
+            return true
+        } catch {
+            let nsError = error as NSError
+            let code = AuthErrorCode(rawValue: nsError.code)
+            switch code {
+            case .userNotFound, .userDisabled, .invalidUserToken, .userTokenExpired:
+                log.info("revalidate: token rejected (\(nsError.code)), ending session")
+                // The SDK normally signs out by itself on these; doing it here
+                // too makes the outcome the same whether or not it did.
+                expire(uid: session.uid)
+                return false
+            default:
+                log.info("revalidate: inconclusive (\(nsError.code)), session kept")
+                return true
+            }
+        }
+    }
+
+    /// Ends the session as an expiry, keeping the place the person was at.
+    private func expire(uid: String) {
+        guard case .signedIn = state else { return }
+        signOutWasDeliberate = false
+        pendingResume = Resume(route: currentRoute, uid: uid)
+        endedReason = .expired
+        try? Auth.auth().signOut()
+        // Not relying on the listener alone: it is what normally drives this,
+        // but if the SDK already had no user the listener will not fire again
+        // and the app would stay on a screen it cannot use.
+        if case .signedIn = state {
+            resetScope()
+            state = .signedOut
+        }
+    }
+
+    // MARK: - Where the person was
+
+    func noteCurrentRoute(_ route: Route) {
+        guard case .signedIn = state else { return }
+        currentRoute = route
+    }
+
+    /// Hands back the place this account left, once.
+    func consumeResume(for uid: String) -> Route? {
+        defer { pendingResume = nil }
+        return Self.resumeRoute(from: pendingResume, forUID: uid)
+    }
+
+    /// The rule for giving a place back, separated from the storage so it can
+    /// be checked without a Firebase app behind it.
+    ///
+    /// Two refusals, both deliberate:
+    ///
+    ///   - **a different account gets nothing.** Restoring the screen the
+    ///     previous person was on is exactly the "content from the last
+    ///     account" §4.4 forbids, and a post id is content;
+    ///   - **the feed is not a place to restore to.** A sign-in lands there
+    ///     anyway, and pushing it would put a second copy of the feed on top
+    ///     of the first.
+    static func resumeRoute(from pending: Resume?, forUID uid: String) -> Route? {
+        guard let pending, pending.uid == uid, pending.route != .feed else { return nil }
+        return pending.route
+    }
+
+    func clearEndedReason() { endedReason = nil }
 
     /// Drops caches and paging state. Called on sign-out and on account switch.
     ///

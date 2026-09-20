@@ -1,4 +1,5 @@
 import Foundation
+import FirebaseFunctions
 import Testing
 
 @testable import PetNote
@@ -33,7 +34,7 @@ struct PostDetailViewModelTests {
         /// Held open to test what happens while a send is in flight.
         var releaseCreate: AsyncStream<Void>.Continuation?
         private var stream: AsyncStream<Void>?
-        private var issued: [PageCursor] = []
+        fileprivate var issued: [PageCursor] = []
 
         func holdCreate() {
             let (s, c) = AsyncStream<Void>.makeStream()
@@ -60,6 +61,15 @@ struct PostDetailViewModelTests {
             if let stream { for await _ in stream { break } }
             if let createError { throw createError }
             return createdID
+        }
+
+        /// Makes the *next* read return `pages` as if the write had landed.
+        ///
+        /// This is the shape of the case that matters: the callable's response
+        /// was lost, but the comment is on the server, so a re-read finds it.
+        func planLandedComment(_ comment: PetNote.Comment) {
+            pages = [[comment]]
+            issued.removeAll()
         }
     }
 
@@ -134,13 +144,21 @@ struct PostDetailViewModelTests {
         }
     }
 
-    @Test func notSignedInAsksForSignIn() async {
+    /// This used to read "Sign in to comment." on a screen the person had
+    /// reached *by* signing in — an instruction with nothing on screen to
+    /// carry it out with. The refusal now starts a session check instead
+    /// (§6.9), and the words say what is happening rather than blaming the
+    /// person for a state they are not in.
+    @Test func notSignedInDoesNotTellASignedInPersonToSignIn() async {
         let comments = FakeComments()
         comments.createError = CommentError.notSignedIn
         let model = await loaded(comments: comments)
         model.draft = "TEST CONTENT hello"
         await model.send(authorID: "uid", authorName: "A")
-        #expect(model.sendFailure?.message == "Sign in to comment.")
+
+        let message = model.sendFailure?.message ?? ""
+        #expect(!message.lowercased().contains("sign in to"), "dead-end instruction: \(message)")
+        #expect(model.sendFailure?.needsReauthentication == true, "the session is what gets asked")
         #expect(model.draft == "TEST CONTENT hello")
     }
 
@@ -342,5 +360,555 @@ struct PostDetailViewModelTests {
 
         #expect(comments.createCalls.count == 1)
         #expect(!model.isOverLength)
+    }
+
+    // MARK: - Offline is a certain failure, not an uncertain one
+
+    /// The Functions SDK only rewrites a GTMSessionFetcher status and
+    /// NSURLErrorTimedOut into its own domain (Functions.swift
+    /// `processedError`); everything else arrives in the original domain. A
+    /// plain "not connected" therefore reached the mapper as NSURLErrorDomain
+    /// and was reported as an outcome we could not determine — which is the
+    /// wrong fact, and the one that costs the person a retry they could safely
+    /// have had.
+    @Test(arguments: [
+        NSURLErrorNotConnectedToInternet,
+        NSURLErrorCannotConnectToHost,
+        NSURLErrorCannotFindHost,
+        NSURLErrorDNSLookupFailed,
+        NSURLErrorDataNotAllowed,
+        NSURLErrorSecureConnectionFailed,
+    ])
+    func aRequestThatNeverLeftTheDeviceIsACertainFailure(code: Int) {
+        let mapped = FirestoreCommentRepository.map(NSError(domain: NSURLErrorDomain, code: code))
+        #expect(mapped == .transport(FirestoreCommentRepository.Transport.offline))
+    }
+
+    /// The ambiguous ones must stay ambiguous: for these the request may have
+    /// been delivered and only the answer lost, and a resend posts twice.
+    @Test(arguments: [
+        NSURLErrorNetworkConnectionLost,
+        NSURLErrorTimedOut,
+        NSURLErrorCancelled,
+    ])
+    func aRequestThatMayHaveArrivedStaysUnknown(code: Int) {
+        let mapped = FirestoreCommentRepository.map(NSError(domain: NSURLErrorDomain, code: code))
+        #expect(mapped == .outcomeUnknown, "code \(code) was mapped to \(mapped)")
+    }
+
+    @Test func offlineSendsKeepTheTextAndSayOfflineNotFailed() async {
+        let comments = FakeComments()
+        comments.createError = CommentError.transport(FirestoreCommentRepository.Transport.offline)
+        let model = await loaded(comments: comments)
+        model.draft = "TEST CONTENT hello"
+        await model.send(authorID: "uid", authorName: "A")
+
+        let message = model.sendFailure?.message ?? ""
+        #expect(message.lowercased().contains("offline"), "got: \(message)")
+        #expect(model.sendFailure?.canRetry == true, "nothing was sent, so sending again is safe")
+        #expect(model.draft == "TEST CONTENT hello")
+        // §6.11: the offline words must not be the server's words.
+        #expect(message != "Could not post that comment.")
+    }
+
+    @Test func aServerSideTransportFailureUsesDifferentWordsFromOffline() async {
+        let offline = FakeComments()
+        offline.createError = CommentError.transport(FirestoreCommentRepository.Transport.offline)
+        let a = await loaded(comments: offline)
+        a.draft = "TEST CONTENT hello"
+        await a.send(authorID: "uid", authorName: "A")
+
+        let server = FakeComments()
+        server.createError = CommentError.transport("functions/13")
+        let b = await loaded(comments: server)
+        b.draft = "TEST CONTENT hello"
+        await b.send(authorID: "uid", authorName: "A")
+
+        #expect(a.sendFailure?.message != b.sendFailure?.message)
+    }
+
+    // MARK: - Settling an unknown outcome, by looking and never by resending
+
+    /// The response was lost but the comment did land. Re-reading finds it, and
+    /// the person is told so — because leaving them with "we could not confirm"
+    /// and their text still in the box is an invitation to post it twice.
+    @Test func anUnknownOutcomeThatLandedIsReportedAsPosted() async {
+        let comments = FakeComments()
+        comments.createError = CommentError.outcomeUnknown
+        let model = await loaded(comments: comments)
+
+        let landed = PetNote.Comment(
+            id: "server-1", authorID: "uid", authorName: "A", authorAvatarURL: nil,
+            text: "TEST CONTENT hello", createdAt: Date(), replyTo: nil, isPending: false
+        )
+        comments.planLandedComment(landed)
+
+        model.draft = "TEST CONTENT hello"
+        await model.send(authorID: "uid", authorName: "A")
+        await settle()
+
+        #expect(comments.createCalls.count == 1, "never sent a second time")
+        #expect(model.sendFailure?.tone == .resolved)
+        #expect(model.sendFailure?.canRetry == false, "there is nothing left to retry")
+        #expect(model.draft.isEmpty, "the box is cleared so the obvious next tap is not a duplicate")
+        #expect(model.comments.contains { $0.id == "server-1" })
+    }
+
+    /// The response was lost and the comment did not land. A fresh read is
+    /// authoritative, so now — and only now — sending again is offered.
+    @Test func anUnknownOutcomeThatDidNotLandBecomesRetryable() async {
+        let comments = FakeComments()
+        comments.createError = CommentError.outcomeUnknown
+        let model = await loaded(comments: comments)
+
+        model.draft = "TEST CONTENT hello"
+        await model.send(authorID: "uid", authorName: "A")
+        #expect(model.sendFailure?.canRetry == false, "not before we have looked")
+
+        await settle()
+
+        #expect(comments.createCalls.count == 1, "looking is a read; it never resends")
+        #expect(model.sendFailure?.canRetry == true, "we looked, it is not there, so it is safe")
+        #expect(model.draft == "TEST CONTENT hello")
+    }
+
+    /// The check itself failed. We know no more than before, so the words must
+    /// not pretend we do and the retry must not be offered.
+    @Test func anUnknownOutcomeWeCannotCheckStaysUnknown() async {
+        let comments = FakeComments()
+        comments.createError = CommentError.outcomeUnknown
+        let model = await loaded(comments: comments)
+        comments.readError = NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet)
+
+        model.draft = "TEST CONTENT hello"
+        await model.send(authorID: "uid", authorName: "A")
+        await settle()
+
+        #expect(comments.createCalls.count == 1)
+        #expect(model.sendFailure?.canRetry == false, "we still do not know")
+        let message = model.sendFailure?.message ?? ""
+        #expect(message.contains("could not check"), "got: \(message)")
+        #expect(model.draft == "TEST CONTENT hello")
+    }
+
+    /// A comment that was already on screen before the send must not be
+    /// mistaken for the one that just went missing — otherwise sending the same
+    /// text twice would always report the second one as having landed.
+    @Test func anOlderCommentWithTheSameTextIsNotMistakenForThisOne() async {
+        let comments = FakeComments()
+        let earlier = PetNote.Comment(
+            id: "earlier", authorID: "uid", authorName: "A", authorAvatarURL: nil,
+            text: "TEST CONTENT hello", createdAt: Date(), replyTo: nil, isPending: false
+        )
+        comments.pages = [[earlier]]
+        let model = await loaded(comments: comments)
+        #expect(model.comments.count == 1)
+
+        comments.createError = CommentError.outcomeUnknown
+        comments.planLandedComment(earlier)   // the re-read returns only the old one
+
+        model.draft = "TEST CONTENT hello"
+        await model.send(authorID: "uid", authorName: "A")
+        await settle()
+
+        #expect(model.sendFailure?.tone == .problem, "the old comment is not evidence this one landed")
+        #expect(model.sendFailure?.canRetry == true)
+        #expect(model.draft == "TEST CONTENT hello")
+    }
+
+    /// If the person has started another send while the check was running, the
+    /// check's verdict is about a moment that has passed and must not overwrite
+    /// what they are doing now.
+    @Test func settlingDoesNotStompASendThePersonStartedMeanwhile() async {
+        let comments = FakeComments()
+        comments.createError = CommentError.outcomeUnknown
+        let model = await loaded(comments: comments)
+
+        model.draft = "TEST CONTENT hello"
+        await model.send(authorID: "uid", authorName: "A")
+
+        // A second send, held open, starts before the check finishes.
+        comments.createError = nil
+        comments.holdCreate()
+        model.draft = "TEST CONTENT second"
+        async let second: Void = model.send(authorID: "uid", authorName: "A")
+        await settle()
+        #expect(model.isSending, "the second send is still in flight")
+        comments.releaseCreate?.finish()
+        await second
+
+        #expect(comments.createCalls.count == 2, "one per deliberate tap, none from the check")
+    }
+
+    // MARK: - An unauthenticated server is a session question, not a sign-in hint
+
+    /// Telling a person who is looking at a signed-in app to "sign in" is a
+    /// dead end: there is nothing on that screen to act on. §6.9 wants the
+    /// session checked instead, which is what this flag asks the screen to do.
+    @Test func anUnauthenticatedRefusalAsksTheSessionRatherThanThePerson() async {
+        let comments = FakeComments()
+        comments.createError = CommentError.notSignedIn
+        let model = await loaded(comments: comments)
+        model.draft = "TEST CONTENT hello"
+        await model.send(authorID: "uid", authorName: "A")
+
+        #expect(model.sendFailure?.needsReauthentication == true)
+        #expect(model.draft == "TEST CONTENT hello", "the text survives whatever the session does next")
+        #expect(model.sendFailure?.canRetry == false, "retrying the same dead token cannot help")
+    }
+
+    @Test func everyOtherRefusalLeavesTheSessionAlone() async {
+        for error: CommentError in [
+            .emailNotVerified, .banned, .blockedFromAuthor, .rateLimited,
+            .rejected("no"), .outcomeUnknown, .transport("functions/13"),
+        ] {
+            let comments = FakeComments()
+            comments.createError = error
+            let model = await loaded(comments: comments)
+            model.draft = "TEST CONTENT hello"
+            await model.send(authorID: "uid", authorName: "A")
+            #expect(
+                model.sendFailure?.needsReauthentication != true,
+                "\(error) must not end anyone's session"
+            )
+        }
+    }
+
+    // MARK: - Paging and refreshing, interleaved
+
+    /// Paging while a refresh is in flight must not append the old page on top
+    /// of the new list — the ids would be from a list that no longer exists.
+    @Test func pagingThatLandsAfterARefreshIsDiscarded() async {
+        let comments = FakeComments()
+        comments.pages = [
+            [Self.comment("c1"), Self.comment("c2")],
+            [Self.comment("c3"), Self.comment("c4")],
+        ]
+        let model = await loaded(comments: comments)
+        #expect(model.comments.count == 2)
+
+        // Read the element BEFORE the task: the right-hand side of an `async
+        // let` runs inside the new task, so this would otherwise be read after
+        // the reset had emptied the array.
+        let second = model.comments[1]
+        async let paging: Void = model.loadMoreCommentsIfNeeded(currentItem: second)
+        await model.loadComments(reset: true)
+        await paging
+
+        let ids = model.comments.map(\.id)
+        #expect(Set(ids).count == ids.count, "no duplicates after the interleave: \(ids)")
+        #expect(model.comments.contains { $0.id == "c1" }, "page one survived")
+    }
+
+    /// A send that lands while a refresh is in flight, and a page arriving on
+    /// top of both. The comment must be on screen exactly once.
+    @Test func aSendARefreshAndAPageAllAtOnceLeaveOneCopy() async {
+        let comments = FakeComments()
+        comments.pages = [[Self.comment("c1"), Self.comment("c2")]]
+        let model = await loaded(comments: comments)
+        comments.holdCreate()
+        model.draft = "TEST CONTENT hello"
+
+        async let sending: Void = model.send(authorID: "uid", authorName: "A")
+        try? await Task.sleep(for: .milliseconds(40))
+        await model.loadComments(reset: true)
+        comments.releaseCreate?.finish()
+        await sending
+
+        let matches = model.comments.filter { $0.id == comments.createdID }
+        #expect(matches.count == 1, "the comment is on screen \(matches.count) times")
+    }
+
+    /// Gives the detached settle-after-unknown check a chance to run.
+    ///
+    /// It is one await against a fake that answers immediately, so this is a
+    /// scheduling gap rather than a wait for work — hence yields rather than a
+    /// single long sleep.
+    private func settle(within seconds: Double = 0.5) async {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+            await Task.yield()
+        }
+    }
+
+    /// A like repository that records order, can be held open, and can be told
+    /// never to answer at all.
+    ///
+    /// No lock: every call is made from the main actor by the model under
+    /// test, and `NSLock` is unavailable from an async context anyway.
+    final class FakeLikes: LikeRepository, @unchecked Sendable {
+        enum Call: Equatable { case like(String); case unlike(String) }
+
+        var calls: [Call] = []
+
+        /// Answers, consumed in order. Anything past the end answers
+        /// `.changed`.
+        var results: [LikeMutationResult] = []
+        var errors: [Int: Error] = [:]
+        /// Requests that go out and never come back — the case that wedges a
+        /// post forever.
+        var neverAnswers = false
+        var likedIDs: Set<String> = []
+        var statusError: Error?
+
+        private var gate: AsyncStream<Void>?
+        private var opener: AsyncStream<Void>.Continuation?
+
+        /// Holds every call until `release()`.
+        func hold() {
+            let (stream, continuation) = AsyncStream<Void>.makeStream()
+            gate = stream
+            opener = continuation
+        }
+
+        func release() {
+            opener?.finish()
+            gate = nil
+            opener = nil
+        }
+
+        func likedPostIDs(among postIDs: [String]) async throws -> Set<String> {
+            if let statusError { throw statusError }
+            return likedIDs.intersection(postIDs)
+        }
+
+        func like(postID: String) async throws -> LikeMutationResult {
+            try await answer(.like(postID))
+        }
+
+        func unlike(postID: String) async throws -> LikeMutationResult {
+            try await answer(.unlike(postID))
+        }
+
+        private func answer(_ call: Call) async throws -> LikeMutationResult {
+            let index = calls.count
+            calls.append(call)
+            let held = gate
+
+            if let held { for await _ in held { break } }
+            if neverAnswers {
+                // Never returns and never throws. Not `Task.sleep`: a sleep can
+                // be cancelled, and the point of this case is a request that
+                // cannot be got rid of.
+                await withCheckedContinuation { (_: CheckedContinuation<Void, Never>) in }
+            }
+
+            if let error = errors[index] { throw error }
+            return index < results.count ? results[index] : .changed
+        }
+    }
+
+    private func loadedWithLikes(
+        count: Int,
+        serverLiked: Bool = false,
+        likes: FakeLikes,
+        likeDeadline: Duration = .seconds(12)
+    ) async -> PostDetailViewModel {
+        let feed = FakeFeed()
+        feed.post = Post(
+            id: "p1", authorID: "uid", authorName: "A", authorAvatarURL: nil,
+            text: "TEST CONTENT", media: [], petID: nil, petName: nil,
+            petAvatarURL: nil, createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            likeCount: count, commentCount: 0, tags: []
+        )
+        if serverLiked { likes.likedIDs = ["p1"] }
+        let model = PostDetailViewModel(
+            postID: "p1", feed: feed, comments: FakeComments(), likes: likes,
+            likeDeadline: likeDeadline
+        )
+        await model.load()
+        return model
+    }
+
+    private func spin(_ times: Int = 40) async {
+        for _ in 0..<times {
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
+    // MARK: - Like convergence (the drift the feed already fixed)
+
+    /// Two taps must reach the server in the order they were made.
+    ///
+    /// The detail screen fired each write in its own unstructured `Task` with
+    /// nothing ordering them, so a like and the unlike that follows it could
+    /// arrive the other way round — leaving the server *liked* while the screen
+    /// says it is not. Nothing in the session corrects that.
+    @Test func twoTapsAreSerialisedInTheOrderTheyWereMade() async {
+        let likes = FakeLikes()
+        let model = await loadedWithLikes(count: 5, likes: likes)
+        likes.hold()
+
+        model.toggleLike()
+        await spin(6)
+        model.toggleLike()
+        await spin(6)
+
+        #expect(likes.calls.count == 1, "both writes went out at once: \(likes.calls)")
+        likes.release()
+        await spin()
+
+        #expect(likes.calls == [.like("p1"), .unlike("p1")], "out of order: \(likes.calls)")
+    }
+
+    /// An answer that a later tap has superseded still says something true
+    /// about the server, and throwing it away loses that.
+    ///
+    /// `.unchanged` means the server's count already contains this state. The
+    /// old code dropped the whole answer when the intent had moved on, so the
+    /// optimistic offset it should have cancelled stayed on screen for the rest
+    /// of the session.
+    @Test func asupersededAnswerStillCorrectsTheCount() async {
+        let likes = FakeLikes()
+        // The server already holds this like, but the status read fails, so the
+        // screen starts out believing it is not liked — the exact situation
+        // that makes a first tap answer `.unchanged`.
+        likes.statusError = NSError(domain: "test", code: 13)
+        likes.likedIDs = ["p1"]
+        likes.results = [.unchanged, .changed]
+        let model = await loadedWithLikes(count: 5, likes: likes)
+        #expect(model.likeCount == 5)
+
+        likes.hold()
+        model.toggleLike()          // like — the server will answer .unchanged
+        await spin(6)
+        model.toggleLike()          // unlike — supersedes it
+        likes.release()
+        await spin()
+
+        // The server holds 5 and, after the unlike, 4. What must not happen is
+        // the screen keeping the +1 from a tap the server said changed nothing.
+        #expect(model.isLiked == false)
+        #expect(model.likeCount == 4, "the count kept an offset the server denied: \(model.likeCount)")
+    }
+
+    /// A request that is never answered must not wedge the post.
+    ///
+    /// With no deadline the intent stays optimistic forever, every later tap
+    /// queues behind it, and no refresh is allowed to correct it.
+    @Test func aRequestThatIsNeverAnsweredGivesUpAndSaysSo() async {
+        let likes = FakeLikes()
+        likes.neverAnswers = true
+        // A short deadline so the test does not have to wait out the real one.
+        // The number is injected, not stubbed away: what is asserted is that
+        // *a* deadline exists and that reaching it produces the right state.
+        let model = await loadedWithLikes(count: 5, likes: likes, likeDeadline: .milliseconds(80))
+
+        model.toggleLike()
+        await spin(60)
+
+        #expect(model.isLiked == false, "the heart is still showing a like nothing confirmed")
+        #expect(model.likeCount == 5, "the count is still carrying an unconfirmed +1")
+        #expect(model.likeFailureMessage != nil, "nothing told the person it could not be confirmed")
+    }
+
+    /// A refresh has to be allowed to correct the number.
+    ///
+    /// `likeCount` is maintained by a trigger that runs after the write, so a
+    /// confirmed write does not mean the aggregate has moved — and a client
+    /// that only ever adds and subtracts locally has no way back to the truth.
+    @Test func aRefreshAdoptsTheServersCountOnceItHasCaughtUp() async {
+        let likes = FakeLikes()
+        let feed = FakeFeed()
+        feed.post = Self.post()
+        let model = PostDetailViewModel(
+            postID: "p1", feed: feed, comments: FakeComments(), likes: likes
+        )
+        feed.post = Post(
+            id: "p1", authorID: "uid", authorName: "A", authorAvatarURL: nil,
+            text: "TEST CONTENT", media: [], petID: nil, petName: nil,
+            petAvatarURL: nil, createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            likeCount: 5, commentCount: 0, tags: []
+        )
+        await model.load()
+
+        model.toggleLike()
+        await spin()
+        #expect(model.likeCount == 6, "the tap is not reflected at all")
+
+        // The trigger has run, and two other people liked it meanwhile.
+        feed.post = Post(
+            id: "p1", authorID: "uid", authorName: "A", authorAvatarURL: nil,
+            text: "TEST CONTENT", media: [], petID: nil, petName: nil,
+            petAvatarURL: nil, createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            likeCount: 8, commentCount: 0, tags: []
+        )
+        likes.likedIDs = ["p1"]
+        await model.refreshLikeState()
+        await spin()
+
+        #expect(model.likeCount == 8, "the server's number was not adopted: \(model.likeCount)")
+        #expect(model.isLiked == true)
+    }
+
+    // MARK: - A build that cannot reach the callables at all
+
+    /// The Functions SDK refuses to put an auth token on a plaintext HTTP
+    /// request to a non-loopback host, and reports it with the *same* code a
+    /// genuinely signed-out caller gets. Told apart by the message, because
+    /// the two need opposite handling: one is a session problem, the other is
+    /// the build, and telling the second person to sign in again is an
+    /// instruction that can never work.
+    @Test func theSDKsPlaintextTokenRefusalIsNotASessionProblem() {
+        let refusal = NSError(
+            domain: FunctionsErrorDomain,
+            code: FunctionsErrorCode.unauthenticated.rawValue,
+            userInfo: [NSLocalizedDescriptionKey:
+                "Refusing to send Auth, FCM, and AppCheck tokens over HTTP to non-loopback host."]
+        )
+        #expect(
+            FirestoreCommentRepository.map(refusal)
+                == .transport(FirestoreCommentRepository.Transport.unavailable)
+        )
+    }
+
+    /// A real unauthenticated answer still has to be one.
+    @Test func arealUnauthenticatedAnswerIsStillASessionProblem() {
+        let unauthenticated = NSError(
+            domain: FunctionsErrorDomain,
+            code: FunctionsErrorCode.unauthenticated.rawValue,
+            userInfo: [NSLocalizedDescriptionKey: "Must be logged in."]
+        )
+        #expect(FirestoreCommentRepository.map(unauthenticated) == .notSignedIn)
+    }
+
+    @Test func anUnreachableCallableIsAcertainFailureWithItsOwnWords() async {
+        let comments = FakeComments()
+        comments.createError = CommentError.transport(
+            FirestoreCommentRepository.Transport.unavailable
+        )
+        let model = await loaded(comments: comments)
+        model.draft = "TEST CONTENT hello"
+        await model.send(authorID: "uid", authorName: "A")
+
+        let message = model.sendFailure?.message ?? ""
+        #expect(model.sendFailure?.canRetry == false, "retrying this build cannot ever work")
+        #expect(model.sendFailure?.needsReauthentication != true, "this is not about the session")
+        #expect(message.contains("build"), "does not say what is actually wrong: \(message)")
+        #expect(model.draft == "TEST CONTENT hello", "the text is kept")
+        // Nothing of the SDK's own wording reaches the screen.
+        for leak in ["Refusing to send", "non-loopback", "FIRFunctions", "code=16"] {
+            #expect(!message.contains(leak), "raw SDK error leaked: \(leak)")
+        }
+    }
+
+    /// The composer is not disabled by any of this. A control that stops
+    /// working is a worse answer than a control that explains itself.
+    @Test func anUnreachableCallableDoesNotDisableTheComposer() async {
+        let comments = FakeComments()
+        comments.createError = CommentError.transport(
+            FirestoreCommentRepository.Transport.unavailable
+        )
+        let model = await loaded(comments: comments)
+        model.draft = "TEST CONTENT hello"
+        await model.send(authorID: "uid", authorName: "A")
+
+        #expect(!model.isSending, "the composer was left in a sending state")
+        #expect(!model.isOverLength)
+        // Sending again is possible — it will fail again, and say why again.
+        await model.send(authorID: "uid", authorName: "A")
+        #expect(comments.createCalls.count == 2)
     }
 }
