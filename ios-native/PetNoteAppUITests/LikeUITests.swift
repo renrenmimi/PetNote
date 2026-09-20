@@ -146,8 +146,19 @@ final class LikeUITests: XCTestCase {
     /// write returns. Returns whether it got there, so the caller can say what
     /// it actually saw.
     @discardableResult
+    /// Polls until the backend agrees, or the deadline passes.
+    ///
+    /// The default is generous on purpose. The aggregate is maintained by a
+    /// trigger running in the functions emulator, which competes for CPU with
+    /// everything else on the machine; at a load average of 28 a wait that is
+    /// comfortable when the machine is idle expires while the trigger is still
+    /// queued. That produces "the aggregate is 1, expected 2" — a statement
+    /// about the machine wearing the words of a product defect.
+    ///
+    /// Waiting longer costs nothing when the machine is quiet: this returns as
+    /// soon as the condition holds.
     private func backendSettles(
-        within seconds: TimeInterval = 20,
+        within seconds: TimeInterval = 60,
         _ condition: () -> Bool
     ) -> Bool {
         let deadline = Date().addingTimeInterval(seconds)
@@ -505,13 +516,27 @@ final class LikeUITests: XCTestCase {
     private func scrollToPost(_ app: XCUIApplication, withText text: String) -> Bool {
         let target = app.staticTexts.matching(identifier: "post.text")
             .containing(NSPredicate(format: "label == %@", text)).firstMatch
-        for _ in 0..<15 {
+        // A swipe budget and a deadline, because the two run out for different
+        // reasons: the budget bounds how far down the list to look, the
+        // deadline bounds how long to wait for a row that exists but has not
+        // been laid out yet. Under load the second one is what bites — the
+        // post is there and the feed has not finished drawing it, and a
+        // count-only loop reports "the post went missing from the feed".
+        let deadline = Date().addingTimeInterval(60)
+        var swipes = 0
+        while swipes < 15, Date() < deadline {
             dismissSavePasswordSheetIfPresent(app)
             if target.exists, target.isHittable,
                let like = likeButton(app, forPostWithText: text), like.isHittable {
                 return true
             }
+            if target.exists {
+                // On screen but not settled: wait rather than scroll past it.
+                Thread.sleep(forTimeInterval: 0.5)
+                continue
+            }
             app.swipeUp()
+            swipes += 1
         }
         return false
     }
@@ -577,11 +602,11 @@ final class LikeUITests: XCTestCase {
             "after five taps the button says \(likeButton(app).label), not \(wantLiked ? "Unlike" : "Like")"
         )
         XCTAssertTrue(
-            backendSettles(within: 30) { self.backendLikeExists(postID: postID, uid: uid) == wantLiked },
+            backendSettles(within: 60) { self.backendLikeExists(postID: postID, uid: uid) == wantLiked },
             "five taps left the like document \(backendLikeExists(postID: postID, uid: uid) ? "present" : "absent")"
         )
         XCTAssertTrue(
-            backendSettles(within: 30) { self.backendLikeCount(of: postID) == expected },
+            backendSettles(within: 60) { self.backendLikeCount(of: postID) == expected },
             """
             five taps moved the aggregate to \
             \(backendLikeCount(of: postID).map(String.init) ?? "nothing"), expected \(expected)
@@ -597,7 +622,7 @@ final class LikeUITests: XCTestCase {
         tapLike(app)
         XCTAssertTrue(waitForLabel(startLabel, on: app, timeout: 30))
         XCTAssertTrue(
-            backendSettles(within: 30) { self.backendLikeCount(of: postID) == startCount },
+            backendSettles(within: 60) { self.backendLikeCount(of: postID) == startCount },
             "left \(postID) at \(backendLikeCount(of: postID).map(String.init) ?? "nothing"), not \(startCount)"
         )
     }
@@ -657,7 +682,7 @@ final class LikeUITests: XCTestCase {
         // usable, not the first one in the tree: this test scrolled down to
         // reach its own post, so the first `post.like` is a card above the
         // fold — which exists, is not hittable, and is not a defect.
-        let usable = backendSettles(within: 20) {
+        let usable = backendSettles(within: 60) {
             app.buttons.matching(identifier: "post.like").allElementsBoundByIndex
                 .contains { $0.exists && $0.isHittable }
         }
@@ -905,7 +930,7 @@ final class LikeUITests: XCTestCase {
         // Somebody else likes it.
         likeAsAnotherAccount(postID: temporary.id, uid: theirs)
         XCTAssertTrue(
-            backendSettles(within: 30) { self.backendLikeCount(of: temporary.id) == 1 },
+            backendSettles(within: 60) { self.backendLikeCount(of: temporary.id) == 1 },
             "the trigger never counted the other account's like"
         )
 
@@ -940,7 +965,7 @@ final class LikeUITests: XCTestCase {
         XCTAssertTrue(waitForCount(2, ofPostWithText: temporary.text, in: app),
                       "our like did not add to theirs")
         XCTAssertTrue(
-            backendSettles(within: 30) { self.backendLikeCount(of: temporary.id) == 2 },
+            backendSettles(within: 60) { self.backendLikeCount(of: temporary.id) == 2 },
             "the aggregate is \(backendLikeCount(of: temporary.id).map(String.init) ?? "nothing"), expected 2"
         )
         XCTAssertTrue(backendLikeExists(postID: temporary.id, uid: mine), "our like was never written")
@@ -952,7 +977,7 @@ final class LikeUITests: XCTestCase {
             "could not remove the other account's like"
         )
         XCTAssertTrue(
-            backendSettles(within: 30) { self.backendLikeCount(of: temporary.id) == 1 },
+            backendSettles(within: 60) { self.backendLikeCount(of: temporary.id) == 1 },
             "the trigger never took the other account's like off the count"
         )
 
@@ -1018,7 +1043,7 @@ final class LikeUITests: XCTestCase {
         XCTAssertTrue(waitForCount(1, ofPostWithText: temporary.text, in: app),
                       "our own like never showed")
         XCTAssertTrue(
-            backendSettles(within: 30) { self.backendLikeCount(of: temporary.id) == 1 },
+            backendSettles(within: 60) { self.backendLikeCount(of: temporary.id) == 1 },
             "the aggregate never caught up, so this test cannot tell a leftover offset from a real count"
         )
 

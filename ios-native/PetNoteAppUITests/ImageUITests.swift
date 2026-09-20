@@ -171,17 +171,32 @@ final class ImageUITests: XCTestCase {
         let anchor = app.buttons.matching(identifier: "post.like").firstMatch
         XCTAssertTrue(anchor.waitForExistence(timeout: 30))
 
+        // Sample until there are enough *and* enough time has passed, rather
+        // than for a fixed eight seconds.
+        //
+        // Every `anchor.frame` waits for the app to be idle, so on a loaded
+        // machine each sample costs more wall-clock and a fixed window
+        // collects fewer of them. This failed with "7 is not greater than 8"
+        // while the machine was at a load average of 28 — a statement about
+        // the machine, not about the layout. Two conditions and a ceiling
+        // keeps the claim the same (nothing moved across the loading window)
+        // while letting a slow machine take longer to make it.
         var positions: [CGFloat] = []
-        let deadline = Date().addingTimeInterval(8)
-        while Date() < deadline {
+        let started = Date()
+        let ceiling = started.addingTimeInterval(60)
+        while Date() < ceiling {
             guard anchor.exists else { break }
             positions.append(anchor.frame.minY)
+            if positions.count >= 12, Date().timeIntervalSince(started) >= 8 { break }
             Thread.sleep(forTimeInterval: 0.5)
         }
 
         let measured = positions.map { String(format: "%.1f", $0) }.joined(separator: ", ")
         print("MEASURED actions-row y across the load window: \(measured)")
-        XCTAssertGreaterThan(positions.count, 8, "not enough samples to say anything")
+        XCTAssertGreaterThan(
+            positions.count, 8,
+            "not enough samples to say anything — \(positions.count) in \(Int(Date().timeIntervalSince(started)))s"
+        )
         let first = positions[0]
         for (index, position) in positions.enumerated() {
             XCTAssertEqual(
