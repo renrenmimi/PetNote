@@ -260,7 +260,20 @@ async function upsertPet({ id, name, ownerId, ownerName, species, breed }) {
   );
 }
 
-/** Deletes everything this script created, so post count stays deterministic. */
+/**
+ * Deletes everything this script created, so post count stays deterministic.
+ *
+ * Note what this cannot do: stop the triggers it sets off. Every comment
+ * deleted here fires onCommentDeleted, which decrements the post's
+ * commentCount. The post is deleted a moment later, and the trigger no-ops on
+ * a post that no longer exists — but the post is then *recreated under the
+ * same id*, and any of those events still in flight arrive to find it there
+ * and decrement it.
+ *
+ * That is how ios-post-000 came to read -10 comments. reconcileCounts() below
+ * is the answer: the aggregates are settled at the end, after the queue has
+ * drained, rather than assumed to be correct on the way through.
+ */
 async function clearSeededPosts() {
   const snap = await db.collection("posts").get();
   const mine = snap.docs.filter((d) => d.id.startsWith("ios-"));
@@ -280,6 +293,93 @@ async function clearSeededPosts() {
     removed += 1;
   }
   return removed;
+}
+
+/**
+ * Settles every seeded post's aggregates against the documents that actually
+ * exist, and keeps settling until two consecutive reads agree.
+ *
+ * The retry is not defensiveness. Deleting the previous run's comments queues
+ * trigger events, and those events can arrive after the posts have been
+ * recreated under the same ids. A single pass would write the right number and
+ * then watch a straggler undo it.
+ */
+async function reconcileCounts() {
+  let corrected = 0;
+  let unsettled = [];
+
+  // Eight passes with a growing wait. Seeding this dataset queues roughly 120
+  // trigger events — 60 deletes from the previous run and 60 creates — and
+  // four passes at a flat three seconds gave up while they were still
+  // draining. The loop was reporting "unsettled" for a post that settled a
+  // moment later, which is a slow check reading as a failed one.
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const snap = await db.collection("posts").get();
+    const mine = snap.docs.filter((d) => d.id.startsWith("ios-"));
+    const wrong = [];
+
+    for (const post of mine) {
+      const [comments, likes] = await Promise.all([
+        post.ref.collection("comments").get(),
+        post.ref.collection("likes").get(),
+      ]);
+      const data = post.data();
+      if (data.commentCount !== comments.size || data.likeCount !== likes.size) {
+        wrong.push({ ref: post.ref, id: post.id, comments: comments.size, likes: likes.size });
+      }
+    }
+
+    if (wrong.length === 0) return { corrected, unsettled: [] };
+
+    for (const w of wrong) {
+      await w.ref.update({ commentCount: w.comments, likeCount: w.likes });
+      corrected += 1;
+    }
+    unsettled = wrong.map((w) => w.id);
+    // Give any straggler events time to land before checking again. If one
+    // does, the next pass sees the drift and this loop repeats.
+    await new Promise((r) => setTimeout(r, 2000 + attempt * 1500));
+  }
+  return { corrected, unsettled };
+}
+
+/**
+ * Writes one comment, waits for the aggregate to move, then removes it.
+ *
+ * This is the only check in this script that can tell "the functions emulator
+ * is running the comment trigger" from "the numbers happen to look right".
+ * Those were the same assertion until a reconciliation step was added, and the
+ * moment the script started writing the aggregates itself, the old check
+ * stopped being evidence of anything about triggers.
+ */
+async function proveTheCommentTriggerRuns() {
+  const postRef = db.doc(`posts/ios-post-000`);
+  const before = (await postRef.get()).data()?.commentCount ?? 0;
+  const probe = await postRef.collection("comments").add({
+    authorId: "seed-trigger-probe",
+    authorName: "seed probe",
+    text: "TEST CONTENT seed trigger probe",
+    createdAt: Timestamp.now(),
+  });
+
+  let moved = before;
+  for (let i = 0; i < 20; i += 1) {
+    await new Promise((r) => setTimeout(r, 500));
+    moved = (await postRef.get()).data()?.commentCount ?? before;
+    if (moved === before + 1) break;
+  }
+  await probe.delete();
+
+  // Wait for the delete to be reflected too, so the probe leaves nothing
+  // behind for reconcileCounts() to have to clean up.
+  for (let i = 0; i < 20; i += 1) {
+    await new Promise((r) => setTimeout(r, 500));
+    if (((await postRef.get()).data()?.commentCount ?? -1) === before) break;
+  }
+
+  return moved === before + 1
+    ? { ok: true, detail: `${before} -> ${moved} -> ${before}` }
+    : { ok: false, detail: `commentCount never moved from ${before}; is the functions emulator running?` };
 }
 
 function mediaFor(index) {
@@ -420,6 +520,9 @@ async function main() {
   console.log(`    no pet at              ${NO_PET_INDEX}`);
   console.log(`    CJK pet name at        ${CJK_PET_INDEX}`);
   console.log(`    ${MANY_COMMENTS_COUNT} comments on         ios-post-${String(MANY_COMMENTS_INDEX).padStart(3, "0")}`);
+  const drift = await reconcileCounts();
+  const triggerAlive = await proveTheCommentTriggerRuns();
+
   // Read back what was written and check it against the matrix, so "the seed
   // ran" and "the seed produced the dataset" are not the same claim.
   const readBack = await db.collection("posts").orderBy("createdAt", "desc").get();
@@ -446,6 +549,13 @@ async function main() {
     // 120 on 60 comments survived.
     [`commentCount matches the comments that exist`, aggregate === commentsOnTarget.size,
       `${aggregate} vs ${commentsOnTarget.size} documents`],
+    [`every aggregate settled`, drift.unsettled.length === 0,
+      drift.unsettled.length ? drift.unsettled.join(", ") : `${drift.corrected} corrected`],
+    // Separate claim, separate evidence. The line above says the dataset is
+    // self-consistent; it would also be true if no trigger existed at all,
+    // because reconcileCounts() writes the numbers itself. This one writes a
+    // single comment and watches the aggregate move.
+    [`the comment trigger is alive`, triggerAlive.ok, triggerAlive.detail],
     [`>=5 video posts`, videoPosts.length >= 5, videoPosts.length],
     [`>50 comments on one post`, commentsOnTarget.size > 50, commentsOnTarget.size],
     [`one post with no media`, seeded.filter((d) => !d.data().media).length >= 1, seeded.filter((d) => !d.data().media).length],
