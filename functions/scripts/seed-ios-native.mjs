@@ -355,7 +355,18 @@ async function main() {
       // checks compare against.
       createdAt: Timestamp.fromMillis(now - i * 60_000),
       likeCount: i % 7,
-      commentCount: i === MANY_COMMENTS_INDEX ? MANY_COMMENTS_COUNT : i % 3,
+      // Zero, always — even for the post that is about to receive 60 real
+      // comments. Every comment document written below fires onCommentCreated,
+      // which increments this field; pre-setting it made the post read 120 for
+      // 60 comments. The likes below avoid the same trap the other way, with a
+      // `counted: true` stamp that makes the trigger skip them, but comments
+      // have no such suppression, so the trigger has to own the number.
+      //
+      // Posts with no comment documents get 0 rather than `i % 3`. A badge
+      // saying "2 comments" on a post whose comment list is empty is a
+      // fabricated disagreement, and the first person to hit it would
+      // reasonably conclude comment loading was broken.
+      commentCount: 0,
       tags: TAG_POOL[i % TAG_POOL.length],
     };
     if (media) {
@@ -417,8 +428,24 @@ async function main() {
   const commentsOnTarget = await db
     .collection(`posts/ios-post-${String(MANY_COMMENTS_INDEX).padStart(3, "0")}/comments`)
     .get();
+  // The aggregate is maintained by a trigger, so it arrives after the writes
+  // do. Waiting for it here is not politeness — it is the only evidence in
+  // this script that the comment trigger is deployed and actually running.
+  const targetPostRef = db.doc(`posts/ios-post-${String(MANY_COMMENTS_INDEX).padStart(3, "0")}`);
+  let aggregate = -1;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    aggregate = (await targetPostRef.get()).data()?.commentCount ?? -1;
+    if (aggregate === commentsOnTarget.size) break;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+
   const checks = [
     [`>=200 posts`, seeded.length >= 200, seeded.length],
+    // Counting documents is not checking the count. The previous version of
+    // this script asserted only the former, which is how a commentCount of
+    // 120 on 60 comments survived.
+    [`commentCount matches the comments that exist`, aggregate === commentsOnTarget.size,
+      `${aggregate} vs ${commentsOnTarget.size} documents`],
     [`>=5 video posts`, videoPosts.length >= 5, videoPosts.length],
     [`>50 comments on one post`, commentsOnTarget.size > 50, commentsOnTarget.size],
     [`one post with no media`, seeded.filter((d) => !d.data().media).length >= 1, seeded.filter((d) => !d.data().media).length],

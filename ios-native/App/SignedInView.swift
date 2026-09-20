@@ -67,7 +67,14 @@ struct SignedInView: View {
                             Text(EnvironmentGuard.displayLabel)
                                 .font(.caption2)
                                 .monospaced()
-                                .foregroundStyle(.secondary)
+                                // Palette.secondaryText, not SwiftUI's
+                                // .secondary. Measured from screenshot pixels,
+                                // .secondary renders this badge at 3.02:1 in
+                                // light and 3.19:1 in dark — below the 4.5:1
+                                // that text this size needs. The palette token
+                                // exists precisely so that is not a per-view
+                                // decision, and I got it wrong the first time.
+                                .foregroundStyle(Palette.secondaryText)
                                 .accessibilityIdentifier("env.badge")
                         }
                     }
@@ -82,12 +89,17 @@ struct SignedInView: View {
                             // the label cannot be made to fill it.
                             //
                             // The reported frame is therefore not the hit area.
-                            // Measured on the simulator: a tap 22pt above this
-                            // label's centre still activates it, so the region
-                            // extends past the frame upwards. How far it
-                            // extends downwards, and whether the total is 44pt,
-                            // has not been measured and is not claimed. See
-                            // PetNoteAppUITests/TouchTargetUITests.
+                            // All four directions have now been measured on the
+                            // simulator, and the result contradicts what was
+                            // inferred from the first one: upwards a tap 22pt
+                            // from centre activates, downwards 22pt does not —
+                            // the lower boundary is between 21 and 22. So the
+                            // region is not symmetric, and "22pt above works,
+                            // therefore it is at least 44pt tall" was not a
+                            // valid step. The span happens to be ~43-44pt,
+                            // which meets the requirement, but by measurement
+                            // rather than by that argument.
+                            // See PetNoteAppUITests/TouchTargetUITests.
                             Text("Sign out")
                         }
                         .accessibilityIdentifier("session.signOut")

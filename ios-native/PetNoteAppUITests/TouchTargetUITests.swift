@@ -16,18 +16,78 @@ import XCTest
 /// distinguish a 20pt control from a 44pt one. The probe here taps at measured
 /// offsets from the centre and checks whether the control responded, which is
 /// the only way to learn the hit region's real extent from outside the app.
+///
+/// **One side is not a size.** An earlier round measured only "22pt above the
+/// centre activates" and reported a 44pt-tall target. That does not follow: a
+/// region can extend 22pt up and 6pt down. Every measurement here sweeps a
+/// ladder of distances in **all four directions** and reports the largest
+/// distance that still activated, per direction.
+///
+/// **A probe that always says yes measures nothing.** Each sweep is paired with
+/// offsets that are known to be outside the control, and the run is only
+/// meaningful if those come back negative. The outcome is three-way rather than
+/// a boolean — *this control fired*, *something else fired*, *nothing happened*
+/// — because "the tap landed on the card behind the button and opened the post"
+/// and "the tap did nothing" are different facts, and a boolean loses the one
+/// that proves the coordinates were real.
 final class TouchTargetUITests: XCTestCase {
     override func setUp() {
-        continueAfterFailure = false
+        // These are measurements. A failed probe in one direction must not
+        // throw away the other three.
+        continueAfterFailure = true
     }
 
+    // MARK: - Outcomes
+
+    private enum Outcome: String {
+        /// The control being probed activated.
+        case activated
+        /// A different control activated — proof the tap landed somewhere real.
+        case somethingElse
+        /// The tap landed and nothing observable happened.
+        case nothing
+        /// The point is outside the window, so it cannot be tapped at all. Not
+        /// a measurement — a limit of the screen.
+        case offWindow
+    }
+
+    private struct Direction {
+        let name: String
+        let dx: CGFloat
+        let dy: CGFloat
+    }
+
+    private static let directions = [
+        Direction(name: "up", dx: 0, dy: -1),
+        Direction(name: "down", dx: 0, dy: 1),
+        Direction(name: "left", dx: -1, dy: 0),
+        Direction(name: "right", dx: 1, dy: 0),
+    ]
+
+    /// Distances swept, in points from the centre. 22 is the edge of a 44pt
+    /// box; the values either side of it are what tell a 44pt region from a
+    /// 36pt one or a 60pt one.
+    private static let ladder: [CGFloat] = [10, 16, 20, 22, 24, 28, 34, 40]
+
+    // MARK: - App
+
+    /// `XCUIApplication()` cannot be a default argument here: constructing one
+    /// is main-actor isolated and a default value is evaluated outside that
+    /// context. Callers that need to relaunch the same instance pass it in.
     private func signedIn() -> XCUIApplication {
-        let app = XCUIApplication()
+        signedIn(XCUIApplication())
+    }
+
+    /// accept-**b**, not accept-a. Four agents share one emulator and the like
+    /// suites all drive accept-a; using a different account keeps this suite's
+    /// like documents out of theirs, and keeps theirs out of these readings.
+    @discardableResult
+    private func signedIn(_ app: XCUIApplication) -> XCUIApplication {
         app.launchArguments = ["-petnote-start-signed-out"]
         app.launch()
         XCTAssertTrue(app.staticTexts["login.title"].waitForExistence(timeout: 15))
         let email = app.textFields["login.email"]
-        email.tap(); email.typeText("accept-a@example.com")
+        email.tap(); email.typeText("accept-b@example.com")
         let password = app.secureTextFields["login.password"]
         password.tap(); password.typeText("Passw0rd!x")
         app.buttons["login.submit"].tap()
@@ -36,59 +96,291 @@ final class TouchTargetUITests: XCTestCase {
         return app
     }
 
-    /// Taps `dy` points above the element's centre and reports whether the
-    /// control reacted. A normalised offset is used because that is the only
-    /// coordinate space XCUITest offers for off-centre taps.
-    private func tapOffset(_ element: XCUIElement, dy: CGFloat) {
-        let height = element.frame.height
-        guard height > 0 else { return }
-        // 0.5 is the centre; move by dy points expressed as a fraction.
-        let normalisedY = 0.5 + (dy / height)
-        element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: normalisedY)).tap()
+    /// An absolute point `dx`/`dy` points from an element's centre.
+    ///
+    /// `withOffset` on the centre coordinate, not a normalised vector: the
+    /// normalised form divides by the element's own height, so the same written
+    /// offset means a different distance on a 36pt control than on a 44pt one —
+    /// which is precisely the variable under study.
+    private func point(from element: XCUIElement, dx: CGFloat, dy: CGFloat) -> XCUICoordinate {
+        element
+            .coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .withOffset(CGVector(dx: dx, dy: dy))
     }
 
-    /// The sign-out button lives in the navigation bar. Its accessibility frame
-    /// measures ~36pt, and the question the earlier run could not answer is
-    /// whether the *hit region* is larger than that.
+    private func isInsideWindow(_ coordinate: XCUICoordinate, _ app: XCUIApplication) -> Bool {
+        let window = app.windows.firstMatch.frame
+        // Two points of margin: a tap exactly on the boundary is delivered to
+        // the window but is not a useful measurement of anything.
+        return coordinate.screenPoint.x > window.minX + 2
+            && coordinate.screenPoint.x < window.maxX - 2
+            && coordinate.screenPoint.y > window.minY + 2
+            && coordinate.screenPoint.y < window.maxY - 2
+    }
+
+    // MARK: - Probe 1: the like button (our own layout, 44pt by construction)
+
+    /// Taps `dx`/`dy` from the like button's centre and classifies what happened.
     ///
-    /// The probe: tap 20pt above the centre — outside a 36pt-tall box, inside a
-    /// 44pt one — and see whether signing out happened.
-    func testNavigationBarButtonHitRegionExtendsBeyondItsFrame() {
-        let app = signedIn()
-        let signOut = app.buttons["session.signOut"]
-        XCTAssertTrue(waitUntilHittable(signOut, in: app, timeout: 20))
+    /// The signal is the **label** — Like ⇄ Unlike — not the value. The value is
+    /// "N likes", an aggregate that another signed-in client can move while this
+    /// test is running, and this suite shares one emulator with three others.
+    /// The label is this account's own like state, so it only changes because
+    /// this test tapped something. The value is printed alongside so a
+    /// surprising reading can be explained rather than guessed at.
+    ///
+    /// What is being measured here is whether the *tap reached the control*, and
+    /// the optimistic flip is exactly that signal; whether the write then
+    /// reached the server is a different question, checked against Firestore
+    /// separately.
+    private func probeLike(_ app: XCUIApplication, dx: CGFloat, dy: CGFloat) -> Outcome {
+        let like = app.buttons.matching(identifier: "post.like").firstMatch
+        guard like.waitForExistence(timeout: 20) else { return .nothing }
+        let beforeLabel = like.label
+        let beforeValue = like.value as? String ?? "?"
 
-        let frame = signOut.frame
-        // Record the measurement, whatever it is — this is the number the
-        // previous report quoted without knowing what it meant.
-        print("MEASURED accessibility frame: \(frame.size)")
+        let target = point(from: like, dx: dx, dy: dy)
+        guard isInsideWindow(target, app) else { return .offWindow }
+        target.tap()
+        Thread.sleep(forTimeInterval: 2.0)
 
-        // 22pt above centre is the edge of a 44pt box: reaching it means the
-        // hit region is at least 44pt tall, which is the actual requirement.
-        tapOffset(signOut, dy: -22)
-
-        let returnedToSignIn = waitForExistence(
-            of: app.staticTexts["login.title"], in: app, timeout: 8
-        )
-        if returnedToSignIn {
-            print("MEASURED hit region reaches 22pt above centre — at least 44pt tall")
-        } else {
-            print("MEASURED hit region does NOT reach 22pt above centre (frame \(frame.size))")
+        // Did the tap open the post instead? That is the card's own gesture,
+        // and it is the thing directly above and below the actions row.
+        if app.navigationBars["Post"].exists {
+            app.navigationBars["Post"].buttons.element(boundBy: 0).tap()
+            _ = waitForExistence(of: app.navigationBars["PetNote"], in: app, timeout: 20)
+            Thread.sleep(forTimeInterval: 1.0)
+            return .somethingElse
         }
-        // Deliberately not an assertion on the outcome: this test's job is to
-        // produce the measurement. Whether 44pt is met is judged in the report,
-        // with this number in hand, rather than by a pass/fail that hides which
-        // of the three sizes was being checked.
-        XCTAssertTrue(true)
+        let after = app.buttons.matching(identifier: "post.like").firstMatch
+        let afterLabel = after.label
+        print("MEASURED   label \(beforeLabel)->\(afterLabel) value \(beforeValue)->\(after.value as? String ?? "?")")
+        return afterLabel == beforeLabel ? .nothing : .activated
     }
 
-    /// Control group: the probe has to be able to tell "inside the control"
-    /// from "outside" it, or the navigation-bar measurement means nothing.
+    /// The full four-direction sweep on a control whose geometry we own.
     ///
-    /// The like button is 44pt tall and laid out by us, so a tap 18pt above its
-    /// centre is inside it and a tap 40pt above it is not. The value — "N
-    /// likes" — is what says whether the tap registered; the label only says
-    /// Like/Unlike and can be the same either side of a failed write.
+    /// This is the control group for everything else in this file: if the probe
+    /// cannot tell inside from outside on a button that is 44pt by construction,
+    /// no reading it gives for a navigation-bar item means anything.
+    func testLikeButtonHitRegionInAllFourDirections() {
+        let app = signedIn()
+        let like = app.buttons.matching(identifier: "post.like").firstMatch
+        XCTAssertTrue(waitUntilHittable(like, in: app, timeout: 30))
+        let frame = like.frame
+        print("MEASURED like button accessibility frame: \(frame.size)")
+
+        var reach: [String: CGFloat] = [:]
+        var negatives = 0
+
+        for direction in Self.directions {
+            var lastActivated: CGFloat = 0
+            for distance in Self.ladder {
+                let outcome = probeLike(app, dx: direction.dx * distance, dy: direction.dy * distance)
+                print("MEASURED like \(direction.name) \(Int(distance))pt -> \(outcome.rawValue)")
+                switch outcome {
+                case .activated:
+                    lastActivated = max(lastActivated, distance)
+                case .nothing, .somethingElse:
+                    negatives += 1
+                case .offWindow:
+                    break
+                }
+            }
+            reach[direction.name] = lastActivated
+            print("MEASURED like REACH \(direction.name) = \(lastActivated)pt")
+        }
+
+        print("MEASURED like SUMMARY up=\(reach["up"] ?? -1) down=\(reach["down"] ?? -1) "
+              + "left=\(reach["left"] ?? -1) right=\(reach["right"] ?? -1) frame=\(frame.size)")
+
+        // The control group, stated as an assertion rather than left to the
+        // reader: a probe that activates at every distance in every direction
+        // has not measured a hit region, it has found a screen that swallows
+        // taps. At least one ladder rung must come back negative.
+        XCTAssertGreaterThan(
+            negatives, 0,
+            "every probe activated the control — the probe cannot tell inside from outside"
+        )
+        // And it must activate somewhere, or it is measuring a dead button.
+        XCTAssertGreaterThan(
+            (reach.values.max() ?? 0), 0,
+            "no probe activated the control in any direction"
+        )
+    }
+
+    // MARK: - Probe 2: a navigation-bar item (UIKit's layout, 36pt frame)
+
+    /// Opens the first post, so the navigation bar has a back button in it.
+    private func openDetail(_ app: XCUIApplication) -> Bool {
+        let comments = app.buttons.matching(identifier: "post.comments").firstMatch
+        guard waitUntilHittable(comments, in: app, timeout: 30) else { return false }
+        comments.tap()
+        return waitForExistence(of: app.navigationBars["Post"], in: app, timeout: 30)
+    }
+
+    /// Probes the navigation bar's **back** button rather than sign-out.
+    ///
+    /// Same bar, same UIKit layout, same 36pt label — and recoverable. A sweep
+    /// that has to sign out and sign back in for every rung is 32 sign-ins, and
+    /// the thing being measured is the bar, not the button's action. Sign-out
+    /// is probed separately, once per direction, to show the numbers transfer.
+    private func probeBack(_ app: XCUIApplication, dx: CGFloat, dy: CGFloat) -> Outcome {
+        let bar = app.navigationBars["Post"]
+        guard bar.waitForExistence(timeout: 20) else { return .nothing }
+        let back = bar.buttons.element(boundBy: 0)
+        guard back.exists else { return .nothing }
+
+        let target = point(from: back, dx: dx, dy: dy)
+        guard isInsideWindow(target, app) else { return .offWindow }
+        target.tap()
+        Thread.sleep(forTimeInterval: 1.5)
+
+        if app.navigationBars["PetNote"].exists && !app.navigationBars["Post"].exists {
+            // Popped. Go back in for the next rung.
+            _ = openDetail(app)
+            return .activated
+        }
+        if app.images["image.full"].exists || app.buttons["full.close"].exists {
+            return .somethingElse
+        }
+        return .nothing
+    }
+
+    func testNavigationBarBackButtonHitRegionInAllFourDirections() {
+        let app = signedIn()
+        XCTAssertTrue(openDetail(app), "could not open a post")
+        let bar = app.navigationBars["Post"]
+        let back = bar.buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 20))
+        print("MEASURED nav bar frame: \(bar.frame), back button frame: \(back.frame)")
+
+        var reach: [String: CGFloat] = [:]
+        var negatives = 0
+        var unreachable: [String] = []
+
+        for direction in Self.directions {
+            var lastActivated: CGFloat = 0
+            for distance in Self.ladder {
+                let outcome = probeBack(app, dx: direction.dx * distance, dy: direction.dy * distance)
+                print("MEASURED back \(direction.name) \(Int(distance))pt -> \(outcome.rawValue)")
+                switch outcome {
+                case .activated: lastActivated = max(lastActivated, distance)
+                case .nothing, .somethingElse: negatives += 1
+                case .offWindow: unreachable.append("\(direction.name)@\(Int(distance))")
+                }
+                // A rung that popped the screen needs the detail view back.
+                if !app.navigationBars["Post"].exists { _ = openDetail(app) }
+            }
+            reach[direction.name] = lastActivated
+            print("MEASURED back REACH \(direction.name) = \(lastActivated)pt")
+        }
+
+        print("MEASURED back SUMMARY up=\(reach["up"] ?? -1) down=\(reach["down"] ?? -1) "
+              + "left=\(reach["left"] ?? -1) right=\(reach["right"] ?? -1) frame=\(back.frame.size)")
+        print("MEASURED back offWindow rungs: \(unreachable.joined(separator: ","))")
+
+        XCTAssertGreaterThan(
+            negatives, 0,
+            "every probe activated — the probe cannot tell inside from outside on the bar"
+        )
+    }
+
+    // MARK: - Probe 3: sign-out, one decisive rung per direction
+
+    /// Sign-out is destructive, so it gets one rung per direction rather than a
+    /// ladder: 22pt is the edge of a 44pt box, and that is the number the
+    /// requirement is about. Four relaunches, not thirty-two.
+    func testSignOutButtonAtTheFourEdgesOfA44ptBox() {
+        let app = XCUIApplication()
+        var results: [String: String] = [:]
+        var frameDescription = "?"
+
+        for direction in Self.directions {
+            _ = signedIn(app)
+            let signOut = app.buttons["session.signOut"]
+            XCTAssertTrue(waitUntilHittable(signOut, in: app, timeout: 20))
+            let frame = signOut.frame
+            frameDescription = "\(frame.size)"
+
+            // Vertically 22pt (half of 44). Horizontally half the button's own
+            // width plus 8pt, which is outside the drawn label in every case.
+            let distance: CGFloat = direction.dy == 0 ? (frame.width / 2) + 8 : 22
+            let target = point(from: signOut, dx: direction.dx * distance, dy: direction.dy * distance)
+
+            if !isInsideWindow(target, app) {
+                results[direction.name] = "offWindow@\(Int(distance))pt"
+            } else {
+                target.tap()
+                let signedOut = waitForExistence(
+                    of: app.staticTexts["login.title"], in: app, timeout: 8
+                )
+                results[direction.name] = "\(signedOut ? "activated" : "nothing")@\(Int(distance))pt"
+            }
+            print("MEASURED signOut \(direction.name): \(results[direction.name] ?? "?")")
+            app.terminate()
+        }
+
+        print("MEASURED signOut frame=\(frameDescription) "
+              + "up=\(results["up"] ?? "?") down=\(results["down"] ?? "?") "
+              + "left=\(results["left"] ?? "?") right=\(results["right"] ?? "?")")
+
+        // No pass/fail on the outcome. This test's job is the four numbers; the
+        // judgement about whether 44pt is met is made in the report, where the
+        // difference between the three sizes can be stated instead of hidden
+        // behind a green tick.
+        XCTAssertEqual(results.count, 4, "a direction was not probed")
+    }
+
+    /// The one number the four-edge probe left ambiguous.
+    ///
+    /// Sign-out activated 22pt **above** its centre and did not activate 22pt
+    /// **below** it. Two different things produce that reading and they have
+    /// opposite verdicts:
+    ///
+    ///   * the region is a half-open 44pt box `[centre-22, centre+22)`, in
+    ///     which case the requirement is met exactly; or
+    ///   * the region really is shorter below, in which case it is not.
+    ///
+    /// The ladder in `testNavigationBarBackButtonHitRegionInAllFourDirections`
+    /// already resolved the back button's lower edge to `(20, 22]`. This does
+    /// the same for sign-out, three launches rather than one, because the
+    /// difference between those two readings is the difference between "44pt"
+    /// and "not 44pt" and it is not a difference to leave to an assumption.
+    func testSignOutLowerEdgeAtFinerResolution() {
+        let app = XCUIApplication()
+        var results: [String] = []
+
+        for distance in [CGFloat(18), 20, 21] {
+            _ = signedIn(app)
+            let signOut = app.buttons["session.signOut"]
+            XCTAssertTrue(waitUntilHittable(signOut, in: app, timeout: 20))
+            let target = point(from: signOut, dx: 0, dy: distance)
+            let outcome: String
+            if !isInsideWindow(target, app) {
+                outcome = "offWindow"
+            } else {
+                target.tap()
+                outcome = waitForExistence(of: app.staticTexts["login.title"], in: app, timeout: 8)
+                    ? "activated" : "nothing"
+            }
+            results.append("\(Int(distance))pt=\(outcome)")
+            print("MEASURED signOutFine down \(Int(distance))pt -> \(outcome)")
+            app.terminate()
+        }
+
+        print("MEASURED signOutFine SUMMARY \(results.joined(separator: " "))")
+        XCTAssertEqual(results.count, 3, "a rung was not probed")
+    }
+
+    // MARK: - Control group, kept from the earlier round
+
+    /// The probe has to be able to tell "inside the control" from "outside" it,
+    /// or every other measurement in this file means nothing.
+    ///
+    /// Deliberately narrow and fast: 18pt above the like button's centre is
+    /// inside a 44pt box and must register; 40pt above it is outside and must
+    /// not.
     func testTheProbeCanTellInsideFromOutside() {
         let app = signedIn()
         let like = app.buttons.matching(identifier: "post.like").firstMatch
@@ -96,45 +388,12 @@ final class TouchTargetUITests: XCTestCase {
         print("MEASURED like button frame: \(like.frame.size)")
         XCTAssertGreaterThanOrEqual(like.frame.height, 44, "content controls are sized by us")
 
-        func currentValue() -> String {
-            app.buttons.matching(identifier: "post.like").firstMatch.value as? String ?? "?"
-        }
+        let inside = probeLike(app, dx: 0, dy: -18)
+        print("MEASURED control group inside (-18pt): \(inside.rawValue)")
+        XCTAssertEqual(inside, .activated, "a tap inside the control must register")
 
-        let start = currentValue()
-        // Inside: 18pt above centre, within a 44pt box.
-        tapOffset(like, dy: -18)
-        Thread.sleep(forTimeInterval: 2)
-        let afterInside = currentValue()
-        print("MEASURED value start=\(start) after -18pt=\(afterInside)")
-        XCTAssertNotEqual(start, afterInside, "a tap inside the control must register")
-
-        // Outside: 40pt above centre is well beyond a 44pt box.
-        tapOffset(like, dy: -40)
-        Thread.sleep(forTimeInterval: 2)
-        let afterOutside = currentValue()
-        print("MEASURED value after -40pt=\(afterOutside)")
-        XCTAssertEqual(afterInside, afterOutside, "a tap outside the control must not register")
-    }
-
-    /// The edge case that matters for a bar button: the very top of the bar.
-    func testNavigationBarButtonRespondsNearTheBarEdge() {
-        let app = signedIn()
-        let bar = app.navigationBars["PetNote"]
-        let signOut = app.buttons["session.signOut"]
-        XCTAssertTrue(waitUntilHittable(signOut, in: app, timeout: 20))
-        print("MEASURED bar frame: \(bar.frame.size), button frame: \(signOut.frame.size)")
-
-        // Tap near the button's horizontal centre but at the top edge of the
-        // navigation bar itself.
-        let barTop = bar.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
-        let buttonCentreX = signOut.frame.midX - bar.frame.minX
-        let point = barTop.withOffset(CGVector(dx: buttonCentreX, dy: 4))
-        point.tap()
-
-        let returnedToSignIn = waitForExistence(
-            of: app.staticTexts["login.title"], in: app, timeout: 8
-        )
-        print("MEASURED tap 4pt from bar top: \(returnedToSignIn ? "activated" : "no effect")")
-        XCTAssertTrue(true)
+        let outside = probeLike(app, dx: 0, dy: -40)
+        print("MEASURED control group outside (-40pt): \(outside.rawValue)")
+        XCTAssertNotEqual(outside, .activated, "a tap outside the control must not register")
     }
 }

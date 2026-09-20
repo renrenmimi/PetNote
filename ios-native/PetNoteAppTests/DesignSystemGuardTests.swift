@@ -94,6 +94,55 @@ struct DesignSystemGuardTests {
         #expect(fontHits.count == 1)
     }
 
+    /// The hole the two scans above leave open.
+    ///
+    /// `noHardcodedColoursOutsideThePalette` requires the literal word `Color`
+    /// before the name, so it sees `Color.red` and misses `.red` — and `.red`
+    /// is what SwiftUI's own documentation writes, because the modifier's
+    /// parameter type makes the prefix redundant. A guard that a person would
+    /// naturally write around is not a guard.
+    ///
+    /// `.secondary` is in the list for a reason specific to this project.
+    /// `Palette.swift` exists partly *because* the system's `secondaryLabel`
+    /// measures 3.44:1 on a white page — its own comment says so — and
+    /// `Palette.secondaryText` replaces it. A view that writes
+    /// `.foregroundStyle(.secondary)` gets the value the palette was created to
+    /// avoid. Measured on the running app: the environment badge in
+    /// `SignedInView` renders at **3.02:1**, under the 4.5:1 body threshold.
+    ///
+    /// Kept as its own test rather than folded into the scan above so the
+    /// failure names the actual decision: either these get a token (a scrim
+    /// over video is a real thing and could be `Palette.scrim`), or the palette
+    /// stops claiming that nothing outside it names a colour.
+    @Test func noShorthandSystemColoursOutsideThePalette() throws {
+        let patterns = [
+            #"\.(foregroundStyle|foregroundColor|tint|fill|stroke|background|shadow)\(\s*\.(red|blue|green|purple|pink|orange|yellow|gray|grey|black|white|brown|cyan|mint|indigo|teal|primary|secondary|tertiary|quaternary)\b"#
+        ]
+        var failures: [String] = []
+        for file in try Self.swiftSources() {
+            for hit in Self.offendingLines(in: file.text, matching: patterns) {
+                failures.append("\(file.name) \(hit)")
+            }
+        }
+        let report = failures.joined(separator: "\n")
+        #expect(
+            failures.isEmpty,
+            "SwiftUI's shorthand names a colour just as much as Color.red does:\n\(report)"
+        )
+    }
+
+    /// The shorthand scan, checked against a sample, so a green result above
+    /// means "no violations" and not "the pattern never matches anything".
+    @Test func theShorthandGuardCatchesAViolation() {
+        let offending = """
+        Text("x").foregroundStyle(.white)
+        Circle().background(.black.opacity(0.35), in: .circle)
+        Text("y").foregroundStyle(.secondary)
+        """
+        let pattern = #"\.(foregroundStyle|foregroundColor|tint|fill|stroke|background|shadow)\(\s*\.(red|blue|green|purple|pink|orange|yellow|gray|grey|black|white|brown|cyan|mint|indigo|teal|primary|secondary|tertiary|quaternary)\b"#
+        #expect(Self.offendingLines(in: offending, matching: [pattern]).count == 3)
+    }
+
     @Test func aHexInACommentIsNotAViolation() {
         let documented = """
         // purple-600 is #9810FA, which is 5.53:1 on white.

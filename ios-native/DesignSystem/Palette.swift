@@ -61,4 +61,17 @@ enum Palette {
     /// Disabled state is deliberately low contrast — it means "not available",
     /// and it is never the only signal.
     static let disabled = Color(uiColor: .quaternaryLabel)
+
+    /// What goes behind controls that sit on top of media.
+    ///
+    /// A `.regularMaterial` is the obvious choice and is right most of the
+    /// time, but it is translucent by definition, so it is the wrong thing
+    /// when Reduce Transparency is on — which is exactly the setting that asks
+    /// for it not to be. This is the opaque substitute, and it belongs here
+    /// rather than in each view so that the two stay in step.
+    ///
+    /// Opaque black at full strength: anything over arbitrary photographic
+    /// content has no known background to compute a ratio against, so the only
+    /// safe assumption is the worst one.
+    static let opaqueScrim = Color.black
 }
