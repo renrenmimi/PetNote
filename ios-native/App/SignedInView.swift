@@ -11,6 +11,9 @@ struct SignedInView: View {
 
     @Environment(SessionStore.self) private var session
     @State private var path: [Route] = []
+    /// Which account the state above currently belongs to, so a first
+    /// appearance can be told from a switch. Nil until the first binding.
+    @State private var boundAccountID: String?
     @State private var feedModel: FeedViewModel
     /// One coordinator for the whole signed-in tree: the player ceiling and
     /// "only the most visible one plays" are global properties, and a per-view
@@ -42,6 +45,28 @@ struct SignedInView: View {
                 // like state whose stale offset is the one that shows the
                 // wrong number to the wrong person.
                 .task(id: user.uid) {
+                    // `.task(id:)` fires on first appearance as well as on a
+                    // change, and the first appearance is not a switch. Left
+                    // unguarded, this cleared the route that had just been
+                    // restored from a cold launch — §6.9 looked like the
+                    // session store failing to save a destination when in fact
+                    // it had saved it, pushed it, and then had it wiped a
+                    // moment later. A probe read `resume=restored path=0`.
+                    //
+                    // prepare(for:) was already safe, because the model is
+                    // constructed bound to this account. The other two were
+                    // not, and one of three being guarded is what made the
+                    // bug survive review.
+                    guard let previous = boundAccountID else {
+                        boundAccountID = user.uid
+                        return
+                    }
+                    boundAccountID = user.uid
+                    guard previous != user.uid else { return }
+
+                    // Ordered deliberately: the feed first, because it owns
+                    // the like state whose stale offset is the one that shows
+                    // the wrong number to the wrong person.
                     feedModel.prepare(for: user.uid)
                     path = []
                     video.releaseAll(reason: "account switched")

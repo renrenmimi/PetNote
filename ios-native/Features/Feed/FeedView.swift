@@ -16,6 +16,8 @@ struct FeedView: View {
     /// top of it, so it sees every foreground, not only the ones that happen
     /// while it is the visible screen.
     @Environment(\.scenePhase) private var scenePhase
+    /// What `returnToWhereTheSessionEnded` decided, for the probe below.
+    @State private var resumeDecision = "notRun"
 
     init(model: FeedViewModel, path: Binding<[Route]>) {
         _model = State(initialValue: model)
@@ -36,6 +38,7 @@ struct FeedView: View {
         .navigationTitle("PetNote")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .principal) { videoProbe } }
+        .overlay(alignment: .topLeading) { sessionProbe }
         .background(Palette.background)
         .task { await model.loadFirstPageIfNeeded() }
         .task { returnToWhereTheSessionEnded() }
@@ -58,9 +61,35 @@ struct FeedView: View {
     /// stored place if a different uid signs in, because restoring the previous
     /// account's screen is exactly the leak §4.4 forbids.
     private func returnToWhereTheSessionEnded() {
-        guard case .signedIn(let user) = session.state, path.isEmpty else { return }
-        guard let route = session.consumeResume(for: user.uid) else { return }
+        guard case .signedIn(let user) = session.state, path.isEmpty else {
+            resumeDecision = "notAsked"
+            return
+        }
+        guard let route = session.consumeResume(for: user.uid) else {
+            resumeDecision = "nothingHeld"
+            return
+        }
         path.append(route)
+        resumeDecision = "restored"
+    }
+
+    /// What the restore above decided, and what the stack holds now.
+    ///
+    /// Behind a launch argument and effectively invisible, like the video
+    /// probe, and for the same reason: the two ways "the person did not get
+    /// their screen back" can happen are indistinguishable from outside. Either
+    /// nothing was held for this account — a session-store question — or a
+    /// route was appended and something later emptied the path, which is a
+    /// question about whoever owns the stack. One reading separates them.
+    @ViewBuilder
+    private var sessionProbe: some View {
+        if ProcessInfo.processInfo.arguments.contains("-petnote-session-probe") {
+            Text("resume=\(resumeDecision) path=\(path.count)")
+                .font(Typography.caption)
+                .opacity(0.001)
+                .allowsHitTesting(false)
+                .accessibilityIdentifier("session.resumeProbe")
+        }
     }
 
     /// Publishes the coordinator's real state for UI tests: how many players

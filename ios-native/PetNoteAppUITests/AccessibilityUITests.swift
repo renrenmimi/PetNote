@@ -274,13 +274,254 @@ final class AccessibilityUITests: XCTestCase {
 
     // MARK: - §6.5 Reduce Transparency
 
-    /// There is nothing translucent in this app — `AccessibilityGuardTests`
-    /// proves that by scanning the source, and that is the stronger half of
+    /// There is exactly one translucent surface in this app, and it is in the
+    /// one file that performs the substitution — `ControlScrim`, which backs
+    /// controls that float over a photograph and swaps `.regularMaterial` for
+    /// an opaque scrim when the setting is on. `AccessibilityGuardTests`
+    /// proves *that* by scanning the source, which is the stronger half of
     /// this requirement because it covers screens no test visits.
     ///
+    /// (The claim here used to be "there is nothing translucent at all". That
+    /// was true when it was written and stopped being true when a control had
+    /// to sit on media; the guard was tightened rather than dropped, and this
+    /// note is what stops the older, easier claim being repeated.)
+    ///
     /// This is the other half: with the setting on, the app still renders and
-    /// every control is still reachable, so "nothing to substitute" is not
-    /// hiding a screen that fails to draw.
+    /// every control is still reachable, so the substitution is not hiding a
+    /// screen that fails to draw.
+    // MARK: - §6.6 Contrast, measured on the pixels that were drawn
+
+    /// The colour of the glyphs and the colour behind them, taken from a
+    /// screenshot of the running app.
+    ///
+    /// **Why not the tokens.** Every other contrast test in this project
+    /// resolves two `Color`s and does the WCAG arithmetic. That answers "is
+    /// this pair of tokens compatible", which is not the question: a view can
+    /// take a compliant token and draw it at 60% opacity, inside a dimmed
+    /// container, over a surface that is not the one the test assumed, and the
+    /// arithmetic stays green throughout. Two defects reached review that way.
+    /// A screenshot has none of those blind spots, because it is the thing the
+    /// person looks at.
+    ///
+    /// Background is the most common colour in the element's box; foreground
+    /// is the pixel furthest from it in luminance, which is the core of a
+    /// glyph. Antialiased edges sit between the two and are deliberately not
+    /// what is measured — they are not what anybody reads a letter by.
+    private func measuredContrast(
+        of element: XCUIElement, in app: XCUIApplication
+    ) -> (ratio: Double, foreground: String, background: String)? {
+        guard element.exists, !element.frame.isEmpty else { return nil }
+        guard let screenshot = XCUIScreen.main.screenshot().image.cgImage else { return nil }
+
+        let window = app.windows.firstMatch.frame
+        guard window.width > 0 else { return nil }
+        let scale = CGFloat(screenshot.width) / window.width
+
+        let box = element.frame
+        let rect = CGRect(
+            x: (box.minX - window.minX) * scale, y: (box.minY - window.minY) * scale,
+            width: box.width * scale, height: box.height * scale
+        ).integral.intersection(CGRect(x: 0, y: 0, width: screenshot.width, height: screenshot.height))
+        guard rect.width >= 2, rect.height >= 2, let crop = screenshot.cropping(to: rect) else {
+            return nil
+        }
+
+        let width = crop.width, height = crop.height
+        var raw = [UInt8](repeating: 0, count: width * height * 4)
+        guard let context = CGContext(
+            data: &raw, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        context.draw(crop, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        func luminance(_ r: Double, _ g: Double, _ b: Double) -> Double {
+            func lin(_ v: Double) -> Double {
+                v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+        }
+
+        // The mode, on a coarse grid: a background is never one exact value
+        // across a whole box once it has been through a display pipeline.
+        var histogram: [Int: Int] = [:]
+        var samples: [(r: Double, g: Double, b: Double)] = []
+        samples.reserveCapacity(width * height)
+        for index in stride(from: 0, to: raw.count, by: 4) {
+            let r = Double(raw[index]) / 255, g = Double(raw[index + 1]) / 255
+            let b = Double(raw[index + 2]) / 255
+            samples.append((r, g, b))
+            let key = (Int(r * 31) << 10) | (Int(g * 31) << 5) | Int(b * 31)
+            histogram[key, default: 0] += 1
+        }
+        guard let commonest = histogram.max(by: { $0.value < $1.value })?.key else { return nil }
+        let background = (
+            r: Double((commonest >> 10) & 31) / 31,
+            g: Double((commonest >> 5) & 31) / 31,
+            b: Double(commonest & 31) / 31
+        )
+        let backgroundLuminance = luminance(background.r, background.g, background.b)
+
+        guard let extreme = samples.max(by: {
+            abs(luminance($0.r, $0.g, $0.b) - backgroundLuminance)
+                < abs(luminance($1.r, $1.g, $1.b) - backgroundLuminance)
+        }) else { return nil }
+        let foregroundLuminance = luminance(extreme.r, extreme.g, extreme.b)
+
+        let ratio = (max(foregroundLuminance, backgroundLuminance) + 0.05)
+            / (min(foregroundLuminance, backgroundLuminance) + 0.05)
+        func describe(_ c: (r: Double, g: Double, b: Double)) -> String {
+            String(format: "#%02X%02X%02X", Int(c.r * 255), Int(c.g * 255), Int(c.b * 255))
+        }
+        return (ratio, describe(extreme), describe(background))
+    }
+
+    /// Text on the two screens a person spends all their time on, measured
+    /// from pixels rather than from tokens.
+    ///
+    /// 4.5:1 for everything here: none of it is large text at the sizes this
+    /// app uses, and none of it is decorative — the timestamp and the counts
+    /// are as much of the post as its words.
+    func testTextOnTheRealScreensMeetsContrastWhenDrawn() throws {
+        let app = launchOnSignIn()
+        signIn(app, email: "accept-a@example.com")
+        XCTAssertTrue(
+            waitForExistence(of: app.staticTexts.matching(identifier: "post.text").firstMatch,
+                             in: app, timeout: 60),
+            "the feed never loaded"
+        )
+        waitForQuietUI(app)
+
+        var measured = 0
+        func check(_ element: XCUIElement, _ what: String) {
+            guard let result = measuredContrast(of: element, in: app) else { return }
+            measured += 1
+            print(String(
+                format: "MEASURED rendered contrast %@: %.2f:1 (%@ on %@)",
+                what, result.ratio, result.foreground, result.background
+            ))
+            XCTAssertGreaterThanOrEqual(
+                result.ratio, 4.5,
+                "\(what) renders at \(String(format: "%.2f", result.ratio)):1 "
+                    + "(\(result.foreground) on \(result.background))"
+            )
+        }
+
+        let window = app.windows.firstMatch.frame
+        for text in app.staticTexts.matching(identifier: "post.text").allElementsBoundByIndex
+        where text.exists && window.contains(text.frame) {
+            check(text, "feed post text")
+        }
+        check(app.staticTexts["env.badge"], "environment badge")
+
+        openFirstPost(app)
+        waitForQuietUI(app)
+        for row in app.staticTexts.matching(identifier: "comment.row").allElementsBoundByIndex.prefix(3)
+        where row.exists && window.contains(row.frame) {
+            check(row, "comment row")
+        }
+
+        XCTAssertGreaterThan(measured, 0, "nothing was measured, so nothing was established")
+    }
+
+    // MARK: - §6.7 VoiceOver, as far as a tool can see
+
+    /// What a tool can check: everything interactive has a label, and the
+    /// order the elements come in matches the order they are read.
+    ///
+    /// **This is not "VoiceOver works".** Whether a card reads as one thing or
+    /// as five, whether the rotor lands somewhere useful, whether a person can
+    /// find what they were looking for — all of that needs VoiceOver actually
+    /// running and a person listening to it, which a simulator run is not.
+    /// That half stays unverified and is reported as unverified.
+    func testEveryControlOnTheCorePathHasSomethingToAnnounce() {
+        let app = launchOnSignIn()
+
+        func auditControls(_ context: String) {
+            let window = app.windows.firstMatch.frame
+            let controls = app.buttons.allElementsBoundByIndex.filter {
+                $0.exists && !$0.identifier.isEmpty && !$0.frame.isEmpty
+                    && window.intersects($0.frame)
+            }
+            XCTAssertFalse(controls.isEmpty, "\(context): no controls to audit")
+            for control in controls {
+                XCTAssertFalse(
+                    control.label.trimmingCharacters(in: .whitespaces).isEmpty,
+                    "\(context): \(control.identifier) has no accessibility label"
+                )
+                XCTAssertFalse(
+                    control.label.contains(control.identifier),
+                    "\(context): \(control.identifier) announces its own identifier"
+                )
+            }
+        }
+
+        auditControls("sign-in")
+        signIn(app, email: "accept-a@example.com")
+        XCTAssertTrue(
+            waitForExistence(of: app.staticTexts.matching(identifier: "post.text").firstMatch,
+                             in: app, timeout: 60)
+        )
+        waitForQuietUI(app)
+        auditControls("feed")
+
+        // Reading order: elements come back in tree order, and for a vertical
+        // list that has to be top to bottom. A card whose action row is read
+        // before its text is a card nobody can follow.
+        let ordered = app.staticTexts.matching(identifier: "post.text")
+            .allElementsBoundByIndex.filter { $0.exists }
+        let tops = ordered.map { $0.frame.minY }
+        XCTAssertEqual(tops, tops.sorted(), "the posts are not announced in the order they appear")
+
+        openFirstPost(app)
+        auditControls("post detail")
+    }
+
+    /// The card's own "open this post" is not reachable by announcement.
+    ///
+    /// `PostCard.content` carries `.onTapGesture { onOpenPost?() }` on a plain
+    /// container: no `.isButton` trait, no `.accessibilityAction`, and nothing
+    /// in the card's accessibility tree that says the card can be opened. A
+    /// sighted person taps the picture or the words; a VoiceOver user is told
+    /// about an image, some text, a Like button and a Comments button, and
+    /// none of those says "open". Comments happens to lead to the same screen,
+    /// which is a coincidence of this layout and not an answer.
+    ///
+    /// Recorded as a failing assertion rather than a comment, because it is a
+    /// real defect against §6.7 and because the file it is in belongs to
+    /// another agent: this run's job is to say that it is still true.
+    func testTheCardAdvertisesThatItCanBeOpened() {
+        let app = launchOnSignIn()
+        signIn(app, email: "accept-a@example.com")
+        let text = app.staticTexts.matching(identifier: "post.text").firstMatch
+        XCTAssertTrue(waitForExistence(of: text, in: app, timeout: 60), "the feed never loaded")
+        waitForQuietUI(app)
+
+        // Everything in the first card, by geometry: from its text down to the
+        // action row below it.
+        let cardTop = text.frame.minY
+        let nextLike = app.buttons.matching(identifier: "post.like").allElementsBoundByIndex
+            .filter { $0.exists && $0.frame.minY > cardTop }
+            .min { $0.frame.minY < $1.frame.minY }
+        let cardBottom = nextLike?.frame.maxY ?? (cardTop + 400)
+
+        let announced = app.descendants(matching: .any).allElementsBoundByIndex.filter {
+            $0.exists && !$0.frame.isEmpty
+                && $0.frame.minY >= cardTop && $0.frame.maxY <= cardBottom
+                && !$0.label.isEmpty
+        }
+        let opensThePost = announced.contains {
+            $0.elementType == .button && !["Like", "Unlike", "Comments"].contains($0.label)
+        }
+        XCTAssertTrue(
+            opensThePost,
+            """
+            nothing in the card says it can be opened. What VoiceOver has to \
+            work with: \(announced.map { "\($0.elementType.rawValue):\($0.label.prefix(30))" })
+            """
+        )
+    }
+
     func testTheCorePathWorksWithReduceTransparencyOn() throws {
         try XCTSkipUnless(
             UIAccessibility.isReduceTransparencyEnabled,

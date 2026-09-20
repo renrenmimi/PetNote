@@ -192,7 +192,11 @@ final class AuthUITests: XCTestCase {
         let email = "a3-expire@example.com"
         let uid = try EmulatorAdmin.createVerifiedAccount(email: email, password: "Passw0rd!x")
 
-        let app = launchOnSignIn()
+        // The probe separates the two ways this can fail. Without it, "not
+        // given back" covers both "nothing was held for this account" and "a
+        // route was pushed and something else emptied the stack afterwards",
+        // and those have different owners and opposite fixes.
+        let app = launchOnSignIn(extraArguments: ["-petnote-session-probe"])
         signIn(app, email: email)
         openFirstPost(app)
         let postText = app.staticTexts["post.text"].firstMatch.label
@@ -219,10 +223,21 @@ final class AuthUITests: XCTestCase {
         try EmulatorAdmin.setAccountDisabled(uid: uid, false)
         signIn(app, email: email, expectFeed: false)
 
-        XCTAssertTrue(
-            waitForExistence(of: app.textFields["composer.field"], in: app, timeout: 60),
-            "The screen the session ended on was not given back.\n\(app.debugDescription)"
-        )
+        let cameBack = waitForExistence(of: app.textFields["composer.field"], in: app, timeout: 60)
+        if !cameBack {
+            // Read the probe before saying anything about what went wrong.
+            let probe = app.staticTexts["session.resumeProbe"]
+            let reading = probe.exists ? probe.label : "no probe (is -petnote-session-probe set?)"
+            XCTFail("""
+                The screen the session ended on was not given back. The feed's own \
+                reading of what it decided: "\(reading)". "resume=restored path=0" means \
+                the route was pushed and the stack was emptied afterwards — by \
+                SignedInView's account-switch reset, which runs on first appearance too. \
+                "resume=nothingHeld" means the session held nothing for this uid, which \
+                is a SessionStore question instead.
+                \(app.debugDescription)
+                """)
+        }
         XCTAssertEqual(
             app.staticTexts["post.text"].firstMatch.label, postText,
             "came back to a different post than the one the session ended on"

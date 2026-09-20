@@ -30,10 +30,36 @@ final class LikeUITests: XCTestCase {
         "http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/projects/petnote-test"
 
     private let account = "accept-a@example.com"
+    private let other = "accept-b@example.com"
     private let password = "Passw0rd!x"
+
+    /// Posts and likes this run added, removed again in tearDown.
+    ///
+    /// The seeded data is shared with the other agents' runs and is not ours
+    /// to change. Adding is allowed; leaving things behind moves what the next
+    /// run sees, and a post left at the top of the feed moves it for everyone
+    /// at once.
+    private var temporaryPosts: [String] = []
+    private var temporaryLikes: [(post: String, uid: String)] = []
 
     override func setUp() {
         continueAfterFailure = false
+    }
+
+    override func tearDown() {
+        for like in temporaryLikes {
+            _ = json("\(Self.firestore)/posts/\(like.post)/likes/\(like.uid)", method: "DELETE")
+        }
+        for post in temporaryPosts {
+            _ = json("\(Self.firestore)/posts/\(post)", method: "DELETE")
+        }
+        let leftBehind = temporaryPosts.filter { json("\(Self.firestore)/posts/\($0)") != nil }
+        temporaryLikes = []
+        temporaryPosts = []
+        // Failing on purpose, as the comment tests do: a run that cannot clean
+        // up after itself has changed the dataset every other run is reading.
+        XCTAssertTrue(leftBehind.isEmpty, "posts left in the shared emulator: \(leftBehind)")
+        super.tearDown()
     }
 
     // MARK: - Reading the emulator
@@ -93,13 +119,20 @@ final class LikeUITests: XCTestCase {
         return users.first { ($0["email"] as? String) == email }?["localId"] as? String
     }
 
-    /// The aggregate the trigger maintains. Absent means the field is not there,
-    /// which for a seeded post would itself be a finding.
+    /// The aggregate the trigger maintains — or 0 when the field is not there.
+    ///
+    /// **Absent is normal and is not zero-by-accident.** No script writes these
+    /// aggregates any more: `onLikeCreated` creates the field the first time
+    /// somebody likes the post, so a post nobody has liked simply has no
+    /// `likeCount`, exactly as the decoder assumes. Treating that as a missing
+    /// value made every assertion below unrunnable against most of the seed —
+    /// and treating it as a *failure* would report the seed as broken for
+    /// being correct. `nil` now means only one thing: there is no such post.
     private func backendLikeCount(of postID: String) -> Int? {
         guard let document = json("\(Self.firestore)/posts/\(postID)"),
-              let fields = document["fields"] as? [String: Any],
-              let count = fields["likeCount"] as? [String: Any],
-              let value = count["integerValue"] as? String else { return nil }
+              let fields = document["fields"] as? [String: Any] else { return nil }
+        guard let count = fields["likeCount"] as? [String: Any],
+              let value = count["integerValue"] as? String else { return 0 }
         return Int(value)
     }
 
@@ -195,8 +228,11 @@ final class LikeUITests: XCTestCase {
         _ app: XCUIApplication, stillShowing postID: String,
         file: StaticString = #filePath, line: UInt = #line
     ) {
-        app.swipeDown()
-        waitForQuietUI(app, quietFor: 1, timeout: 10)
+        // A held pull, not a flick. This used to be a bare `swipeDown()`, and
+        // a flick at the top of a List does not necessarily start
+        // `.refreshable` at all — which would have left every assertion after
+        // it describing a screen that had never been reloaded.
+        pullToRefresh(app)
         XCTAssertEqual(
             firstPostID(app), postID,
             "the first row is a different post now; this run cannot be reconciled",
@@ -378,5 +414,470 @@ final class LikeUITests: XCTestCase {
             backendSettles { self.backendLikeCount(of: postID) == startBackendCount },
             "left the post at \(backendLikeCount(of: postID).map(String.init) ?? "nothing"), not \(startBackendCount)"
         )
+    }
+
+    // MARK: - Posts this run owns
+
+    /// A post of our own, placed a few rows down the feed.
+    ///
+    /// Two tests below need a post they may delete and a post nobody else's
+    /// assertions are about, and the seeded 210 are neither. `createdAt` is
+    /// set between two seeded posts rather than to "now" for the sake of the
+    /// other agents: the feed is ordered newest first, and a post written at
+    /// "now" becomes row one for every run sharing this emulator — including
+    /// the ones whose first assertion is which post row one is.
+    private func createTemporaryPost(label: String) -> (id: String, text: String)? {
+        guard let manifest = try? EmulatorAdmin.seedManifest() else {
+            XCTFail("no seed manifest; cannot place a post relative to this run's data")
+            return nil
+        }
+        guard let above = createdAt(ofPost: manifest.post(index: 2)),
+              let below = createdAt(ofPost: manifest.post(index: 3)) else {
+            XCTFail("could not read the seeded posts this one has to sit between")
+            return nil
+        }
+        let between = Date(
+            timeIntervalSince1970: (above.timeIntervalSince1970 + below.timeIntervalSince1970) / 2
+        )
+
+        let id = "a3-like-\(label)-\(UUID().uuidString.prefix(8))"
+        let text = "TEST CONTENT a3 \(label) \(Int(Date().timeIntervalSince1970 * 1000))"
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        // The author is a real seeded account: `onPostWritten` maintains
+        // aggregates from it, and pointing at a uid that does not exist would
+        // be asking the trigger to do arithmetic on a missing document.
+        let body = """
+            {"fields":{\
+            "authorId":{"stringValue":"\(uid(forEmail: account) ?? "")"},\
+            "authorName":{"stringValue":"Accept A"},\
+            "text":{"stringValue":"\(text)"},\
+            "createdAt":{"timestampValue":"\(formatter.string(from: between))"}}}
+            """
+        guard json("\(Self.firestore)/posts?documentId=\(id)", method: "POST", body: body) != nil else {
+            XCTFail("could not create the temporary post \(id)")
+            return nil
+        }
+        temporaryPosts.append(id)
+        return (id, text)
+    }
+
+    private func createdAt(ofPost id: String) -> Date? {
+        guard let document = json("\(Self.firestore)/posts/\(id)"),
+              let fields = document["fields"] as? [String: Any],
+              let stamp = fields["createdAt"] as? [String: Any],
+              let raw = stamp["timestampValue"] as? String else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: raw) ?? {
+            formatter.formatOptions = [.withInternetDateTime]
+            return formatter.date(from: raw)
+        }()
+    }
+
+    /// Writes a like as somebody else, the way another person's phone would.
+    ///
+    /// `counted: false`, because that is what the rules require of a client and
+    /// what `onLikeCreated` flips when it moves the count. A like written with
+    /// the field already true would be a like the trigger declines to count,
+    /// which is not what another person's like looks like.
+    private func likeAsAnotherAccount(postID: String, uid otherUID: String) {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let body = """
+            {"fields":{\
+            "userId":{"stringValue":"\(otherUID)"},\
+            "postId":{"stringValue":"\(postID)"},\
+            "createdAt":{"timestampValue":"\(formatter.string(from: Date()))"},\
+            "counted":{"booleanValue":false}}}
+            """
+        XCTAssertNotNil(
+            json("\(Self.firestore)/posts/\(postID)/likes?documentId=\(otherUID)",
+                 method: "POST", body: body),
+            "could not write \(otherUID)'s like on \(postID)"
+        )
+        temporaryLikes.append((post: postID, uid: otherUID))
+    }
+
+    /// Scrolls until a post's text and its own action row are both on screen.
+    @discardableResult
+    private func scrollToPost(_ app: XCUIApplication, withText text: String) -> Bool {
+        let target = app.staticTexts.matching(identifier: "post.text")
+            .containing(NSPredicate(format: "label == %@", text)).firstMatch
+        for _ in 0..<15 {
+            dismissSavePasswordSheetIfPresent(app)
+            if target.exists, target.isHittable,
+               let like = likeButton(app, forPostWithText: text), like.isHittable {
+                return true
+            }
+            app.swipeUp()
+        }
+        return false
+    }
+
+    /// The like button belonging to one particular card.
+    ///
+    /// By geometry, because the cards are siblings in the tree and nothing
+    /// links a button to the text above it: the first `post.like` below this
+    /// card's text is this card's, since the next card's text comes after its
+    /// own action row. Indexing into the visible buttons instead is what
+    /// previously moved an assertion onto whatever card happened to be on
+    /// screen.
+    private func likeButton(_ app: XCUIApplication, forPostWithText text: String) -> XCUIElement? {
+        let target = app.staticTexts.matching(identifier: "post.text")
+            .containing(NSPredicate(format: "label == %@", text)).firstMatch
+        guard target.exists else { return nil }
+        let top = target.frame.minY
+        return app.buttons.matching(identifier: "post.like").allElementsBoundByIndex
+            .filter { $0.exists && !$0.frame.isEmpty && $0.frame.minY > top }
+            .min { $0.frame.minY < $1.frame.minY }
+    }
+
+    private func shownCount(of button: XCUIElement) -> Int? {
+        guard let value = button.value as? String,
+              let digits = value.split(separator: " ").first else { return nil }
+        return Int(digits)
+    }
+
+    // MARK: - 5A.8 Five taps in a row
+
+    /// Five taps, then the button, the number and the server have to agree.
+    ///
+    /// An odd number of taps from a known start ends on the opposite intent,
+    /// and the count must have moved by exactly one — not five, not zero, and
+    /// never below zero. The unit test asserts the same thing over fakes with
+    /// the taps genuinely interleaved; what this adds is that the real
+    /// repository, the real rules and the real trigger produce one document
+    /// and one increment out of it.
+    ///
+    /// XCUITest cannot promise how close together five `tap()`s land, so this
+    /// does not claim to reproduce a particular interleaving. It claims what
+    /// 5A.8 actually asks: after five, everything agrees.
+    func testFiveTapsInARowLeaveTheButtonTheNumberAndTheServerAgreeing() throws {
+        let uid = try XCTUnwrap(uid(forEmail: account), "no uid for \(account)")
+        let app = signedIn()
+        let like = likeButton(app)
+        XCTAssertTrue(waitUntilHittable(like, in: app, timeout: 30), "no like button")
+        let postID = try XCTUnwrap(firstPostID(app), "could not tell which post the first row is")
+
+        let startLabel = like.label
+        let startShown = try XCTUnwrap(shownCount(app), "the button announced no number")
+        let startCount = try XCTUnwrap(backendLikeCount(of: postID), "\(postID) is not in the emulator")
+        let startLiked = backendLikeExists(postID: postID, uid: uid)
+        print("MEASURED 5A.8 target=\(postID) label=\(startLabel) shown=\(startShown) backend=\(startCount) liked=\(startLiked)")
+        XCTAssertEqual(startShown, startCount, "screen and aggregate disagree before the first tap")
+
+        for _ in 0..<5 { likeButton(app).tap() }
+
+        let wantLiked = !startLiked
+        let expected = startCount + (wantLiked ? 1 : -1)
+        XCTAssertTrue(
+            waitForLabel(wantLiked ? "Unlike" : "Like", on: app, timeout: 30),
+            "after five taps the button says \(likeButton(app).label), not \(wantLiked ? "Unlike" : "Like")"
+        )
+        XCTAssertTrue(
+            backendSettles(within: 30) { self.backendLikeExists(postID: postID, uid: uid) == wantLiked },
+            "five taps left the like document \(backendLikeExists(postID: postID, uid: uid) ? "present" : "absent")"
+        )
+        XCTAssertTrue(
+            backendSettles(within: 30) { self.backendLikeCount(of: postID) == expected },
+            """
+            five taps moved the aggregate to \
+            \(backendLikeCount(of: postID).map(String.init) ?? "nothing"), expected \(expected)
+            """
+        )
+        let ended = try XCTUnwrap(shownCount(app), "the button stopped announcing a number")
+        XCTAssertEqual(ended, expected, "the number on screen is not what the server holds")
+        XCTAssertGreaterThanOrEqual(ended, 0, "the count went negative")
+        XCTAssertFalse(app.staticTexts["feed.likeError"].exists,
+                       "five taps reported a failure: \(app.staticTexts["feed.likeError"].label)")
+
+        // Put it back.
+        tapLike(app)
+        XCTAssertTrue(waitForLabel(startLabel, on: app, timeout: 30))
+        XCTAssertTrue(
+            backendSettles(within: 30) { self.backendLikeCount(of: postID) == startCount },
+            "left \(postID) at \(backendLikeCount(of: postID).map(String.init) ?? "nothing"), not \(startCount)"
+        )
+    }
+
+    // MARK: - 5A.9 A post that is no longer there
+
+    /// The post is deleted on the server while it is on screen, and then its
+    /// heart is tapped.
+    ///
+    /// The old web client turned the heart red and incremented the number with
+    /// no write behind it. What has to happen instead: the row goes, the
+    /// person is told, and nothing is written — which is checked at the
+    /// server, because "no like appeared on screen" is also what a silently
+    /// dropped write looks like.
+    func testLikingAPostThatWasDeletedSaysSoAndWritesNothing() throws {
+        let uid = try XCTUnwrap(uid(forEmail: account))
+        let temporary = try XCTUnwrap(createTemporaryPost(label: "deleted"))
+        let app = signedIn()
+
+        XCTAssertTrue(scrollToPost(app, withText: temporary.text),
+                      "the post this test created never appeared in the feed")
+        let heart = try XCTUnwrap(likeButton(app, forPostWithText: temporary.text),
+                                  "found the post but not its like button")
+        XCTAssertEqual(heart.label, "Like", "the temporary post started out liked")
+
+        // Gone, from under the screen that is still showing it.
+        XCTAssertNotNil(json("\(Self.firestore)/posts/\(temporary.id)", method: "DELETE"),
+                        "could not delete the post")
+        XCTAssertNil(json("\(Self.firestore)/posts/\(temporary.id)"), "the post is still there")
+
+        heart.tap()
+
+        let banner = app.staticTexts["feed.likeError"]
+        XCTAssertTrue(waitForExistence(of: banner, in: app, timeout: 30),
+                      "liking a deleted post said nothing at all")
+        XCTAssertEqual(banner.label, "That post no longer exists.")
+
+        // The row goes with it: a card for a post that does not exist is a
+        // second tap waiting to happen.
+        let gone = Date().addingTimeInterval(20)
+        var stillThere = true
+        while Date() < gone {
+            stillThere = app.staticTexts.matching(identifier: "post.text")
+                .containing(NSPredicate(format: "label == %@", temporary.text)).firstMatch.exists
+            if !stillThere { break }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        XCTAssertFalse(stillThere, "the deleted post is still in the list")
+
+        // Nothing was written. The rules would have refused it anyway — a like
+        // requires its post to exist — and the repository checks first, so
+        // this is belt and braces on purpose: both have been wrong before.
+        XCTAssertNil(json("\(Self.firestore)/posts/\(temporary.id)/likes/\(uid)"),
+                     "a like was written against a post that does not exist")
+
+        // And the feed still works afterwards. *Some* card's heart has to be
+        // usable, not the first one in the tree: this test scrolled down to
+        // reach its own post, so the first `post.like` is a card above the
+        // fold — which exists, is not hittable, and is not a defect.
+        let usable = backendSettles(within: 20) {
+            app.buttons.matching(identifier: "post.like").allElementsBoundByIndex
+                .contains { $0.exists && $0.isHittable }
+        }
+        XCTAssertTrue(usable, "the feed stopped responding after a post was dropped from it")
+    }
+
+    // MARK: - Somebody else moved the count
+
+    /// Another account likes and unlikes the same post, and this client has to
+    /// end up agreeing with the server both times.
+    ///
+    /// This is the case `likeCount` cannot answer on its own: one integer does
+    /// not say whose write it contains, so a stranger's like moves it by
+    /// exactly as much as our own unconfirmed one would. The bounded offset is
+    /// what stops that being permanent, and this drives it through the real
+    /// UI — a pull to refresh, on a post whose count really did change
+    /// underneath us.
+    func testACountMovedByAnotherAccountIsAdoptedOnRefresh() throws {
+        let mine = try XCTUnwrap(uid(forEmail: account), "no uid for \(account)")
+        let theirs = try XCTUnwrap(uid(forEmail: other), "no uid for \(other)")
+        let temporary = try XCTUnwrap(createTemporaryPost(label: "stranger"))
+        let app = signedIn()
+
+        XCTAssertTrue(scrollToPost(app, withText: temporary.text), "the post never appeared")
+        var heart = try XCTUnwrap(likeButton(app, forPostWithText: temporary.text))
+        XCTAssertEqual(shownCount(of: heart), 0, "a post nobody has liked did not start at zero")
+        XCTAssertEqual(backendLikeCount(of: temporary.id), 0, "the aggregate did not start at zero")
+
+        // Somebody else likes it.
+        likeAsAnotherAccount(postID: temporary.id, uid: theirs)
+        XCTAssertTrue(
+            backendSettles(within: 30) { self.backendLikeCount(of: temporary.id) == 1 },
+            "the trigger never counted the other account's like"
+        )
+
+        pullToRefresh(app)
+        XCTAssertTrue(scrollToPost(app, withText: temporary.text), "the post vanished on refresh")
+        if !waitForCount(1, ofPostWithText: temporary.text, in: app) {
+            // Two very different faults look identical from here, so ask the
+            // other way before saying which one it is: a cold start reads
+            // everything again and cannot be confused with a gesture that
+            // failed to trigger a reload.
+            let afterRefresh = likeButton(app, forPostWithText: temporary.text)
+                .flatMap(shownCount(of:))
+            relaunchAndSignIn(app)
+            _ = scrollToPost(app, withText: temporary.text)
+            let afterRelaunch = likeButton(app, forPostWithText: temporary.text)
+                .flatMap(shownCount(of:))
+            XCTFail("""
+                the other account's like did not reach the screen. After a pull to \
+                refresh the card said \(afterRefresh.map(String.init) ?? "nothing"); after a \
+                cold start it said \(afterRelaunch.map(String.init) ?? "nothing"); the server \
+                holds \(backendLikeCount(of: temporary.id).map(String.init) ?? "nothing"). \
+                A cold start that says 1 means the refresh did not read; a cold start that \
+                also says 0 means the client will not adopt the server's count at all.
+                """)
+        }
+        heart = try XCTUnwrap(likeButton(app, forPostWithText: temporary.text))
+        XCTAssertEqual(heart.label, "Like", "somebody else's like filled in our heart")
+
+        // Now our own, on top of theirs.
+        heart = try XCTUnwrap(likeButton(app, forPostWithText: temporary.text))
+        heart.tap()
+        XCTAssertTrue(waitForCount(2, ofPostWithText: temporary.text, in: app),
+                      "our like did not add to theirs")
+        XCTAssertTrue(
+            backendSettles(within: 30) { self.backendLikeCount(of: temporary.id) == 2 },
+            "the aggregate is \(backendLikeCount(of: temporary.id).map(String.init) ?? "nothing"), expected 2"
+        )
+        XCTAssertTrue(backendLikeExists(postID: temporary.id, uid: mine), "our like was never written")
+        temporaryLikes.append((post: temporary.id, uid: mine))
+
+        // And they take theirs back.
+        XCTAssertNotNil(
+            json("\(Self.firestore)/posts/\(temporary.id)/likes/\(theirs)", method: "DELETE"),
+            "could not remove the other account's like"
+        )
+        XCTAssertTrue(
+            backendSettles(within: 30) { self.backendLikeCount(of: temporary.id) == 1 },
+            "the trigger never took the other account's like off the count"
+        )
+
+        // This is the case the aggregate cannot answer, and the one the bound
+        // exists for. Our own like is confirmed but the count has not caught
+        // up with it yet, so we hold a +1; their unlike then moves the count
+        // back down by exactly as much, so it reads the same as before and
+        // "has it caught up?" can never answer yes. The offset is therefore
+        // *not* dropped on the first read, by design — it is given up after
+        // `unconfirmedReadLimit` (3) of them, server wins.
+        //
+        // So convergence is what is asserted, with the documented bound as the
+        // deadline, and the number of reads it took is printed. One refresh
+        // showing 2 is the design; still showing 2 after four is the defect.
+        var reads = 0
+        var settled = false
+        for _ in 0..<4 {
+            reads += 1
+            pullToRefresh(app)
+            XCTAssertTrue(scrollToPost(app, withText: temporary.text),
+                          "the post vanished on refresh \(reads)")
+            if waitForCount(1, ofPostWithText: temporary.text, in: app, timeout: 5) {
+                settled = true
+                break
+            }
+        }
+        print("MEASURED convergence after a stranger's unlike: \(reads) refresh(es), settled=\(settled)")
+        XCTAssertTrue(
+            settled,
+            "the screen kept a like that was taken away: after \(reads) refreshes it says "
+                + "\(likeButton(app, forPostWithText: temporary.text).flatMap(shownCount(of:)).map(String.init) ?? "nothing")"
+                + ", the server says 1"
+        )
+        heart = try XCTUnwrap(likeButton(app, forPostWithText: temporary.text))
+        XCTAssertEqual(heart.label, "Unlike", "our own like was lost when theirs went away")
+    }
+
+    // MARK: - §4.4 The next account inherits none of this
+
+    /// One account likes a post; the next account must see the server's state
+    /// and nothing of the first account's.
+    ///
+    /// The count is the half that hides. A filled heart belonging to somebody
+    /// else is obvious, but an unconfirmed +1 left over from the previous
+    /// person looks exactly like a number — and the worst case is quiet: the
+    /// aggregate already contains the like, so the leftover offset shows the
+    /// next person one more than the truth with nothing on screen to
+    /// contradict it.
+    ///
+    /// On a post this test made, so the answer is not "whatever the seed
+    /// happened to leave on post one".
+    func testTheNextAccountSeesNoneOfThePreviousAccountsLikeState() throws {
+        let mine = try XCTUnwrap(uid(forEmail: account), "no uid for \(account)")
+        let temporary = try XCTUnwrap(createTemporaryPost(label: "switch"))
+        let app = signedIn()
+
+        XCTAssertTrue(scrollToPost(app, withText: temporary.text), "the post never appeared")
+        let heart = try XCTUnwrap(likeButton(app, forPostWithText: temporary.text))
+        XCTAssertEqual(shownCount(of: heart), 0)
+        heart.tap()
+        temporaryLikes.append((post: temporary.id, uid: mine))
+
+        XCTAssertTrue(waitForCount(1, ofPostWithText: temporary.text, in: app),
+                      "our own like never showed")
+        XCTAssertTrue(
+            backendSettles(within: 30) { self.backendLikeCount(of: temporary.id) == 1 },
+            "the aggregate never caught up, so this test cannot tell a leftover offset from a real count"
+        )
+
+        // Out, and in as somebody else.
+        let signOut = app.buttons["session.signOut"]
+        XCTAssertTrue(waitUntilHittable(signOut, in: app, timeout: 20), "sign out is not reachable")
+        signOut.tap()
+        XCTAssertTrue(waitForExistence(of: app.staticTexts["login.title"], in: app, timeout: 20),
+                      "signing out did not return to sign-in")
+        typeCredentials(app, email: other, password: password)
+        XCTAssertTrue(reachedFeed(app), "did not reach the feed as \(other)")
+        waitForQuietUI(app)
+
+        XCTAssertTrue(scrollToPost(app, withText: temporary.text),
+                      "the post is not in the second account's feed")
+        let afterSwitch = try XCTUnwrap(likeButton(app, forPostWithText: temporary.text))
+        XCTAssertEqual(
+            afterSwitch.label, "Like",
+            "the previous account's filled heart survived the switch"
+        )
+        XCTAssertEqual(
+            shownCount(of: afterSwitch), 1,
+            "the second account is shown \(shownCount(of: afterSwitch).map(String.init) ?? "nothing") "
+                + "likes where the server holds 1 — the previous account's optimistic offset is still here"
+        )
+    }
+
+    /// Waits for one card's announced number to settle on `expected`.
+    ///
+    /// The button is looked up again on every poll. An element taken from
+    /// `allElementsBoundByIndex` is bound to a position in the tree, and a
+    /// refresh rebuilds that tree — so a held reference goes on answering for
+    /// whatever is at that position afterwards, which is how a stale reading
+    /// outlives the thing it was read from.
+    private func waitForCount(
+        _ expected: Int,
+        ofPostWithText text: String,
+        in app: XCUIApplication,
+        timeout: TimeInterval = 25
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let button = likeButton(app, forPostWithText: text),
+               shownCount(of: button) == expected { return true }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        return likeButton(app, forPostWithText: text).flatMap(shownCount(of:)) == expected
+    }
+
+    /// A real pull-to-refresh, from wherever the list happens to be.
+    ///
+    /// Two things had to be true and neither was. The list has to be at the
+    /// **top**, because a downward drag anywhere else only scrolls; and the
+    /// gesture has to be a **pull**, held, rather than a flick. `swipeDown()`
+    /// is a flick, and ten of them in a row moved the list to the top and
+    /// refreshed nothing — which this test then reported as the app failing to
+    /// adopt a change it had never been asked to go and look for.
+    private func pullToRefresh(_ app: XCUIApplication) {
+        for _ in 0..<8 { app.swipeDown() }
+        waitForQuietUI(app, quietFor: 1, timeout: 15)
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9))
+        start.press(forDuration: 0.2, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.8)
+        waitForQuietUI(app, quietFor: 1, timeout: 20)
+    }
+
+    /// The same question asked the hard way: a cold start reads everything
+    /// again, so it cannot be confused with a gesture that did nothing.
+    private func relaunchAndSignIn(_ app: XCUIApplication) {
+        app.terminate()
+        app.launchArguments = ["-petnote-start-signed-out"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["login.title"].waitForExistence(timeout: 20))
+        typeCredentials(app, email: account, password: password)
+        XCTAssertTrue(reachedFeed(app), "did not reach the feed after relaunching")
+        waitForQuietUI(app)
     }
 }

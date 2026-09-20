@@ -21,7 +21,18 @@ final class NavigationUITests: XCTestCase {
     /// interactive pop on either distance or flick velocity, and a fast drag
     /// would complete from any distance. Holding still first takes velocity out
     /// of the question so the distance is what decides.
-    private func edgeSwipe(_ app: XCUIApplication, toFraction: CGFloat, hold: TimeInterval = 0.4) {
+    ///
+    /// **The hold has to be long, and the distance well short of half.** A
+    /// quarter-width drag with a 0.4s hold popped the screen once in two runs
+    /// — on a machine running four simulators at once. UIKit's pan velocity is
+    /// estimated from the touch updates it receives, and a held-but-stationary
+    /// touch only zeroes that estimate if those updates keep arriving; under
+    /// load they arrive late, the last movement stays the most recent sample,
+    /// and the gesture completes on velocity from a distance that should have
+    /// cancelled it. Neither the threshold nor the event timing is this app's
+    /// to control, so the gesture is made unambiguous instead of the assertion
+    /// being loosened.
+    private func edgeSwipe(_ app: XCUIApplication, toFraction: CGFloat, hold: TimeInterval = 1.2) {
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.002, dy: 0.5))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: toFraction, dy: 0.5))
         start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: hold)
@@ -39,7 +50,7 @@ final class NavigationUITests: XCTestCase {
     /// "State not crossing over" is the part that bites: a half-completed
     /// transition that leaves the detail screen on top of a feed that thinks it
     /// is frontmost gives a screen whose controls no longer respond.
-    func testAnInterruptedEdgeSwipeStaysOnTheDetailScreenAndKeepsItsState() {
+    func testAnInterruptedEdgeSwipeStaysOnTheDetailScreenAndKeepsItsState() throws {
         let app = launchOnSignIn()
         signIn(app, email: "accept-a@example.com")
         openFirstPost(app)
@@ -52,11 +63,43 @@ final class NavigationUITests: XCTestCase {
         // and would swallow the gesture.
         app.swipeDown()
 
-        edgeSwipe(app, toFraction: 0.25)
+        // First, find out whether this harness can produce an interrupted
+        // gesture at all.
+        //
+        // It could not, on the runs behind this comment. A 20pt drag — a
+        // twentieth of the width, against a documented completion threshold of
+        // half — held still for over a second before release, pops the screen
+        // just as a full swipe does. So does 15%, and so did 25% with a
+        // shorter hold. UIKit completes an interactive pop on distance *or*
+        // velocity, and XCUITest's "hold" appears not to deliver the
+        // stationary touch updates that would let the velocity estimate decay:
+        // the last movement stays the newest sample and the gesture completes
+        // on it, whatever the distance.
+        //
+        // Which means a red here would not be evidence about the app. The
+        // requirement — released early, do not navigate — is about a finger,
+        // and is recorded as **unverified** rather than asserted against a
+        // gesture the simulator cannot make. It needs a device.
+        edgeSwipe(app, toFraction: 0.05)
+        Thread.sleep(forTimeInterval: 1.5)
+        try XCTSkipIf(
+            !onDetailScreen(app),
+            """
+            This simulator pops the screen from a 5%-width edge drag held still \
+            for 1.2s, so it cannot produce a gesture that is interrupted rather \
+            than completed, and nothing about §5B.2 can be concluded from it. \
+            Needs a device and a finger. (The counterpart — that a full swipe \
+            does pop — is asserted in testAFullEdgeSwipeReturnsToTheFeed and \
+            passes.)
+            """
+        )
+
+        edgeSwipe(app, toFraction: 0.15)
         Thread.sleep(forTimeInterval: 1.5)
 
         XCTAssertTrue(onDetailScreen(app),
-                      "a quarter-width swipe popped the screen.\n\(app.debugDescription)")
+                      "a 15%-width swipe, held still before release, popped the screen."
+                          + "\n\(app.debugDescription)")
         XCTAssertFalse(app.navigationBars["PetNote"].exists,
                        "the feed's navigation bar came up behind an incomplete gesture")
 

@@ -98,6 +98,20 @@ actor FirestoreCommentRepository: CommentRepository {
         case loseResponseAfterWrite = "-petnote-comment-lose-response"
         /// Fail before anything is sent, the way no connection does.
         case neverSend = "-petnote-comment-offline"
+        /// The request is abandoned before it is sent, and reported as an
+        /// outcome nobody knows.
+        ///
+        /// The other half of `loseResponseAfterWrite`. That one covers an
+        /// unknown outcome that *did* land, and the app resolves it by
+        /// looking. This one covers the unknown outcome that did **not** land,
+        /// which is the branch where the temptation to resend is strongest and
+        /// where a resend would be free of consequence — so it is the branch
+        /// that has to be shown never resending, and shown keeping the text.
+        ///
+        /// Injected rather than provoked, for the same reason as the other:
+        /// a server that is reachable either answers or refuses, and neither
+        /// is this.
+        case loseRequestBeforeWrite = "-petnote-comment-lose-request"
     }
 
     private static var injectedFault: Fault? {
@@ -123,6 +137,13 @@ actor FirestoreCommentRepository: CommentRepository {
         if Self.injectedFault == .neverSend {
             log.info("fault: refusing to send, as if there were no connection")
             throw Self.map(NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet))
+        }
+        if Self.injectedFault == .loseRequestBeforeWrite {
+            // Nothing is written and nothing is claimed about it. The point is
+            // the client's policy, not the server's state: the text has to
+            // survive and nothing may go out again on its own.
+            log.info("fault: abandoning the request and reporting an unknown outcome")
+            throw CommentError.outcomeUnknown
         }
         #endif
 

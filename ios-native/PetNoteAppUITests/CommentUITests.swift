@@ -46,13 +46,54 @@ final class CommentUITests: XCTestCase {
     }
 
     /// Opens the post the emulator says has the most comments — 5C.11 needs
-    /// more than 50, and asking the server which post that is beats assuming a
-    /// position in the feed.
+    /// more than one page of them, and asking the server which post that is
+    /// beats assuming a position in the feed.
+    ///
+    /// The id is checked against this process's pinned manifest. Each seed run
+    /// writes into its own namespace now, and "the post with the most
+    /// comments" is a query over everything in the emulator: a document left
+    /// behind by an abandoned run, or one another agent added, would answer it
+    /// just as well and the test would then be describing data nobody meant.
     @discardableResult
     private func openTheMostCommentedPost(_ app: XCUIApplication) throws -> String {
         let post = try EmulatorAdmin.postWithMostComments()
+        let manifest = try EmulatorAdmin.seedManifest()
+        XCTAssertTrue(
+            post.id.hasPrefix(manifest.postIdPrefix),
+            """
+            the most-commented post in the emulator is \(post.id), which is not \
+            from this run (\(manifest.runId)). Testing against it would be testing \
+            against data no seed run claims.
+            """
+        )
         openPost(app, withText: post.text)
         return post.id
+    }
+
+    /// How many comments the server holds for a post. A collection count, read
+    /// straight from Firestore: the screen can only say what the app drew, and
+    /// "the list paged" means nothing unless there was more than one page of
+    /// comments to page through.
+    private func serverCommentCount(postID: String) -> Int? {
+        let url = URL(
+            string: "http://127.0.0.1:8088/v1/projects/petnote-test/databases/(default)"
+                + "/documents/posts/\(postID)/comments?pageSize=300"
+        )!
+        var request = URLRequest(url: url)
+        request.setValue("Bearer owner", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 20
+
+        var count: Int?
+        let answered = expectation(description: "comment count for \(postID)")
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            if let data,
+               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                count = (object["documents"] as? [Any])?.count ?? 0
+            }
+            answered.fulfill()
+        }.resume()
+        wait(for: [answered], timeout: 25)
+        return count
     }
 
     private func type(_ text: String, into app: XCUIApplication) {
@@ -103,9 +144,22 @@ final class CommentUITests: XCTestCase {
 
     // MARK: - 5C.4 A comment that is actually written
 
-    func testVerifiedAccountCommentIsWrittenToTheServer() {
+    /// All three have to agree: the list on screen, the count the feed draws
+    /// on the card, and the documents in the emulator.
+    ///
+    /// The count is the one that used to be taken on trust. `commentCount` is
+    /// moved by a trigger, not by this write and not by the seed — a post with
+    /// no comments has no such field at all — so "the row appeared" says
+    /// nothing about whether the number a reader sees followed it.
+    func testVerifiedAccountCommentIsWrittenToTheServer() throws {
         let app = launchOnSignIn()
         signIn(app, email: "accept-a@example.com")
+        let postID = try XCTUnwrap(firstPostID(in: app), "could not tell which post the first row is")
+        let countBefore = shownCommentCount(app)
+        let backendBefore = serverPostCommentCount(postID: postID) ?? 0
+        print("MEASURED target=\(postID) shown=\(String(describing: countBefore)) backend=\(backendBefore)")
+        XCTAssertEqual(countBefore, backendBefore,
+                       "the card's count and the aggregate disagree before anything was written")
         openFirstPost(app)
 
         let text = uniqueText("write")
@@ -124,6 +178,91 @@ final class CommentUITests: XCTestCase {
                        "the composer was not cleared after a successful send")
 
         assertServerCommentCount(text, equals: 1)
+
+        // The aggregate, once the trigger has had its turn. Polled, not slept
+        // on: it is a separate write by a separate process.
+        var backendAfter = backendBefore
+        let settled = Date().addingTimeInterval(20)
+        while Date() < settled {
+            backendAfter = serverPostCommentCount(postID: postID) ?? backendBefore
+            if backendAfter >= backendBefore + 1 { break }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        XCTAssertGreaterThanOrEqual(
+            backendAfter, backendBefore + 1,
+            "the comment is in the database but commentCount never moved: \(backendBefore) → \(backendAfter)"
+        )
+
+        // And the number a reader actually sees, back on the feed.
+        //
+        // After a refresh, not before one: the feed reads its posts when it
+        // loads, and popping a screen off the stack is not a read. A card
+        // still showing the count from a minute ago is the design working.
+        popToFeed(app)
+        pullToRefreshFeed(app)
+        var shown: Int?
+        let agree = Date().addingTimeInterval(20)
+        while Date() < agree {
+            shown = shownCommentCount(app)
+            if shown == serverPostCommentCount(postID: postID) { break }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        if shown != serverPostCommentCount(postID: postID) {
+            // "The refresh did not read" and "the client will not adopt the
+            // server's count" look identical from here, and have different
+            // owners. A cold start separates them.
+            app.terminate()
+            let cold = launchOnSignIn()
+            signIn(cold, email: "accept-a@example.com")
+            waitForQuietUI(cold)
+            let afterRelaunch = shownCommentCount(cold)
+            XCTFail(
+                "after a refresh the card says \(shown.map(String.init) ?? "nothing") comments; "
+                    + "after a cold start \(afterRelaunch.map(String.init) ?? "nothing"); "
+                    + "the aggregate says "
+                    + "\(serverPostCommentCount(postID: postID).map(String.init) ?? "nothing")"
+            )
+        }
+    }
+
+    /// The number the first card's comments button is announcing.
+    private func shownCommentCount(_ app: XCUIApplication) -> Int? {
+        let button = app.buttons.matching(identifier: "post.comments").firstMatch
+        guard waitForExistence(of: button, in: app, timeout: 30),
+              let value = button.value as? String else { return nil }
+        return Int(value.trimmingCharacters(in: .whitespaces))
+    }
+
+    /// `commentCount` on the post document, or 0 when the field is not there.
+    ///
+    /// Absent is the normal state for a post nobody has commented on: no
+    /// script writes these aggregates any more, the trigger creates them, and
+    /// a test that treats absence as an error reports the seed as broken.
+    private func serverPostCommentCount(postID: String) -> Int? {
+        let url = URL(
+            string: "http://127.0.0.1:8088/v1/projects/petnote-test/databases/(default)"
+                + "/documents/posts/\(postID)"
+        )!
+        var request = URLRequest(url: url)
+        request.setValue("Bearer owner", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 20
+
+        var count: Int?
+        let answered = expectation(description: "commentCount for \(postID)")
+        URLSession.shared.dataTask(with: request) { data, response, _ in
+            defer { answered.fulfill() }
+            guard (response as? HTTPURLResponse)?.statusCode == 200, let data,
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let fields = object["fields"] as? [String: Any] else { return }
+            guard let field = fields["commentCount"] as? [String: Any],
+                  let raw = field["integerValue"] as? String, let value = Int(raw) else {
+                count = 0
+                return
+            }
+            count = value
+        }.resume()
+        wait(for: [answered], timeout: 25)
+        return count
     }
 
     /// Written, and still there after the screen is rebuilt from the server —
@@ -267,6 +406,69 @@ final class CommentUITests: XCTestCase {
         assertServerCommentCount(text, equals: 1, settleFor: 10)
     }
 
+    /// The other half of 5C.10: an unknown outcome that did **not** land.
+    ///
+    /// This is the branch where resending is most tempting and looks most
+    /// harmless — nothing was written, so a resend would produce exactly one
+    /// comment and nobody would ever know. `createCommentCallable` has no
+    /// idempotency key, so the app cannot tell this case from the one above
+    /// without looking, and "look, then tell the person" is the only policy
+    /// that is safe in both. What is asserted here is that policy, from the
+    /// outside: the words never claim a plain failure, the text is still in
+    /// the box to send by hand, and the server holds nothing — which is what
+    /// proves no request went out on the app's own initiative.
+    func testAnUnknownOutcomeThatDidNotLandKeepsTheTextAndNeverResends() {
+        let app = launchOnSignIn(extraArguments: ["-petnote-comment-lose-request"])
+        signIn(app, email: "accept-a@example.com")
+        openFirstPost(app)
+
+        let text = uniqueText("unknown-not-landed")
+        type(text, into: app)
+        app.buttons["composer.send"].tap()
+
+        let error = app.staticTexts["composer.error"]
+        XCTAssertTrue(waitForExistence(of: error, in: app, timeout: 40), "nothing was reported")
+
+        var seen: [String] = []
+        let deadline = Date().addingTimeInterval(40)
+        while Date() < deadline {
+            if error.exists {
+                let label = error.label
+                if seen.last != label { seen.append(label) }
+                if label.contains("not in the list") { break }
+            }
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+
+        XCTAssertTrue(
+            seen.last?.contains("not in the list") == true,
+            "the app never settled the unknown outcome. messages: \(seen)"
+        )
+        for message in seen {
+            XCTAssertFalse(
+                message.contains("was posted"),
+                "claimed a comment was posted that was never written: \(message)"
+            )
+        }
+
+        // 不丢输入: the text is still there, and the person is the one who
+        // decides whether it goes again.
+        XCTAssertEqual(
+            app.textFields["composer.field"].value as? String, text,
+            "the text was thrown away, so the only way to recover it is to type it again"
+        )
+        XCTAssertTrue(
+            waitUntilHittable(app.buttons["composer.retry"], in: app, timeout: 10),
+            "no way offered to send it by hand"
+        )
+        XCTAssertEqual(commentRows(in: app, containing: text).count, 0,
+                       "the optimistic row was left behind for a comment that does not exist")
+
+        // The load-bearing assertion. A settle window long enough for an
+        // automatic resend — had there been one — to have landed.
+        assertServerCommentCount(text, equals: 0, settleFor: 10)
+    }
+
     // MARK: - Offline: a certain failure, not an uncertain one
 
     /// Nothing left the device, so nothing was written, so sending again is
@@ -301,12 +503,25 @@ final class CommentUITests: XCTestCase {
 
     // MARK: - 5C.11 Paging a long list, and refreshing it
 
-    /// 120 comments, a page size of 30. Paging must bring in comments that
-    /// were not there before, and must not move what is already on screen.
+    /// A page size of 30 against the post the seed gives the most comments —
+    /// 60 in the current run, and read from the server rather than written
+    /// down here, because the number is the seed's to choose. Paging must
+    /// bring in comments that were not there before, and must not move what is
+    /// already on screen.
     func testPagingALongCommentListDoesNotMoveWhatIsAlreadyThere() throws {
         let app = launchOnSignIn()
         signIn(app, email: "accept-a@example.com")
-        try openTheMostCommentedPost(app)
+        let postID = try openTheMostCommentedPost(app)
+
+        // The premise, established rather than assumed: paging can only be
+        // demonstrated against a post that really has more than one page.
+        let held = try XCTUnwrap(serverCommentCount(postID: postID),
+                                 "could not read \(postID)'s comments from the emulator")
+        print("MEASURED paging target=\(postID) serverComments=\(held)")
+        XCTAssertGreaterThan(
+            held, 30,
+            "\(postID) holds \(held) comments, which is one page or less — this run proves nothing"
+        )
 
         let rows = app.staticTexts.matching(identifier: "comment.row")
         XCTAssertTrue(waitForExistence(of: rows.firstMatch, in: app, timeout: 40),
@@ -363,15 +578,21 @@ final class CommentUITests: XCTestCase {
         for _ in 0..<8 { app.swipeDown() }
 
         let before = labels(of: rows)
-        app.swipeDown()   // the pull-to-refresh
-        Thread.sleep(forTimeInterval: 3)
+        // A held pull, not a flick. `swipeDown()` does not trigger
+        // `.refreshable` — measured: ten in a row produced no reread. Every
+        // assertion below was therefore being made about a screen that had
+        // never refreshed, which is the shape of a test that cannot fail.
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9))
+        start.press(forDuration: 0.2, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.8)
+        waitForQuietUI(app, quietFor: 1, timeout: 20)
 
         let after = labels(of: rows)
         XCTAssertEqual(Set(after).count, after.count,
                        "the refresh left duplicates on screen: \(after.count) rows, \(Set(after).count) distinct")
         XCTAssertFalse(after.isEmpty, "the refresh emptied the list")
         XCTAssertFalse(app.staticTexts["detail.noComments"].exists,
-                       "a list with 120 comments reported itself empty after a refresh")
+                       "a list with comments in it reported itself empty after a refresh")
         XCTAssertFalse(app.staticTexts["detail.commentsError"].exists,
                        "the refresh failed: \(app.staticTexts["detail.commentsError"].label)")
         XCTAssertFalse(before.isEmpty)

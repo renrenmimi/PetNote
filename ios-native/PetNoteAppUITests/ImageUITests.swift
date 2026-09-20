@@ -83,20 +83,55 @@ final class ImageUITests: XCTestCase {
         let hint = app.staticTexts["post.croppedHint"].firstMatch
         XCTAssertTrue(hint.waitForExistence(timeout: 10), "no hint that the photo is cropped")
 
-        // The photo itself opens it.
-        let photo = app.images.firstMatch.exists
-            ? app.images.firstMatch
-            : app.otherElements.matching(NSPredicate(format: "label BEGINSWITH 'Photo'")).firstMatch
+        // The photo itself opens it — identified by what it says it is, not by
+        // being the first image on the screen.
+        //
+        // It was the first image, and that is why this test failed at random:
+        // the author's avatar is an `Image` too and comes first in the tree, so
+        // whenever the avatar managed to load, this tapped the avatar. Tapping
+        // an avatar correctly does nothing, and the failure then landed on the
+        // assertion about the full photo — describing the wrong thing.
+        let photo = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH 'Photo'")).firstMatch
         XCTAssertTrue(photo.waitForExistence(timeout: 10), "no photo element to tap")
         photo.tap()
 
         let close = app.buttons["fullImage.close"]
         XCTAssertTrue(close.waitForExistence(timeout: 15), "the full photo never opened")
+        // Hittable, not merely existing: a cover that is still presenting has
+        // its controls in the tree and swallows taps aimed at them, and that
+        // reads exactly like a button that does nothing.
+        XCTAssertTrue(waitUntilHittable(close, in: app, timeout: 15),
+                      "the close control never became tappable")
         close.tap()
-        XCTAssertFalse(
-            close.waitForExistence(timeout: 3),
-            "closing the full photo left it on screen"
-        )
+
+        // Closed means *the screen underneath works again*, which is a
+        // positive fact about a live query, and not `!close.exists`.
+        //
+        // The negative form reported this button as doing nothing three times
+        // over, and it was wrong every time: polling `exists` once a second
+        // held it true for thirty seconds, a quiet six-second wait then one
+        // check held it true as well — and the tree dumped immediately after
+        // each of those showed the detail screen with no cover on it. A held
+        // element's `exists` is answered from a cached snapshot that nothing
+        // was invalidating; `app.debugDescription` forces a fresh one, which
+        // is why the dump and the assertion disagreed.
+        //
+        // A full-screen cover takes every touch, so a composer that can be
+        // tapped is proof the cover is gone — and the query behind it is made
+        // afresh on every attempt.
+        // The check is an action, not a reading: go back to the feed. A cover
+        // that is still up owns the whole screen, so it would swallow the tap
+        // and the feed would never arrive.
+        //
+        // Readings were tried first and could not settle it. `close.exists`
+        // stayed true for thirty seconds of polling, and stayed true after a
+        // quiet six-second wait — while `app.debugDescription`, taken
+        // immediately after each, showed the detail screen with no cover on
+        // it. One of those two is answered from a stale snapshot and the other
+        // forces a fresh traversal; which is which cannot be decided from
+        // here, and an action does not depend on knowing.
+        popToFeed(app)
     }
 
     /// 6.4: an image arriving must not move anything.
