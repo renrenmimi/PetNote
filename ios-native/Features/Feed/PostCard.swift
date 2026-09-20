@@ -45,7 +45,7 @@ struct PostCard: View {
             identity
             if !post.text.isEmpty { text }
             if let media = post.media.first {
-                MediaView(item: media, size: mediaSize)
+                MediaView(postID: post.id, item: media, size: mediaSize)
                     .onTapGesture {
                         // On the detail screen a photo opens full size; in the
                         // feed the whole card opens the post. One gesture, one

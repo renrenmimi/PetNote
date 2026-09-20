@@ -3,11 +3,20 @@ import SwiftUI
 
 /// A video in the feed.
 ///
-/// Three states, and which one is showing is always knowable from the outside:
-/// the poster frame (no player), the player (playing or paused), and a
-/// retryable failure. The poster is what shows whenever there is no player,
-/// which is also what makes the height stable — §5D.5 asks that starting
-/// playback not move anything.
+/// Four states, and which one is showing is always knowable from the outside:
+/// the poster frame (no player), the poster still up while the video opens
+/// (a player exists but the decoder has not said how big the picture is), the
+/// picture itself, and a retryable failure. The poster is underneath all of
+/// them, which is what makes the height stable — §5D.5 asks that starting
+/// playback not move anything — and is also why a video that is still opening
+/// shows a photo rather than a black rectangle.
+///
+/// **This view owns no playback state.** It used to keep its own `@State`
+/// player, failure flag and KVO observation, and all three drifted from the
+/// coordinator that actually owns the player: when the ceiling evicted a
+/// player the row went on holding it, so `livePlayerCount` read zero while the
+/// object was still alive and the row drew an empty black `VideoPlayer`
+/// forever. Reading through the coordinator makes that state unrepresentable.
 struct VideoPlayerView: View {
     let id: String
     let url: URL
@@ -17,17 +26,11 @@ struct VideoPlayerView: View {
     @Environment(VideoPlaybackCoordinator.self) private var coordinator
     @Environment(\.scenePhase) private var scenePhase
 
-    @State private var player: AVPlayer?
-    @State private var failure: String?
-    @State private var attempt = 0
-    /// Watches the player item so a real load failure reaches the UI.
-    ///
-    /// The previous version had a failure branch that nothing could ever
-    /// enter: `failed` was only ever assigned `false`. A broken video showed a
-    /// poster frame and a play button forever, and the retry button — which
-    /// also did nothing, because `attempt` drove no reload — was unreachable
-    /// anyway. An error state that cannot be produced is not error handling.
-    @State private var statusObservation: NSKeyValueObservation?
+    /// The last visibility reading, kept so that a retry can re-ask for a
+    /// player without waiting for the row to move. A tap is the event; nothing
+    /// about the geometry changes when someone taps retry, so `onChange` will
+    /// not fire again on its own.
+    @State private var lastReading: VisibilityReading?
 
     var body: some View {
         GeometryReader { geometry in
@@ -38,8 +41,6 @@ struct VideoPlayerView: View {
                 }
                 .onDisappear {
                     coordinator.reportOffscreen(id: id)
-                    statusObservation = nil
-                    player = nil
                 }
         }
         .aspectRatio(aspectRatio, contentMode: .fit)
@@ -54,31 +55,83 @@ struct VideoPlayerView: View {
 
     @ViewBuilder
     private var content: some View {
-        if let failure {
+        if let failure = coordinator.failure(for: id) {
             retryable(failure)
-        } else if let player {
+        } else {
             ZStack(alignment: .bottomTrailing) {
+                surface
+                // A sibling of the surface, not a child of it: the surface is
+                // one accessibility element so that a test can ask it what it
+                // is showing, and a control buried inside such an element
+                // cannot be reached by VoiceOver or by a tap in a test.
+                if coordinator.activePlayer(for: id) != nil {
+                    muteButton
+                }
+            }
+        }
+    }
+
+    /// The picture area: the poster, and the video on top of it once there is
+    /// a video to show.
+    ///
+    /// One accessibility element carrying a machine-readable value, so a UI
+    /// test can pair *what this row believes* with a screenshot of *what this
+    /// row drew*. That pairing is the only way to tell "the coordinator says it
+    /// is playing" from "there is a picture on the glass", and those two have
+    /// already been different once.
+    private var surface: some View {
+        ZStack {
+            // Always present, always the same height. Nothing moves when a
+            // player arrives, and nothing is black while it opens.
+            poster
+
+            if let player = coordinator.activePlayer(for: id), coordinator.hasPicture(for: id) {
                 VideoPlayer(player: player)
                     .disabled(true)   // playback is decided by the coordinator
                     .accessibilityHidden(true)
-                muteButton
             }
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Video")
-        } else {
-            // No player: the poster. Same height, so nothing moves when one
-            // appears.
-            ZStack {
-                RemoteImage(url: posterURL, aspectRatio: aspectRatio)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityIdentifier("video.surface")
+        .accessibilityLabel(coordinator.playingID == id ? "Video" : "Video, not playing")
+        // Empty unless a test asked for it: nobody should hear "state=picture
+        // playing=true size=320x240" read aloud.
+        .accessibilityValue(Self.isProbing ? stateDescription : "")
+    }
+
+    private var poster: some View {
+        ZStack {
+            RemoteImage(url: posterURL, aspectRatio: aspectRatio)
+            if !coordinator.hasPicture(for: id) {
                 Image(systemName: "play.circle.fill")
                     .font(Typography.pageTitle)
                     .foregroundStyle(Palette.textOnBrand)
                     .shadow(radius: 8)
                     .accessibilityHidden(true)
             }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Video, not playing")
         }
+        .accessibilityHidden(true)
+    }
+
+    /// Set once: reading the argument list per row per redraw is waste, and
+    /// the answer cannot change while the process is alive.
+    private static let isProbing = ProcessInfo.processInfo.arguments.contains("-petnote-video-probe")
+
+    private var stateDescription: String {
+        let size = coordinator.presentationSizes[id] ?? .zero
+        let state: String
+        if coordinator.failure(for: id) != nil {
+            state = "failed"
+        } else if coordinator.activePlayer(for: id) == nil {
+            state = "poster"
+        } else if !coordinator.hasPicture(for: id) {
+            state = "opening"
+        } else {
+            state = "picture"
+        }
+        return "state=\(state) playing=\(coordinator.playingID == id) "
+            + "size=\(Int(size.width))x\(Int(size.height)) "
+            + "advanced=\(coordinator.advanced.contains(id))"
     }
 
     private var muteButton: some View {
@@ -89,7 +142,11 @@ struct VideoPlayerView: View {
                 .font(Typography.body)
                 .foregroundStyle(Palette.textOnBrand)
                 .frame(width: Layout.minTouchTarget, height: Layout.minTouchTarget)
-                .background(.black.opacity(0.35), in: .circle)
+                // Not `.black.opacity()` — the design system guard is right
+                // that naming a colour here is the wrong move — and not a bare
+                // material either, which would ignore Reduce Transparency.
+                // Both decisions live in one place; see ControlScrim.
+                .controlScrim()
                 .contentShape(.circle)
         }
         .padding(Spacing.s)
@@ -99,14 +156,12 @@ struct VideoPlayerView: View {
 
     private func retryable(_ message: String) -> some View {
         Button {
-            // A real reload: the coordinator is told to forget this video, the
-            // observation is torn down, and the next visibility report builds a
-            // fresh player. Bumping a counter on its own changed nothing.
-            failure = nil
-            attempt += 1
-            statusObservation = nil
-            player = nil
-            coordinator.reportOffscreen(id: id)
+            // A real reload: the coordinator forgets the failure and builds a
+            // new player from the URL it remembered. Re-sending the last
+            // visibility reading covers the case where the row is the only
+            // thing on screen and nothing will move to trigger it.
+            coordinator.retry(id: id)
+            if let lastReading { report(lastReading) }
         } label: {
             VStack(spacing: Spacing.s) {
                 Image(systemName: "arrow.clockwise")
@@ -135,9 +190,9 @@ struct VideoPlayerView: View {
     }
 
     private func report(_ reading: VisibilityReading) {
+        lastReading = reading
         guard reading.fraction > 0 else {
             coordinator.reportOffscreen(id: id)
-            player = nil
             return
         }
         coordinator.reportVisibility(
@@ -145,34 +200,12 @@ struct VideoPlayerView: View {
             fraction: reading.fraction,
             distanceFromCentre: reading.distance
         )
-        let granted = coordinator.player(for: id, url: url)
-        if granted !== player {
-            player = granted
-            observeFailures(of: granted)
-        }
-    }
-
-    /// AVPlayer reports a load failure on its *item*, asynchronously, and does
-    /// not throw. Without watching for it the view has no way to know.
-    private func observeFailures(of player: AVPlayer?) {
-        statusObservation = nil
-        guard let item = player?.currentItem else { return }
-        statusObservation = item.observe(\.status, options: [.new]) { item, _ in
-            guard item.status == .failed else { return }
-            let reason = item.error?.localizedDescription ?? "Video failed to load."
-            Task { @MainActor in
-                // Keep our own words, not the framework's: the message is shown
-                // to a person.
-                _ = reason
-                failure = "Video failed to load. Tap to retry."
-                coordinator.reportOffscreen(id: id)
-            }
-        }
+        _ = coordinator.player(for: id, url: url)
     }
 }
 
 /// Equatable so `onChange` only fires when the reading really moves.
-private struct VisibilityReading: Equatable {
+struct VisibilityReading: Equatable {
     let fraction: CGFloat
     let distance: CGFloat
 

@@ -44,7 +44,16 @@ struct RemoteImage: View {
             retryable
         } else {
             placeholder
-                .task(id: attempt) { await load(width: width) }
+                // The width is part of the key, and that is a fix, not a
+                // detail. `.task(id:)` only re-runs when the id changes, so a
+                // first layout pass that reports width 0 — which happens — used
+                // to start a load that returned immediately, and nothing ever
+                // asked again: a permanent grey rectangle. Quantised to the
+                // loader's own step so that a one-point width change does not
+                // start a second download.
+                .task(id: LoadKey(attempt: attempt, pixels: pixels(for: width))) {
+                    await load(width: width)
+                }
         }
     }
 
@@ -75,14 +84,38 @@ struct RemoteImage: View {
         .accessibilityLabel("Image failed to load. Tap to retry.")
     }
 
+    private func pixels(for width: CGFloat) -> CGFloat {
+        ImageLoader.quantizedPixels(width * displayScale)
+    }
+
+    /// What a load is keyed on: which attempt, and which decoded size.
+    private struct LoadKey: Equatable {
+        let attempt: Int
+        let pixels: CGFloat
+    }
+
+    /// Test-only, and off unless a launch argument turns it on.
+    ///
+    /// Proving that nothing moves when a photo arrives means being able to see
+    /// the moment before it arrives; on a simulator with a warm cache that
+    /// moment is a few milliseconds long. Absent in the app a person runs —
+    /// the key is not in any plist, so this reads nil and costs one lookup at
+    /// first use.
+    private static let artificialDelayMilliseconds: Int = {
+        UserDefaults.standard.integer(forKey: "petnoteImageDelayMilliseconds")
+    }()
+
     private func load(width: CGFloat) async {
         guard let url, width > 0 else { return }
+        if Self.artificialDelayMilliseconds > 0 {
+            try? await Task.sleep(for: .milliseconds(Self.artificialDelayMilliseconds))
+        }
         Logger(subsystem: "dev.local.petnote.native", category: "media")
             .debug("load \(url.lastPathComponent, privacy: .public) @\(Int(width))pt")
         let optimized = CloudinaryURL.optimized(url, size: size)
-        let pixels = width * displayScale
+        let requestedPixels = width * displayScale
         do {
-            image = try await ImageLoader.shared.image(for: optimized, maxPixelSize: pixels)
+            image = try await ImageLoader.shared.image(for: optimized, maxPixelSize: requestedPixels)
         } catch is CancellationError {
             // Scrolled away before it arrived; not a failure state.
         } catch {

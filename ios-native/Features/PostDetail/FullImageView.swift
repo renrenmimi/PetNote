@@ -71,9 +71,13 @@ struct FullImageView: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(Typography.body)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Palette.textOnBrand)
                         .frame(width: Layout.minTouchTarget, height: Layout.minTouchTarget)
-                        .background(.black.opacity(0.4), in: .circle)
+                        // Not `.black.opacity()` — the design system guard is right
+                        // that naming a colour here is the wrong move — and not a bare
+                        // material either, which would ignore Reduce Transparency.
+                        // Both decisions live in one place; see ControlScrim.
+                        .controlScrim()
                         .contentShape(.circle)
                 }
                 .accessibilityIdentifier("fullImage.close")
