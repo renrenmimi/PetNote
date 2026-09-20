@@ -37,7 +37,80 @@ enum EmulatorAdmin {
         }
     }
 
+    // MARK: - The seed manifest
+
+    /// What the current seed run created.
+    ///
+    /// Tests used to name documents directly — `ios-post-001` and so on. That
+    /// stopped being possible when each seed run started writing into its own
+    /// namespace, and it was a bad idea before that: a hardcoded id is exactly
+    /// what let a test keep passing against data left behind by a run nobody
+    /// remembered, including one whose own self-checks had failed.
+    struct SeedManifest {
+        let runId: String
+        let postIdPrefix: String
+        /// Named posts — "manyComments", "brokenVideo", "textOnly" and so on.
+        let landmarks: [String: String]
+
+        func post(_ landmark: String) -> String? { landmarks[landmark] }
+        /// The document id for an index, matching the seed's own numbering.
+        func post(index: Int) -> String { postIdPrefix + String(format: "%03d", index) }
+    }
+
+    /// Reads `seedRuns/current`, which the seed writes only after its own
+    /// checks have passed.
+    static func seedManifest() throws -> SeedManifest {
+        let url = "\(firestore)/v1/projects/\(projectID)/databases/(default)/documents/seedRuns/current"
+        let document = try get(url, owner: true)
+        guard let fields = document["fields"] as? [String: Any],
+              let prefix = (fields["postIdPrefix"] as? [String: Any])?["stringValue"] as? String,
+              let runId = (fields["runId"] as? [String: Any])?["stringValue"] as? String
+        else {
+            throw NSError(domain: "EmulatorAdmin", code: 2, userInfo: [
+                NSLocalizedDescriptionKey:
+                    "No seed manifest at seedRuns/current. Run functions/scripts/seed-ios-native.mjs; "
+                    + "it writes the manifest only when its self-checks pass."
+            ])
+        }
+
+        var landmarks: [String: String] = [:]
+        if let map = (fields["landmarks"] as? [String: Any])?["mapValue"] as? [String: Any],
+           let entries = map["fields"] as? [String: Any] {
+            for (key, value) in entries {
+                if let text = (value as? [String: Any])?["stringValue"] as? String {
+                    landmarks[key] = text
+                }
+            }
+        }
+        return SeedManifest(runId: runId, postIdPrefix: prefix, landmarks: landmarks)
+    }
+
     // MARK: - Transport
+
+    private static func get(_ url: String, owner: Bool) throws -> [String: Any] {
+        guard let target = URL(string: url) else {
+            throw NSError(domain: "EmulatorAdmin", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "bad url \(url)"])
+        }
+        var request = URLRequest(url: target)
+        if owner { request.setValue("Bearer owner", forHTTPHeaderField: "Authorization") }
+        request.timeoutInterval = 20
+
+        var result: Result<Data, Error>?
+        let done = DispatchSemaphore(value: 0)
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            if let error { result = .failure(error) } else { result = .success(data ?? Data()) }
+            done.signal()
+        }.resume()
+        _ = done.wait(timeout: .now() + 25)
+
+        guard let result else {
+            throw NSError(domain: "EmulatorAdmin", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "timed out reading \(url)"])
+        }
+        let data = try result.get()
+        return (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+    }
 
     private static func post(_ url: String, body: [String: Any], owner: Bool) throws -> [String: Any] {
         guard let target = URL(string: url) else {

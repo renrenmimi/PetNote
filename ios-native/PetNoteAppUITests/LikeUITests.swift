@@ -155,12 +155,22 @@ final class LikeUITests: XCTestCase {
 
     /// Which post the first row is. The seed writes the index into every post's
     /// text so the run can name the document it touched.
+    ///
+    /// The prefix comes from the seed manifest rather than being spelled out
+    /// here. Each seed run writes into its own namespace — that is what stops
+    /// a previous run's deletions from corrupting this one's counts — so a
+    /// literal `ios-post-%03d` would now name a document from no run at all,
+    /// or worse, from an abandoned one.
     private func firstPostID(_ app: XCUIApplication) -> String? {
         let text = app.staticTexts.matching(identifier: "post.text").firstMatch
         guard text.waitForExistence(timeout: 20) else { return nil }
         guard let range = text.label.range(of: #"\[#(\d+)\]"#, options: .regularExpression),
               let index = Int(text.label[range].dropFirst(2).dropLast()) else { return nil }
-        return String(format: "ios-post-%03d", index)
+        guard let manifest = try? EmulatorAdmin.seedManifest() else {
+            XCTFail("No seed manifest; run functions/scripts/seed-ios-native.mjs")
+            return nil
+        }
+        return manifest.post(index: index)
     }
 
     /// Taps the heart, after waiting for it to be tappable *again*.
