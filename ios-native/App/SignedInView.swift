@@ -82,24 +82,33 @@ struct SignedInView: View {
                         Button {
                             try? session.signOut()
                         } label: {
-                            // The bar is 44pt tall and lays its items out
-                            // inside that, so the reported frame stays 36pt
-                            // however this is written.
+                            // This button's reported frame is 36pt tall and
+                            // cannot be made taller: .frame(minHeight:) and
+                            // padding were both measured and neither moved it.
+                            //
+                            // Not a property of navigation bars, though —
+                            // that generalisation was here and is wrong. The
+                            // system back button in the same bar reports
+                            // 44.165 x 44.060 on iOS 27. The difference is
+                            // what makes it: UIKit synthesises its own back
+                            // button, and this is a SwiftUI Button inside a
+                            // ToolbarItem. Measured at the same y, the back
+                            // button activates and this one does not.
                             //
                             // Padding plus an explicit .contentShape was tried
-                            // here and measured: the hit region did not grow.
-                            // A tap 22pt below the centre still did nothing,
-                            // exactly as before. The bar clips it, so there is
-                            // no margin to be had at this call site and the
-                            // padding was only making the label bigger to no
-                            // effect. Recorded rather than left in.
+                            // here and did nothing: the hit region starts at
+                            // y≈62 while this label's frame starts at 66, so
+                            // the bar has already stretched it to its own
+                            // content box and there is no margin left to add.
                             //
-                            // The size question is therefore settled by
-                            // measuring the region's absolute boundaries —
-                            // see TouchTargetUITests — rather than by
-                            // measuring outwards from the centre, which
-                            // conflates where the centre sits with how tall
-                            // the region is.
+                            // Measured height of the hit region: somewhere in
+                            // [43.438, 44.062). §6.4 asks for 44, and tapping
+                            // cannot settle it — proving 44 would mean landing
+                            // inside a 0.063pt window, under a fifth of a
+                            // pixel at this scale. Recorded as unmet rather
+                            // than rounded up. The fix is to move this control
+                            // somewhere we lay out ourselves, like the like
+                            // button, which measures 56 x 68.
                             Text("Sign out")
                         }
                         .accessibilityIdentifier("session.signOut")

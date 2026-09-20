@@ -221,10 +221,17 @@ final class TouchTargetUITests: XCTestCase {
 
     /// Probes the navigation bar's **back** button rather than sign-out.
     ///
-    /// Same bar, same UIKit layout, same 36pt label — and recoverable. A sweep
-    /// that has to sign out and sign back in for every rung is 32 sign-ins, and
-    /// the thing being measured is the bar, not the button's action. Sign-out
-    /// is probed separately, once per direction, to show the numbers transfer.
+    /// Recoverable, where a sweep that signs out and back in for every rung is
+    /// 32 sign-ins.
+    ///
+    /// **The numbers do not transfer, and this comment used to claim they
+    /// did.** It said "same bar, same UIKit layout, same 36pt label", and
+    /// `HitRegionBoundaryUITests` has since measured all three clauses wrong:
+    /// the back button reports a 44.165x44.060 frame, not 36pt; it is
+    /// synthesised by UIKit's navigation controller rather than declared as a
+    /// `ToolbarItem` the way sign-out is; and at y=105.875 the back button
+    /// activates while sign-out does not. Sharing a bar is not sharing a hit
+    /// region. Each control's verdict rests on its own measurement.
     private func probeBack(_ app: XCUIApplication, dx: CGFloat, dy: CGFloat) -> Outcome {
         let bar = app.navigationBars["Post"]
         guard bar.waitForExistence(timeout: 20) else { return .nothing }
@@ -347,6 +354,13 @@ final class TouchTargetUITests: XCTestCase {
     /// the same for sign-out, three launches rather than one, because the
     /// difference between those two readings is the difference between "44pt"
     /// and "not 44pt" and it is not a difference to leave to an assumption.
+    ///
+    /// **Superseded as evidence, kept as a ladder.** Reaching outwards from a
+    /// centre cannot separate "the region is 44pt" from "the centre sits half a
+    /// point high", which is the whole reason `HitRegionBoundaryUITests`
+    /// exists; it measures both boundaries absolutely instead and found
+    /// sign-out's height to be in [43.438, 44.062) — unconfirmed against 44.
+    /// Nothing here should be quoted as a verdict.
     func testSignOutLowerEdgeAtFinerResolution() {
         let app = XCUIApplication()
         var results: [String] = []
