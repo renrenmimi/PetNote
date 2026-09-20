@@ -34,6 +34,56 @@ actor FirestoreLikeRepository: LikeRepository {
         return uid
     }
 
+    // MARK: - Fault injection (debug builds only)
+
+    /// The one like outcome the server cannot be asked to produce: a request
+    /// that goes out, lands, and is never answered.
+    ///
+    /// 5A.10's deadline exists for exactly this case and nothing reachable
+    /// through the UI can reach it — a server that is up either answers or
+    /// refuses, and a server that is down refuses quickly. So the deadline was
+    /// only ever exercised by a unit test over an injected fake, which proves
+    /// the controller's arithmetic and says nothing about the screen.
+    ///
+    /// `writeThenNeverAnswer` is the honest shape of it. The like document is
+    /// really created — the write is not skipped, faked or rolled back — and
+    /// the client really never learns that it was. That is what makes the two
+    /// questions this is here to answer answerable at all: what the screen
+    /// does when the answer never comes, and whether the app wrote anything a
+    /// second time while it was waiting.
+    ///
+    /// **Debug-only, and gated at compile time rather than at runtime.** In a
+    /// Release build this enum, its raw values, and every use of them do not
+    /// exist; `PetNoteAppTests/ReleaseHygieneTests` is what keeps that true
+    /// for anything added later. Nothing in the app's own UI passes the flag.
+    #if DEBUG
+    enum Fault: String, CaseIterable {
+        case writeThenNeverAnswer = "-petnote-like-lose-response"
+    }
+
+    private static var injectedFault: Fault? {
+        let arguments = ProcessInfo.processInfo.arguments
+        return Fault.allCases.first { arguments.contains($0.rawValue) }
+    }
+
+    /// Continuations from `neverAnswer()`, kept so that nothing resumes them
+    /// and nothing reclaims them.
+    ///
+    /// A `CheckedContinuation` that is merely dropped is *diagnosed* — the
+    /// runtime logs a continuation misuse — and a diagnostic is not what is
+    /// being reproduced. Holding them is also the difference between a call
+    /// that never returns and one that returns late: `Task.sleep` comes back
+    /// as soon as the caller cancels, and `FeedViewModel.answer(for:)` cancels
+    /// the abandoned work on its way out. Firestore's own calls make no
+    /// promise to return early on cancellation, which is the situation the
+    /// deadline was written for.
+    private var parkedContinuations: [CheckedContinuation<Void, Never>] = []
+
+    private func neverAnswer() async {
+        await withCheckedContinuation { parkedContinuations.append($0) }
+    }
+    #endif
+
     func like(postID: String) async throws -> LikeMutationResult {
         guard let validID = DeepLink.validDocumentID(postID) else { return .postNotFound }
         let uid = try currentUID()
@@ -63,6 +113,15 @@ actor FirestoreLikeRepository: LikeRepository {
                 // See this type's documentation for what the alternative cost.
                 "counted": false,
             ])
+            #if DEBUG
+            if Self.injectedFault == .writeThenNeverAnswer {
+                // After the write, deliberately. The document exists and the
+                // trigger will count it; what is being thrown away is only the
+                // caller's knowledge that either happened.
+                log.info("fault: the like was written and this call will never return")
+                await neverAnswer()
+            }
+            #endif
             return .changed
         } catch {
             let nsError = error as NSError

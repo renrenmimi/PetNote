@@ -101,8 +101,17 @@ struct RemoteImage: View {
     /// moment is a few milliseconds long. Absent in the app a person runs —
     /// the key is not in any plist, so this reads nil and costs one lookup at
     /// first use.
+    ///
+    /// Behind `#if DEBUG`, and the key name is why: `petnoteImageDelayMilliseconds`
+    /// has no `-petnote-` prefix, so an audit grepping for the prefix misses
+    /// it entirely. Reading it at runtime and ignoring the answer would still
+    /// leave the literal in the shipped binary.
     private static let artificialDelayMilliseconds: Int = {
-        UserDefaults.standard.integer(forKey: "petnoteImageDelayMilliseconds")
+        #if DEBUG
+        return UserDefaults.standard.integer(forKey: "petnoteImageDelayMilliseconds")
+        #else
+        return 0
+        #endif
     }()
 
     private func load(width: CGFloat) async {

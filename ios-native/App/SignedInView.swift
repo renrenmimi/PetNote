@@ -19,6 +19,19 @@ struct SignedInView: View {
     /// "only the most visible one plays" are global properties, and a per-view
     /// owner could not enforce either.
     @State private var video = VideoPlaybackCoordinator()
+    /// Whether the account menu is on screen. Opening it is all the
+    /// navigation-bar control does.
+    @State private var isAccountMenuOpen = false
+    /// Sign-out is deferred to the menu's dismissal rather than run from the
+    /// row's action.
+    ///
+    /// Not timing superstition: `signOut()` replaces the whole session scope,
+    /// which tears down this view and everything presented from it. Doing that
+    /// from inside the presented sheet's own button action asks UIKit to
+    /// dismiss a presentation whose presenter is being removed in the same
+    /// turn. Closing first and acting in `onDismiss` keeps the two in order,
+    /// and costs nothing a person can perceive.
+    @State private var signOutWhenMenuCloses = false
     private let repositories: Repositories
 
     init(user: UserSession, repositories: Repositories = .live) {
@@ -72,11 +85,22 @@ struct SignedInView: View {
                     video.releaseAll(reason: "account switched")
                 }
                 .task {
+                    // `#if DEBUG` and not the runtime check alone. The check
+                    // is still here — a debug build should not log unless
+                    // asked — but on its own it only decides whether the
+                    // branch *runs*. The flag name, the branch, and
+                    // everything it reaches stay in a Release binary where
+                    // `strings` finds them and where anything able to set a
+                    // launch argument can reach them. The candidate package
+                    // carries no test switch, and only the compiler can make
+                    // that true.
+                    #if DEBUG
                     // Only under the probe flag: it is a diagnostic, and a
                     // per-second task in the app a person uses is waste.
                     if ProcessInfo.processInfo.arguments.contains("-petnote-video-probe") {
                         video.startPlaybackClockLogging()
                     }
+                    #endif
                 }
                 .toolbar {
                     // A screenshot from a device has to say for itself which
@@ -104,40 +128,44 @@ struct SignedInView: View {
                         }
                     }
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            try? session.signOut()
-                        } label: {
-                            // This button's reported frame is 36pt tall and
-                            // cannot be made taller: .frame(minHeight:) and
-                            // padding were both measured and neither moved it.
-                            //
-                            // Not a property of navigation bars, though —
-                            // that generalisation was here and is wrong. The
-                            // system back button in the same bar reports
-                            // 44.165 x 44.060 on iOS 27. The difference is
-                            // what makes it: UIKit synthesises its own back
-                            // button, and this is a SwiftUI Button inside a
-                            // ToolbarItem. Measured at the same y, the back
-                            // button activates and this one does not.
-                            //
-                            // Padding plus an explicit .contentShape was tried
-                            // here and did nothing: the hit region starts at
-                            // y≈62 while this label's frame starts at 66, so
-                            // the bar has already stretched it to its own
-                            // content box and there is no margin left to add.
-                            //
-                            // Measured height of the hit region: somewhere in
-                            // [43.438, 44.062). §6.4 asks for 44, and tapping
-                            // cannot settle it — proving 44 would mean landing
-                            // inside a 0.063pt window, under a fifth of a
-                            // pixel at this scale. Recorded as unmet rather
-                            // than rounded up. The fix is to move this control
-                            // somewhere we lay out ourselves, like the like
-                            // button, which measures 56 x 68.
-                            Text("Sign out")
-                        }
-                        .accessibilityIdentifier("session.signOut")
+                        // The bar holds the *entry* now, not the action.
+                        //
+                        // What used to be here was a "Sign out" button whose
+                        // hit region the bar owned: .frame(minHeight:),
+                        // padding and .contentShape were all tried at this
+                        // call site and none of them moved it, and its
+                        // measured height came out as the interval
+                        // [43.438, 44.062) — straddling the 44pt requirement
+                        // with no tap able to settle which side it is on.
+                        // Rather than keep re-measuring an unmeasurable
+                        // control, the action moved to a surface we lay out
+                        // ourselves (AccountMenuView), where the region is
+                        // set by a .contentShape on the label and can be
+                        // stated as a number.
+                        //
+                        // Opening a menu and ending a session are now two
+                        // separate taps on two separate controls, which is
+                        // the other half of why this moved.
+                        AccountMenuButton(isPresented: $isAccountMenuOpen)
                     }
+                }
+                .sheet(isPresented: $isAccountMenuOpen) {
+                    guard signOutWhenMenuCloses else { return }
+                    signOutWhenMenuCloses = false
+                    try? session.signOut()
+                } content: {
+                    AccountMenuView(email: user.email) {
+                        // Two statements, one action: close, then end the
+                        // session once the closing has finished.
+                        signOutWhenMenuCloses = true
+                        isAccountMenuOpen = false
+                    }
+                    // The resting height fits the header and the one row. The
+                    // second detent is not a feature: it is somewhere for the
+                    // largest accessibility type sizes to go, since clamping
+                    // Dynamic Type is what AccessibilityGuardTests forbids.
+                    .presentationDetents([.height(AccountMenuView.preferredHeight), .large])
+                    .presentationDragIndicator(.visible)
                 }
                 .navigationDestination(for: Route.self) { route in
                     switch route {

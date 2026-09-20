@@ -55,10 +55,29 @@ struct MediaView: View {
     /// `string(forKey:)` and not `url(forKey:)`: the latter turns a plain
     /// string into a *file* URL, which would quietly rewrite
     /// `http://127.0.0.1/clip.mp4` into a path that does not exist.
-    private static let overrideVideoURL = UserDefaults.standard
-        .string(forKey: "petnoteVideoURLOverride").flatMap(URL.init(string:))
-    private static let overridePosterURL = UserDefaults.standard
-        .string(forKey: "petnoteVideoPosterOverride").flatMap(URL.init(string:))
+    ///
+    /// **Behind `#if DEBUG`, and these two are the ones that are easy to miss.**
+    /// They carry no `-petnote-` prefix — they are `UserDefaults` keys, not
+    /// launch arguments — so a release audit that greps for the prefix walks
+    /// straight past them and reports the binary clean. A runtime check would
+    /// not help either: the literal is in the binary whether or not anything
+    /// reads it. Compiled out is the only state that is actually absent.
+    private static let overrideVideoURL: URL? = {
+        #if DEBUG
+        return UserDefaults.standard
+            .string(forKey: "petnoteVideoURLOverride").flatMap(URL.init(string:))
+        #else
+        return nil
+        #endif
+    }()
+    private static let overridePosterURL: URL? = {
+        #if DEBUG
+        return UserDefaults.standard
+            .string(forKey: "petnoteVideoPosterOverride").flatMap(URL.init(string:))
+        #else
+        return nil
+        #endif
+    }()
 
     /// Test-only: renders every media item as a video, and only when an
     /// override URL is also set (so it can do nothing in a shipped build).
@@ -68,9 +87,14 @@ struct MediaView: View {
     /// videos": reaching thirty would mean paging most of the way through the
     /// feed. This makes every row a video, which is not what a feed looks like
     /// and is a harder test of the ceiling than a feed would be.
-    private static let everythingIsVideo =
-        ProcessInfo.processInfo.arguments.contains("-petnote-all-media-is-video")
-        && overrideVideoURL != nil
+    private static let everythingIsVideo: Bool = {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-petnote-all-media-is-video")
+            && overrideVideoURL != nil
+        #else
+        return false
+        #endif
+    }()
 
     static func kind(of item: MediaItem) -> MediaItem.Kind {
         everythingIsVideo ? .video : item.kind

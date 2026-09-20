@@ -37,6 +37,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
     # kinds of failure apart.
     def end_headers(self):
         self.send_header("Connection", "close")
+        # **Nothing served here may be cached, and `/a2-flaky.mp4` least of
+        # all.** That file is 404 in one test and the clip in the next, which
+        # is exactly the shape a URL cache is built to flatten: the retry test
+        # healed it, the app downloaded it, and the *next run* of the same test
+        # replayed those bytes from the simulator's cache instead of asking —
+        # so a URL the server was answering 404 for produced a working video,
+        # no failure state, no retry button, and a test that failed saying "a
+        # 404 video never offered a retry". It had not been offered a 404.
+        # The app container survives between runs; this header is what makes
+        # the server's state, and not a cache's memory, decide what is seen.
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
         self.close_connection = True
         http.server.BaseHTTPRequestHandler.end_headers(self)
 

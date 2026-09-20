@@ -373,19 +373,66 @@ struct VideoPlaybackTests {
         #expect(coordinator.playingID == nil)
     }
 
-    // MARK: - Reaching the end
+    // MARK: - 2. Playing all the way to the end
 
-    /// **A clip that runs out goes back to the beginning instead of freezing.**
+    /// **The clip reaches its own end, and that is not a failure.**
     ///
-    /// This is the defect the whole suite was built to catch and still missed:
-    /// every other real-media test samples the first two or three seconds, and
-    /// the fixture is four seconds long, so nothing here ever watched what
-    /// happens when it ends. On screen it ended like this — the clock stopped
-    /// at 4.00, `timeControlStatus` went to `paused`, and the last decoded
-    /// frame stayed on the glass for as long as anyone looked at it. A feed row
-    /// in that state has no picture that moves and no control to restart it,
-    /// which is not "finished", it is "broken".
-    @Test func aClipThatRunsOutGoesBackToTheBeginningRatherThanFreezing() async throws {
+    /// Kept apart from looping deliberately, because this is the exact place a
+    /// previous round drew the wrong conclusion: a row whose picture stopped
+    /// changing was reported as broken playback, and what had really happened
+    /// was that four seconds of video had finished and the player was holding
+    /// its last frame. A screenshot cannot tell "finished" from "stalled" from
+    /// "the decoder died" — all three are a still picture — so nothing here
+    /// asks it to. The evidence is the clock getting there under its own
+    /// power, the item still being `readyToPlay` when it arrives, and
+    /// AVFoundation's own end-of-clip notification.
+    @Test func aClipPlaysAllTheWayToItsEndAndThatIsNotAFailure() async throws {
+        let url = try await clip()
+        let coordinator = VideoPlaybackCoordinator()
+        coordinator.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 0)
+        let player = try #require(coordinator.player(for: "a", url: url))
+        let item = try #require(player.currentItem)
+
+        let finished = Flag()
+        let observer = NotificationCenter.default.addObserver(
+            forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main
+        ) { _ in finished.raise() }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        // Under its own power: the furthest point reached, so a loop that
+        // wraps while this is waiting cannot make the condition go backwards.
+        var furthest = 0.0
+        try await waitUntil("the clock to reach the clip's last half second", timeout: 40, describe: {
+            "furthest=\(furthest) t=\(coordinator.currentTime(of: "a") ?? -1) "
+                + "status=\(player.timeControlStatus.rawValue) item=\(item.status.rawValue)"
+        }) {
+            furthest = max(furthest, coordinator.currentTime(of: "a") ?? 0)
+            return furthest >= TestVideoFixture.duration - 0.5
+        }
+
+        try await waitUntil("the end-of-clip notification to arrive", timeout: 20, describe: {
+            "furthest=\(furthest)"
+        }) { finished.isRaised }
+
+        // Finished, not broken — the two readings a still picture allows.
+        #expect(item.status == .readyToPlay, "the item did not survive to its own end")
+        #expect(coordinator.failure(for: "a") == nil, "reaching the end was recorded as a failure")
+        #expect(coordinator.livePlayerCount == 1, "the player was torn down when the clip ended")
+    }
+
+    // MARK: - 3. The seam, end back to beginning
+
+    /// **The join itself: the last frame is followed by the first one, playing.**
+    ///
+    /// Separate from the test above because "it got to the end" and "it carried
+    /// on from the start" fail for different reasons and one can hold without
+    /// the other. Before the loop existed, the clock stopped at 4.00,
+    /// `timeControlStatus` went to `paused`, and the last decoded frame stayed
+    /// on the glass indefinitely: a row with no moving picture and no control
+    /// to restart it, which is not "finished", it is stuck. Clips in this feed
+    /// are seconds long, so that state is where a row would spend most of its
+    /// life.
+    @Test func theSeamFromTheEndBackToTheBeginningKeepsPlaying() async throws {
         let url = try await clip()
         let coordinator = VideoPlaybackCoordinator()
         coordinator.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 0)
@@ -429,6 +476,66 @@ struct VideoPlaybackTests {
             frame.isCloseTo(TestVideoFixture.colour(atSecond: 0)),
             "after wrapping, the first second should be the red block again, measured \(frame)"
         )
+
+        // Last: wrapped *and still running*. A `seek(to: .zero)` with no
+        // `play()` after it also puts the clock under 1.0 and shows the red
+        // block — and is not looping, it is a tidier way of being stuck,
+        // holding the first frame forever instead of the last. Only the clock
+        // moving on past the seam tells the two apart.
+        try await waitUntil("the clock to carry on past the seam", timeout: 20, describe: {
+            "t=\(coordinator.currentTime(of: "a") ?? -1) status=\(player.timeControlStatus.rawValue)"
+        }) { (coordinator.currentTime(of: "a") ?? 0) > 1.2 }
+    }
+
+    /// **Looping is not a property of the first video.**
+    ///
+    /// The end-of-clip observer is attached to one player's one item, so "the
+    /// first row loops" says nothing whatever about the second: scrolling
+    /// tears players down and builds new ones, and an observer that only ever
+    /// reached the first item would leave every later row frozen on its last
+    /// frame. That is the same symptom one row further down — and the suite
+    /// had no test that would have noticed.
+    @Test func everyVideoThatWinsTheCentreLoopsNotJustTheFirst() async throws {
+        let url = try await clip()
+        let coordinator = VideoPlaybackCoordinator()
+
+        coordinator.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 0)
+        _ = coordinator.player(for: "a", url: url)
+        try await waitUntil("the first video to take the screen") { coordinator.playingID == "a" }
+        try await goRoundOnce(coordinator, id: "a")
+
+        // The list moves: "b" is nearest the middle now and "a" is gone
+        // entirely, which is what a row does when it is scrolled past.
+        coordinator.reportVisibility(id: "b", fraction: 0.95, distanceFromCentre: 0)
+        _ = coordinator.player(for: "b", url: url)
+        coordinator.reportOffscreen(id: "a", reason: "scrolled past")
+        try await waitUntil("the second video to take the screen", describe: {
+            "playing=\(coordinator.playingID ?? "none") live=\(coordinator.livePlayerIDs)"
+        }) { coordinator.playingID == "b" }
+
+        try await goRoundOnce(coordinator, id: "b")
+        #expect(coordinator.playingID == "b")
+        #expect(coordinator.isActuallyPlaying(id: "b"))
+    }
+
+    /// Plays `id` to its end, over the seam, and out the other side — saying
+    /// what it last saw rather than failing with a bare timeout.
+    private func goRoundOnce(_ coordinator: VideoPlaybackCoordinator, id: String) async throws {
+        var furthest = 0.0
+        try await waitUntil("\(id) to reach its last half second", timeout: 40, describe: {
+            "furthest=\(furthest) t=\(coordinator.currentTime(of: id) ?? -1) "
+                + "playing=\(coordinator.playingID ?? "none")"
+        }) {
+            furthest = max(furthest, coordinator.currentTime(of: id) ?? 0)
+            return furthest >= TestVideoFixture.duration - 0.5
+        }
+        try await waitUntil("\(id) to wrap back to the start", timeout: 20, describe: {
+            "t=\(coordinator.currentTime(of: id) ?? -1)"
+        }) { (coordinator.currentTime(of: id) ?? .greatestFiniteMagnitude) < 1.0 }
+        try await waitUntil("\(id) to carry on past the seam", timeout: 20, describe: {
+            "t=\(coordinator.currentTime(of: id) ?? -1) playing=\(coordinator.playingID ?? "none")"
+        }) { (coordinator.currentTime(of: id) ?? 0) > 1.2 }
+        #expect(coordinator.isActuallyPlaying(id: id), "\(id) wrapped and then stopped")
     }
 
     /// Looping belongs to the chosen video only.
@@ -485,7 +592,63 @@ struct VideoPlaybackTests {
         #expect(!coordinator.isActuallyPlaying(id: "a"), "the app is in the background and a video is playing")
     }
 
-    // MARK: - Failure and retry (5D.8)
+    // MARK: - 4. Leaving the feed and coming back
+
+    /// **Coming back has to restart the decision, not merely allow playback.**
+    ///
+    /// Opening a post releases every player *and* empties what the coordinator
+    /// knows about the screen — `SignedInView` calls `releaseAll` on the way
+    /// out and again on the way back. Everything after that depends on rows
+    /// speaking up again: with an empty visibility map nothing is eligible, so
+    /// nothing plays, and a row that has not moved produces no `onChange`, so
+    /// on its own nothing ever would. (`VideoPlayerView.onAppear` is what now
+    /// guarantees the rebuilt rows speak.)
+    ///
+    /// "It plays again" is the weaker claim and would pass on a coordinator
+    /// that simply resumed whatever it had been doing. The claim made here is
+    /// that the *choice* is made afresh: after coming back, the video nearest
+    /// the middle is a different one, and it is the one that plays.
+    @Test func comingBackFromAPostRestartsTheDecisionAndNotJustPlayback() async throws {
+        let url = try await clip()
+        let coordinator = VideoPlaybackCoordinator()
+        let firstVisit = UUID()
+        coordinator.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 0, reporter: firstVisit)
+        _ = coordinator.player(for: "a", url: url)
+        try await waitUntil("the feed to be playing before we leave") { coordinator.advanced.contains("a") }
+
+        // Out to the post and back, both calls, in the order they really happen.
+        coordinator.releaseAll(reason: "navigated away")
+        #expect(coordinator.livePlayerCount == 0, "a player survived navigating away")
+        #expect(coordinator.playingID == nil)
+        coordinator.releaseAll(reason: "returned to feed")
+
+        // The rebuilt rows report themselves. "b" is the one in the middle now.
+        let secondVisit = UUID()
+        let neighbour = UUID()
+        coordinator.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 300, reporter: secondVisit)
+        coordinator.reportVisibility(id: "b", fraction: 0.9, distanceFromCentre: 10, reporter: neighbour)
+        _ = coordinator.player(for: "a", url: url)
+        _ = coordinator.player(for: "b", url: url)
+
+        try await waitUntil("the decision to be taken again", timeout: 20, describe: {
+            "playing=\(coordinator.playingID ?? "none") live=\(coordinator.livePlayerIDs)"
+        }) { coordinator.playingID == "b" }
+        #expect(coordinator.isActuallyPlaying(id: "b"))
+        #expect(
+            !coordinator.isActuallyPlaying(id: "a"),
+            "the video that was playing before took the screen back instead of the decision being made again"
+        )
+
+        // And it is still free to move afterwards, so nothing has latched.
+        coordinator.reportVisibility(id: "a", fraction: 0.95, distanceFromCentre: 5, reporter: secondVisit)
+        coordinator.reportVisibility(id: "b", fraction: 0.7, distanceFromCentre: 400, reporter: neighbour)
+        try await waitUntil("a later scroll to change the choice", timeout: 20, describe: {
+            "playing=\(coordinator.playingID ?? "none")"
+        }) { coordinator.playingID == "a" }
+        #expect(!coordinator.isActuallyPlaying(id: "b"))
+    }
+
+    // MARK: - 5. Failure and retry (5D.8)
 
     @Test func aMissingFileBecomesARetryableFailure() async throws {
         let coordinator = VideoPlaybackCoordinator()
@@ -643,14 +806,44 @@ struct VideoPlaybackTests {
 
     // MARK: - Audio (5D.4)
 
-    /// Muted by default, so entering a feed cannot interrupt music.
+    /// **Muted by default — on the player, while it is playing, and in the session.**
+    ///
+    /// Three different things, and only the first is cheap to check. The
+    /// coordinator's `isMuted` is a belief; `AVPlayer.isMuted` is what the
+    /// audio unit is actually told; the session category is what decides
+    /// whether this app is allowed to interrupt anything at all. The old test
+    /// read the first two at the moment the player was built, which a player
+    /// that unmuted itself on its first `play()` would pass — so this one
+    /// waits until a clip is genuinely running and reads them then.
     @Test func mutedByDefault() async throws {
         let url = try await clip()
         let coordinator = VideoPlaybackCoordinator()
         #expect(coordinator.isMuted)
         coordinator.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 0)
-        let player = coordinator.player(for: "a", url: url)
-        #expect(player?.isMuted == true)
+        let player = try #require(coordinator.player(for: "a", url: url))
+        #expect(player.isMuted, "the player was built with sound on")
+
+        try await waitUntil("the clip to be genuinely playing", describe: {
+            "status=\(player.timeControlStatus.rawValue) t=\(coordinator.currentTime(of: "a") ?? -1)"
+        }) { coordinator.advanced.contains("a") && player.timeControlStatus == .playing }
+
+        // The state that matters: silent at the moment sound could come out.
+        #expect(player.isMuted, "the player unmuted itself once it started")
+        #expect(coordinator.isMuted)
+
+        // And a session that plays alongside other audio rather than taking it
+        // over. Muting the player alone does not achieve this — a muted
+        // AVPlayer still activates the session, and the default category stops
+        // whatever the person was listening to.
+        try await waitUntil("the session to be ambient", describe: {
+            "category=\(AVAudioSession.sharedInstance().category.rawValue)"
+        }) { AVAudioSession.sharedInstance().category == .ambient }
+
+        // A video that scrolls in later inherits the silence rather than
+        // starting from the framework's default.
+        coordinator.reportVisibility(id: "b", fraction: 0.7, distanceFromCentre: 300)
+        let second = try #require(coordinator.player(for: "b", url: url))
+        #expect(second.isMuted, "a video that arrived later came in with sound")
     }
 
     /// **Muting the player is not enough**, and this is the test that says so.
@@ -805,6 +998,29 @@ struct VideoPlaybackTests {
             ]
         )
         try await waitUntil("playback to come back", timeout: 5) { coordinator.playingID == "a" }
+    }
+}
+
+// MARK: - A yes/no a notification can raise
+
+/// Raised from a notification block, read from the test.
+///
+/// A plain `var` will not do: the block runs on the main *queue*, which Swift
+/// concurrency has no way to know is the main *actor*, and the compiler is
+/// right to refuse. Locked rather than actor-isolated so the read side stays a
+/// plain expression inside `waitUntil`.
+final class Flag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+
+    func raise() {
+        lock.lock(); defer { lock.unlock() }
+        value = true
+    }
+
+    var isRaised: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return value
     }
 }
 

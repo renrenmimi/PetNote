@@ -126,7 +126,7 @@ extension XCTestCase {
         //
         // That query spans every bar in the tree, and index 0 of it is
         // whichever one the tree happens to list first. The feed's bar is
-        // still there underneath, and it carries the sign-out button — so
+        // still there underneath, and it carried the sign-out button until it moved into the account menu — so
         // "no back button" was sometimes a report about the wrong bar, and
         // tapping index 0 could have ended the session instead of going back.
         // The same mistake, in the touch-target measurement, did exactly that.
@@ -219,6 +219,88 @@ extension XCTestCase {
         XCTAssertEqual(
             found.count, expected,
             "the server holds \(found.count) comments with this text, expected \(expected)",
+            file: file, line: line
+        )
+    }
+}
+
+// MARK: - The account menu
+
+extension XCTestCase {
+    /// Opens the account menu and waits until its own control can be tapped.
+    ///
+    /// Two waits, not one. The entry being hittable says the navigation bar has
+    /// settled; the row being hittable says the sheet has finished presenting.
+    /// Waiting only on the row would pass the moment the sheet exists, which is
+    /// before it has stopped moving, and a tap during a presentation animation
+    /// lands where the row is going to be rather than where it is.
+    func openAccountMenu(
+        _ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let entry = app.buttons["account.menu"]
+        XCTAssertTrue(
+            waitUntilHittable(entry, in: app, timeout: 30),
+            "the account entry is not reachable\n\(app.debugDescription)", file: file, line: line
+        )
+        entry.tap()
+        XCTAssertTrue(
+            waitUntilHittable(app.buttons["session.signOut"], in: app, timeout: 20),
+            "the account menu did not open\n\(app.debugDescription)", file: file, line: line
+        )
+    }
+
+    /// Closes the menu without signing out: a tap on the dimmed area above it,
+    /// falling back to a downward drag.
+    ///
+    /// Deliberately not "tap something inside the menu": the point of the
+    /// helper is that leaving the menu and ending the session are different
+    /// things, so it must not go near the row that ends it.
+    func closeAccountMenu(
+        _ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let window = app.windows.firstMatch
+        let bounds = window.frame
+        let origin = window.coordinate(withNormalizedOffset: .zero)
+        // Dragged down by the header, not flicked at the middle of the screen.
+        // `app.swipeDown()` starts at the centre of the app's frame, which is
+        // the dimmed area *behind* the sheet, so it reaches nothing; and a tap
+        // on that dimmed area did not dismiss this sheet either (measured).
+        // The header is also the one part of the menu that is safe to grab:
+        // the gesture never begins on the control that ends the session.
+        let headerY = max(bounds.minY + 1, app.buttons["session.signOut"].frame.minY - 30)
+        origin.withOffset(CGVector(dx: bounds.midX, dy: headerY))
+            .press(
+                forDuration: 0.1,
+                thenDragTo: origin.withOffset(CGVector(dx: bounds.midX, dy: bounds.maxY - 2)),
+                withVelocity: .default,
+                thenHoldForDuration: 0.1
+            )
+        var deadline = Date().addingTimeInterval(6)
+        while Date() < deadline, app.buttons["session.signOut"].exists {
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        if app.buttons["session.signOut"].exists {
+            origin.withOffset(CGVector(dx: bounds.midX, dy: bounds.minY + bounds.height * 0.15)).tap()
+            deadline = Date().addingTimeInterval(6)
+            while Date() < deadline, app.buttons["session.signOut"].exists {
+                Thread.sleep(forTimeInterval: 0.25)
+            }
+        }
+        XCTAssertFalse(
+            app.buttons["session.signOut"].exists,
+            "the account menu would not close", file: file, line: line
+        )
+    }
+
+    /// Menu, then sign-out: the two taps the product now asks for.
+    func signOutFromAccountMenu(
+        _ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        openAccountMenu(app, file: file, line: line)
+        app.buttons["session.signOut"].tap()
+        XCTAssertTrue(
+            waitForExistence(of: app.staticTexts["login.title"], in: app, timeout: 20),
+            "did not return to sign-in after signing out\n\(app.debugDescription)",
             file: file, line: line
         )
     }

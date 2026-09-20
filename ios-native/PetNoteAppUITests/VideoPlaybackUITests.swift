@@ -224,9 +224,22 @@ final class VideoPlaybackUITests: XCTestCase {
 
     // MARK: - Leaving, coming back
 
+    /// **The seeded feed on purpose, and a bigger budget for arriving.**
+    ///
+    /// This one wants the videos *sparse*. The seed puts them at posts 2, 26,
+    /// 63, 117, 170 and 203, so four fast swipes land somewhere with no video
+    /// in it at all and `playing` becomes `none` — which is the thing being
+    /// asserted, unambiguously.
+    ///
+    /// Making every row a video was tried here and measured *worse*: the fling
+    /// can then settle on another video, and a run recorded
+    /// `players=1 playing=post-000` both before **and** after four synthesized
+    /// swipes. That reads like "the feed is stuck" and really means "there was
+    /// another video right there". The only genuine flake was *arriving* at a
+    /// video at all, so only the arrival budget changed.
     func testScrollingAwayStopsPlaybackAndReleasesThePlayer() {
         let app = launch()
-        let state = scrollToAPlayingVideo(app)
+        let state = scrollToAPlayingVideo(app, swipes: 20)
         XCTAssertFalse(state.isEmpty, "nothing was playing to begin with")
         let before = probe(app)
         print("MEASURED probe while playing: \(before)")
@@ -250,8 +263,18 @@ final class VideoPlaybackUITests: XCTestCase {
     /// Backgrounding stops playback; returning does not start it again by
     /// itself, and a scroll does. The rule is written down in
     /// `VideoPlayerView`; this is the rule actually happening.
+    ///
+    /// **Every row is a video here**, and that is a fixture fix rather than a
+    /// weaker claim. The seed has six videos among 210 posts, so "scroll a
+    /// little and see whether video comes back" was really "scroll a little
+    /// and hope another one of six rows is nearby": the run that caught this
+    /// swiped five times, left the only video on screen behind, found no video
+    /// row at all, and reported the stuck case. Nothing was stuck — there was
+    /// nothing to play. With every row a video, one swipe is guaranteed to put
+    /// one in the middle, and a silent feed afterwards means what the test
+    /// says it means.
     func testBackgroundingStopsPlaybackAndReturningIsQuietUntilAScroll() {
-        let app = launch()
+        let app = launch(everythingIsVideo: true)
         XCTAssertFalse(scrollToAPlayingVideo(app).isEmpty)
 
         XCUIDevice.shared.press(.home)
@@ -414,30 +437,26 @@ final class VideoPlaybackUITests: XCTestCase {
         let before = waitForState(app, contains: "advanced=true")
         XCTAssertTrue(before.contains("advanced=true"), before)
 
-        // In the feed, tapping the card's content — including the video —
-        // opens the post. **By coordinate, not `element.tap()`.**
-        //
-        // `AVPlayerViewController` publishes an accessibility frame that is
-        // the aspect-*fill* rectangle of the clip at the row's height, not the
-        // rectangle it actually drew: a 320x240 clip in a 402pt-wide row was
-        // reported as 670pt wide starting at x = -134, hanging off both edges
-        // of a 402pt screen and below its bottom. XCUITest calls an element
-        // shaped like that unhittable and refuses to tap it, which was read
-        // once as "the video swallows taps". It does not — a finger in the
-        // middle of the picture opens the post, measured. What is drawn is
-        // 402x300, letterboxed and centred inside the 402x502.7 media area;
-        // only the reported frame is wrong, and it belongs to AVKit.
-        //
-        // So: tap where the picture really is. This asserts the same thing the
-        // element tap was meant to assert, with the instrument that matches
-        // what a person does.
+        // The id the coordinator is playing before we leave. Compared later,
+        // because "a video plays again" and "the choice is being made again"
+        // are different claims and only the second one is the requirement.
+        let playingBefore = Self.value(named: "playing", in: probe(app))
+        print("MEASURED playing before leaving: \(playingBefore ?? "none")")
+
+        // Tapping the video row opens the post — `element.tap()`, which only
+        // became possible once the row stopped being drawn by AVKit. See
+        // `testTheVideoRowReportsTheRectangleItActuallyDrew`.
         let target = try XCTUnwrap(playingSurface(app)?.element)
-        let visible = app.windows.firstMatch.frame.intersection(target.frame)
-        app.coordinate(withNormalizedOffset: .zero)
-            .withOffset(CGVector(dx: visible.midX, dy: visible.midY))
-            .tap()
+        XCTAssertTrue(target.isHittable, "the video row is not tappable: frame \(target.frame)")
+        target.tap()
+        // The detail screen's own bar, by name. `app.navigationBars.buttons`
+        // spans every bar in the tree and index 0 is whichever one it lists
+        // first — the feed's bar is still underneath, and asking it whether a
+        // button exists answers a question about the wrong screen. The same
+        // query in SessionFlow picked the sign-out control and ended the
+        // session mid-measurement.
         XCTAssertTrue(
-            app.navigationBars.buttons.element(boundBy: 0).waitForExistence(timeout: 20),
+            app.navigationBars["Post"].waitForExistence(timeout: 20),
             "the post never opened"
         )
         Thread.sleep(forTimeInterval: 2)
@@ -456,6 +475,97 @@ final class VideoPlaybackUITests: XCTestCase {
         XCTAssertTrue(
             Self.clipColours.contains { colour.isNear($0) },
             "nothing was drawn after coming back: \(colour)"
+        )
+
+        // **And the decision is working, not just playback.**
+        //
+        // A coordinator that came back playing the video it left on would pass
+        // everything above and still be stuck in the way that matters: the
+        // rule is "the eligible video nearest the middle plays", and a rule
+        // that stopped being applied looks exactly like a rule that keeps
+        // choosing the same answer. So scroll, and require the answer to
+        // change to a different video.
+        // Read through the navigation-bar probe rather than the rows: it is one
+        // scoped query, where walking `video.surface` across a 210-row feed is
+        // the unscoped kind that once turned a one-minute run into
+        // twenty-two.
+        //
+        // **Thirty swipes, because the seed puts its videos at posts 2, 26,
+        // 63, 117, 170 and 203.** The first version budgeted eight, never got
+        // within twenty rows of the second video, and reported "the decision
+        // is not being made any more" about a feed that had nothing else to
+        // choose. The budget is a fixture fact, not a weaker claim — the
+        // assertion below is still that a *different* video takes the screen.
+        let resumed = Self.value(named: "playing", in: probe(app))
+        print("MEASURED playing after returning: \(resumed ?? "none")")
+        var moved: String?
+        for _ in 0..<30 {
+            list(app).swipeUp(velocity: .slow)
+            Thread.sleep(forTimeInterval: 0.6)
+            let now = Self.value(named: "playing", in: probe(app))
+            if let now, now != "none", now != resumed { moved = now; break }
+        }
+        let chosenAfterScrolling = try XCTUnwrap(
+            moved,
+            "after coming back from the post, scrolling never handed the screen to a different "
+                + "video — the decision is not being made any more. Still on: \(resumed ?? "none")"
+        )
+        print("MEASURED playing after scrolling on: \(chosenAfterScrolling)")
+        let state = waitForState(app, contains: "advanced=true", timeout: 25)
+        XCTAssertTrue(
+            state.contains("advanced=true"),
+            "the newly chosen video was picked but its clock never moved: \(state)"
+        )
+    }
+
+    /// **The row's accessibility rectangle is the rectangle it drew.**
+    ///
+    /// It was not. SwiftUI's `VideoPlayer` is an `AVPlayerViewController`, and
+    /// it published the aspect-*fill* rectangle of the clip rather than the
+    /// one on screen: a 320x240 clip in a 402pt-wide row was reported 670pt
+    /// wide starting at x = -134, hanging off both edges of a 402pt screen and
+    /// below its bottom. The picture was drawn correctly and a finger landed
+    /// on it, so it was invisible to everything except two things that matter
+    /// — VoiceOver's focus rectangle for the row, and XCUITest, which calls an
+    /// element shaped like that unhittable and refuses to tap it.
+    ///
+    /// The fix is `.contentShape(.accessibility, Rectangle())` on the row's
+    /// surface in `VideoPlayerView`. Two better-looking theories were measured
+    /// and thrown away first — it is not AVKit (the number was unchanged after
+    /// this view stopped using `VideoPlayer` at all) and it is not the poster
+    /// overflowing `scaledToFill` (unchanged after `.clipped()`). Measured
+    /// before: (-134.0, 393.0, 670.0, 502.7). After: (0.0, 453.3, 402.0,
+    /// 502.7), in a 402x874 window.
+    func testTheVideoRowReportsTheRectangleItActuallyDrew() throws {
+        let app = launch()
+        XCTAssertTrue(scrollToAPlayingVideo(app).contains("playing=true"))
+        XCTAssertTrue(waitForState(app, contains: "state=picture").contains("state=picture"))
+
+        let surface = try XCTUnwrap(playingSurface(app)?.element)
+        let frame = surface.frame
+        let window = app.windows.firstMatch.frame
+        print("MEASURED video.surface frame \(frame) in window \(window)")
+
+        // Horizontal containment is the whole of the old defect: the reported
+        // width was 1.67x the screen's, centred, so it overhung by 134pt each
+        // side. One point of slack for rounding, no more.
+        XCTAssertGreaterThanOrEqual(
+            frame.minX, window.minX - 1,
+            "the row claims to start off the left edge of the screen: \(frame)"
+        )
+        XCTAssertLessThanOrEqual(
+            frame.maxX, window.maxX + 1,
+            "the row claims to extend past the right edge of the screen: \(frame)"
+        )
+        XCTAssertLessThanOrEqual(
+            frame.width, window.width + 1,
+            "the row is reported wider than the screen: \(frame)"
+        )
+        // And it is a real target, which is what both VoiceOver and a tap need.
+        XCTAssertTrue(surface.isHittable, "the video row is still not hittable: \(frame)")
+        XCTAssertTrue(
+            frame.height > 40,
+            "the row reported a frame too short to be the media area: \(frame)"
         )
     }
 

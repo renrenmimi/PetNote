@@ -30,7 +30,15 @@ enum FirebaseBootstrap {
     /// has no XCTest configuration in its environment, so it configures
     /// normally and really does talk to the emulator.
     private static var isUnitTestHost: Bool {
-        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        #else
+        // A shipped build is never a unit-test host, and saying so at compile
+        // time keeps the environment key out of the binary. It is a test hook
+        // like any other: harmless to evaluate, and still the sort of string
+        // that has no business in a candidate package.
+        return false
+        #endif
     }
 
     /// False in a unit-test host, where nothing that needs a running app

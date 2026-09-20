@@ -17,6 +17,10 @@ import XCTest
 /// offsets from the centre and checks whether the control responded, which is
 /// the only way to learn the hit region's real extent from outside the app.
 ///
+/// **The sign-out button these notes discuss is no longer in the bar.** It
+/// lives in the account menu now and is measured in AuthUITests, where the
+/// layout is ours and there is room to spare. What follows is about method.
+///
 /// **One side is not a size.** An earlier round measured only "22pt above the
 /// centre activates" and reported a 44pt-tall target. That does not follow: a
 /// region can extend 22pt up and 6pt down. Every measurement here sweeps a
@@ -292,101 +296,6 @@ final class TouchTargetUITests: XCTestCase {
             "every probe activated — the probe cannot tell inside from outside on the bar"
         )
     }
-
-    // MARK: - Probe 3: sign-out, one decisive rung per direction
-
-    /// Sign-out is destructive, so it gets one rung per direction rather than a
-    /// ladder: 22pt is the edge of a 44pt box, and that is the number the
-    /// requirement is about. Four relaunches, not thirty-two.
-    func testSignOutButtonAtTheFourEdgesOfA44ptBox() {
-        let app = XCUIApplication()
-        var results: [String: String] = [:]
-        var frameDescription = "?"
-
-        for direction in Self.directions {
-            _ = signedIn(app)
-            let signOut = app.buttons["session.signOut"]
-            XCTAssertTrue(waitUntilHittable(signOut, in: app, timeout: 20))
-            let frame = signOut.frame
-            frameDescription = "\(frame.size)"
-
-            // Vertically 22pt (half of 44). Horizontally half the button's own
-            // width plus 8pt, which is outside the drawn label in every case.
-            let distance: CGFloat = direction.dy == 0 ? (frame.width / 2) + 8 : 22
-            let target = point(from: signOut, dx: direction.dx * distance, dy: direction.dy * distance)
-
-            if !isInsideWindow(target, app) {
-                results[direction.name] = "offWindow@\(Int(distance))pt"
-            } else {
-                target.tap()
-                let signedOut = waitForExistence(
-                    of: app.staticTexts["login.title"], in: app, timeout: 8
-                )
-                results[direction.name] = "\(signedOut ? "activated" : "nothing")@\(Int(distance))pt"
-            }
-            print("MEASURED signOut \(direction.name): \(results[direction.name] ?? "?")")
-            app.terminate()
-        }
-
-        print("MEASURED signOut frame=\(frameDescription) "
-              + "up=\(results["up"] ?? "?") down=\(results["down"] ?? "?") "
-              + "left=\(results["left"] ?? "?") right=\(results["right"] ?? "?")")
-
-        // No pass/fail on the outcome. This test's job is the four numbers; the
-        // judgement about whether 44pt is met is made in the report, where the
-        // difference between the three sizes can be stated instead of hidden
-        // behind a green tick.
-        XCTAssertEqual(results.count, 4, "a direction was not probed")
-    }
-
-    /// The one number the four-edge probe left ambiguous.
-    ///
-    /// Sign-out activated 22pt **above** its centre and did not activate 22pt
-    /// **below** it. Two different things produce that reading and they have
-    /// opposite verdicts:
-    ///
-    ///   * the region is a half-open 44pt box `[centre-22, centre+22)`, in
-    ///     which case the requirement is met exactly; or
-    ///   * the region really is shorter below, in which case it is not.
-    ///
-    /// The ladder in `testNavigationBarBackButtonHitRegionInAllFourDirections`
-    /// already resolved the back button's lower edge to `(20, 22]`. This does
-    /// the same for sign-out, three launches rather than one, because the
-    /// difference between those two readings is the difference between "44pt"
-    /// and "not 44pt" and it is not a difference to leave to an assumption.
-    ///
-    /// **Superseded as evidence, kept as a ladder.** Reaching outwards from a
-    /// centre cannot separate "the region is 44pt" from "the centre sits half a
-    /// point high", which is the whole reason `HitRegionBoundaryUITests`
-    /// exists; it measures both boundaries absolutely instead and found
-    /// sign-out's height to be in [43.438, 44.062) — unconfirmed against 44.
-    /// Nothing here should be quoted as a verdict.
-    func testSignOutLowerEdgeAtFinerResolution() {
-        let app = XCUIApplication()
-        var results: [String] = []
-
-        for distance in [CGFloat(18), 20, 21] {
-            _ = signedIn(app)
-            let signOut = app.buttons["session.signOut"]
-            XCTAssertTrue(waitUntilHittable(signOut, in: app, timeout: 20))
-            let target = point(from: signOut, dx: 0, dy: distance)
-            let outcome: String
-            if !isInsideWindow(target, app) {
-                outcome = "offWindow"
-            } else {
-                target.tap()
-                outcome = waitForExistence(of: app.staticTexts["login.title"], in: app, timeout: 8)
-                    ? "activated" : "nothing"
-            }
-            results.append("\(Int(distance))pt=\(outcome)")
-            print("MEASURED signOutFine down \(Int(distance))pt -> \(outcome)")
-            app.terminate()
-        }
-
-        print("MEASURED signOutFine SUMMARY \(results.joined(separator: " "))")
-        XCTAssertEqual(results.count, 3, "a rung was not probed")
-    }
-
     // MARK: - Control group, kept from the earlier round
 
     /// The probe has to be able to tell "inside the control" from "outside" it,

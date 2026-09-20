@@ -79,9 +79,18 @@ final class AccessibilityUITests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
+        // Read the identifier in the same pass that selects the element.
+        //
+        // `.filter { $0.exists }` then `.map { $0.identifier }` are two
+        // traversals of a tree that moves — a feed row resizes as its image
+        // arrives — so the second one resolves indices into a layout the
+        // first one no longer describes: "No matches found for Element at
+        // index N". That reads like a missing control and is a stale query.
+        // The same mistake was fixed elsewhere in this file; this was the
+        // other one.
         let barButtonIDs = Set(
             app.navigationBars.buttons.allElementsBoundByIndex
-                .filter { $0.exists }.map { $0.identifier }
+                .compactMap { $0.exists ? $0.identifier : nil }
         )
         let controls = visibleOwnControls(app)
         XCTAssertFalse(controls.isEmpty, "\(context): no identified controls found", file: file, line: line)

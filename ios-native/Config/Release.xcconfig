@@ -8,3 +8,13 @@ SWIFT_OPTIMIZATION_LEVEL = -O
 GCC_OPTIMIZATION_LEVEL = s
 ENABLE_TESTABILITY = NO
 VALIDATE_PRODUCT = YES
+
+// Support/ is a synchronised group, so everything in it is copied into every
+// configuration's bundle — including the emulator's Firebase configuration.
+// A shipping build was carrying GoogleService-Info-Emulator.plist with
+// PROJECT_ID = petnote-test inside it.
+//
+// Not a secret; it is the local emulator. But it is the file a build falls
+// back to when its own is missing, and a candidate package has no business
+// carrying the configuration of a backend it must never talk to.
+EXCLUDED_SOURCE_FILE_NAMES = GoogleService-Info-Emulator.plist

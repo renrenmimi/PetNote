@@ -1,4 +1,11 @@
 import XCTest
+#if canImport(UIKit)
+import UIKit
+#endif
+
+/// Three decimals, because the bracket every measurement below is quoted to is
+/// one device pixel — 0.333pt at 3x. Fewer digits would round the answer away.
+private func fmt3(_ value: CGFloat) -> String { String(format: "%.3f", value) }
 
 /// Writes a screenshot somewhere a human can open it. XCTAttachment only ends
 /// up inside the result bundle, which is awkward to get at from a terminal.
@@ -8,6 +15,13 @@ private func saveScreenshot(_ app: XCUIApplication, named name: String) {
     try? data.write(to: url)
 }
 
+/// Driving the account menu, which is where sign-out lives now.
+///
+/// These are `XCTestCase` extensions rather than methods on `AuthUITests`
+/// because the other suites sign out too, and every one of them currently taps
+/// a navigation-bar button that no longer exists. They belong in
+/// `SessionFlow.swift` with the rest of the shared driving; they are here only
+/// because that file is not this change's to edit.
 /// Acceptance 4.1, 4.3–4.6 and 6.9 at the UI level, against the emulator.
 ///
 /// L4: these assert the behaviour that is asserted. They say nothing about how
@@ -112,11 +126,19 @@ final class AuthUITests: XCTestCase {
         let app = launchOnSignIn()
         signIn(app, email: "accept-a@example.com")
 
+        // Two taps, and the first one is not the destructive one: the bar
+        // opens the menu, the menu ends the session.
+        openAccountMenu(app)
+        XCTAssertTrue(
+            app.navigationBars["PetNote"].exists,
+            "opening the account menu already left the signed-in screen"
+        )
+
         let signOut = app.buttons["session.signOut"]
         if !waitUntilHittable(signOut, in: app) {
             saveScreenshot(app, named: "signout-not-hittable")
             XCTFail("""
-                Sign out button is not hittable.
+                Sign out row is not hittable.
                 frame: \(signOut.frame)
                 window: \(app.windows.firstMatch.frame)
                 \(app.debugDescription)
@@ -148,10 +170,7 @@ final class AuthUITests: XCTestCase {
         field.typeText(draft)
         popToFeed(app)
 
-        let signOut = app.buttons["session.signOut"]
-        XCTAssertTrue(waitUntilHittable(signOut, in: app, timeout: 20), "sign out is not reachable")
-        signOut.tap()
-        XCTAssertTrue(waitForExistence(of: app.staticTexts["login.title"], in: app, timeout: 20))
+        signOutFromAccountMenu(app)
 
         signIn(app, email: "accept-b@example.com")
 
@@ -313,5 +332,381 @@ final class AuthUITests: XCTestCase {
                 XCTAssertTrue(button.isHittable, "\(button.identifier) is not hittable")
             }
         }
+    }
+
+    // MARK: - The account menu
+
+    /// The account the hit-region measurement signs in and out of, repeatedly.
+    ///
+    /// A seeded account rather than one this suite creates: the measurement
+    /// ends the session on purpose a dozen times, and doing that to an account
+    /// that `tearDown` then deletes would mix "the control did not activate"
+    /// with "the account went away".
+    private static let measurementAccount = "accept-a@example.com"
+
+    /// Opening the menu must not be the act of signing out.
+    ///
+    /// Asserting that the sign-out row *appeared* is not enough on its own —
+    /// it would pass on a build that signed out and drew the menu on the way.
+    /// So the session itself is checked, from both sides: the feed's bar is
+    /// still there, and the sign-in screen is not.
+    func testOpeningTheAccountMenuDoesNotEndTheSession() {
+        let app = launchOnSignIn()
+        signIn(app, email: "accept-a@example.com")
+
+        let entry = app.buttons["account.menu"]
+        XCTAssertTrue(waitUntilHittable(entry, in: app, timeout: 30),
+                      "the account entry is not reachable\n\(app.debugDescription)")
+        entry.tap()
+
+        XCTAssertTrue(waitUntilHittable(app.buttons["session.signOut"], in: app, timeout: 20),
+                      "the account menu did not open\n\(app.debugDescription)")
+        XCTAssertFalse(app.staticTexts["login.title"].exists,
+                       "opening the account menu signed the person out")
+        XCTAssertTrue(app.navigationBars["PetNote"].exists,
+                      "opening the account menu left the signed-in screen")
+
+        // Two controls, not one wearing two names. The container traps in this
+        // project produced exactly that shape: a child reporting its parent's
+        // identifier, or its parent's rectangle.
+        let entryFrame = app.buttons["account.menu"].frame
+        let menuRowFrame = app.buttons["session.signOut"].frame
+        print("MEASURED account.menu frame=\(entryFrame) session.signOut frame=\(menuRowFrame)")
+        XCTAssertFalse(entryFrame.equalTo(menuRowFrame),
+                       "the entry and the sign-out row are the same rectangle")
+
+        // Leaving the menu is not signing out either.
+        closeAccountMenu(app)
+        XCTAssertFalse(app.staticTexts["login.title"].exists,
+                       "dismissing the account menu signed the person out")
+        XCTAssertTrue(waitUntilHittable(app.buttons["account.menu"], in: app, timeout: 20),
+                      "the signed-in screen did not come back after closing the menu")
+    }
+
+    /// What a tool can check about VoiceOver: both controls have something to
+    /// announce, neither announces machinery, and the menu can be reached.
+    func testTheAccountEntryAndItsMenuAnnounceThemselves() {
+        let app = launchOnSignIn()
+        signIn(app, email: "accept-a@example.com")
+
+        let entry = app.buttons["account.menu"]
+        XCTAssertTrue(waitUntilHittable(entry, in: app, timeout: 30))
+        let entryLabel = entry.label
+        print("MEASURED account.menu label=\"\(entryLabel)\" hittable=\(entry.isHittable)")
+        XCTAssertFalse(entryLabel.trimmingCharacters(in: .whitespaces).isEmpty,
+                       "the account entry has nothing to announce")
+        XCTAssertFalse(entryLabel.contains("account.menu"),
+                       "the account entry announces its own identifier")
+        // An icon-only control with no label announces the SF Symbol's name,
+        // which is the failure this catches rather than an empty string.
+        XCTAssertFalse(entryLabel.lowercased().contains("person.crop"),
+                       "the account entry announces a symbol name: \"\(entryLabel)\"")
+
+        openAccountMenu(app)
+
+        let row = app.buttons["session.signOut"]
+        let rowLabel = row.label
+        print("MEASURED session.signOut label=\"\(rowLabel)\" type=\(row.elementType.rawValue) "
+              + "hittable=\(row.isHittable)")
+        XCTAssertFalse(rowLabel.trimmingCharacters(in: .whitespaces).isEmpty,
+                       "the sign-out row has nothing to announce")
+        XCTAssertFalse(rowLabel.contains("session.signOut"),
+                       "the sign-out row announces its own identifier")
+        XCTAssertEqual(row.elementType, .button, "the sign-out row is not a focusable control")
+        XCTAssertTrue(row.isHittable, "the sign-out row cannot be reached")
+
+        // And the menu says whose session it is, so "sign out" is not an
+        // instruction given in the dark.
+        XCTAssertTrue(app.staticTexts["account.title"].exists, "the menu does not name itself")
+        let email = app.staticTexts["account.email"]
+        XCTAssertTrue(waitForExistence(of: email, in: app, timeout: 10))
+        XCTAssertEqual(email.label, "accept-a@example.com")
+
+        // Printed because the measured hit region of the row reaches about
+        // 14.7pt past the rectangle it is drawn in, on both sides. That is
+        // fine while the space it reaches into is padding, and not fine if it
+        // reaches the line above — so the gap is recorded rather than assumed.
+        print("MEASURED account.title frame=\(app.staticTexts["account.title"].frame) "
+              + "account.email frame=\(email.frame) "
+              + "session.signOut frame=\(app.buttons["session.signOut"].frame)")
+    }
+
+    /// The menu is an account entry and a sign-out row. It is not a settings
+    /// screen, and this is what would notice it becoming one.
+    ///
+    /// Hittability is the filter, and it is the right one here: while a sheet
+    /// is up, the screen behind it is not reachable, so what is both identified
+    /// and hittable is exactly what this menu offers.
+    func testTheAccountMenuHoldsNothingButSignOut() {
+        let app = launchOnSignIn()
+        signIn(app, email: "accept-a@example.com")
+        openAccountMenu(app)
+
+        // A closure rather than a key path: XCUIElement's properties are
+        // main-actor isolated and a key path cannot cross that boundary.
+        let reachable = app.buttons.allElementsBoundByIndex
+            .filter { $0.exists && $0.isHittable && !$0.identifier.isEmpty }
+            .map { $0.identifier }
+            .sorted()
+        print("MEASURED account menu offers: \(reachable)")
+        XCTAssertEqual(
+            Set(reachable), ["session.signOut"],
+            """
+            The account menu offers \(reachable). This stage is an account \
+            entry plus sign-out; anything else here is a settings screen \
+            arriving without the decision to build one.
+            """
+        )
+    }
+
+    // MARK: - Where the sign-out row's hit region actually is
+
+    /// The reading, in absolute window coordinates, kept so `restoreAccountMenu`
+    /// can notice if the geometry moves between probes.
+    private var rowFrame: CGRect?
+
+    /// The hit region of the sign-out row, measured as two absolute boundaries.
+    ///
+    /// **Absolute, not "N points from the centre."** Reaching outwards from a
+    /// centre cannot tell a 44pt region whose centre sits half a point high
+    /// from a 43pt one; that conflation is the whole reason
+    /// `HitRegionBoundaryUITests` exists, and it is why the navigation-bar
+    /// button's height could only ever be stated as the interval
+    /// [43.438, 44.062). Each boundary here is found as a coordinate and the
+    /// extent is the difference between two of them.
+    ///
+    /// Two kinds of claim come out of it and they are not the same kind:
+    ///
+    ///   * **a floor is a fact** — two points activated, and a UIKit hit region
+    ///     is one connected rectangle, so everything between them is inside it;
+    ///   * **a ceiling is the complement** — two points did not activate, so the
+    ///     region reaches neither.
+    ///
+    /// Cost: only an *activating* probe costs anything, because it ends the
+    /// session. A probe that misses leaves the menu open, or at worst closed,
+    /// and is reopened for nothing. No relaunch either way — signing in again
+    /// is enough, which is what makes a real bisection affordable here where it
+    /// was not for the bar button.
+    func testTheSignOutRowsHitRegionMeasuredAbsolutely() {
+        // These are measurements. One boundary that cannot be found must not
+        // throw away the others.
+        continueAfterFailure = true
+        rowFrame = nil
+
+        let app = launchOnSignIn()
+        signIn(app, email: Self.measurementAccount)
+        openAccountMenu(app)
+
+        let window = app.windows.firstMatch
+        let windowFrame = window.frame
+        let originOnScreen = window.coordinate(withNormalizedOffset: .zero).screenPoint
+        let scale = XCUIScreen.main.screenshot().image.scale
+        // One device pixel. Stopping finer would be inventing resolution:
+        // there is no coordinate between two adjacent pixels for a tap to land
+        // on, so a narrower bracket describes the search, not the control.
+        let tolerance = 1 / scale
+        print("MEASURED conditions coordinates=window window=\(windowFrame) "
+              + "window(0,0)onScreen=\(originOnScreen) scale=\(fmt3(scale))x "
+              + "pixel=\(fmt3(tolerance))pt bracket=\(fmt3(tolerance))pt")
+        print("MEASURED windows: \(app.windows.allElementsBoundByIndex.map { $0.frame })")
+
+        let frame = settledRowFrame(app)
+        rowFrame = frame
+        print("MEASURED session.signOut reported(accessibility) frame = \(frame)")
+        XCTAssertFalse(frame.isEmpty, "there is no frame to measure from")
+
+        let centreX = frame.midX
+        let centreY = frame.midY
+
+        // 0. The region is where the row is drawn, and not the whole screen.
+        //
+        // This project has shipped a control whose reported rectangle was
+        // 603x874 at x=-100 because an `.accessibilityAction` sat on a
+        // container; every tap then "hit" it from anywhere. A tap far outside
+        // the menu that ends the session would be that failure, and it costs
+        // one probe to rule out.
+        let farY = windowFrame.minY + windowFrame.height * 0.15
+        let farAway = probeSignOut(app, x: windowFrame.midX, y: farY)
+        print("MEASURED session.signOut far-away tap at (\(fmt3(windowFrame.midX)), "
+              + "\(fmt3(farY))) -> \(farAway ? "activated" : "nothing")")
+        XCTAssertFalse(
+            farAway,
+            "a tap outside the menu ended the session — the hit region is not where the row is drawn"
+        )
+
+        // 1. The width floor, as a fact: two activating points 44.000 apart.
+        //    Width is not bisected — the row spans the sheet — so the floor is
+        //    all that is claimed about it.
+        let left = probeSignOut(app, x: centreX - 22, y: centreY)
+        let right = probeSignOut(app, x: centreX + 22, y: centreY)
+        print("MEASURED session.signOut width: x=\(fmt3(centreX - 22)) -> "
+              + "\(left ? "activated" : "nothing"), x=\(fmt3(centreX + 22)) -> "
+              + "\(right ? "activated" : "nothing")")
+        XCTAssertTrue(
+            left && right,
+            "width >= 44.000 not established: two points 44.000 apart did not both activate"
+        )
+
+        // 2. Both vertical boundaries, absolutely, then the extent between them.
+        let top = findVerticalEdge(
+            app, name: "signOut.top", x: centreX,
+            inside: centreY, limit: frame.minY - 24, tolerance: tolerance
+        )
+        print("MEASURED \(top.description)")
+        let bottom = findVerticalEdge(
+            app, name: "signOut.bottom", x: centreX,
+            inside: centreY, limit: frame.maxY + 24, tolerance: tolerance
+        )
+        print("MEASURED \(bottom.description)")
+
+        let verdict = extent("height", from: top, to: bottom, requirement: 44)
+        print("MEASURED session.signOut VERDICT height=\(verdict) "
+              + "width=\(left && right ? ">= 44.000" : "not established") "
+              + "reportedFrame=\(frame)")
+        XCTAssertEqual(
+            verdict, "PASS",
+            "the sign-out row's measured height does not establish 44pt; see the MEASURED lines"
+        )
+    }
+
+    // MARK: Measurement machinery
+
+    private struct Edge {
+        let name: String
+        /// The furthest coordinate in this direction that activated.
+        let inside: CGFloat
+        /// The nearest that did not. `nil` when the search ran out of room
+        /// before it ran out of hit region.
+        let outside: CGFloat?
+        let searchedUpwards: Bool
+        let probes: Int
+
+        var description: String {
+            guard let outside else {
+                return "\(name): still activating at \(fmt3(inside)), which is the limit of the "
+                    + "search — no outer boundary was reached"
+            }
+            // Searching towards larger coordinates the boundary is the last
+            // coordinate inside, so it lies in [inside, outside); towards
+            // smaller ones it is the first inside, so (outside, inside].
+            let bracket = searchedUpwards
+                ? "[\(fmt3(inside)), \(fmt3(outside)))"
+                : "(\(fmt3(outside)), \(fmt3(inside))]"
+            return "\(name): boundary in \(bracket) — activates at \(fmt3(inside)), "
+                + "does not at \(fmt3(outside)) [\(probes) probes]"
+        }
+    }
+
+    /// Bisects between a coordinate known to activate and one known not to.
+    ///
+    /// `limit` is probed first and a `nil` outside is returned if it activates
+    /// too: that is a fact about the screen, not a failed search, and bisecting
+    /// anyway would report a boundary that is really just where we stopped.
+    private func findVerticalEdge(
+        _ app: XCUIApplication, name: String, x: CGFloat,
+        inside: CGFloat, limit: CGFloat, tolerance: CGFloat
+    ) -> Edge {
+        var probes = 0
+        func test(_ y: CGFloat) -> Bool {
+            probes += 1
+            let hit = probeSignOut(app, x: x, y: y)
+            print("MEASURED   \(name) #\(probes) at \(fmt3(y)) -> \(hit ? "activated" : "nothing")")
+            return hit
+        }
+
+        let upwards = limit > inside
+        if test(limit) {
+            return Edge(name: name, inside: limit, outside: nil,
+                        searchedUpwards: upwards, probes: probes)
+        }
+        var good = inside
+        var bad = limit
+        while abs(bad - good) > tolerance {
+            let mid = (good + bad) / 2
+            if test(mid) { good = mid } else { bad = mid }
+        }
+        return Edge(name: name, inside: good, outside: bad,
+                    searchedUpwards: upwards, probes: probes)
+    }
+
+    /// An extent, as the interval the two brackets allow, and the verdict that
+    /// interval supports — which is sometimes neither pass nor fail.
+    @discardableResult
+    private func extent(
+        _ name: String, from low: Edge, to high: Edge, requirement: CGFloat
+    ) -> String {
+        guard let lowOutside = low.outside, let highOutside = high.outside else {
+            print("MEASURED session.signOut \(name): UNRESOLVED — the region ran past the limit of "
+                  + "the search on at least one side")
+            return "UNRESOLVED"
+        }
+        let atLeast = high.inside - low.inside
+        let lessThan = abs(highOutside - lowOutside)
+        let verdict: String
+        if atLeast >= requirement {
+            verdict = "PASS"
+        } else if lessThan <= requirement {
+            verdict = "FAIL"
+        } else {
+            verdict = "UNCONFIRMED"
+        }
+        print("MEASURED session.signOut \(name) in [\(fmt3(atLeast)), \(fmt3(lessThan))) vs "
+              + "required \(fmt3(requirement)) -> \(verdict)")
+        return verdict
+    }
+
+    /// A tap at an absolute point in the window's coordinate space.
+    ///
+    /// Deliberately not `element.coordinate(withNormalizedOffset:)`: that form
+    /// divides by the element's own size, so the same written offset means a
+    /// different distance on a 36pt control than on a 56pt one — and that size
+    /// is the variable under study.
+    private func tapAbsolute(_ app: XCUIApplication, x: CGFloat, y: CGFloat) {
+        app.windows.firstMatch
+            .coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: x, dy: y))
+            .tap()
+    }
+
+    /// The row's frame once it has stopped moving.
+    ///
+    /// A sheet is still animating when its contents first become hittable, and
+    /// a frame read mid-presentation is a coordinate the row is passing
+    /// through rather than one it occupies.
+    private func settledRowFrame(_ app: XCUIApplication) -> CGRect {
+        var last = app.buttons["session.signOut"].frame
+        for _ in 0..<20 {
+            Thread.sleep(forTimeInterval: 0.25)
+            let now = app.buttons["session.signOut"].frame
+            if now.equalTo(last) { return now }
+            last = now
+        }
+        return last
+    }
+
+    /// Puts the app back in front of an open account menu, whatever the last
+    /// probe did to it — signed out, menu dismissed, or neither.
+    private func restoreAccountMenu(_ app: XCUIApplication) {
+        dismissSavePasswordSheetIfPresent(app)
+        if app.staticTexts["login.title"].exists {
+            signIn(app, email: Self.measurementAccount)
+        }
+        if !app.buttons["session.signOut"].exists {
+            openAccountMenu(app)
+        }
+        guard let expected = rowFrame else { return }
+        let now = settledRowFrame(app)
+        if !now.equalTo(expected) {
+            // Coordinates from the first reading would then be measuring
+            // something that has moved, which is worth knowing loudly.
+            print("MEASURED WARNING signOut row moved between probes: \(expected) -> \(now)")
+        }
+    }
+
+    /// One probe. True when the tap ended the session.
+    private func probeSignOut(_ app: XCUIApplication, x: CGFloat, y: CGFloat) -> Bool {
+        restoreAccountMenu(app)
+        tapAbsolute(app, x: x, y: y)
+        return waitForExistence(of: app.staticTexts["login.title"], in: app, timeout: 6)
     }
 }

@@ -81,8 +81,14 @@ struct FeedView: View {
     /// nothing was held for this account — a session-store question — or a
     /// route was appended and something later emptied the path, which is a
     /// question about whoever owns the stack. One reading separates them.
+    ///
+    /// Gated with `#if DEBUG` rather than by the runtime check alone: a
+    /// runtime check still leaves the flag name and the branch in the shipped
+    /// binary, and the candidate package is required to carry no test switch
+    /// at all. In a Release build this builder produces `EmptyView`.
     @ViewBuilder
     private var sessionProbe: some View {
+        #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-petnote-session-probe") {
             Text("resume=\(resumeDecision) path=\(path.count)")
                 .font(Typography.caption)
@@ -90,6 +96,7 @@ struct FeedView: View {
                 .allowsHitTesting(false)
                 .accessibilityIdentifier("session.resumeProbe")
         }
+        #endif
     }
 
     /// Publishes the coordinator's real state for UI tests: how many players
@@ -99,8 +106,12 @@ struct FeedView: View {
     /// app a person sees. It exists because the alternative — asserting the
     /// coordinator's own `playingID` from a unit test — is exactly what let a
     /// video that never played look correct.
+    ///
+    /// Behind `#if DEBUG` for the same reason as `sessionProbe`: compiled out
+    /// of a Release build entirely, rather than merely switched off in it.
     @ViewBuilder
     private var videoProbe: some View {
+        #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-petnote-video-probe") {
             // No TimelineView, and that matters more than where it lives: a
             // periodic redraw means the app never reports itself idle, and
@@ -117,6 +128,7 @@ struct FeedView: View {
                 .opacity(0.001)
                 .accessibilityIdentifier("video.probe")
         }
+        #endif
     }
 
     private var probeReading: String {

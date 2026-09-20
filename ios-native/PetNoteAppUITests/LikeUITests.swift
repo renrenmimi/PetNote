@@ -160,9 +160,9 @@ final class LikeUITests: XCTestCase {
 
     // MARK: - Reading the screen
 
-    private func signedIn() -> XCUIApplication {
+    private func signedIn(extraArguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-petnote-start-signed-out"]
+        app.launchArguments = ["-petnote-start-signed-out"] + extraArguments
         app.launch()
         XCTAssertTrue(app.staticTexts["login.title"].waitForExistence(timeout: 15))
         let email = app.textFields["login.email"]
@@ -664,6 +664,222 @@ final class LikeUITests: XCTestCase {
         XCTAssertTrue(usable, "the feed stopped responding after a post was dropped from it")
     }
 
+    // MARK: - 5A.10 A like request that is never answered
+
+    /// The deadline, on the real screen.
+    ///
+    /// **Why this test had to exist.** 5A.10 was signed off on a `FeedViewModel`
+    /// unit test that hands the model a fake whose `like` never returns. That
+    /// test is correct and it is not evidence about the app: it never
+    /// constructs a view, never touches `FirestoreLikeRepository`, and never
+    /// writes anything, so it cannot say what a person sees or what the server
+    /// is left holding. Those are the two questions 5A.10 asks.
+    ///
+    /// **The fault is injected, because it cannot be provoked.** A reachable
+    /// server answers or refuses; an unreachable one refuses quickly. Neither
+    /// is "the request landed and no answer ever came", which is the case the
+    /// 12-second deadline was written for. `-petnote-like-lose-response` makes
+    /// `FirestoreLikeRepository.like` do the write for real and then never
+    /// return — see that type's `Fault`. It is compiled only into a debug
+    /// build; `PetNoteAppTests/ReleaseHygieneTests` is what keeps that true.
+    ///
+    /// **The deadline is not shortened for the test.** There is no injection
+    /// point for `likeDeadline` above `FeedViewModel`, and adding one would
+    /// mean this test proved a number the app does not ship. So it waits out
+    /// the real twelve seconds, and the elapsed time is asserted to be more
+    /// than eight — a banner that appeared instantly would mean the request
+    /// had failed, which is a different outcome with different words.
+    ///
+    /// What has to be true afterwards, and each of these has a way of being
+    /// wrong on its own:
+    ///
+    ///   1. the write really landed — otherwise there is nothing to have
+    ///      written twice and the rest of the test proves nothing;
+    ///   2. the screen stops waiting and says it does not know, rather than
+    ///      keeping an optimistic like nothing will ever confirm;
+    ///   3. the intent falls back to the last state the server was *known* to
+    ///      hold, which here is "not liked" — the app must not claim the write
+    ///      succeeded when it never heard that it had;
+    ///   4. nothing was written a second time, checked at the emulator: one
+    ///      document, one `likeCount`, and a `createTime` that did not move;
+    ///   5. a refresh finds the truth, so the honest "I do not know" is
+    ///      recoverable rather than permanent.
+    func testALikeRequestThatIsNeverAnsweredRecoversWithoutWritingTwice() throws {
+        let uid = try XCTUnwrap(uid(forEmail: account), "no uid for \(account)")
+        let temporary = try XCTUnwrap(createTemporaryPost(label: "never-answered"))
+
+        // Absent `likeCount` is normal and reads as 0; nil would mean no post.
+        XCTAssertEqual(backendLikeCount(of: temporary.id), 0,
+                       "the post this test created already has likes")
+        XCTAssertFalse(backendLikeExists(postID: temporary.id, uid: uid),
+                       "this account has already liked the post this test created")
+
+        let app = signedIn(extraArguments: [Self.loseLikeResponse])
+        XCTAssertTrue(scrollToPost(app, withText: temporary.text),
+                      "the post this test created never appeared in the feed")
+        let heart = try XCTUnwrap(likeButton(app, forPostWithText: temporary.text),
+                                  "found the post but not its like button")
+        XCTAssertEqual(heart.label, "Like", "the temporary post started out liked")
+        XCTAssertEqual(shownCount(of: heart), 0, "the temporary post started out counted")
+
+        let tappedAt = Date()
+        XCTAssertTrue(waitUntilHittable(heart, in: app, timeout: 30),
+                      "the like button is not tappable")
+        heart.tap()
+        // Registered before anything is asserted: from here on the server may
+        // be holding a like, and a run that fails halfway must still not leave
+        // one behind in the shared emulator.
+        temporaryLikes.append((post: temporary.id, uid: uid))
+
+        // (1) Optimistic while the request is outstanding — a heart that did
+        //     not fill would mean the tap never reached the model.
+        XCTAssertTrue(waitForLabel("Unlike", ofPostWithText: temporary.text, in: app, timeout: 10),
+                      "the heart did not fill while the request was in flight")
+
+        // (1) And the write really happened. If the fault had swallowed the
+        //     write as well, everything below would pass by being vacuous.
+        XCTAssertTrue(
+            backendSettles(within: 25) { self.backendLikeExists(postID: temporary.id, uid: uid) },
+            "the injected fault was supposed to lose the answer, not the write"
+        )
+        let createTimeWhenWritten = try XCTUnwrap(
+            likeCreateTime(postID: temporary.id, uid: uid),
+            "the like document has no createTime to compare against later"
+        )
+
+        // (2) Still waiting, six seconds in.
+        //
+        //     Asserted separately from the elapsed time below, because elapsed
+        //     time alone does not distinguish the two outcomes: the backend
+        //     polling above can take seconds of its own, and a banner that had
+        //     appeared instantly would still be "more than eight seconds after
+        //     the tap" by the time anything looked. A banner before the
+        //     deadline means the request *failed*, which carries different
+        //     words and a different conclusion about the count.
+        let banner = app.staticTexts["feed.likeError"]
+        while Date().timeIntervalSince(tappedAt) < 6 {
+            XCTAssertFalse(
+                banner.exists,
+                "the screen gave up \(Date().timeIntervalSince(tappedAt))s after the tap; "
+                + "the deadline is 12s and the request had not failed, it was unanswered"
+            )
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+
+        // And then it does stop waiting, in its own words.
+        XCTAssertTrue(
+            waitForExistence(of: banner, in: app, timeout: 45),
+            "the deadline passed and the screen said nothing; it is still showing a like "
+            + "that nothing will ever confirm"
+        )
+        let waited = Date().timeIntervalSince(tappedAt)
+        print("MEASURED 5A.10 like deadline: banner \(String(format: "%.1f", waited))s after the tap")
+        XCTAssertEqual(banner.label, "Could not confirm that. Pull down to refresh.",
+                       "an unanswered request must not be reported as a failure")
+        XCTAssertGreaterThan(
+            waited, 8,
+            "the banner arrived after \(waited)s, far inside the 12s deadline — that is a "
+            + "request that failed, not one that was never answered"
+        )
+
+        // (3) The intent goes back to the last thing the server was known to
+        //     hold. "Known" is the operative word: the like is on the server,
+        //     but this client was never told so, and claiming otherwise would
+        //     be the same guess that the deadline exists to stop.
+        XCTAssertTrue(
+            waitForLabel("Like", ofPostWithText: temporary.text, in: app, timeout: 15),
+            "the heart stayed filled after the deadline, on the strength of an answer "
+            + "that never came"
+        )
+        let afterDeadline = try XCTUnwrap(likeButton(app, forPostWithText: temporary.text))
+        XCTAssertEqual(shownCount(of: afterDeadline), 0,
+                       "the count kept a +1 for a write this client cannot confirm")
+
+        // (4) Nothing was written twice. Three readings, because each one alone
+        //     has a hole: a second `create` on the same path is refused by the
+        //     rules and would leave the count alone, a delete-and-recreate
+        //     would leave the count alone too but move `createTime`, and a
+        //     second document under a different id would move neither.
+        XCTAssertEqual(
+            likeDocumentCount(ofPost: temporary.id), 1,
+            "the likes subcollection of \(temporary.id) does not hold exactly one document"
+        )
+        XCTAssertEqual(
+            likeCreateTime(postID: temporary.id, uid: uid), createTimeWhenWritten,
+            "the like document was created again after the deadline passed"
+        )
+        XCTAssertTrue(
+            backendSettles(within: 25) { self.backendLikeCount(of: temporary.id) == 1 },
+            "likeCount settled at \(backendLikeCount(of: temporary.id).map(String.init) ?? "nothing")"
+            + ", not 1 — the trigger counted the like a number of times other than once"
+        )
+
+        // (5) The instruction in the banner is the one that works.
+        pullToRefresh(app)
+        XCTAssertTrue(scrollToPost(app, withText: temporary.text),
+                      "the post went missing from the feed after a refresh")
+        XCTAssertTrue(
+            waitForLabel("Unlike", ofPostWithText: temporary.text, in: app, timeout: 30),
+            "a refresh did not adopt the like the server has been holding all along"
+        )
+        XCTAssertTrue(
+            waitForCount(1, ofPostWithText: temporary.text, in: app, timeout: 30),
+            "the refreshed count is "
+            + "\(likeButton(app, forPostWithText: temporary.text).flatMap(shownCount(of:)).map(String.init) ?? "unreadable")"
+            + ", not the 1 the server holds"
+        )
+
+        // And the refresh did not produce a second write of its own.
+        XCTAssertEqual(likeDocumentCount(ofPost: temporary.id), 1,
+                       "a second like document appeared while the feed was being refreshed")
+        XCTAssertEqual(backendLikeCount(of: temporary.id), 1,
+                       "likeCount moved again after the screen had already converged")
+    }
+
+    /// The launch flag that makes `FirestoreLikeRepository.like` write and then
+    /// never return. Spelled once, here, so the flag and its only user move
+    /// together.
+    private static let loseLikeResponse = "-petnote-like-lose-response"
+
+    /// How many like documents the post holds, from the server.
+    ///
+    /// The subcollection rather than the one document at `likes/{uid}`: a
+    /// duplicate write that used a different document id would leave that one
+    /// untouched and still double the count when the trigger ran.
+    private func likeDocumentCount(ofPost postID: String) -> Int {
+        guard let listing = json("\(Self.firestore)/posts/\(postID)/likes") else { return 0 }
+        return (listing["documents"] as? [Any])?.count ?? 0
+    }
+
+    /// The server's own creation stamp for a like document.
+    ///
+    /// `createTime`, not the `createdAt` field: the field is written by the
+    /// client and a rewrite would carry the same value, while `createTime` is
+    /// the server's and moves only if the document is genuinely new.
+    /// `updateTime` is no use for this — `onLikeCreated` flips `counted` in
+    /// the same transaction that moves the count, so it moves every time,
+    /// whether or not anybody wrote twice.
+    private func likeCreateTime(postID: String, uid: String) -> String? {
+        json("\(Self.firestore)/posts/\(postID)/likes/\(uid)")?["createTime"] as? String
+    }
+
+    /// The accessibility label of one particular card's heart, waited for.
+    ///
+    /// By card rather than `likeButton(app)`: this test scrolls down to its own
+    /// post, so the first `post.like` in the tree belongs to a card above the
+    /// fold and would answer for the wrong post.
+    private func waitForLabel(
+        _ expected: String, ofPostWithText text: String,
+        in app: XCUIApplication, timeout: TimeInterval = 15
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if likeButton(app, forPostWithText: text)?.label == expected { return true }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        return likeButton(app, forPostWithText: text)?.label == expected
+    }
+
     // MARK: - Somebody else moved the count
 
     /// Another account likes and unlikes the same post, and this client has to
@@ -806,12 +1022,10 @@ final class LikeUITests: XCTestCase {
             "the aggregate never caught up, so this test cannot tell a leftover offset from a real count"
         )
 
-        // Out, and in as somebody else.
-        let signOut = app.buttons["session.signOut"]
-        XCTAssertTrue(waitUntilHittable(signOut, in: app, timeout: 20), "sign out is not reachable")
-        signOut.tap()
-        XCTAssertTrue(waitForExistence(of: app.staticTexts["login.title"], in: app, timeout: 20),
-                      "signing out did not return to sign-in")
+        // Out, and in as somebody else. Two taps now: sign-out moved from the
+        // navigation bar into the account menu, so reaching it is part of the
+        // flow rather than one control on screen.
+        signOutFromAccountMenu(app)
         typeCredentials(app, email: other, password: password)
         XCTAssertTrue(reachedFeed(app), "did not reach the feed as \(other)")
         waitForQuietUI(app)

@@ -152,13 +152,51 @@ final class VideoPlaybackCoordinator {
         reconcile()
     }
 
-    /// Everything stops: leaving the screen, or the app going to the background.
+    /// **Pause everything, keep every player.** Used when the feed is still
+    /// the screen but must go quiet — the app leaving the foreground, and an
+    /// audio interruption.
+    ///
+    /// Pause and not release, and the difference is decided by one question:
+    /// *is the same video about to be wanted again?* Backgrounding says yes —
+    /// the rows have not moved, the person is coming back to the same place,
+    /// and rebuilding a decoder there would put a poster back over a picture
+    /// that was already on the glass. The cost of keeping them is bounded by
+    /// the ceiling of two, and a paused `AVPlayer` in a suspended process is
+    /// not decoding anything; iOS reclaims the hardware decoder itself if
+    /// another app needs it, and `AVPlayer` reopens it on the way back.
+    ///
+    /// The other half of the rule, written down because it is a choice and not
+    /// an accident: **coming back to the foreground does not resume.**
+    /// `playingID` is cleared here, so the next visibility report decides
+    /// afresh. Returning to a feed that starts moving and making noise on its
+    /// own is worse than returning to a still one, and the first scroll starts
+    /// it again.
     func suspendAll(reason: String) {
         for entry in entries { entry.player.pause() }
         playingID = nil
         log.info("video: suspended all (\(reason, privacy: .public))")
     }
 
+    /// **Release everything, and forget what was on screen.** Used when the
+    /// feed stops being the screen at all — opening a post, switching account.
+    ///
+    /// The opposite answer to `suspendAll`, from the same question: nothing
+    /// here is about to be wanted again. The post that was opened has its own
+    /// media to decode, and holding two paused feed players while it does that
+    /// is spending the ceiling on rows nobody is looking at. The audio session
+    /// goes back for the same reason — this screen is not even visible, so
+    /// keeping it active would hold another app's music down for no one.
+    ///
+    /// **This also clears `visibility` and `reporters`, and that has a
+    /// consequence worth stating.** The decision is made entirely from those
+    /// maps, so afterwards *nothing* is eligible and nothing will play until
+    /// rows report themselves again. Coming back from a post used to land
+    /// exactly there: the rows were rebuilt but their geometry was unchanged,
+    /// so `onChange` had nothing to fire on, and the feed sat silent until it
+    /// was scrolled. `VideoPlayerView.onAppear` is what now guarantees the
+    /// rebuilt rows speak up, and
+    /// `comingBackFromAPostRestartsTheDecisionAndNotJustPlayback` is what
+    /// keeps it true.
     func releaseAll(reason: String) {
         for entry in entries { release(entry) }
         entries.removeAll()

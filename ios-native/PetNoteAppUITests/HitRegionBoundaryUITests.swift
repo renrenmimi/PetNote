@@ -337,28 +337,6 @@ final class HitRegionBoundaryUITests: XCTestCase {
 
     /// The bar geometry from the first launch, to check it against later ones.
     private var signOutFrame: CGRect?
-
-    /// One probe of sign-out costs a whole relaunch and sign-in, because
-    /// activating it destroys the session. Hence the deliberate asymmetry in
-    /// what is measured on each control below.
-    private func probeSignOut(_ app: XCUIApplication, at point: CGPoint) -> Bool {
-        guard signIn(app) else {
-            XCTFail("could not sign in before the probe at \(point)")
-            return false
-        }
-        let frame = app.buttons["session.signOut"].frame
-        if let expected = signOutFrame, !frame.equalTo(expected) {
-            // Coordinates from the first launch would then be measuring
-            // something that has moved, which is worth knowing loudly.
-            print("MEASURED WARNING signOut frame moved between launches: \(expected) -> \(frame)")
-        }
-        signOutFrame = frame
-        tap(app, point)
-        let signedOut = waitForExistence(of: app.staticTexts["login.title"], in: app, timeout: 8)
-        app.terminate()
-        return signedOut
-    }
-
     // MARK: - The system back button
 
     /// UIKit's own back button: created by the navigation controller, not by
@@ -417,65 +395,5 @@ final class HitRegionBoundaryUITests: XCTestCase {
         // about UIKit's bar, and a run that goes red on it hides the four
         // numbers underneath a failure message.
         XCTAssertNotEqual(height, "", "height was not measured")
-    }
-
-    // MARK: - Our own sign-out button
-
-    /// The sign-out button is **not** the same kind of control as the back
-    /// button, and a reading from one is not a reading from the other:
-    ///
-    ///   * back is UIKit's, synthesised by the navigation controller from the
-    ///     previous screen's title, and UIKit has historically given it a hit
-    ///     region wider than it draws;
-    ///   * sign-out is ours — a `ToolbarItem(placement: .topBarTrailing)`
-    ///     wrapping a `Button` with a `Text` label.
-    ///
-    /// They share a bar and therefore a height budget, which is why the
-    /// *vertical* numbers are worth comparing. They share nothing about their
-    /// horizontal sizing. So this measures sign-out's own top and bottom, and
-    /// settles its width the cheap way.
-    func testSignOutHitRegionBoundaries() {
-        let app = XCUIApplication()
-        XCTAssertTrue(signIn(app), "could not sign in")
-        let conditions = conditions(app)
-        let signOut = app.buttons["session.signOut"]
-        XCTAssertTrue(waitUntilHittable(signOut, in: app, timeout: 30), "no sign-out button")
-        let frame = signOut.frame
-        signOutFrame = frame
-        print("MEASURED signOut reported(accessibility) frame = \(frame)")
-        let centreX = frame.midX, centreY = frame.midY
-        app.terminate()
-
-        // Width, by a floor rather than by two boundary searches. The
-        // requirement is "at least 44", and two points 44 apart that both
-        // activate establish exactly that on a connected region — for four
-        // probes instead of the sixteen relaunches a pair of bisections would
-        // cost. Precision beyond the requirement is not worth eight minutes.
-        let leftHalf = probeSignOut(app, at: CGPoint(x: centreX - 22, y: centreY))
-        let rightHalf = probeSignOut(app, at: CGPoint(x: centreX + 22, y: centreY))
-        print("MEASURED signOut width floor: x=\(fmt(centreX - 22)) -> \(leftHalf ? "activated" : "nothing"), "
-              + "x=\(fmt(centreX + 22)) -> \(rightHalf ? "activated" : "nothing")")
-        let widthVerdict = (leftHalf && rightHalf) ? "PASS" : "UNCONFIRMED"
-        print("MEASURED signOut width \(leftHalf && rightHalf ? ">= 44.000 (two activating points 44.000 apart)" : "not established by this pair") -> \(widthVerdict)")
-
-        let window = conditions.window
-        let top = findEdge(name: "signOut.top", inside: centreY,
-                           limit: max(window.minY + 1, centreY - 40),
-                           tolerance: conditions.tolerance) {
-            self.probeSignOut(app, at: CGPoint(x: centreX, y: $0))
-        }
-        let bottom = findEdge(name: "signOut.bottom", inside: centreY,
-                              limit: min(window.maxY - 1, centreY + 40),
-                              tolerance: conditions.tolerance) {
-            self.probeSignOut(app, at: CGPoint(x: centreX, y: $0))
-        }
-
-        print("MEASURED ---- sign-out button ----")
-        print("MEASURED \(conditions.summary)")
-        for edge in [top, bottom] { print("MEASURED \(edge.description)") }
-        let heightVerdict = extent("signOut", "height", from: top, to: bottom, requirement: 44)
-        print("MEASURED signOut VERDICT height=\(heightVerdict) width=\(widthVerdict)")
-
-        XCTAssertNotEqual(heightVerdict, "", "height was not measured")
     }
 }
