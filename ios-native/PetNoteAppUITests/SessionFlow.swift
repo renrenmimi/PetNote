@@ -13,13 +13,33 @@ extension XCTestCase {
     ///
     /// `extraArguments` is how the accessibility tests ask for a content size
     /// category; it is passed to the app, not acted on here.
-    func launchOnSignIn(extraArguments: [String] = []) -> XCUIApplication {
+    func launchOnSignIn(
+        extraArguments: [String] = [], file: StaticString = #filePath, line: UInt = #line
+    ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-petnote-start-signed-out"] + extraArguments
-        app.launch()
-        XCTAssertTrue(
-            app.staticTexts["login.title"].waitForExistence(timeout: 20),
-            "Sign-in screen did not appear"
+
+        // Two attempts, because a launch that hangs does not only lose its own
+        // test. Measured on a loaded machine: one case waited 762 seconds for
+        // the app to go idle, ended in kAXErrorServerNotFound — the
+        // accessibility service never came up — and left process 29459 alive.
+        // The *next* test then failed in setUp with "Failed to terminate
+        // dev.local.petnote.native:29459", which is a report about the
+        // previous failure wearing the words of a new one.
+        //
+        // Terminating before the retry is the part that matters; relaunching
+        // on top of a wedged process reproduces the wedge.
+        for attempt in 1...2 {
+            app.launch()
+            if app.staticTexts["login.title"].waitForExistence(timeout: 30) { return app }
+            if attempt == 1 {
+                app.terminate()
+                _ = app.wait(for: .notRunning, timeout: 30)
+            }
+        }
+        XCTFail(
+            "Sign-in screen did not appear after two launches\n\(app.debugDescription)",
+            file: file, line: line
         )
         return app
     }

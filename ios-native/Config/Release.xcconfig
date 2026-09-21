@@ -17,4 +17,7 @@ VALIDATE_PRODUCT = YES
 // Not a secret; it is the local emulator. But it is the file a build falls
 // back to when its own is missing, and a candidate package has no business
 // carrying the configuration of a backend it must never talk to.
-EXCLUDED_SOURCE_FILE_NAMES = GoogleService-Info-Emulator.plist
+// Both of them. The emulator's plist was excluded when this was written and
+// the test project's one did not exist yet; the moment it arrived the
+// candidate package started carrying it again. Same trap, same file, twice.
+EXCLUDED_SOURCE_FILE_NAMES = GoogleService-Info-Emulator.plist GoogleService-Info-Test.plist

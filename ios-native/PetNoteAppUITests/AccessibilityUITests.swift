@@ -18,9 +18,19 @@ import XCTest
 ///
 ///     xcrun simctl spawn pn-a3 defaults write com.apple.Accessibility \
 ///         ReduceMotionEnabled -bool true
+///     xcrun simctl spawn pn-a3 defaults write com.apple.Accessibility \
+///         EnhancedBackgroundContrastEnabled -bool true
 ///
 /// and the tests that need them skip — rather than silently pass — when they
 /// are off.
+///
+/// The second key is not a typo and not a different setting. On iOS the switch
+/// Settings calls "Reduce Transparency" is stored as
+/// `EnhancedBackgroundContrastEnabled`; `ReduceTransparencyEnabled` is macOS's
+/// name for it. Writing the macOS name here writes a key nothing reads, so
+/// `UIAccessibility.isReduceTransparencyEnabled` stayed false and §6.5 skipped
+/// on every run — which was read as "the runner process cannot be told" rather
+/// than "the key is spelled wrong".
 final class AccessibilityUITests: XCTestCase {
     /// AX5, the largest accessibility size.
     private static let ax5 = "UICTContentSizeCategoryAccessibilityXXXL"
@@ -47,6 +57,40 @@ final class AccessibilityUITests: XCTestCase {
         return app.buttons.allElementsBoundByIndex.filter {
             $0.exists && !$0.identifier.isEmpty
                 && !$0.frame.isEmpty && window.intersects($0.frame)
+        }
+    }
+
+    /// What one element looked like at one moment: the four facts the geometry
+    /// scans need, read together so they describe the same instant.
+    ///
+    /// A plain value on purpose. An `XCUIElement` kept in an array is not a
+    /// thing, it is a *recipe* for finding a thing — every `.frame`, `.label`
+    /// or `.elementType` re-runs the query against the tree as it is now. Hold
+    /// a hundred of them across a feed whose rows resize as their images
+    /// arrive and the answers stop belonging to one layout.
+    struct SeenElement {
+        let identifier: String
+        let label: String
+        let type: XCUIElement.ElementType
+        let frame: CGRect
+    }
+
+    /// Every element the app is currently showing, as values, in tree order.
+    ///
+    /// One pass. The cost of the pass is unavoidable — XCTest has no batch
+    /// read — but doing it once instead of four times is both faster and the
+    /// only way the numbers can be compared to each other at all.
+    private func snapshotOfEverythingOnScreen(_ app: XCUIApplication) -> [SeenElement] {
+        app.descendants(matching: .any).allElementsBoundByIndex.compactMap { element in
+            guard element.exists else { return nil }
+            let frame = element.frame
+            guard !frame.isEmpty else { return nil }
+            return SeenElement(
+                identifier: element.identifier,
+                label: element.label,
+                type: element.elementType,
+                frame: frame
+            )
         }
     }
 
@@ -190,6 +234,14 @@ final class AccessibilityUITests: XCTestCase {
         openFirstPost(app)
 
         let field = app.textFields["composer.field"]
+        // Hittable, not merely existing, before anything is measured from it.
+        // `openFirstPost` waits for the field to exist, and existence is not
+        // the same as being in its final place: the save-password sheet can
+        // still be over it, and a frame read through that is a frame read of
+        // a screen mid-flight. The resting position this whole test compares
+        // against was taken with no wait at all.
+        XCTAssertTrue(waitUntilHittable(field, in: app, timeout: 30),
+                      "the comment field never became usable")
         let restingBottom = field.frame.maxY
         field.tap()
 
@@ -219,9 +271,23 @@ final class AccessibilityUITests: XCTestCase {
         // Swiping *up*, deliberately. A downward drag at the top of the list
         // is pull-to-refresh's gesture, and asserting on it would be asserting
         // which of the two wins rather than that the keyboard goes away.
-        app.swipeUp()
-        let deadline = Date().addingTimeInterval(10)
-        while keyboard.exists, Date() < deadline { Thread.sleep(forTimeInterval: 0.2) }
+        //
+        // Two budgets rather than one bigger number: up to three swipes and
+        // up to 30 seconds. A single swipe plus a longer sleep waits out the
+        // clock on a gesture that may never have landed — under load the
+        // synthesised swipe can arrive before the list is listening, and the
+        // test then reports the machine as a missing
+        // `.scrollDismissesKeyboard`. Retrying the gesture does not weaken
+        // the assertion below; it only makes sure there was a gesture to
+        // assert about.
+        var swipes = 0
+        let deadline = Date().addingTimeInterval(30)
+        while keyboard.exists, Date() < deadline, swipes < 3 {
+            app.swipeUp()
+            swipes += 1
+            let settle = Date().addingTimeInterval(5)
+            while keyboard.exists, Date() < settle { Thread.sleep(forTimeInterval: 0.2) }
+        }
         XCTAssertFalse(keyboard.exists, "dragging the list did not dismiss the keyboard")
 
         // §5C.5: the composer comes back down, and does not leave a strip of
@@ -519,6 +585,23 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(waitForExistence(of: text, in: app, timeout: 60), "the feed never loaded")
         waitForQuietUI(app)
 
+        // One walk of the tree, reading the values out as it goes.
+        //
+        // What this replaced walked it four times — once for the card's top,
+        // once for its bottom, once to collect what is announced inside it,
+        // and a fourth time inside the failure message — and every property
+        // access in every one of those is a fresh query answered against
+        // whatever the tree looks like at that moment. A feed row changes
+        // height when its image arrives, so the later walks resolve indices
+        // into a layout the earlier ones no longer describe. That surfaces as
+        // "No matches found for Element at index N", which reads like a
+        // control going missing and is a stale query. It also meant the
+        // failure message described a different observation from the
+        // assertion that produced it.
+        //
+        // Values cannot go stale. Everything below this line is arithmetic.
+        let seen = snapshotOfEverythingOnScreen(app)
+
         // Everything in the first card, by geometry: from its identity row —
         // the pet's name and the timestamp — down to the action row below it.
         //
@@ -528,29 +611,62 @@ final class AccessibilityUITests: XCTestCase {
         // way in while the card was sitting there offering one. A window
         // drawn from one of the things it is searching for is not a window
         // around the card.
-        let header = app.descendants(matching: .any)
-            .matching(identifier: "post.open").allElementsBoundByIndex
-            .filter { $0.exists && !$0.frame.isEmpty && $0.frame.minY < text.frame.minY }
+        guard let cardText = seen.first(where: {
+            $0.identifier == "post.text" && $0.type == .staticText
+        }) else {
+            return XCTFail(
+                "post.text existed a moment ago and is not in the snapshot; "
+                    + "the screen changed under the scan"
+            )
+        }
+        let header = seen
+            .filter { $0.identifier == "post.open" && $0.frame.minY < cardText.frame.minY }
             .max { $0.frame.minY < $1.frame.minY }
-        let cardTop = header?.frame.minY ?? text.frame.minY
-        let nextLike = app.buttons.matching(identifier: "post.like").allElementsBoundByIndex
-            .filter { $0.exists && $0.frame.minY > cardTop }
+        let cardTop = header?.frame.minY ?? cardText.frame.minY
+        let nextLike = seen
+            .filter { $0.identifier == "post.like" && $0.type == .button && $0.frame.minY > cardTop }
             .min { $0.frame.minY < $1.frame.minY }
         let cardBottom = nextLike?.frame.maxY ?? (cardTop + 400)
 
-        let announced = app.descendants(matching: .any).allElementsBoundByIndex.filter {
-            $0.exists && !$0.frame.isEmpty
-                && $0.frame.minY >= cardTop && $0.frame.maxY <= cardBottom
-                && !$0.label.isEmpty
+        // The window has to be the card, not the screen.
+        //
+        // Twice now an `.accessibilityAction` on a container has made an
+        // element report the whole window as its own rectangle — 603x874 at
+        // x=-100 the last time. A window that big reaches the navigation bar,
+        // and the bar's account entry is a button whose label is not Like,
+        // Unlike or Comments: it would satisfy the assertion below on its own,
+        // and this test would go green while the card offered no way in at
+        // all. A false pass is the one outcome a test must not be able to
+        // produce, so the window is checked before anything is concluded from
+        // it.
+        //
+        // Measured at HEAD: post.open is (0, 128, 402, 44) — a row, not a
+        // screen — and account.menu is (349, 66, 30, 36), clearing the top of
+        // the window by 26pt.
+        if let bar = seen.first(where: { $0.identifier == "account.menu" }) {
+            XCTAssertFalse(
+                bar.frame.minY >= cardTop && bar.frame.maxY <= cardBottom,
+                """
+                the navigation bar's account entry \(bar.frame) is inside the \
+                card window [\(cardTop), \(cardBottom)]. The window is the \
+                screen rather than the card, so anything found in it says \
+                nothing about the card — check what post.open reports as its \
+                frame (it should be one row tall).
+                """
+            )
+        }
+
+        let announced = seen.filter {
+            $0.frame.minY >= cardTop && $0.frame.maxY <= cardBottom && !$0.label.isEmpty
         }
         let opensThePost = announced.contains {
-            $0.elementType == .button && !["Like", "Unlike", "Comments"].contains($0.label)
+            $0.type == .button && !["Like", "Unlike", "Comments"].contains($0.label)
         }
         XCTAssertTrue(
             opensThePost,
             """
             nothing in the card says it can be opened. What VoiceOver has to \
-            work with: \(announced.map { "\($0.elementType.rawValue):\($0.label.prefix(30))" })
+            work with: \(announced.map { "\($0.type.rawValue):\($0.label.prefix(30))" })
             """
         )
     }
@@ -561,8 +677,17 @@ final class AccessibilityUITests: XCTestCase {
             """
             Reduce Transparency is off on this simulator, so this run would \
             prove nothing. Set it first:
-              xcrun simctl spawn pn-a3 defaults write com.apple.Accessibility \
-            ReduceTransparencyEnabled -bool true
+              xcrun simctl spawn <device> defaults write com.apple.Accessibility \
+            EnhancedBackgroundContrastEnabled -bool true
+
+            The key really is called that. `ReduceTransparencyEnabled` is the \
+            macOS name; on iOS the switch labelled "Reduce Transparency" is \
+            stored as `EnhancedBackgroundContrastEnabled`, next to \
+            `ReduceMotionEnabled` in the same domain, and posts \
+            com.apple.accessibility.enhance.background.contrast.status. \
+            Writing the macOS name put a key in the domain that nothing reads, \
+            which is why this skipped every time while Reduce Motion — whose \
+            name happens to match — worked.
             """
         )
 
