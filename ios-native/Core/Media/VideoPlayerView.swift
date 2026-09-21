@@ -41,6 +41,18 @@ struct VideoPlayerView: View {
     /// there.
     @State private var instance = UUID()
 
+    /// What tapping the picture does. Nil where there is nowhere to go.
+    ///
+    /// Declared on the surface, which is a sibling of the mute button inside
+    /// the same ZStack — so the two have separate event paths rather than
+    /// competing for one. And declared *inside* the GeometryReader: the
+    /// visibility fraction that drives the playback decision is computed from
+    /// that reader's coordinate space, and a modifier wrapped around
+    /// `VideoPlayerView` sits outside it. Measured: doing that made
+    /// `scrollToAPlayingVideo` unable to find a playing video at all, because
+    /// the fraction no longer described where the row was.
+    var onTapPicture: (() -> Void)?
+
     var body: some View {
         GeometryReader { geometry in
             content
@@ -162,6 +174,11 @@ struct VideoPlayerView: View {
         // to say "this is my accessibility rectangle", and one ZStack is
         // exactly the scope it should cover.
         .contentShape(.accessibility, Rectangle())
+        // The picture opens the post. The speaker does not: it is a sibling
+        // of this view in the enclosing ZStack, drawn over it, so a tap that
+        // lands on the button is the button's and never reaches here.
+        .contentShape(.interaction, Rectangle())
+        .onTapGesture { onTapPicture?() }
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("video.surface")
         .accessibilityLabel(coordinator.playingID == id ? "Video" : "Video, not playing")

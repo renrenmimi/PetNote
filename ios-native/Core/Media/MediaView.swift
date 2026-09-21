@@ -153,36 +153,28 @@ struct MediaView: View {
                 // so the stored 400x400 c_fill crop would be a second
                 // rendition of the same frame — the cache split §7.4 forbids.
                 posterURL: Self.posterURL(for: item, size: size),
-                aspectRatio: mediaFrame.ratio
+                aspectRatio: mediaFrame.ratio,
+                // Handed to the player, which declares it on the picture —
+                // a sibling of the mute button, not a layer over it. Nothing
+                // of ours wraps `VideoPlayerView`: the playback decision is
+                // computed inside its GeometryReader and a modifier outside
+                // that reader changes the coordinate space it measures in.
+                onTapPicture: onActivate.map { open in { open(item.url) } }
             )
-            // Deliberately nothing here, and it cost three attempts to be
-            // sure of that.
+            // The picture's tap lives inside the player, not over it.
             //
-            // Tapping a video row used to open the post via a gesture wrapped
-            // around the whole card — the same gesture that swallowed the mute
-            // button. Removing it fixed the speaker and took "tap the picture
-            // to open the post" with it, so the obvious repair was to give the
-            // video its own action here. Measured: with
-            // `.modifier(ActivateMedia(…))` on the player, both
-            // `testVideoStartsMutedAndTheControlTogglesBothWays` and
-            // `testOpeningAPostAndComingBackLeavesTheFeedPlayingAgain` fail on
-            // the *first* line — `scrollToAPlayingVideo` can no longer find a
-            // playing video at all. Removing that one line makes the mute test
-            // pass again (31.3s). Wrapping the player changes what it reports,
-            // and what it reports is the input to the playback decision.
+            // It took three wrong attempts to find that line. A gesture
+            // wrapped around the whole card ate the mute button. Removing
+            // that gesture fixed the speaker and left video rows with no way
+            // into the post. Putting a modifier on `VideoPlayerView` broke
+            // the playback decision itself — both video tests then failed on
+            // their *first* line, unable to find a playing video, because the
+            // visibility fraction is computed in the GeometryReader's
+            // coordinate space and the modifier sat outside it.
             //
-            // Right now a video row is opened from the rest of the card — the
-            // identity line and the body text each carry the action — and by
-            // VoiceOver through `post.open`. **Tapping the picture does
-            // nothing, and that is a failing acceptance item, not a decision
-            // anyone accepted.**
-            //
-            // What has been shown is that *this* arrangement of gestures and
-            // *this* player cannot do both. It has not been shown that the two
-            // behaviours are incompatible. The conflict is in the layer that
-            // owns hit testing over the player's own bounds; the next step is
-            // to find which layer that is and give the picture and the speaker
-            // separate event paths.
+            // So the action is passed in and declared on the surface, whose
+            // sibling in the same ZStack is the speaker. Two event paths, not
+            // one path with a priority rule.
         }
     }
 }
