@@ -170,16 +170,32 @@ extension XCTestCase {
                 return frame.isEmpty ? nil : (button, frame.minX)
             }
             .min { $0.1 < $1.1 }?.0 ?? bar.buttons.firstMatch
+        // The diagnosis is gathered *before* the assertion, in one pass, and
+        // kept as text.
+        //
+        // It used to be built inline in the failure message, which meant it
+        // re-walked the tree reading .frame and .isHittable — and it was only
+        // ever evaluated when the tree was already in trouble. So the
+        // diagnostic threw "Failed to get matching snapshot" and replaced the
+        // diagnosis it existed to provide.
+        let diagnosis = app.navigationBars.allElementsBoundByIndex
+            .compactMap { navigationBar -> String? in
+                guard navigationBar.exists else { return nil }
+                let buttons = navigationBar.buttons.allElementsBoundByIndex
+                    .compactMap { button -> String? in
+                        guard button.exists else { return nil }
+                        let name = button.identifier.isEmpty ? button.label : button.identifier
+                        return "\(name)@\(button.frame)"
+                    }
+                return "\(navigationBar.identifier): [\(buttons.joined(separator: ", "))]"
+            }
+            .joined(separator: "\n  ")
+
         XCTAssertTrue(
             waitUntilHittable(back, in: app, timeout: 20),
             """
             no back button on the pushed screen.
-            bars: \(app.navigationBars.allElementsBoundByIndex.map { $0.identifier })
-            buttons on \(bar.identifier): \(bar.buttons.allElementsBoundByIndex.map {
-                "\($0.identifier.isEmpty ? $0.label : $0.identifier)@\($0.frame) hittable=\($0.isHittable)"
-            })
-            full-image close still present: \(app.buttons["fullImage.close"].exists)
-            covers: \(app.otherElements.allElementsBoundByIndex.filter { $0.exists && $0.frame.height > 600 }.count)
+              \(diagnosis)
             """
         )
         back.tap()

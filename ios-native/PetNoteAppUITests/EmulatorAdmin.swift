@@ -121,10 +121,28 @@ enum EmulatorAdmin {
         if owner { request.setValue("Bearer owner", forHTTPHeaderField: "Authorization") }
         request.timeoutInterval = 20
 
+        // The status code is checked, not just the body.
+        //
+        // Firestore answers a rejected query with a JSON *object* describing
+        // the error, and a successful one with an array. Callers that only
+        // understand the array shape silently read a rejection as "no
+        // documents" — so a query with a bogus operator came back as zero
+        // results and four assertions that count documents stayed green.
+        // A backend check that cannot fail is not a backend check.
         var result: Result<Data, Error>?
         let done = DispatchSemaphore(value: 0)
-        URLSession.shared.dataTask(with: request) { data, _, error in
-            if let error { result = .failure(error) } else { result = .success(data ?? Data()) }
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error {
+                result = .failure(error)
+            } else if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                let body = String(data: data ?? Data(), encoding: .utf8)?.prefix(300) ?? ""
+                result = .failure(NSError(domain: "EmulatorAdmin", code: http.statusCode, userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "emulator refused the request: HTTP \(http.statusCode)\n\(body)"
+                ]))
+            } else {
+                result = .success(data ?? Data())
+            }
             done.signal()
         }.resume()
         _ = done.wait(timeout: .now() + 25)
@@ -149,10 +167,28 @@ enum EmulatorAdmin {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         request.timeoutInterval = 20
 
+        // The status code is checked, not just the body.
+        //
+        // Firestore answers a rejected query with a JSON *object* describing
+        // the error, and a successful one with an array. Callers that only
+        // understand the array shape silently read a rejection as "no
+        // documents" — so a query with a bogus operator came back as zero
+        // results and four assertions that count documents stayed green.
+        // A backend check that cannot fail is not a backend check.
         var result: Result<Data, Error>?
         let done = DispatchSemaphore(value: 0)
-        URLSession.shared.dataTask(with: request) { data, _, error in
-            if let error { result = .failure(error) } else { result = .success(data ?? Data()) }
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error {
+                result = .failure(error)
+            } else if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                let body = String(data: data ?? Data(), encoding: .utf8)?.prefix(300) ?? ""
+                result = .failure(NSError(domain: "EmulatorAdmin", code: http.statusCode, userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "emulator refused the request: HTTP \(http.statusCode)\n\(body)"
+                ]))
+            } else {
+                result = .success(data ?? Data())
+            }
             done.signal()
         }.resume()
         // A blocking wait, deliberately: XCTest's test methods are synchronous

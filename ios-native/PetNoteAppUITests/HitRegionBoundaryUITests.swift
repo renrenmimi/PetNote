@@ -294,7 +294,14 @@ final class HitRegionBoundaryUITests: XCTestCase {
         // A probe below the bar can land on the post's image and open the
         // full-screen viewer. That is a negative result for the button, but it
         // leaves a screen the next probe cannot see past.
-        let close = app.buttons["full.close"]
+        // `fullImage.close`, not `full.close`. The wrong name meant this
+        // branch never ran once — and the comment above says what that costs:
+        // a probe that opened the viewer left a screen the next probe could
+        // not see past, so every probe after it was recorded as a miss. The
+        // boundaries this file measured were biased by it, and the control
+        // group that was supposed to prove the probe could tell inside from
+        // outside could be satisfied by the same misclassification.
+        let close = app.buttons["fullImage.close"]
         if close.exists, close.isHittable {
             close.tap()
             Thread.sleep(forTimeInterval: 0.5)

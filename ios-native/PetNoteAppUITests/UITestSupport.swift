@@ -55,22 +55,41 @@ extension XCTestCase {
     /// screen it covers, so clearing it once and then walking the hierarchy
     /// races it. Anything behind it reads as "not hittable", which looks
     /// exactly like a touch-target defect and is not one.
+    ///
+    /// **Returns false when it gave up.** It used to return `Void`, which meant
+    /// the one outcome this helper exists to prevent — the sheet still up when
+    /// the caller starts measuring — left no trace at all: the loop ran out,
+    /// the function returned, and every frame read afterwards was read through
+    /// a sheet. A housekeeping helper that cannot report its own failure hands
+    /// the caller a measurement of the wrong screen.
+    ///
+    /// Deliberately not an `XCTFail` from in here: the helper does not know
+    /// what the caller was about to do, and thirty call sites would start
+    /// failing on a sheet that the next line would have dismissed anyway. The
+    /// result is there so a caller that is about to *measure* can say so.
+    @discardableResult
     func waitForQuietUI(
         _ app: XCUIApplication,
         quietFor: TimeInterval = 2,
         timeout: TimeInterval = 20
-    ) {
+    ) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         var quietSince = Date()
+        var clearances = 0
         while Date() < deadline {
             if app.buttons["Not Now"].exists {
                 dismissSavePasswordSheetIfPresent(app)
+                clearances += 1
                 quietSince = Date()
             } else if Date().timeIntervalSince(quietSince) >= quietFor {
-                return
+                return true
             }
             Thread.sleep(forTimeInterval: 0.25)
         }
+        print("MEASURED waitForQuietUI gave up after \(timeout)s; "
+              + "cleared the save-password sheet \(clearances) time(s) and it kept coming back. "
+              + "Anything measured from here is measured through it.")
+        return false
     }
 
     /// Same, but for something that has to be tappable — a control behind the

@@ -241,8 +241,11 @@ final class AccessibilityWalkUITests: XCTestCase {
         // player. So the names of the controls that were checked are recorded,
         // and an empty set fails.
         var checked: [String] = []
+        // One pass. `.filter` then `.map` walks a moving tree twice and the
+        // second walk answers about a layout the first one no longer
+        // describes.
         let barIDs = Set(app.navigationBars.buttons.allElementsBoundByIndex
-            .filter { $0.exists }.map { $0.identifier })
+            .compactMap { $0.exists ? $0.identifier : nil })
         for button in app.buttons.allElementsBoundByIndex
         where button.exists && !button.identifier.isEmpty && !button.frame.isEmpty
             && window.intersects(button.frame) && !barIDs.contains(button.identifier) {

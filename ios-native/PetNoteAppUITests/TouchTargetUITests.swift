@@ -252,7 +252,12 @@ final class TouchTargetUITests: XCTestCase {
             _ = openDetail(app)
             return .activated
         }
-        if app.images["image.full"].exists || app.buttons["full.close"].exists {
+        // Both names were invented. `image.full` never existed at all and
+        // `full.close` is `fullImage.close`, so `.somethingElse` was a dead
+        // branch: a probe that opened the viewer was filed as `.nothing`,
+        // which is the very category the control group counts as its negative
+        // samples.
+        if app.otherElements["fullImage.photo"].exists || app.buttons["fullImage.close"].exists {
             return .somethingElse
         }
         return .nothing
