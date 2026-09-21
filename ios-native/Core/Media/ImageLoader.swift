@@ -70,7 +70,7 @@ actor ImageLoader {
                 if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                     throw ImageLoadError.http(http.statusCode)
                 }
-                guard let image = Self.decode(data, maxPixelSize: maxPixelSize) else {
+                guard let image = await Self.decodedOffTheActor(data, maxPixelSize: maxPixelSize) else {
                     throw ImageLoadError.undecodable
                 }
                 return image
@@ -85,16 +85,34 @@ actor ImageLoader {
             } onCancel: {
                 Task { await self.release(key) }
             }
-            await release(key, completed: true)
+            release(key, completed: true)
             cache.setObject(image, forKey: key as NSString, cost: Self.cost(of: image))
             return image
         } catch {
-            await release(key, completed: true)
-            if !(error is CancellationError) {
-                log.error("image failed: \(error.localizedDescription, privacy: .public)")
-            }
+            release(key, completed: true)
+            // **A cancelled download has to arrive as `CancellationError`.**
+            //
+            // `URLSession` throws `URLError(.cancelled)` — code -999 — and
+            // nothing else in the app knows that. `RemoteImage` catches
+            // `is CancellationError` to mean "the row scrolled away, this is
+            // not a failure"; that branch was unreachable, so every request
+            // stopped by a scroll fell through to `failed = true` and the row
+            // came back showing "Tap to retry" over a photo that was never
+            // broken. Measured in
+            // `scrollingAwayIsReportedAsCancellationAndNotAsAFailure`.
+            if Self.isCancellation(error) { throw CancellationError() }
+            log.error("image failed: \(error.localizedDescription, privacy: .public)")
             throw error
         }
+    }
+
+    /// Whether an error means "somebody stopped this", in any of the shapes
+    /// the two cancellation systems produce.
+    nonisolated static func isCancellation(_ error: any Error) -> Bool {
+        if error is CancellationError { return true }
+        if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+        let asNSError = error as NSError
+        return asNSError.domain == NSURLErrorDomain && asNSError.code == NSURLErrorCancelled
     }
 
     /// Drops one subscriber and cancels the shared download when none are left.
@@ -131,6 +149,28 @@ actor ImageLoader {
         }
     }
 
+    /// The decode, run somewhere that is not this actor.
+    ///
+    /// `Task { }` written inside an actor-isolated method inherits that
+    /// actor's isolation, so the download task's body — including the
+    /// decode — was running *on* `ImageLoader`. Decoding is the one
+    /// genuinely expensive thing here, and while it ran the actor could
+    /// answer nothing: every cache hit for every other row queued behind it,
+    /// one at a time. docs/image-loading-decision.md says "解码放后台" —
+    /// decode off the main path — and this is what makes that true rather
+    /// than intended.
+    ///
+    /// Detached on purpose: cancellation of this work is driven by
+    /// `request.cancel()` on the task that owns it, not by inheritance, so
+    /// there is nothing to lose by not inheriting.
+    private nonisolated static func decodedOffTheActor(
+        _ data: Data, maxPixelSize: CGFloat
+    ) async -> UIImage? {
+        await Task.detached(priority: .userInitiated) {
+            decode(data, maxPixelSize: maxPixelSize)
+        }.value
+    }
+
     /// Downsamples while decoding, so a 4000px original never exists in memory
     /// at full size.
     private nonisolated static func decode(_ data: Data, maxPixelSize: CGFloat) -> UIImage? {
@@ -165,6 +205,24 @@ actor ImageLoader {
     nonisolated static func quantizedPixels(_ size: CGFloat) -> CGFloat {
         let step: CGFloat = 128
         return max(step, (size / step).rounded(.up) * step)
+    }
+
+    /// Test-facing: how many callers are currently waiting on a shared
+    /// request, and whether one is registered at all.
+    ///
+    /// Needed because "the download was not cancelled" and "the row that was
+    /// still waiting got its picture" are different claims, and the ordering
+    /// between a cancelling caller and a joining one cannot be driven from
+    /// outside without being able to see the register.
+    func subscriberCountForTesting(url: URL, maxPixelSize: CGFloat) -> Int {
+        subscribers[Self.cacheKey(url: url, maxPixelSize: Self.quantizedPixels(maxPixelSize))] ?? 0
+    }
+
+    func inFlightCountForTesting() -> Int { inFlight.count }
+
+    func isCachedForTesting(url: URL, maxPixelSize: CGFloat) -> Bool {
+        let key = Self.cacheKey(url: url, maxPixelSize: Self.quantizedPixels(maxPixelSize))
+        return cache.object(forKey: key as NSString) != nil
     }
 
     /// Test-facing view of the key, so the quantisation can be asserted without

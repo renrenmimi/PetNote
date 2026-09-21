@@ -8,8 +8,15 @@ import SwiftUI
 /// image arrives). That frame crops anything outside 4:5–16:9, so there has to
 /// be somewhere the full image is reachable, and this is it.
 ///
-/// Deliberately minimal — pinch to zoom, drag to pan, tap to dismiss. Not a
-/// gallery: paging between a post's images, sharing and saving are later work.
+/// Deliberately minimal — pinch to zoom, drag to pan, double-tap to toggle
+/// zoom, and the X to close. Not a gallery: paging between a post's images,
+/// sharing and saving are later work.
+///
+/// **There is no single-tap-to-dismiss and no drag-down-to-dismiss**, and an
+/// earlier version of this comment claimed the first of those. A single tap
+/// cannot dismiss while a double tap toggles zoom without every double tap
+/// paying a recognition delay, and `.fullScreenCover` offers no interactive
+/// dismissal. The X is the way out; docs/media-sizing.md says the same.
 struct FullImageView: View {
     let url: URL
     @Environment(\.dismiss) private var dismiss
@@ -18,6 +25,7 @@ struct FullImageView: View {
     @State private var committedZoom: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var committedOffset: CGSize = .zero
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let maxZoom: CGFloat = 4
 
@@ -27,8 +35,17 @@ struct FullImageView: View {
 
             // .large: the detail rendition, matching the web client's
             // imageSize="large" on its own detail screen.
-            RemoteImage(url: url, aspectRatio: 1, size: .large)
-                .aspectRatio(contentMode: .fit)
+            //
+            // **`.whole`, and it was not.** This asked for `aspectRatio: 1`,
+            // and `RemoteImage` answered by reserving a square and filling it
+            // — `scaledToFill` inside a fixed frame, then clipped. On the one
+            // screen whose entire reason to exist is
+            // docs/media-sizing.md's "裁切是压缩显示，不是丢失内容", a 4:1
+            // panorama showed its middle quarter and a 1:4 portrait showed
+            // its middle quarter, with no way to reach the rest: pinching
+            // zooms the crop, it does not restore what was clipped away.
+            // Measured in `FullImageViewTests`.
+            RemoteImage(url: url, size: .large, fit: .whole)
                 .scaleEffect(zoom)
                 .offset(offset)
                 .gesture(
@@ -52,6 +69,20 @@ struct FullImageView: View {
                         }
                         .onEnded { _ in committedOffset = offset }
                 )
+                // **Without this there is nothing to put the label on.**
+                //
+                // `RemoteImage` hides its own contents from VoiceOver — they
+                // are pixels — so labelling it labels a subtree with no
+                // element in it, and the photo is simply not there: VoiceOver
+                // on this screen found the Close button and nothing else, and
+                // the "Pinch to zoom" hint was announced to no one. The same
+                // line, for the same reason, is already in `MediaView`.
+                //
+                // On the image and not on the ZStack: a modifier on the
+                // container would swallow the close button, which is the trap
+                // recorded at the bottom of this file.
+                .accessibilityElement(children: .ignore)
+                .accessibilityIdentifier("fullImage.photo")
                 .accessibilityLabel("Photo, full size")
                 .accessibilityHint("Pinch to zoom")
 
@@ -101,7 +132,11 @@ struct FullImageView: View {
     }
 
     private func toggleZoom() {
-        withAnimation(.snappy) {
+        // Reduce Motion is about exactly this: a large scale transform across
+        // the whole screen. The zoom still happens — turning the feature off
+        // would be a different and worse answer — it simply arrives without
+        // being animated there.
+        withAnimation(reduceMotion ? nil : .snappy) {
             if zoom > 1 {
                 zoom = 1
                 committedZoom = 1

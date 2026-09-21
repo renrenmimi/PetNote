@@ -28,6 +28,8 @@ import XCTest
 /// memory. Those need a device and Instruments.
 final class VideoPlaybackUITests: XCTestCase {
     private static let mediaHost = "http://127.0.0.1:8123"
+    /// The generated clip's length. Named so the wrap test says why it waits.
+    private let clipDuration: TimeInterval = 4
     /// Solid yellow, the poster. Measured off the generated file rather than
     /// assumed: the JPEG round trip moves it slightly.
     private static let posterColour = Sample(r: 0.99, g: 0.85, b: 0.14)
@@ -221,6 +223,140 @@ final class VideoPlaybackUITests: XCTestCase {
     // a better place for it: the row that is opening is the one in the middle
     // of the screen, so it can be photographed without hunting for a row that
     // happens to be both idle and fully visible.)
+
+    /// **The seam, on the glass.**
+    ///
+    /// The unit tests prove the clock wraps and that the decoder hands back
+    /// the first block again. Neither of them looks at the screen, and the
+    /// defect this is about was a screen one: the clip is four seconds long,
+    /// so before looping existed a row spent almost its whole life holding
+    /// its last frame, and "the picture never changes" was reported as a dead
+    /// decoder. It was a finished clip.
+    ///
+    /// The claim here is narrow and is the one a person would make: watch one
+    /// row for longer than the clip lasts, and the picture goes round. Not
+    /// "it changed" — a clip playing once changes too — but that after
+    /// reaching the last block it is back at the first.
+    func testTheGlassKeepsChangingPastTheEndOfTheClip() throws {
+        let app = launch()
+        XCTAssertTrue(scrollToAPlayingVideo(app).contains("playing=true"))
+        XCTAssertTrue(waitForState(app, contains: "state=picture").contains("state=picture"))
+        let surface = try XCTUnwrap(playingSurface(app)?.element)
+
+        // Which block each sample landed in, in order. Values, not elements:
+        // reading `.frame` or `.label` from a held element on a second pass
+        // is the stale-snapshot trap this project has hit five times.
+        var blocks: [Int] = []
+        var samples: [String] = []
+        let started = Date()
+        // Two conditions, not a fixed count: a loaded machine takes longer
+        // per screenshot, and the claim is about the clip's four seconds
+        // rather than about how many photographs fit into them.
+        let ceiling = started.addingTimeInterval(45)
+        while Date() < ceiling {
+            if let colour = Self.centreColour(of: surface, in: app) {
+                if let index = Self.clipColours.firstIndex(where: { colour.isNear($0) }) {
+                    samples.append("\(index)")
+                    if blocks.last != index { blocks.append(index) }
+                } else {
+                    samples.append("?")
+                }
+            }
+            // Wrapped: it reached the back half of the clip and then came
+            // round to the first block again.
+            if let wrap = blocks.firstIndex(where: { $0 >= 2 }),
+               blocks.dropFirst(wrap).contains(0),
+               Date().timeIntervalSince(started) >= clipDuration {
+                break
+            }
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+
+        print("MEASURED block sequence on the glass: \(samples.joined(separator: " "))")
+        print("MEASURED transitions: \(blocks)")
+        XCTAssertGreaterThanOrEqual(
+            blocks.count, 3,
+            "the picture barely changed in \(Int(Date().timeIntervalSince(started)))s: \(samples.joined(separator: " "))"
+        )
+        let reachedTheEnd = try XCTUnwrap(
+            blocks.firstIndex(where: { $0 >= 2 }),
+            "the clip never reached its second half: \(blocks)"
+        )
+        XCTAssertTrue(
+            blocks.dropFirst(reachedTheEnd).contains(0),
+            "after the last block the picture never came back to the first — it played once and "
+                + "stopped, which is the frozen-last-frame case, not looping: \(blocks)"
+        )
+    }
+
+    // MARK: - Sound
+
+    /// Muted to begin with, and the control says both what it is and what it
+    /// will do.
+    ///
+    /// **What this cannot show:** whether another app's music actually keeps
+    /// playing. That is an audio-session fact, the simulator shares no session
+    /// with anything, and it stays on the device list.
+    func testVideoStartsMutedAndTheControlTogglesBothWays() throws {
+        let app = launch()
+        XCTAssertTrue(scrollToAPlayingVideo(app).contains("playing=true"))
+
+        let mute = app.buttons["video.mute"].firstMatch
+        XCTAssertTrue(mute.waitForExistence(timeout: 15), "a playing video offered no sound control")
+        // The label is the state: muted video offers "Unmute".
+        XCTAssertEqual(mute.label, "Unmute video", "the video did not start muted")
+
+        mute.tap()
+
+        // **Where the tap went, before what it did.**
+        //
+        // Measured: it opened the post. The app's own log, at the moment of
+        // the tap, reads `video: released all (navigated away)` — which is
+        // `SignedInView` reacting to navigation, not the coordinator being
+        // muted. `PostCard` puts an `.onTapGesture` around `MediaView`, and
+        // that ancestor swallows the tap meant for the button inside it;
+        // this is the same defect `PostCard`'s own comment records for the
+        // like button ("the like button could not be activated at all"),
+        // still present for the sound control.
+        //
+        // Checked first because the other assertion cannot tell the two
+        // apart: the detail screen draws the same row with the same
+        // `video.mute` identifier, so the button is still found afterwards
+        // and still reads "Unmute video" — which looks like "the toggle did
+        // nothing" and is really "you are on a different screen".
+        XCTAssertTrue(
+            app.navigationBars["PetNote"].exists,
+            "tapping the sound control opened the post instead of unmuting — the tap is being "
+                + "swallowed by the gesture PostCard puts around MediaView"
+        )
+        XCTAssertTrue(
+            Self.waitForLabel(mute, toBe: "Mute video"),
+            "unmuting did not take — the control still reads \(mute.label)"
+        )
+        // And unmuting does not stop the video, which is what a reconfigured
+        // audio session in the middle of playback could easily do.
+        let stillPlaying = waitForState(app, contains: "playing=true")
+        XCTAssertTrue(stillPlaying.contains("playing=true"), "unmuting stopped playback: \(stillPlaying)")
+
+        mute.tap()
+        XCTAssertTrue(
+            Self.waitForLabel(mute, toBe: "Unmute video"),
+            "re-muting did not take — the control still reads \(mute.label)"
+        )
+        let afterRemute = waitForState(app, contains: "playing=true")
+        XCTAssertTrue(afterRemute.contains("playing=true"), "re-muting stopped playback: \(afterRemute)")
+    }
+
+    private static func waitForLabel(
+        _ element: XCUIElement, toBe expected: String, timeout: TimeInterval = 10
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if element.exists, element.label == expected { return true }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        return false
+    }
 
     // MARK: - Leaving, coming back
 
@@ -460,7 +596,13 @@ final class VideoPlaybackUITests: XCTestCase {
             "the post never opened"
         )
         Thread.sleep(forTimeInterval: 2)
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        // Scoped to the post's own bar, which is what the comment above says
+        // and what the code did not do. `app.navigationBars.buttons` spans
+        // every bar in the tree — the feed's is still mounted underneath —
+        // and index 0 is whichever one the traversal lists first. The same
+        // unscoped query in `SessionFlow` picked the sign-out control and
+        // ended the session in the middle of a measurement.
+        app.navigationBars["Post"].buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.navigationBars["PetNote"].waitForExistence(timeout: 20))
 
         let after = waitForState(app, contains: "advanced=true", timeout: 25)

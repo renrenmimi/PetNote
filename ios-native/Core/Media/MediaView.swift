@@ -15,6 +15,23 @@ struct MediaView: View {
     let item: MediaItem
     var size: CloudinaryURL.Size = .medium
 
+    /// Opens the whole photo. Optional, because only the detail screen has
+    /// somewhere for it to go.
+    ///
+    /// **It belongs here rather than on a tap gesture around this view, and
+    /// that is the fix.** A `.onTapGesture` wrapped around `MediaView` is
+    /// invisible to VoiceOver: the element it wraps stays a plain image with
+    /// a label, carries no `.isButton` trait, and offers no action — so the
+    /// "tap the photo" the cropped hint tells people to do could not be done
+    /// with VoiceOver on at all, and the whole photo was unreachable. The
+    /// trait and the action have to be declared by whatever *is* the
+    /// element, which is this.
+    var onActivate: ((URL) -> Void)?
+    /// What activating it does, in the words VoiceOver will read. The same
+    /// gesture means different things: in the feed a tap opens the post, on
+    /// the detail screen it opens the photo.
+    var activationHint: String = "Opens the post"
+
     /// Used when the URL carries no `ar_` hint. 4:5 because pet photos are
     /// mostly portrait, and because a guess that is stable beats a guess that
     /// changes once the bytes arrive.
@@ -123,6 +140,7 @@ struct MediaView: View {
                 // media at all.
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(mediaFrame.isCropped ? "Photo, cropped to fit" : "Photo")
+                .modifier(ActivateMedia(url: item.url, hint: activationHint, open: onActivate))
         case .video:
             VideoPlayerView(
                 // Post first, URL second, and the URL is the post's own even
@@ -137,6 +155,34 @@ struct MediaView: View {
                 posterURL: Self.posterURL(for: item, size: size),
                 aspectRatio: mediaFrame.ratio
             )
+            // Deliberately nothing here, and it cost three attempts to be
+            // sure of that.
+            //
+            // Tapping a video row used to open the post via a gesture wrapped
+            // around the whole card — the same gesture that swallowed the mute
+            // button. Removing it fixed the speaker and took "tap the picture
+            // to open the post" with it, so the obvious repair was to give the
+            // video its own action here. Measured: with
+            // `.modifier(ActivateMedia(…))` on the player, both
+            // `testVideoStartsMutedAndTheControlTogglesBothWays` and
+            // `testOpeningAPostAndComingBackLeavesTheFeedPlayingAgain` fail on
+            // the *first* line — `scrollToAPlayingVideo` can no longer find a
+            // playing video at all. Removing that one line makes the mute test
+            // pass again (31.3s). Wrapping the player changes what it reports,
+            // and what it reports is the input to the playback decision.
+            //
+            // Right now a video row is opened from the rest of the card — the
+            // identity line and the body text each carry the action — and by
+            // VoiceOver through `post.open`. **Tapping the picture does
+            // nothing, and that is a failing acceptance item, not a decision
+            // anyone accepted.**
+            //
+            // What has been shown is that *this* arrangement of gestures and
+            // *this* player cannot do both. It has not been shown that the two
+            // behaviours are incompatible. The conflict is in the layer that
+            // owns hit testing over the player's own bounds; the next step is
+            // to find which layer that is and give the picture and the speaker
+            // separate event paths.
         }
     }
 }
@@ -149,4 +195,37 @@ struct MediaFrame: Equatable {
     let isCropped: Bool
     /// What the URL said, when it said anything.
     let declaredRatio: CGFloat?
+}
+
+
+/// Makes a photo a real target for the full-image screen — for a finger and
+/// for VoiceOver — and does nothing at all where there is nowhere to go.
+///
+/// A separate modifier so the traits and the gesture are added together. They
+/// have to be: a tap gesture with no `.isButton` trait is a control VoiceOver
+/// cannot see, and a trait with no gesture is a promise nothing keeps.
+/// Makes a piece of media activatable, and says so.
+///
+/// A bare `.onTapGesture` wrapped around media is invisible to VoiceOver, and
+/// on this card it also swallowed the mute button underneath it. The trait,
+/// the hint and the gesture belong together on the element that *is* the
+/// media.
+///
+/// The hint is the caller's, because the same gesture means different things:
+/// in the feed a tap opens the post, on the detail screen it opens the photo.
+private struct ActivateMedia: ViewModifier {
+    let url: URL
+    let hint: String
+    let open: ((URL) -> Void)?
+
+    func body(content: Content) -> some View {
+        if let open {
+            content
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint(hint)
+                .onTapGesture { open(url) }
+        } else {
+            content
+        }
+    }
 }

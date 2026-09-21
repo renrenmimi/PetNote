@@ -74,7 +74,11 @@ final class ImageUITests: XCTestCase {
         XCTAssertTrue(firstCard.waitForExistence(timeout: 20))
         firstCard.tap()
         XCTAssertTrue(
-            app.otherElements["detail.root"].waitForExistence(timeout: 20)
+            // Was `app.otherElements["detail.root"]`, which the app never
+            // sets — so this half always timed out and the `||` below carried
+            // the result. Twenty wasted seconds per run and a condition that
+            // looked like it meant something.
+            app.textFields["composer.field"].waitForExistence(timeout: 20)
                 || app.staticTexts.matching(identifier: "post.text").firstMatch.waitForExistence(timeout: 20),
             "the detail screen never appeared"
         )
@@ -98,6 +102,22 @@ final class ImageUITests: XCTestCase {
 
         let close = app.buttons["fullImage.close"]
         XCTAssertTrue(close.waitForExistence(timeout: 15), "the full photo never opened")
+
+        // **The photo itself has to be an element, not just a picture.**
+        //
+        // `RemoteImage` hides its contents from VoiceOver, so a label hung on
+        // a view with no element in it labels nothing: the screen reported the
+        // Close button and no photo at all, and the "Pinch to zoom" hint had
+        // nowhere to be announced. Asserted by identifier so this says
+        // "the photo is reachable" rather than "something on screen is
+        // called Photo".
+        let photoElement = app.descendants(matching: .any)
+            .matching(identifier: "fullImage.photo").firstMatch
+        XCTAssertTrue(
+            photoElement.waitForExistence(timeout: 10),
+            "the full photo is invisible to VoiceOver — no element carries it"
+        )
+        print("MEASURED full photo element: label=\(photoElement.label) frame=\(photoElement.frame)")
         // Hittable, not merely existing: a cover that is still presenting has
         // its controls in the tree and swallows taps aimed at them, and that
         // reads exactly like a button that does nothing.
