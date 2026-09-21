@@ -120,6 +120,15 @@ final class FeedViewModel {
         var unreflectedDelta: Int
         var snapshotCount: Int
         var unconfirmedReads = 0
+        /// `writeSequence` as of the last comment this client had confirmed
+        /// for this post. A read issued before that number was sampled from a
+        /// server that did not have the comment yet, so it cannot be evidence
+        /// that the aggregate declined to catch up — the like path has had
+        /// this guard since `writeSequence` was added and the comment path
+        /// did not, which cost a correct offset one of its three chances
+        /// every time somebody pulled to refresh while their comment was
+        /// being written.
+        var lastWriteSequence = 0
     }
     private var commentStates: [String: CommentState] = [:]
     private var likeTasks: [String: Task<Void, Never>] = [:]
@@ -187,6 +196,10 @@ final class FeedViewModel {
         posts = []
         likedPostIDs = []
         likeStates.removeAll()
+        // For the reason spelled out above, which is not specific to likes: a
+        // pending comment of the last person's is invisible to the next one's
+        // reads — same post, same count — so nothing would ever contradict it.
+        commentStates.removeAll()
         writeSequence = 0
         state = .idle
         isLoadingMore = false
@@ -320,7 +333,8 @@ final class FeedViewModel {
             // there is no "did the server say we liked it" to wait for, and a
             // post the client has never touched simply has no offset to
             // reconcile.
-            if var comments = commentStates[post.id] {
+            if var comments = commentStates[post.id],
+               comments.lastWriteSequence <= readSequence {
                 reconcileComments(&comments, against: post.commentCount)
                 comments.snapshotCount = post.commentCount
                 commentStates[post.id] = comments
@@ -419,10 +433,15 @@ final class FeedViewModel {
     /// this offset covers.
     func recordCommentChange(postID: String, delta: Int) {
         guard delta != 0 else { return }
+        // The same logical clock the like writes use. Any read already in
+        // flight was sampled before this, so it is not allowed to judge this
+        // offset.
+        writeSequence += 1
         let snapshot = posts.first(where: { $0.id == postID })?.commentCount ?? 0
         var state = commentStates[postID] ?? CommentState(unreflectedDelta: 0, snapshotCount: snapshot)
         state.unreflectedDelta += delta
         state.unconfirmedReads = 0
+        state.lastWriteSequence = writeSequence
         commentStates[postID] = state
     }
 
@@ -433,10 +452,11 @@ final class FeedViewModel {
             state.unconfirmedReads = 0
             return
         }
-        if hasCaughtUp(from: state.snapshotCount, to: freshCount, delta: state.unreflectedDelta) {
-            // The trigger has landed. Keeping the offset would count the same
+        let credit = Self.absorbed(moved: freshCount - state.snapshotCount, owed: state.unreflectedDelta)
+        if credit != 0 {
+            // Exactly what arrived comes off. Keeping it would count the same
             // comment twice — once in the server's number and once in ours.
-            state.unreflectedDelta = 0
+            state.unreflectedDelta -= credit
             state.unconfirmedReads = 0
             return
         }
@@ -453,10 +473,11 @@ final class FeedViewModel {
             state.unconfirmedReads = 0
             return
         }
-        if hasCaughtUp(from: state.snapshotCount, to: freshCount, delta: state.unreflectedDelta) {
-            // The aggregate has moved at least as far as our confirmed writes,
-            // so keeping the offset would count them twice.
-            state.unreflectedDelta = 0
+        let credit = Self.absorbed(moved: freshCount - state.snapshotCount, owed: state.unreflectedDelta)
+        if credit != 0 {
+            // The aggregate has moved our way; what arrived comes off, because
+            // keeping it would count the same write twice.
+            state.unreflectedDelta -= credit
             state.unconfirmedReads = 0
             return
         }
@@ -468,20 +489,30 @@ final class FeedViewModel {
         }
     }
 
-    /// Whether the server's count has moved at least as far, and in the same
-    /// direction, as the writes this client has had confirmed.
+    /// How much of what we are owed this reading of the aggregate can account
+    /// for. Used by both of this screen's offsets, and `PostDetailViewModel`
+    /// keeps its own four-line copy of it. What holds the two screens
+    /// together is not a shared type but
+    /// `CommentCountInterleavingTests.bothScreensAnswerTheSameWayForTheSameSequenceOfReads`,
+    /// which drives them through the same sequence of reads and requires the
+    /// same answer at every step.
     ///
-    /// Not equality: somebody else's like can land in the same window, so the
-    /// count may have moved further than ours alone would explain. What must
-    /// not happen is treating "has not moved at all" as "has caught up".
+    /// **Partial, not all-or-nothing.** Two comments are two trigger
+    /// invocations and the aggregate arrives one at a time, while
+    /// `snapshotCount` is re-based on every read. Answering "it has not caught
+    /// up" to a count that has moved half way therefore counts that half
+    /// twice: once in the server's own number and once in an offset nothing
+    /// reduced. Measured against the fakes: a post at 5 with two of our
+    /// comments confirmed read 8, then 9, where the truth was 7.
     ///
-    /// This is a heuristic and cannot be anything else — see
-    /// `reconcile(_:against:)` for what it gets wrong and what bounds it.
-    private func hasCaughtUp(from old: Int, to fresh: Int, delta: Int) -> Bool {
-        guard delta != 0 else { return true }
-        let moved = fresh - old
-        guard moved.signum() == delta.signum() else { return false }
-        return abs(moved) >= abs(delta)
+    /// Movement the other way is somebody else's write and is worth nothing to
+    /// us; movement further than we are owed is partly theirs, and we take
+    /// only what we are owed. What this **cannot** do is tell whose write
+    /// moved the number — see `reconcile(_:against:)` for the bound that puts
+    /// a limit on being wrong about it.
+    private static func absorbed(moved: Int, owed: Int) -> Int {
+        guard owed != 0, moved.signum() == owed.signum() else { return 0 }
+        return min(abs(moved), abs(owed)) * owed.signum()
     }
 
     func rememberScrollAnchor(_ postID: String) { scrollAnchor = postID }
@@ -617,6 +648,9 @@ final class FeedViewModel {
             case .postNotFound:
                 posts.removeAll { $0.id == postID }
                 likeStates[postID] = nil
+                // And the comment offset, which otherwise outlives the row and
+                // rides back in if that id is ever served again.
+                commentStates[postID] = nil
                 likedPostIDs.remove(postID)
                 likeFailureMessage = "That post no longer exists."
             }

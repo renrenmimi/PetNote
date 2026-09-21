@@ -57,6 +57,9 @@ final class PostDetailViewModel {
     }
     private var likeState: LikeState?
     private var likeTask: Task<Void, Never>?
+    /// The look-again that follows an unknown outcome. Held so a test can wait
+    /// for it by identity rather than by guessing at a duration.
+    private var settleTask: Task<Void, Never>?
     /// Bumped by every answered write, so a status read can be compared
     /// against it and discarded when it describes an older world.
     private var writeSequence = 0
@@ -86,6 +89,19 @@ final class PostDetailViewModel {
     /// nothing recomputed it. The comments list below was right the whole time,
     /// which is what made it easy to miss.
     private var unreflectedCommentDelta = 0
+    /// How many server reads have looked at `unreflectedCommentDelta` and been
+    /// unable to account for it. Bounded by `unconfirmedReadLimit`, exactly as
+    /// the like offset is.
+    ///
+    /// This screen used to have no bound at all. Its only rule was "if the
+    /// number changed, drop the whole offset", and the case that rule cannot
+    /// see is the one that matters: a stranger's delete cancelling our comment
+    /// leaves the count exactly where it was, so the number never changes and
+    /// the offset was held for the lifetime of the screen.
+    private var commentUnconfirmedReads = 0
+    /// `writeSequence` as of the last comment this client had confirmed. A
+    /// post read issued before that cannot contain it.
+    private var commentLastWriteSequence = 0
 
     /// The number to draw for comments: the server's count plus what our
     /// confirmed writes have added that it has not caught up with.
@@ -180,6 +196,9 @@ final class PostDetailViewModel {
     }
 
     func load() async {
+        // Sampled before the read goes out, so a comment confirmed while it is
+        // in flight is recognised as newer than the answer.
+        let readSequence = writeSequence
         state = .loading
         do {
             guard let post = try await feed.post(id: postID) else {
@@ -187,14 +206,8 @@ final class PostDetailViewModel {
                 return
             }
             state = .loaded(post)
-            serverLikeCount = post.likeCount
-            // A fresh read of the post is the aggregate's own answer, so an
-            // offset measured against an older one has done its job. Keeping
-            // it would count the same comment twice — once in the number the
-            // server just gave us and once in ours.
-            if serverCommentCount != post.commentCount { unreflectedCommentDelta = 0 }
-            serverCommentCount = post.commentCount
-            await readLikeState(freshCount: post.likeCount, readSequence: writeSequence)
+            adopt(post, readSequence: readSequence)
+            await readLikeState(freshCount: post.likeCount, readSequence: readSequence)
             await loadComments(reset: true)
         } catch {
             state = .failed(Self.message(for: error))
@@ -215,8 +228,82 @@ final class PostDetailViewModel {
         if let post = try? await feed.post(id: postID) {
             freshCount = post.likeCount
             if case .loaded = state { state = .loaded(post) }
+            // The same read carries `commentCount`. Ignoring it left this
+            // screen with only one place it could ever learn the aggregate had
+            // caught up — `load()` — so an offset survived every refresh.
+            adopt(post, readSequence: readSequence)
         }
         await readLikeState(freshCount: freshCount, readSequence: readSequence)
+    }
+
+    /// Takes the two counts off a post the server has just given us.
+    ///
+    /// The comment half is bounded and partial for the same reasons the like
+    /// half is; `FeedViewModel.absorbed(moved:owed:)` carries the argument in
+    /// full, and `CommentCountInterleavingTests` drives both screens through
+    /// the same sequence of reads and requires the same answer — which is what
+    /// keeps these two from drifting apart, rather than a shared framework
+    /// neither of them needs.
+    private func adopt(_ post: Post, readSequence: Int) {
+        serverLikeCount = post.likeCount
+        if commentLastWriteSequence <= readSequence {
+            reconcileComments(against: post.commentCount)
+            serverCommentCount = post.commentCount
+        }
+    }
+
+    /// Credits what the aggregate actually moved against what we are owed, and
+    /// gives up on the remainder after `unconfirmedReadLimit` reads.
+    ///
+    /// Partial, not all-or-nothing: two comments are two trigger invocations
+    /// and they arrive one at a time. The rule this replaced — "any change in
+    /// the number means our offset has done its job" — threw the second
+    /// comment away the moment the first one's trigger landed.
+    private func reconcileComments(against freshCount: Int) {
+        guard unreflectedCommentDelta != 0 else {
+            commentUnconfirmedReads = 0
+            return
+        }
+        let credit = Self.absorbed(
+            moved: freshCount - serverCommentCount, owed: unreflectedCommentDelta
+        )
+        if credit != 0 {
+            unreflectedCommentDelta -= credit
+            commentUnconfirmedReads = 0
+            return
+        }
+        commentUnconfirmedReads += 1
+        if commentUnconfirmedReads >= Self.unconfirmedReadLimit {
+            log.debug("dropping a comment offset the aggregate never confirmed")
+            unreflectedCommentDelta = 0
+            commentUnconfirmedReads = 0
+        }
+    }
+
+    /// How much of what we are owed this reading of the aggregate can account
+    /// for. The same four lines as `FeedViewModel.absorbed(moved:owed:)`,
+    /// which carries the full argument for why it is partial rather than
+    /// all-or-nothing and why it cannot tell whose write moved the number.
+    ///
+    /// Deliberately duplicated rather than hoisted: it is four lines of
+    /// arithmetic, the two screens keep genuinely different state around it
+    /// (a dictionary of posts here, one post there), and what actually stops
+    /// them disagreeing is the parity test, not a shared type.
+    private static func absorbed(moved: Int, owed: Int) -> Int {
+        guard owed != 0, moved.signum() == owed.signum() else { return 0 }
+        return min(abs(moved), abs(owed)) * owed.signum()
+    }
+
+    /// One comment this client has had confirmed — by the callable answering,
+    /// or by going and finding it after the answer was lost. Both are the same
+    /// fact, and both have to reach this screen's count and the feed's.
+    private func recordConfirmedComment(delta: Int) {
+        guard delta != 0 else { return }
+        writeSequence += 1
+        commentLastWriteSequence = writeSequence
+        unreflectedCommentDelta += delta
+        commentUnconfirmedReads = 0
+        onCommentCountChanged?(postID, delta)
     }
 
     private func readLikeState(freshCount: Int?, readSequence: Int) async {
@@ -289,11 +376,11 @@ final class PostDetailViewModel {
             state.unconfirmedReads = 0
             return
         }
-        let moved = freshCount - state.snapshotCount
-        let caughtUp = moved.signum() == state.unreflectedDelta.signum()
-            && abs(moved) >= abs(state.unreflectedDelta)
-        if caughtUp {
-            state.unreflectedDelta = 0
+        let credit = Self.absorbed(
+            moved: freshCount - state.snapshotCount, owed: state.unreflectedDelta
+        )
+        if credit != 0 {
+            state.unreflectedDelta -= credit
             state.unconfirmedReads = 0
             return
         }
@@ -403,10 +490,10 @@ final class PostDetailViewModel {
             // right when this screen closes, without a refresh and without
             // waiting out a timer; the feed's own reconciliation stops it
             // being counted twice once the trigger lands.
-            onCommentCountChanged?(postID, +1)
-            // This screen too. The comments list was always right; the count
-            // beside the post came from a read taken before the write.
-            unreflectedCommentDelta += 1
+            // Both screens, in one place. The comments list was always right;
+            // the count beside the post came from a read taken before the
+            // write, and the feed underneath from one taken before that.
+            recordConfirmedComment(delta: +1)
             let confirmed = placeholder.confirmed(as: id)
             if let index = comments.firstIndex(where: { $0.id == pendingID }) {
                 comments[index] = confirmed
@@ -477,7 +564,7 @@ final class PostDetailViewModel {
                 message: "We could not confirm that comment was posted. Checking…",
                 canRetry: false
             )
-            Task { [weak self] in
+            settleTask = Task { [weak self] in
                 await self?.settleUnknownOutcome(
                     text: text, authorID: authorID,
                     knownBefore: knownBefore, generation: generation
@@ -550,6 +637,11 @@ final class PostDetailViewModel {
             $0.authorID == authorID && $0.text == text && !knownBefore.contains($0.id)
         }
         if landed {
+            // We went and looked, and it is there. That is a confirmed write,
+            // no weaker than the callable having answered — and it has to
+            // reach the count on this screen and the feed underneath, which it
+            // did not, because this branch only ever corrected the words.
+            recordConfirmedComment(delta: +1)
             // It is already on screen, from the refresh above. Clear the box so
             // the obvious next action is not the one that duplicates it — but
             // only if it still holds what we put back.
@@ -716,6 +808,14 @@ final class PostDetailViewModel {
     }
 
     func dismissFailure() { sendFailure = nil }
+
+    /// Waits for the work this model started on its own — the like write and
+    /// the look-again after an unknown outcome. Test-facing, and the reason no
+    /// test of those paths has to sleep for a duration it picked.
+    func waitForPendingWork() async {
+        await settleTask?.value
+        await likeTask?.value
+    }
 
     private static func message(for error: Error) -> String {
         let nsError = error as NSError

@@ -18,6 +18,19 @@ struct FeedViewModelTests {
         var error: Error?
         private var issued: [PageCursor] = []
 
+        /// Runs **inside** one open read: after the page has been chosen and
+        /// before it is handed back.
+        ///
+        /// This is how a test puts something in the window a read is already
+        /// in flight — a write being confirmed, a second refresh overtaking
+        /// this one — without a sleep and without repeating until it happens.
+        /// The page returned is the one sampled *before* the hook ran, which
+        /// is exactly what a read that predates the write looks like.
+        ///
+        /// One-shot: it clears itself before running, so a hook that reads
+        /// again does not recurse.
+        var whileInFlight: (@Sendable () async -> Void)?
+
         func posts(after cursor: PageCursor?, limit: Int) async throws -> Page<Post> {
             cursorsRequested.append(cursor)
             if let error { throw error }
@@ -35,6 +48,10 @@ struct FeedViewModelTests {
                 let token = PageCursor()
                 issued.append(token)
                 next = token
+            }
+            if let hook = whileInFlight {
+                whileInFlight = nil
+                await hook()
             }
             return Page(items: items, next: next)
         }
