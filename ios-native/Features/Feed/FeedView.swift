@@ -176,7 +176,9 @@ struct FeedView: View {
             List {
                 ForEach(model.posts) { post in
                 PostCard(
-                    post: post.withLikeCount(model.displayLikeCount(for: post)),
+                    post: post
+                        .withLikeCount(model.displayLikeCount(for: post))
+                        .withCommentCount(model.displayCommentCount(for: post)),
                     isLiked: model.isLiked(post),
                     onLike: { model.toggleLike(post) },
                     onOpenComments: { open(post) },

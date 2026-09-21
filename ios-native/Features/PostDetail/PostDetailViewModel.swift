@@ -77,6 +77,23 @@ final class PostDetailViewModel {
         return max(0, serverLikeCount + state.unreflectedDelta + pending)
     }
 
+    /// What this client has had confirmed about the comment count but which
+    /// the post it fetched on open does not include.
+    ///
+    /// The detail screen had the same gap the feed did, one screen further in:
+    /// the post says "2 comments", you add one, and it still says 2 — because
+    /// `commentCount` came from a document read before the comment existed and
+    /// nothing recomputed it. The comments list below was right the whole time,
+    /// which is what made it easy to miss.
+    private var unreflectedCommentDelta = 0
+
+    /// The number to draw for comments: the server's count plus what our
+    /// confirmed writes have added that it has not caught up with.
+    var commentCount: Int {
+        max(0, serverCommentCount + unreflectedCommentDelta)
+    }
+    private var serverCommentCount = 0
+
     var draft: String = ""
     private(set) var sendFailure: SendFailure?
     private(set) var isSending = false
@@ -113,6 +130,9 @@ final class PostDetailViewModel {
 
     /// Read by the screen so it can tell the session where the person is.
     let postID: String
+    /// Told when a comment is confirmed written or deleted, so the screen
+    /// underneath can show the new number the moment this one comes back.
+    private let onCommentCountChanged: ((String, Int) -> Void)?
     private let feed: any FeedRepository
     private let commentRepository: any CommentRepository
     private let likes: (any LikeRepository)?
@@ -140,8 +160,16 @@ final class PostDetailViewModel {
         likes: (any LikeRepository)? = nil,
         pageSize: Int = 30,
         likeDeadline: Duration = .seconds(12),
+        /// Told when a comment is confirmed written or deleted, so the screen
+        /// underneath can show the new number the moment this one comes back.
+        ///
+        /// A closure rather than a reference to the feed: this screen is also
+        /// reachable from a deep link, where there is no feed behind it, and
+        /// it has no business knowing which.
+        onCommentCountChanged: ((String, Int) -> Void)? = nil,
         sleeper: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
+        self.onCommentCountChanged = onCommentCountChanged
         self.postID = postID
         self.feed = feed
         self.commentRepository = commentRepository
@@ -160,6 +188,12 @@ final class PostDetailViewModel {
             }
             state = .loaded(post)
             serverLikeCount = post.likeCount
+            // A fresh read of the post is the aggregate's own answer, so an
+            // offset measured against an older one has done its job. Keeping
+            // it would count the same comment twice — once in the number the
+            // server just gave us and once in ours.
+            if serverCommentCount != post.commentCount { unreflectedCommentDelta = 0 }
+            serverCommentCount = post.commentCount
             await readLikeState(freshCount: post.likeCount, readSequence: writeSequence)
             await loadComments(reset: true)
         } catch {
@@ -364,6 +398,15 @@ final class PostDetailViewModel {
         defer { isSending = false }
         do {
             let id = try await commentRepository.create(postID: postID, text: text, replyTo: nil)
+            // Confirmed by the server, which is not the same moment as the
+            // aggregate moving. Telling the feed now is what makes the number
+            // right when this screen closes, without a refresh and without
+            // waiting out a timer; the feed's own reconciliation stops it
+            // being counted twice once the trigger lands.
+            onCommentCountChanged?(postID, +1)
+            // This screen too. The comments list was always right; the count
+            // beside the post came from a read taken before the write.
+            unreflectedCommentDelta += 1
             let confirmed = placeholder.confirmed(as: id)
             if let index = comments.firstIndex(where: { $0.id == pendingID }) {
                 comments[index] = confirmed

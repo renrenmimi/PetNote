@@ -12,7 +12,7 @@
          <TestableReference skipped="NO">
             <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="000000000000000000000020" BuildableName="PetNoteAppTests.xctest" BlueprintName="PetNoteAppTests" ReferencedContainer="container:PetNoteApp.xcodeproj"/>
          </TestableReference>
-         <TestableReference skipped="YES">
+         <TestableReference skipped="NO">
             <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="000000000000000000000023" BuildableName="PetNoteAppUITests.xctest" BlueprintName="PetNoteAppUITests" ReferencedContainer="container:PetNoteApp.xcodeproj"/>
          </TestableReference>
       </Testables>

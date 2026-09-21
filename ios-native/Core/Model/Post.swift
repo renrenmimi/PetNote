@@ -22,6 +22,16 @@ struct Post: Sendable, Equatable, Identifiable {
 extension Post {
     /// The optimistic like offset is the only field the client ever changes on
     /// a post it did not create, so it is the only copy helper that exists.
+    func withCommentCount(_ count: Int) -> Post {
+        Post(
+            id: id, authorID: authorID, authorName: authorName,
+            authorAvatarURL: authorAvatarURL, text: text, media: media,
+            petID: petID, petName: petName, petAvatarURL: petAvatarURL,
+            createdAt: createdAt, likeCount: likeCount, commentCount: count,
+            tags: tags
+        )
+    }
+
     func withLikeCount(_ count: Int) -> Post {
         Post(
             id: id, authorID: authorID, authorName: authorName,

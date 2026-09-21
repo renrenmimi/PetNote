@@ -112,7 +112,9 @@ struct PostDetailView: View {
                     // an inert control that always reads "not liked" is worse
                     // than no control.
                     PostCard(
-                        post: post.withLikeCount(model.likeCount),
+                        post: post
+                            .withLikeCount(model.likeCount)
+                            .withCommentCount(model.commentCount),
                         isLiked: model.isLiked,
                         onLike: { model.toggleLike() },
                         onOpenComments: {},

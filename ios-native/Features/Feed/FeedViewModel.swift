@@ -107,6 +107,21 @@ final class FeedViewModel {
         var lastWriteSequence = 0
     }
     private var likeStates: [String: LikeState] = [:]
+
+    /// What this client has had confirmed about a post's comment count but
+    /// which the feed's copy of the post may not include yet.
+    ///
+    /// The same shape as the like offset, for the same reason: `commentCount`
+    /// is maintained by a trigger, and the feed's Post is a snapshot taken
+    /// before the comment existed. Measured on a device: comment posted, the
+    /// detail screen showed it, the server said 1, and the feed still said
+    /// "0 comments" — the server was right and nothing had told the feed.
+    private struct CommentState {
+        var unreflectedDelta: Int
+        var snapshotCount: Int
+        var unconfirmedReads = 0
+    }
+    private var commentStates: [String: CommentState] = [:]
     private var likeTasks: [String: Task<Void, Never>] = [:]
 
     /// Bumped by every like write that comes back with an answer, so a status
@@ -301,6 +316,16 @@ final class FeedViewModel {
         guard thisGeneration == generation else { return }
 
         for post in newPosts {
+            // Comment counts first and unconditionally: unlike the like state
+            // there is no "did the server say we liked it" to wait for, and a
+            // post the client has never touched simply has no offset to
+            // reconcile.
+            if var comments = commentStates[post.id] {
+                reconcileComments(&comments, against: post.commentCount)
+                comments.snapshotCount = post.commentCount
+                commentStates[post.id] = comments
+            }
+
             let freshCount = post.likeCount
 
             guard var existing = likeStates[post.id] else {
@@ -378,6 +403,51 @@ final class FeedViewModel {
     /// that the server's number is taken as it stands. A number that is briefly
     /// wrong and then right is recoverable; one that is quietly wrong forever
     /// is not.
+    /// The count to show for a post's comments.
+    ///
+    /// Immediate: the offset is applied the moment the write is confirmed, so
+    /// coming back from the detail screen shows the new number without a
+    /// refresh and without waiting out a timer.
+    func displayCommentCount(for post: Post) -> Int {
+        max(0, post.commentCount + (commentStates[post.id]?.unreflectedDelta ?? 0))
+    }
+
+    /// A comment this client wrote, or deleted, and had confirmed.
+    ///
+    /// Confirmed means the server accepted the write — not that the aggregate
+    /// has moved. Those are different moments and the gap between them is what
+    /// this offset covers.
+    func recordCommentChange(postID: String, delta: Int) {
+        guard delta != 0 else { return }
+        let snapshot = posts.first(where: { $0.id == postID })?.commentCount ?? 0
+        var state = commentStates[postID] ?? CommentState(unreflectedDelta: 0, snapshotCount: snapshot)
+        state.unreflectedDelta += delta
+        state.unconfirmedReads = 0
+        commentStates[postID] = state
+    }
+
+    /// Same bounded window as likes: an offset the server never confirms is
+    /// given up on rather than kept forever.
+    private func reconcileComments(_ state: inout CommentState, against freshCount: Int) {
+        guard state.unreflectedDelta != 0 else {
+            state.unconfirmedReads = 0
+            return
+        }
+        if hasCaughtUp(from: state.snapshotCount, to: freshCount, delta: state.unreflectedDelta) {
+            // The trigger has landed. Keeping the offset would count the same
+            // comment twice — once in the server's number and once in ours.
+            state.unreflectedDelta = 0
+            state.unconfirmedReads = 0
+            return
+        }
+        state.unconfirmedReads += 1
+        if state.unconfirmedReads >= Self.unconfirmedReadLimit {
+            log.debug("dropping a comment offset the aggregate never confirmed")
+            state.unreflectedDelta = 0
+            state.unconfirmedReads = 0
+        }
+    }
+
     private func reconcile(_ state: inout LikeState, against freshCount: Int) {
         guard state.unreflectedDelta != 0 else {
             state.unconfirmedReads = 0

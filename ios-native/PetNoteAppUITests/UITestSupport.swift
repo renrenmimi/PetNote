@@ -18,7 +18,15 @@ extension XCTestCase {
     /// simulator's keychain and change what the next run starts from.
     func dismissSavePasswordSheetIfPresent(_ app: XCUIApplication) {
         let notNow = app.buttons["Not Now"]
-        if notNow.exists, notNow.isHittable {
+        guard notNow.exists, notNow.isHittable else { return }
+        // Checking and tapping are two moments, and this sheet closes itself.
+        // On a device the gap was wide enough to lose the race: the check
+        // passed, the sheet went away, and the tap failed the test with
+        // "Failed to tap 'Not Now': No matches found" — a housekeeping helper
+        // reporting a defect in whatever test happened to call it.
+        //
+        // A sheet that is already gone is the outcome this wants anyway.
+        if notNow.waitForExistence(timeout: 1), notNow.isHittable {
             notNow.tap()
         }
     }

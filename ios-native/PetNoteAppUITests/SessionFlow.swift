@@ -150,12 +150,26 @@ extension XCTestCase {
         // "no back button" was sometimes a report about the wrong bar, and
         // tapping index 0 could have ended the session instead of going back.
         // The same mistake, in the touch-target measurement, did exactly that.
+        // Frames read in the same pass that selects, and kept as values.
+        // Gathering elements and then reading `.frame` off them is two
+        // traversals of a tree that moves, and the second one fails with
+        // "Failed to get matching snapshot" — which reads like a missing
+        // control. This is the fifth place in this suite to make that
+        // mistake; the shape is the tell, not the symptom.
         let bar = app.navigationBars.allElementsBoundByIndex
-            .filter { $0.exists && $0.identifier != "PetNote" && !$0.frame.isEmpty }
-            .first ?? app.navigationBars.firstMatch
+            .compactMap { element -> (XCUIElement, CGRect)? in
+                guard element.exists, element.identifier != "PetNote" else { return nil }
+                let frame = element.frame
+                return frame.isEmpty ? nil : (element, frame)
+            }
+            .first?.0 ?? app.navigationBars.firstMatch
         let back = bar.buttons.allElementsBoundByIndex
-            .filter { $0.exists && !$0.frame.isEmpty }
-            .min { $0.frame.minX < $1.frame.minX } ?? bar.buttons.firstMatch
+            .compactMap { button -> (XCUIElement, CGFloat)? in
+                guard button.exists else { return nil }
+                let frame = button.frame
+                return frame.isEmpty ? nil : (button, frame.minX)
+            }
+            .min { $0.1 < $1.1 }?.0 ?? bar.buttons.firstMatch
         XCTAssertTrue(
             waitUntilHittable(back, in: app, timeout: 20),
             """

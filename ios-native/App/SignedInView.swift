@@ -177,7 +177,15 @@ struct SignedInView: View {
                                 postID: postID,
                                 feed: repositories.feed,
                                 comments: repositories.comments,
-                                likes: repositories.likes
+                                likes: repositories.likes,
+                                // So the feed underneath is already right when
+                                // this screen closes. Measured on a device:
+                                // without it, a comment was written, the
+                                // server said 1, and the feed still read
+                                // "0 comments" until a manual refresh.
+                                onCommentCountChanged: { id, delta in
+                                    feedModel.recordCommentChange(postID: id, delta: delta)
+                                }
                             )
                         )
                         .environment(video)
