@@ -1,0 +1,8 @@
+{
+  "//": "Deploy-only config for the independent test project petnote-devtest. Used as `firebase deploy --config firebase.testcloud.json --project petnote-devtest`. The default firebase.json is untouched, so no production deploy path goes through here. It carries no hosting block and no rules: those are deployed from the normal config.",
+  "functions": {
+    "source": "functions-testcloud",
+    "codebase": "testcloud",
+    "ignore": ["node_modules", ".git", "*.log"]
+  }
+}

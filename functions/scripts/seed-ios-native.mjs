@@ -100,7 +100,23 @@ if (targetingCloud) {
 process.env.GCLOUD_PROJECT = PROJECT;
 
 const admin = require(path.join(functionsRoot, "node_modules", "firebase-admin"));
+/**
+ * Against the emulator the credential is irrelevant — the host variables
+ * redirect everything and any token is accepted. Against a real project it is
+ * not, and firebase-admin's Firestore client accepts exactly two things: a
+ * service account certificate, or application default credentials. A bare
+ * access token is refused, and so is a refresh-token credential passed
+ * directly; both come back as "Must initialize the SDK with a certificate
+ * credential or application default credentials".
+ *
+ * So point `GOOGLE_APPLICATION_CREDENTIALS` at an authorized-user ADC file
+ * before running this. Deliberately not a service account key: creating one
+ * would mint a new long-lived credential for a machine that only needs to run
+ * a seed, and an authorized-user file re-encodes a token the machine already
+ * has rather than adding one.
+ */
 if (admin.apps.length === 0) admin.initializeApp({ projectId: PROJECT });
+
 const auth = admin.auth();
 const db = admin.firestore();
 const FieldValue = admin.firestore.FieldValue;
@@ -464,8 +480,17 @@ async function main() {
 
   const uidA = await upsertUser({ email: "accept-a@example.com", name: "Accept A", verified: true });
   const uidB = await upsertUser({ email: "accept-b@example.com", name: "Accept B", verified: true });
+  // An account whose email is not verified, because the server refusing a
+  // comment from one is an acceptance item and there is no way to exercise it
+  // without such an account. It was described in the plan and never actually
+  // created here — the emulator happened to have one left over from a UI test,
+  // so nothing noticed until a fresh cloud project had only two accounts.
+  const uidNew = await upsertUser({
+    email: "accept-new@example.com", name: "Accept New", verified: false,
+  });
   console.log(`  accept-a -> ${uidA}`);
   console.log(`  accept-b -> ${uidB}`);
+  console.log(`  accept-new -> ${uidNew} (email not verified, on purpose)`);
 
   await upsertPet({ id: "ios-pet-latin", name: "Mochi", ownerId: uidA, ownerName: "Accept A", species: "dog", breed: "Shiba" });
   // A deliberately long CJK name: it must truncate, not overflow the card.
