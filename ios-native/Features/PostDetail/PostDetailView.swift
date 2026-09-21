@@ -11,6 +11,11 @@ struct PostDetailView: View {
     @State private var fullImageURL: URL?
     @Environment(SessionStore.self) private var session
 
+    /// What the comment count scrolls to. A constant rather than a literal at
+    /// two call sites, because a typo in either would fail silently — a
+    /// `scrollTo` with an id nothing carries does nothing and says nothing.
+    private static let commentsAnchor = "detail.commentsAnchor"
+
     init(model: PostDetailViewModel) {
         _model = State(initialValue: model)
     }
@@ -104,99 +109,142 @@ struct PostDetailView: View {
         // post — the like and comment row — ends up underneath it. An inset
         // makes the composer part of the safe area, so content scrolls clear of
         // it and the keyboard still pushes it up.
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: Spacing.l) {
-                    // No line clamp here: a post has to be readable in full
-                    // somewhere, and the feed is where the clamp belongs.
-                    // The like state is the model's, not a hardcoded false —
-                    // an inert control that always reads "not liked" is worse
-                    // than no control.
-                    PostCard(
-                        post: post
-                            .withLikeCount(model.likeCount)
-                            .withCommentCount(model.commentCount),
-                        isLiked: model.isLiked,
-                        onLike: { model.toggleLike() },
-                        onOpenComments: {},
-                        textLineLimit: nil,
-                        mediaSize: .large,
-                        onOpenImage: { fullImageURL = $0 }
-                    )
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: Spacing.l) {
+                        // No line clamp here: a post has to be readable in full
+                        // somewhere, and the feed is where the clamp belongs.
+                        // The like state is the model's, not a hardcoded false —
+                        // an inert control that always reads "not liked" is worse
+                        // than no control.
+                        PostCard(
+                            post: post
+                                .withLikeCount(model.likeCount)
+                                .withCommentCount(model.commentCount),
+                            isLiked: model.isLiked,
+                            onLike: { model.toggleLike() },
+                            // Not an empty closure. The card reported an enabled
+                            // button here, took the tap and dropped it — a dead
+                            // control, which a person cannot tell from a broken
+                            // one.
+                            //
+                            // It puts the comments under your eye, which is what
+                            // the count is an invitation to look at. The first
+                            // two attempts put the cursor in the composer
+                            // instead, and **both were measured not to work**:
+                            // `composerFocused = true` from the button's action,
+                            // and the same assignment deferred one turn of the
+                            // main actor, each left the keyboard down across
+                            // nineteen and twenty consecutive reads. Rather than
+                            // ship a third guess at the same effect, the action
+                            // became one whose result can be seen and measured —
+                            // the list moves, and a test can say by how much.
+                            onOpenComments: { proxy.scrollTo(Self.commentsAnchor, anchor: .top) },
+                            textLineLimit: nil,
+                            mediaSize: .large,
+                            onOpenImage: { fullImageURL = $0 }
+                        )
 
-                    Divider().overlay(Palette.separator)
+                        // Where the comment count scrolls to. On the divider
+                        // rather than on `commentsSection`, which is a
+                        // `@ViewBuilder` producing several views and has no
+                        // single element to carry an id.
+                        Divider()
+                            .overlay(Palette.separator)
+                            .id(Self.commentsAnchor)
 
-                    commentsSection
-                }
-            .padding(.vertical, Spacing.m)
+                        commentsSection
+                    }
+                .padding(.vertical, Spacing.m)
+            }
+            .refreshable { await model.loadComments(reset: true) }
+            // Without this there is no way off the keyboard on this screen at all:
+            // the composer is a vertical-axis TextField, so its return key inserts
+            // a newline rather than submitting, and there is no toolbar and no
+            // background to tap.
+            //
+            // `.immediately` rather than `.interactively`, and the reason is the
+            // `.refreshable` directly above. Interactive dismissal follows a
+            // *downward* drag, which at the top of the list is the same gesture
+            // pull-to-refresh claims — so it never engaged, and the keyboard
+            // stayed up. Measured: with `.interactively` the keyboard was still
+            // present ten seconds after the drag.
+            //
+            // No fixed delay anywhere, here or below: the web client's 320ms wait
+            // for the keyboard to "settle" is what the Chinese candidate bar
+            // walked straight past.
+            .scrollDismissesKeyboard(.immediately)
+            .safeAreaInset(edge: .bottom, spacing: 0) { composer }
         }
-        .refreshable { await model.loadComments(reset: true) }
-        // Without this there is no way off the keyboard on this screen at all:
-        // the composer is a vertical-axis TextField, so its return key inserts
-        // a newline rather than submitting, and there is no toolbar and no
-        // background to tap.
-        //
-        // `.immediately` rather than `.interactively`, and the reason is the
-        // `.refreshable` directly above. Interactive dismissal follows a
-        // *downward* drag, which at the top of the list is the same gesture
-        // pull-to-refresh claims — so it never engaged, and the keyboard
-        // stayed up. Measured: with `.interactively` the keyboard was still
-        // present ten seconds after the drag.
-        //
-        // No fixed delay anywhere, here or below: the web client's 320ms wait
-        // for the keyboard to "settle" is what the Chinese candidate bar
-        // walked straight past.
-        .scrollDismissesKeyboard(.immediately)
-        .safeAreaInset(edge: .bottom, spacing: 0) { composer }
     }
 
+    /// Split on "is there anything to show" first, and on the load state
+    /// second — rather than the other way round.
+    ///
+    /// The other way round is what shipped: a `.failed` comments state drew
+    /// the error and nothing else, so losing *page three* took pages one and
+    /// two off the screen with it. What the person was reading disappeared to
+    /// report a page they had not got to yet. The three states still have to
+    /// stay apart (§6.5) — "could not load", "none yet" and "still loading"
+    /// are different facts — and they do: with nothing on screen each gets the
+    /// whole area, and with something on screen the failure is a line under
+    /// the comments it failed to add to.
+    ///
+    /// Read off the code, not off a screen. `FirestoreCommentRepository`'s
+    /// fault injection covers `create` only, so there is no way from a test
+    /// to make page three fail while pages one and two are up, and none was
+    /// added for this — the branch above is the evidence, and it is the kind
+    /// that a run cannot currently improve on.
     @ViewBuilder
     private var commentsSection: some View {
-        switch model.commentsState {
-        case .loading where model.comments.isEmpty:
-            ProgressView()
-                .frame(maxWidth: .infinity)
-                .accessibilityLabel("Loading comments")
-
-        case .failed(let message):
-            // Not an empty list: "could not load" and "none yet" are different
-            // facts and must not look the same (§6.5).
-            VStack(spacing: Spacing.s) {
-                Text(message)
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.secondaryText)
-                    .accessibilityIdentifier("detail.commentsError")
-                Button {
-                    Task { await model.retryComments() }
-                } label: {
-                    Text("Try again")
-                        .font(Typography.body)
-                        .foregroundStyle(Palette.brandPrimary)
-                        .frame(maxWidth: .infinity, minHeight: Layout.minTouchTarget)
-                        .contentShape(.rect)
-                }
-                .accessibilityIdentifier("detail.commentsRetry")
-            }
-            .padding(.horizontal, Layout.pageInset)
-
-        default:
-            if model.comments.isEmpty {
+        if model.comments.isEmpty {
+            switch model.commentsState {
+            case .loading:
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .accessibilityLabel("Loading comments")
+            case .failed(let message):
+                commentsFailure(message)
+            default:
                 Text("No comments yet")
                     .font(Typography.body)
                     .foregroundStyle(Palette.secondaryText)
                     .padding(.horizontal, Layout.pageInset)
                     .accessibilityIdentifier("detail.noComments")
-            } else {
-                ForEach(model.comments) { comment in
-                    CommentRow(comment: comment)
-                        .task { await model.loadMoreCommentsIfNeeded(currentItem: comment) }
-                }
-                if model.hasMoreComments {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                        .accessibilityLabel("Loading more comments")
-                }
+            }
+        } else {
+            ForEach(model.comments) { comment in
+                CommentRow(comment: comment)
+                    .task { await model.loadMoreCommentsIfNeeded(currentItem: comment) }
+            }
+            if case .failed(let message) = model.commentsState {
+                commentsFailure(message)
+            } else if model.hasMoreComments {
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .accessibilityLabel("Loading more comments")
             }
         }
+    }
+
+    private func commentsFailure(_ message: String) -> some View {
+        VStack(spacing: Spacing.s) {
+            Text(message)
+                .font(Typography.caption)
+                .foregroundStyle(Palette.secondaryText)
+                .accessibilityIdentifier("detail.commentsError")
+            Button {
+                Task { await model.retryComments() }
+            } label: {
+                Text("Try again")
+                    .font(Typography.body)
+                    .foregroundStyle(Palette.brandPrimary)
+                    .frame(maxWidth: .infinity, minHeight: Layout.minTouchTarget)
+                    .contentShape(.rect)
+            }
+            .accessibilityIdentifier("detail.commentsRetry")
+        }
+        .padding(.horizontal, Layout.pageInset)
     }
 
     private var composer: some View {
@@ -255,6 +303,23 @@ struct PostDetailView: View {
                     .frame(minHeight: Layout.minTouchTarget)
                     .background(Palette.secondaryBackground, in: .rect(cornerRadius: Radius.control))
                     .accessibilityIdentifier("composer.field")
+                    // `.disabled(model.isSending)` stays, and it stays because
+                    // the case against it did not survive being measured.
+                    // Disabling a focused text field resigns first responder,
+                    // which reads as "every send takes the keyboard away", so
+                    // it was going to be removed. It does not: a send against
+                    // the local emulator kept the keyboard up across eight
+                    // consecutive reads — `MEASURED keyboard after send:
+                    // ["up" x8]`, recorded by
+                    // `testSendingACommentDoesNotTakeTheKeyboardAway`.
+                    // Removing it would have bought nothing observable and
+                    // would have let someone type into a box whose contents
+                    // `send()` overwrites when a send fails.
+                    //
+                    // The slow case is *not* established either way: a local
+                    // send finishes well inside the time a disabled state
+                    // would need to be noticed, and a send over a real
+                    // network does not. Unverified, not claimed.
                     .disabled(model.isSending)
 
                 Button {
@@ -283,7 +348,15 @@ struct PostDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .padding(.horizontal, Layout.pageInset)
                     .accessibilityIdentifier("composer.remaining")
-                    .accessibilityLabel("\(model.remainingCharacters) characters remaining")
+                    // Spoken differently from how it is drawn. "-3" is the
+                    // conventional way to show being over a limit and stays;
+                    // read out, "minus three characters remaining" is a
+                    // sentence nobody can act on.
+                    .accessibilityLabel(
+                        model.isOverLength
+                            ? "\(-model.remainingCharacters) characters too many"
+                            : "\(model.remainingCharacters) characters remaining"
+                    )
             }
         }
         // Breathing room without a dead zone: the web client once reserved

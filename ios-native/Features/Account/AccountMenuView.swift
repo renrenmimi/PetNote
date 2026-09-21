@@ -51,6 +51,16 @@ struct AccountMenuButton: View {
 struct AccountMenuView: View {
     let email: String
     let onSignOut: () -> Void
+    /// Leaving without doing anything.
+    ///
+    /// Until this existed the sheet held exactly one control and it ended the
+    /// session. A SwiftUI sheet does not dismiss when the dimmed area behind
+    /// it is tapped — `closeAccountMenu` in the UI tests records measuring
+    /// that — so the only way out was a drag, advertised by nothing but the
+    /// grabber. Someone who opened this by brushing the corner of the bar had
+    /// a choice between a gesture they may not know and the one button on
+    /// screen, which signs them out.
+    let onClose: () -> Void
 
     /// The sheet's resting height: enough for the header and one row at the
     /// default type size. Not a design token — it is a fact about this sheet's
@@ -75,16 +85,20 @@ struct AccountMenuView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text("Account")
-                .font(Typography.sectionTitle)
-                .foregroundStyle(Palette.primaryText)
-                .accessibilityAddTraits(.isHeader)
-                .accessibilityIdentifier("account.title")
-            Text(email)
-                .font(Typography.caption)
-                .foregroundStyle(Palette.secondaryText)
-                .accessibilityIdentifier("account.email")
+        HStack(alignment: .top, spacing: Spacing.m) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("Account")
+                    .font(Typography.sectionTitle)
+                    .foregroundStyle(Palette.primaryText)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("account.title")
+                Text(email)
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.secondaryText)
+                    .accessibilityIdentifier("account.email")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            closeButton
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Layout.pageInset)
@@ -96,6 +110,31 @@ struct AccountMenuView: View {
         // the session. Padding is the right place to absorb that; the line
         // above it is not.
         .padding(.bottom, Spacing.xl)
+    }
+
+    /// The way out, in the corner a sheet's way out is looked for.
+    ///
+    /// At the top rather than as a second row under sign-out, and that is the
+    /// whole point of where it is: a menu that opened by accident should have
+    /// the harmless control under the thumb that is coming down, not the one
+    /// that ends the session. Height and shape on the label, as everywhere
+    /// else here — on the Button they move where it sits and leave the hit
+    /// region behind.
+    private var closeButton: some View {
+        Button(action: onClose) {
+            Text("Close")
+                .font(Typography.body)
+                .foregroundStyle(Palette.brandPrimary)
+                // `.lineLimit(1)` with `.fixedSize()`: at the accessibility
+                // type sizes a wrapping "Close" would squeeze the address next
+                // to it into a column two characters wide.
+                .lineLimit(1)
+                .fixedSize()
+                .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget)
+                .contentShape(.rect)
+        }
+        .accessibilityIdentifier("account.close")
+        .accessibilityHint("Closes the account menu without signing out")
     }
 
     private var signOutRow: some View {

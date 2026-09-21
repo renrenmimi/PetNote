@@ -598,6 +598,158 @@ final class CommentUITests: XCTestCase {
         XCTAssertFalse(before.isEmpty)
     }
 
+
+    // MARK: - What the composer does after a send
+
+    /// Sending a comment must not take the keyboard away.
+    ///
+    /// **Written to catch a defect that turned out not to be there, and kept
+    /// because the question is worth a standing answer.** The composer field
+    /// carries `.disabled(model.isSending)`, and a disabled text field
+    /// resigns first responder — which says every send should drop the
+    /// keyboard and never bring it back. Measured against the local
+    /// emulator, it does not: eight consecutive reads after the comment
+    /// landed all said "up". The modifier was going to be removed on the
+    /// strength of the reasoning; it stays, because the reasoning was not
+    /// what happened.
+    ///
+    /// What this does **not** establish is the slow case. A local send
+    /// finishes well inside the time a disabled state would need to be
+    /// noticed; a send over a real network does not, and no simulator run
+    /// can say what happens then.
+    ///
+    /// Read several times rather than once: "the keyboard is gone" and "the
+    /// keyboard has not finished coming back" look the same in a single read.
+    func testSendingACommentDoesNotTakeTheKeyboardAway() throws {
+        let app = launchOnSignIn()
+        signIn(app, email: "accept-a@example.com")
+        openFirstPost(app)
+
+        let field = app.textFields["composer.field"]
+        XCTAssertTrue(waitUntilHittable(field, in: app, timeout: 30),
+                      "the comment field never became usable")
+        field.tap()
+
+        let keyboard = app.keyboards.firstMatch
+        try XCTSkipUnless(
+            keyboard.waitForExistence(timeout: 8),
+            """
+            No software keyboard on this simulator, so there is nothing to \
+            observe. Disconnect the hardware keyboard for this device and run \
+            again.
+            """
+        )
+
+        let text = uniqueText("keyboard-after-send")
+        field.typeText(text)
+        app.buttons["composer.send"].tap()
+
+        XCTAssertTrue(
+            waitForExistence(
+                of: app.staticTexts.matching(identifier: "comment.row")
+                    .containing(NSPredicate(format: "label CONTAINS %@", text)).firstMatch,
+                in: app, timeout: 40
+            ),
+            "the comment never appeared, so this says nothing about the keyboard"
+        )
+
+        var readings: [Bool] = []
+        for _ in 0..<8 {
+            readings.append(keyboard.exists)
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        print("MEASURED keyboard after send: \(readings.map { $0 ? "up" : "down" })")
+        XCTAssertTrue(
+            readings.allSatisfy { $0 },
+            """
+            The keyboard went away when the comment was sent and did not come \
+            back: \(readings.map { $0 ? "up" : "down" }). Nothing asked it to; \
+            disabling the field the person is typing in resigns first responder.
+            """
+        )
+        XCTAssertTrue(field.exists, "the composer is gone after a send")
+    }
+
+
+    /// The comment button on the detail screen has to do something.
+    ///
+    /// In the feed it opens the post. On the detail screen the post is
+    /// already open, and the card was handed an empty closure — so the
+    /// control drew a count, reported itself as an enabled button, took the
+    /// tap, and did nothing with it. Measured before the fix:
+    /// `MEASURED keyboard after tapping post.comments on detail:
+    /// ["down" x19]`.
+    ///
+    /// **Two attempts to make it focus the composer were measured not to
+    /// work** — assigned inline, and deferred one turn of the main actor,
+    /// each left the keyboard down across nineteen and twenty reads. So the
+    /// action is one whose result is visible instead: the list scrolls to
+    /// the comments. That is also what a count next to a post is an
+    /// invitation to look at.
+    ///
+    /// Asserted as a movement rather than as a final position. "The comments
+    /// are on screen" would pass on a short post where they never left it;
+    /// "they came a long way up" only passes if the tap did something.
+    func testTheCommentButtonOnTheDetailScreenScrollsToTheComments() throws {
+        let app = launchOnSignIn()
+        signIn(app, email: "accept-a@example.com")
+        // The post with the most comments, so there is certainly more list
+        // than screen and the comments are certainly below the fold.
+        try openTheMostCommentedPost(app)
+
+        let rows = app.staticTexts.matching(identifier: "comment.row")
+        XCTAssertTrue(waitForExistence(of: rows.firstMatch, in: app, timeout: 40),
+                      "the comments never loaded")
+
+        // Back to the top of the post, by flicks: a press-and-drag downward
+        // here is pull-to-refresh's gesture, and `app.swipeDown()` is a flick,
+        // which `.refreshable` does not answer.
+        for _ in 0..<6 { app.swipeDown() }
+        waitForQuietUI(app, quietFor: 1, timeout: 15)
+
+        let window = app.windows.firstMatch.frame
+        XCTAssertTrue(app.navigationBars["Post"].exists, "not on the detail screen")
+
+        // Read in the pass that selects, kept as a value.
+        let before = rows.firstMatch.exists ? rows.firstMatch.frame.minY : .infinity
+        print(String(format: "MEASURED first comment row before tap: minY=%.1f window=%.1f",
+                     before, window.maxY))
+
+        var commentButton: XCUIElement?
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline, commentButton == nil {
+            dismissSavePasswordSheetIfPresent(app)
+            commentButton = app.buttons.matching(identifier: "post.comments")
+                .allElementsBoundByIndex.first { $0.exists && $0.isHittable }
+            if commentButton == nil { Thread.sleep(forTimeInterval: 0.25) }
+        }
+        let comments = try XCTUnwrap(commentButton, "the detail screen has no comment control")
+        comments.tap()
+
+        // Several reads, and the sequence is printed: one read cannot tell
+        // "nothing happened" from "it has not happened yet".
+        var readings: [CGFloat] = []
+        let settle = Date().addingTimeInterval(6)
+        while Date() < settle {
+            readings.append(rows.firstMatch.exists ? rows.firstMatch.frame.minY : .infinity)
+            if let last = readings.last, last < window.maxY * 0.5 { break }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        print("MEASURED first comment row after tap: "
+              + readings.map { String(format: "%.1f", $0) }.joined(separator: " | "))
+
+        let after = try XCTUnwrap(readings.last, "nothing was read after the tap")
+        XCTAssertLessThan(
+            after, window.maxY * 0.5,
+            """
+            Tapping the comment count did not bring the comments up: the first \
+            row sat at \(before) before and \(after) after, on a \(window.maxY)pt \
+            window. The control took the tap and did nothing with it.
+            """
+        )
+        XCTAssertLessThan(after, before, "the list did not move at all")
+    }
+
     private func labels(of query: XCUIElementQuery) -> [String] {
         query.allElementsBoundByIndex.filter { $0.exists }.map { $0.label }
     }

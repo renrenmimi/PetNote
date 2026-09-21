@@ -154,12 +154,19 @@ struct SignedInView: View {
                     signOutWhenMenuCloses = false
                     try? session.signOut()
                 } content: {
-                    AccountMenuView(email: user.email) {
-                        // Two statements, one action: close, then end the
-                        // session once the closing has finished.
-                        signOutWhenMenuCloses = true
-                        isAccountMenuOpen = false
-                    }
+                    AccountMenuView(
+                        email: user.email,
+                        onSignOut: {
+                            // Two statements, one action: close, then end the
+                            // session once the closing has finished.
+                            signOutWhenMenuCloses = true
+                            isAccountMenuOpen = false
+                        },
+                        // Nothing to defer here: closing is all that happens,
+                        // so `signOutWhenMenuCloses` stays false and the
+                        // dismissal handler does nothing.
+                        onClose: { isAccountMenuOpen = false }
+                    )
                     // The resting height fits the header and the one row. The
                     // second detent is not a feature: it is somewhere for the
                     // largest accessibility type sizes to go, since clamping

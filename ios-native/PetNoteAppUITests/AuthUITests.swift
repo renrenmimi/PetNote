@@ -15,13 +15,6 @@ private func saveScreenshot(_ app: XCUIApplication, named name: String) {
     try? data.write(to: url)
 }
 
-/// Driving the account menu, which is where sign-out lives now.
-///
-/// These are `XCTestCase` extensions rather than methods on `AuthUITests`
-/// because the other suites sign out too, and every one of them currently taps
-/// a navigation-bar button that no longer exists. They belong in
-/// `SessionFlow.swift` with the rest of the shared driving; they are here only
-/// because that file is not this change's to edit.
 /// Acceptance 4.1, 4.3–4.6 and 6.9 at the UI level, against the emulator.
 ///
 /// L4: these assert the behaviour that is asserted. They say nothing about how
@@ -309,10 +302,16 @@ final class AuthUITests: XCTestCase {
         // recorded as such rather than asserted away.
         // A closure, not a key path: XCUIElement's properties are main-actor
         // isolated and a key path cannot cross that boundary.
+        //
+        // One pass, not `.filter` then `.map`. Two traversals of a tree that
+        // moves — a feed row resizes as its image arrives — resolve their
+        // indices into different layouts, and the second comes back "No
+        // matches found for Element at index N", which reads like a missing
+        // control. Five places in this suite have made that mistake; this was
+        // one of them.
         let barButtonIDs = Set(
             app.navigationBars.buttons.allElementsBoundByIndex
-                .filter { $0.exists }
-                .map { $0.identifier }
+                .compactMap { $0.exists ? $0.identifier : nil }
         )
 
         for button in ours {
@@ -449,15 +448,73 @@ final class AuthUITests: XCTestCase {
             .map { $0.identifier }
             .sorted()
         print("MEASURED account menu offers: \(reachable)")
+        // Sign-out, and a way to leave without it. `account.close` is not a
+        // feature arriving without a decision — it is the decision that a
+        // sheet whose only control ends the session is not a menu, and it is
+        // pinned here rather than merely allowed so that a third control still
+        // fails this.
         XCTAssertEqual(
-            Set(reachable), ["session.signOut"],
+            Set(reachable), ["account.close", "session.signOut"],
             """
             The account menu offers \(reachable). This stage is an account \
-            entry plus sign-out; anything else here is a settings screen \
-            arriving without the decision to build one.
+            entry, a way out and sign-out; anything else here is a settings \
+            screen arriving without the decision to build one.
             """
         )
     }
+
+    /// Leaving the account menu must be something a person can tap.
+    ///
+    /// Before this there was exactly one control on the sheet, and it ended
+    /// the session. A SwiftUI sheet does not close when the dimmed area behind
+    /// it is tapped — `closeAccountMenu` records measuring that — so the only
+    /// way out was a drag, advertised by nothing but the grabber. Someone who
+    /// opened the menu by brushing the corner of the bar had a choice between
+    /// a gesture they may not know and the one button on screen, which signs
+    /// them out.
+    ///
+    /// The assertion is about *a* way out, not about a particular button, so
+    /// it keeps saying something if the control is renamed or redrawn.
+    func testTheAccountMenuCanBeLeftWithoutEndingTheSession() {
+        let app = launchOnSignIn()
+        signIn(app, email: "accept-a@example.com")
+        openAccountMenu(app)
+
+        // Identifiers read in the same pass that filters, kept as values: a
+        // sheet that is still settling is a tree that moves, and a second
+        // traversal answers about a different one.
+        let offered = app.buttons.allElementsBoundByIndex.compactMap { button -> String? in
+            guard button.exists, button.isHittable, !button.identifier.isEmpty else { return nil }
+            return button.identifier
+        }.sorted()
+        print("MEASURED account menu offers: \(offered)")
+
+        let waysOut = offered.filter { $0 != "session.signOut" }
+        XCTAssertFalse(
+            waysOut.isEmpty,
+            """
+            The account menu offers \(offered). The only control on it is the \
+            one that ends the session: closing the menu is a drag gesture and \
+            nothing else, and a sheet does not dismiss on a tap outside it.
+            """
+        )
+
+        let close = app.buttons["account.close"]
+        XCTAssertTrue(waitUntilHittable(close, in: app, timeout: 10),
+                      "the account menu has no close control")
+        close.tap()
+
+        let deadline = Date().addingTimeInterval(8)
+        while Date() < deadline, app.buttons["session.signOut"].exists {
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        XCTAssertFalse(app.buttons["session.signOut"].exists, "the close control did not close the menu")
+        XCTAssertFalse(app.staticTexts["login.title"].exists,
+                       "closing the account menu ended the session")
+        XCTAssertTrue(waitUntilHittable(app.buttons["account.menu"], in: app, timeout: 20),
+                      "the signed-in screen did not come back after closing the menu")
+    }
+
 
     // MARK: - Where the sign-out row's hit region actually is
 

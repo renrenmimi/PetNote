@@ -140,9 +140,6 @@ struct LoginView: View {
             .font(Typography.caption)
             .foregroundStyle(Palette.danger)
             .accessibilityIdentifier("login.error")
-            // Announced rather than only shown: with VoiceOver on, a message
-            // that appears below the button is easy to never reach.
-            .accessibilityAddTraits(.isStaticText)
         }
     }
 
@@ -173,14 +170,38 @@ struct LoginView: View {
                 // one path into the signed-in state rather than two.
             } catch let failure as AuthError {
                 self.error = failure
+                announce(failure.message)
             } catch {
                 // signIn is `throws(AuthError)`, so this is unreachable; it
                 // exists because the compiler cannot see that through the Task.
                 // `self.` is required: catch binds its own `error`, which would
                 // otherwise shadow the @State of the same name.
                 self.error = .unknown
+                announce(AuthError.unknown.message)
             }
         }
+    }
+
+    /// Says the failure out loud, for someone who cannot see it appear.
+    ///
+    /// The message is drawn *below* the button that was just pressed, so with
+    /// VoiceOver on nothing moves and nothing is spoken: focus stays on "Sign
+    /// in", which still says "Sign in", and the only report that anything
+    /// happened is an element the person has to go looking for. The previous
+    /// code claimed to announce this and did not — it added
+    /// `.accessibilityAddTraits(.isStaticText)`, which describes an element
+    /// and announces nothing.
+    ///
+    /// Not verifiable from XCUITest: announcements are not elements and the
+    /// tree has nothing to read back. It needs VoiceOver and a person, and is
+    /// recorded as unverified rather than as tested.
+    private func announce(_ message: String) {
+        var announcement = AttributedString(message)
+        // Interrupts whatever is being read: this is the answer to the action
+        // the person just took, and queueing it behind the button's own label
+        // is how it gets missed.
+        announcement.accessibilitySpeechAnnouncementPriority = .high
+        AccessibilityNotification.Announcement(announcement).post()
     }
 }
 

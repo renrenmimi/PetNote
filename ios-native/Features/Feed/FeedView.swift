@@ -18,6 +18,10 @@ struct FeedView: View {
     @Environment(\.scenePhase) private var scenePhase
     /// What `returnToWhereTheSessionEnded` decided, for the probe below.
     @State private var resumeDecision = "notRun"
+    /// Whether the person has waved away the banner for the failure that is
+    /// current. Reset by `onChange(of: model.state)` when a new one arrives,
+    /// so dismissing one failure does not silence the next.
+    @State private var refreshFailureDismissed = false
 
     init(model: FeedViewModel, path: Binding<[Route]>) {
         _model = State(initialValue: model)
@@ -28,9 +32,31 @@ struct FeedView: View {
         Group {
             switch model.state {
             case .idle, .loadingFirstPage:
-                loading
+                // A refresh is not a first load. `reload()` moves the model
+                // to `.loadingFirstPage` whatever was on screen, so switching
+                // on that state alone hands the whole screen to the first-load
+                // spinner for the length of the round trip — taking the rows
+                // the person is reading and the `List` that owns the refresh
+                // control they are still looking at.
+                //
+                // Not seen on a screen: against the local emulator the reload
+                // returns faster than a UI test can resolve its first query,
+                // and `testPullToRefreshDoesNotBlankTheFeed` sampled only the
+                // steady state. The length of the blank is the length of the
+                // round trip, which on a phone on a train is not 90ms — so
+                // this is a reading of the path rather than a repair of an
+                // observation, and is recorded as one.
+                if model.posts.isEmpty { loading } else { list }
             case .failed(let kind):
-                FeedErrorView(message: kind.message) { Task { await model.reload() } }
+                // Same split, for the same reason. A refresh that fails is a
+                // reason to say so, not a reason to throw away a feed that is
+                // still perfectly readable — see `refreshFailureBanner`, which
+                // is where the saying-so happens.
+                if model.posts.isEmpty {
+                    FeedErrorView(message: kind.message) { Task { await model.reload() } }
+                } else {
+                    list
+                }
             case .loaded:
                 if model.posts.isEmpty { emptyState } else { list }
             }
@@ -43,6 +69,13 @@ struct FeedView: View {
         .task { await model.loadFirstPageIfNeeded() }
         .task { returnToWhereTheSessionEnded() }
         .refreshable { await model.reload() }
+        // An inset rather than an overlay: this one says the list underneath
+        // is out of date, and a banner that covers the row it is talking
+        // about is its own small problem.
+        .safeAreaInset(edge: .top, spacing: 0) { refreshFailureBanner }
+        .onChange(of: model.state) { _, newState in
+            if case .failed = newState { refreshFailureDismissed = false }
+        }
         .overlay(alignment: .bottom) { likeFailureBanner }
         // A session can be revoked while the app is in the background, and
         // nothing about a cached ID token notices: it stays valid for an hour
@@ -225,6 +258,19 @@ struct FeedView: View {
     /// Remember where we were before leaving, so coming back is a restore
     /// rather than a guess.
     private func open(_ post: Post) {
+        // One push per post. `path` is an array, so two taps inside the
+        // third of a second the push animation takes would append
+        // `.postDetail` twice and put two copies of the same screen on the
+        // stack — which, from where the person is sitting, is Back not
+        // working: they tap it, the same post is underneath, and the app
+        // looks like it ignored them.
+        //
+        // Hardening, not a repair: `testTappingAPostTwiceQuicklyOpensOne-
+        // Screen` passed before this guard existed, so the synthesised
+        // double tap never produced the second push on a simulator. The
+        // path is open in the code and a finger is not a synthesised tap;
+        // the guard costs one comparison and the claim is kept to that.
+        guard !path.contains(.postDetail(postID: post.id)) else { return }
         model.rememberScrollAnchor(post.id)
         path.append(.postDetail(postID: post.id))
     }
@@ -249,6 +295,50 @@ struct FeedView: View {
         .padding(.vertical, Spacing.m)
         .listRowSeparator(.hidden)
         .listRowBackground(Palette.background)
+    }
+
+    /// A reload that failed over a feed that still has something on it.
+    ///
+    /// The whole-screen `FeedErrorView` is still what an empty feed gets —
+    /// there is nothing to keep, and "we could not find out" is then the only
+    /// thing to say. This is the other case: the rows are still there, still
+    /// readable, and the only new fact is that they are older than the person
+    /// asked for. Replacing them with an error screen said that fact by
+    /// deleting the answer to the question it was reporting on.
+    @ViewBuilder
+    private var refreshFailureBanner: some View {
+        if case .failed(let kind) = model.state, !model.posts.isEmpty, !refreshFailureDismissed {
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
+                Image(systemName: "exclamationmark.circle.fill").accessibilityHidden(true)
+                // The identifier on the Text, never on the HStack around it:
+                // an identifier on a container overwrites every descendant's.
+                Text(kind.message)
+                    .font(Typography.caption)
+                    .accessibilityIdentifier("feed.refreshError")
+                Spacer(minLength: Spacing.s)
+                Button {
+                    Task { await model.reload() }
+                } label: {
+                    Text("Try again")
+                        .font(Typography.caption)
+                        .frame(minHeight: Layout.minTouchTarget)
+                        .contentShape(.rect)
+                }
+                .accessibilityIdentifier("feed.refreshRetry")
+                Button {
+                    refreshFailureDismissed = true
+                } label: {
+                    Text("Dismiss")
+                        .font(Typography.caption)
+                        .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget)
+                        .contentShape(.rect)
+                }
+                .accessibilityIdentifier("feed.refreshErrorDismiss")
+            }
+            .foregroundStyle(Palette.danger)
+            .padding(.horizontal, Layout.pageInset)
+            .background(Palette.secondaryBackground)
+        }
     }
 
     @ViewBuilder

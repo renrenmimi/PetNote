@@ -42,37 +42,101 @@ struct PostCard: View {
     /// Everything that is not a control. Tappable as one piece in the feed.
     private var content: some View {
         VStack(alignment: .leading, spacing: Spacing.m) {
+            // The card's own "tap to open" covers the identity row and the
+            // text — and stops there. It used to wrap the media too, and that
+            // is the third time a gesture spread over a view has eaten the
+            // controls inside it:
+            //
+            //   1. the like button could not be activated at all (fixed with
+            //      `.buttonStyle(.borderless)`);
+            //   2. nothing told VoiceOver the card could be opened (fixed by
+            //      putting the action on `identity`);
+            //   3. **this one** — the mute control inside a playing video.
+            //      A tap on the speaker opened the post: the app log reads
+            //      `video: released all (navigated away)` at the moment of
+            //      the tap, and the detail screen then built a second player
+            //      that drew the same `video.mute`. From a test it looked
+            //      like "the toggle does not work"; what happened is that
+            //      the person was already on another screen.
+            //
+            // Removing the inner `.onTapGesture` that sat directly on
+            // `MediaView` was not enough on its own — measured, the tap still
+            // navigated, because this outer one reached the speaker too.
             identity
-            if !post.text.isEmpty { text }
+            if !post.text.isEmpty {
+                text
+                    .contentShape(.rect)
+                    .onTapGesture { onOpenPost?() }
+            }
+
             if let media = post.media.first {
-                MediaView(postID: post.id, item: media, size: mediaSize)
-                    .onTapGesture {
-                        // On the detail screen a photo opens full size; in the
-                        // feed the whole card opens the post. One gesture, one
-                        // meaning, depending on where you are.
-                        if media.kind == .image, let onOpenImage {
-                            onOpenImage(media.url)
-                        } else {
-                            onOpenPost?()
-                        }
-                    }
+                if media.kind == .video {
+                    // Nothing of ours over a video. The player owns controls
+                    // inside its own bounds and they have to be reachable;
+                    // the rest of the card still opens the post.
+                    mediaView(media)
+                } else {
+                    photo(media)
+                }
+
                 if MediaView.frame(for: media.url).isCropped, onOpenImage != nil {
                     croppedHint
                 }
             }
         }
-        .contentShape(.rect)
-        .onTapGesture { onOpenPost?() }
-        // A tap gesture on a container is invisible to VoiceOver. The
-        // subviews are each their own element, none of them is a button, and
-        // nothing in the card said it could be opened — so the only way in was
-        // the Comments button, and "Tap photo" in the cropped hint pointed at
-        // an action that could not be reached.
+        // No identifier and no gesture on this stack. A tap gesture on a
+        // container is invisible to VoiceOver — the subviews are each their
+        // own element and none of them is a button — which is why the way in
+        // for VoiceOver is the identity row and not this.
+    }
+
+    private func mediaView(_ media: MediaItem) -> some View {
+        // An action, declared on the element that *is* the media, rather than
+        // a gesture wrapped around it: a bare gesture is invisible to
+        // VoiceOver, and it also swallowed the mute button underneath it.
         //
-        // The way in for VoiceOver is the identity row, not this container.
-        // A tap gesture here is invisible to it, and a custom action would be
-        // right and uncheckable — XCUITest cannot enumerate custom actions, so
-        // that fix would ship with no way to tell if it later stopped working.
+        // Which action depends on where the card is, and both screens have
+        // one. The detail screen opens the photo full size. The feed opens the
+        // post — a comment here previously said a photo in the feed "is not a
+        // control because there is nowhere for it to go", and passing nil on
+        // that reasoning left video rows with no gesture at all: tapping the
+        // picture did nothing and the post could not be opened from it.
+        // Both screens have an action for the media; they are different
+        // actions. The detail screen opens the photo full size. The feed opens
+        // the post — an earlier comment claimed a photo in the feed "is not a
+        // control because there is nowhere for it to go", and passing nil on
+        // that reasoning left video rows with no gesture at all.
+        if let onOpenImage {
+            MediaView(
+                postID: post.id, item: media, size: mediaSize,
+                onActivate: onOpenImage,
+                activationHint: MediaView.frame(for: media.url).isCropped
+                    ? "Opens the whole photo" : "Opens the photo full screen"
+            )
+        } else {
+            MediaView(
+                postID: post.id, item: media, size: mediaSize,
+                onActivate: onOpenPost.map { open in { _ in open() } },
+                activationHint: "Opens the post"
+            )
+        }
+    }
+
+    /// A photo, plus the feed's own "tapping it opens the post".
+    ///
+    /// Safe here and not over a video for one reason: a photo has no controls
+    /// inside it to swallow. On the detail screen this adds nothing —
+    /// `onOpenImage` is set there, so `MediaView` owns the gesture and this
+    /// closure is nil.
+    @ViewBuilder
+    private func photo(_ media: MediaItem) -> some View {
+        if onOpenImage == nil {
+            mediaView(media)
+                .contentShape(.rect)
+                .onTapGesture { onOpenPost?() }
+        } else {
+            mediaView(media)
+        }
     }
 
     /// The pet or author line, and the way into the post for VoiceOver.
@@ -122,6 +186,13 @@ struct PostCard: View {
         // mistake shipped the sign-out button at 20pt once already.
         .frame(minHeight: Layout.minTouchTarget)
         .contentShape(.rect)
+        // The tap lives on this row and on the post's text, one each, rather
+        // than on a stack wrapped around the pair. A wrapper is a container,
+        // and a container with a gesture on it is the shape that has cost
+        // this file three defects; it also made the accessibility walk in
+        // `testTheCardAdvertisesThatItCanBeOpened` lose the app mid-scan.
+        // Two gestures on two leaves add no container at all.
+        .onTapGesture { onOpenPost?() }
         // Author, pet and time read as one phrase.
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)

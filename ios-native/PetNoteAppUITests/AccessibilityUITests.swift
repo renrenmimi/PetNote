@@ -701,4 +701,43 @@ final class AccessibilityUITests: XCTestCase {
         openFirstPost(app)
         assertControlsAreStillReachable(app, "post detail with Reduce Transparency")
     }
+
+    // MARK: - The account menu at the largest size
+
+    /// The sheet that holds sign-out has a fixed resting height, and text
+    /// three times its default size has to fit in it — or reach somewhere it
+    /// does fit.
+    ///
+    /// A sheet's content does not scroll unless something makes it scroll, so
+    /// a detent chosen for the default type size clips whatever grows past it.
+    /// What gets clipped here is the only action the menu has.
+    func testTheAccountMenuIsUsableAtAX5() {
+        let app = launch(contentSize: Self.ax5)
+        signIn(app, email: "accept-a@example.com")
+
+        let entry = app.buttons["account.menu"]
+        XCTAssertTrue(waitUntilHittable(entry, in: app, timeout: 30),
+                      "the account entry is not reachable at AX5")
+        entry.tap()
+
+        let row = app.buttons["session.signOut"]
+        XCTAssertTrue(
+            waitUntilHittable(row, in: app, timeout: 20),
+            """
+            The sign-out row cannot be reached at AX5. exists=\(row.exists) \
+            frame=\(row.exists ? "\(row.frame)" : "n/a") \
+            window=\(app.windows.firstMatch.frame)
+            \(app.debugDescription)
+            """
+        )
+        print("MEASURED at AX5: session.signOut frame=\(row.frame) "
+              + "account.title frame=\(app.staticTexts["account.title"].frame) "
+              + "window=\(app.windows.firstMatch.frame)")
+        assertNothingRunsOffTheSide(app, "account menu at AX5")
+
+        // The address is what makes "sign out" an informed tap; at AX5 it is
+        // also the line most likely to be pushed out of the sheet.
+        XCTAssertTrue(app.staticTexts["account.email"].exists,
+                      "the menu no longer says whose session it is at AX5")
+    }
 }
