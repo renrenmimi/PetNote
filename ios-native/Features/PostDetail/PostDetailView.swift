@@ -16,8 +16,13 @@ struct PostDetailView: View {
     /// `scrollTo` with an id nothing carries does nothing and says nothing.
     private static let commentsAnchor = "detail.commentsAnchor"
 
-    init(model: PostDetailViewModel) {
+    /// Bumped by the shell after this post is edited, so the new text shows
+    /// without the screen being rebuilt.
+    private let reloadToken: Int
+
+    init(model: PostDetailViewModel, reloadToken: Int = 0) {
         _model = State(initialValue: model)
+        self.reloadToken = reloadToken
     }
 
     var body: some View {
@@ -36,6 +41,7 @@ struct PostDetailView: View {
             }
         }
         .background(Palette.background)
+        .onChange(of: reloadToken) { Task { await model.reloadPost() } }
         .navigationTitle("Post")
         .navigationBarTitleDisplayMode(.inline)
         .task { await model.load() }

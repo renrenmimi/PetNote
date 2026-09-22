@@ -112,7 +112,7 @@ enum EmulatorAdmin {
 
     // MARK: - Transport
 
-    private static func get(_ url: String, owner: Bool) throws -> [String: Any] {
+    static func get(_ url: String, owner: Bool) throws -> [String: Any] {
         guard let target = URL(string: url) else {
             throw NSError(domain: "EmulatorAdmin", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "bad url \(url)"])
@@ -155,7 +155,7 @@ enum EmulatorAdmin {
         return (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
     }
 
-    private static func post(_ url: String, body: [String: Any], owner: Bool) throws -> [String: Any] {
+    static func post(_ url: String, body: [String: Any], owner: Bool) throws -> [String: Any] {
         guard let target = URL(string: url) else {
             throw NSError(domain: "EmulatorAdmin", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "bad url \(url)"])

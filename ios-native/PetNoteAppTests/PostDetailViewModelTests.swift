@@ -127,6 +127,51 @@ struct PostDetailViewModelTests {
         return model
     }
 
+    // MARK: - After the author edits the post
+
+    /// The edit was made from this screen, so the screen has to show it — and
+    /// must not blank itself or drop the comments to do so.
+    @Test func anEditedPostIsReReadWithoutBlankingTheScreen() async {
+        let comments = FakeComments()
+        comments.pages = [[Self.comment("c1")]]
+        let feed = FakeFeed()
+        feed.post = Self.post()
+        let model = await loaded(comments: comments, feed: feed)
+        let readsBefore = comments.cursorsRequested.count
+
+        feed.post = Post(
+            id: "p1", authorID: "uid", authorName: "A", authorAvatarURL: nil,
+            text: "TEST CONTENT edited", media: [], petID: nil, petName: nil,
+            petAvatarURL: nil, createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            likeCount: 0, commentCount: 1, tags: []
+        )
+        await model.reloadPost()
+
+        guard case .loaded(let post) = model.state else {
+            Issue.record("expected the edited post on screen, got \(model.state)")
+            return
+        }
+        #expect(post.text == "TEST CONTENT edited")
+        #expect(model.comments.map(\.id) == ["c1"], "the comments stay")
+        #expect(comments.cursorsRequested.count == readsBefore, "the comments are not re-read")
+    }
+
+    /// A failed re-read is not a failed edit. The version on screen stays.
+    @Test func aFailedReReadKeepsWhatIsOnScreen() async {
+        let feed = FakeFeed()
+        feed.post = Self.post()
+        let model = await loaded(feed: feed)
+
+        feed.error = URLError(.notConnectedToInternet)
+        await model.reloadPost()
+
+        guard case .loaded(let post) = model.state else {
+            Issue.record("a failed re-read replaced the post with \(model.state)")
+            return
+        }
+        #expect(post.text == "TEST CONTENT")
+    }
+
     // MARK: - Each gate, in the server's order
 
     @Test func unverifiedEmailKeepsTheTextAndDoesNotOfferARetry() async {

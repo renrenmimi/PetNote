@@ -84,6 +84,10 @@ struct MyPetsSection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: reloadToken) { await model.load() }
+        // `.contain` first: an identifier on a plain stack is handed down to
+        // every element inside it, and replaced "profile.addPet" and each
+        // pet row's own — the journey test found no Add a pet to tap.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("profile.pets")
     }
 

@@ -107,9 +107,10 @@ struct CloudinaryAvatarUploader: AvatarUploading {
         }
 
         let boundary = "petnote-\(UUID().uuidString)"
-        var request = URLRequest(
-            url: URL(string: "https://api.cloudinary.com/v1_1/\(signature.cloudName)/image/upload")!
-        )
+        guard let endpoint = UploadSignature.endpoint(cloudName: signature.cloudName, resourceType: "image") else {
+            throw AvatarUploadError.transport("bad-cloud-name")
+        }
+        var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.timeoutInterval = Self.requestTimeout
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")

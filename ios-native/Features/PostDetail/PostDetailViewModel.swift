@@ -225,6 +225,27 @@ final class PostDetailViewModel {
         }
     }
 
+    /// Re-reads the post after its author edited it, keeping the screen up.
+    ///
+    /// Not `load()`: that starts from `.loading`, which blanks the screen,
+    /// throws away the comments and loses the scroll position — for an edit
+    /// made from this very screen, whose comments did not change. A read that
+    /// fails leaves what is on screen; the edit itself already succeeded, and
+    /// saying otherwise would be wrong.
+    func reloadPost() async {
+        let readSequence = writeSequence
+        do {
+            guard let post = try await feed.post(id: postID) else {
+                state = .deleted
+                return
+            }
+            state = .loaded(post)
+            adopt(post, readSequence: readSequence)
+        } catch {
+            // Keep the version on screen.
+        }
+    }
+
     /// Re-reads the like state — the document *and* the count — without
     /// reloading the whole screen.
     ///

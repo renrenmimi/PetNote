@@ -46,6 +46,8 @@ struct SignedInView: View {
     /// Bumped when a pet is created, edited or deleted, so the screens that
     /// show pets re-read the server rather than trusting what was typed.
     @State private var petsChanged = 0
+    /// Bumped when a post is edited, so an open detail screen re-reads it.
+    @State private var postsEdited = 0
     /// The web client's `onboardingDismissed`: closing onboarding hides it for
     /// this session only. It comes back next time until it is completed,
     /// because an account without a name is not one other people can find.
@@ -296,7 +298,8 @@ struct SignedInView: View {
                     onCommentCountChanged: { id, delta in
                         feedModel.recordCommentChange(postID: id, delta: delta)
                     }
-                )
+                ),
+                reloadToken: postsEdited
             )
             .environment(video)
             .toolbar {
@@ -388,6 +391,9 @@ struct SignedInView: View {
                 repositories: repositories,
                 onSaved: {
                     self.editor = nil
+                    // The detail screen underneath, and the feed under that:
+                    // both are showing the text that was just replaced.
+                    postsEdited += 1
                     Task { await feedModel.reload() }
                 },
                 onClose: { self.editor = nil }
