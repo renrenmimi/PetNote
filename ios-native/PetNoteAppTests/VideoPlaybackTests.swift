@@ -91,13 +91,17 @@ struct VideoPlaybackTests {
         print("MEASURED sessions: mine=\(cutInMine) -> \(mineAfterTheirsMended), theirs=\(theirsSize)")
         #expect(
             mineAfterTheirsMended == cutInMine,
-            "another session's mend changed what this session is served: "
-            + "\(cutInMine) became \(mineAfterTheirsMended)"
+            """
+            another session's mend changed what this session is served: \
+            \(cutInMine) became \(mineAfterTheirsMended)
+            """
         )
         #expect(
             theirsSize > mineAfterTheirsMended,
-            "the other session's mend did not take effect in its own namespace, "
-            + "so the two sessions are not independent — they are both broken"
+            """
+            the other session's mend did not take effect in its own namespace, \
+            so the two sessions are not independent — they are both broken
+            """
         )
     }
 

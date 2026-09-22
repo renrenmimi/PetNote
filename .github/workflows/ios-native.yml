@@ -159,6 +159,19 @@ jobs:
             > test.log 2>&1 || TEST_STATUS=$?
           grep -E '^(✔|✘)|Test run with|TEST (SUCCEEDED|FAILED)' test.log || true
 
+          # **When the build breaks, that summary shows nothing.** It matches
+          # test results, and a compile error is not one — so the step said
+          # `** TEST FAILED **` and `tests executed: 0` with no cause, and the
+          # cause was only in the uploaded artifact. Someone reading a red job
+          # should not have to download a zip to find out that a file did not
+          # compile.
+          if ! grep -q 'Test run with' test.log; then
+            echo "--- no test run was reported; first errors from test.log ---"
+            grep -E 'error:' test.log | head -20 || true
+            echo "--- last 30 lines ---"
+            tail -30 test.log || true
+          fi
+
           COUNT=$(grep -oE 'Test run with ([0-9]+) tests' test.log | grep -oE '[0-9]+' | head -1)
           echo "tests executed: ${COUNT:-0}"
           if [ "${COUNT:-0}" -lt 1 ]; then

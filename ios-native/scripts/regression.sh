@@ -37,13 +37,22 @@ if [ "${#SKIPPED[@]}" -ne "$EXPECTED_SKIPS" ]; then
   exit 2
 fi
 
+# Checked before anything starts, and `--help` answers rather than runs.
+usage() { sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+if [ $# -gt 1 ]; then
+  echo "expected at most one argument, got $#: $*" >&2; echo "" >&2; usage >&2; exit 2
+fi
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+esac
+
 WHAT="${1:-all}"
 ARGS=()
 case "$WHAT" in
   unit) ARGS+=(-only-testing:PetNoteAppTests) ;;
   ui)   ARGS+=(-only-testing:PetNoteAppUITests) ;;
   all)  ;;
-  *) echo "usage: $0 [unit|ui|all]" >&2; exit 2 ;;
+  *) echo "unknown argument: $WHAT" >&2; echo "" >&2; usage >&2; exit 2 ;;
 esac
 for s in "${SKIPPED[@]}"; do ARGS+=("-skip-testing:$s"); done
 

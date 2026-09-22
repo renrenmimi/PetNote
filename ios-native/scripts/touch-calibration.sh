@@ -27,6 +27,18 @@
 set -u
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
+# **Arguments are checked before anything starts.** This script previously
+# ignored them, so `--help` fell through and launched the build it was being
+# asked about — which is how a question about a script becomes a twenty-minute
+# xcodebuild queued behind someone else's run. Unknown arguments stop here.
+usage() { sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; echo "" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
 DEST='platform=iOS Simulator,name=iPhone 17'
 DD=build/dd
 LOGDIR="build/touch-calibration"
