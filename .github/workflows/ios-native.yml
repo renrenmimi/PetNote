@@ -109,3 +109,16 @@ jobs:
             echo "::error::No tests were executed; the suite did not run."
             exit 1
           fi
+          # A floor as well as "more than none". `-lt 1` only catches the suite
+          # disappearing entirely; a filter or scheme change that ran three of
+          # two hundred would still be green, and this project has already lost
+          # 25 minutes to a filter that matched nothing while reporting success.
+          #
+          # Deliberately a floor and not the exact count: it must not fail
+          # because somebody added a test. Raise it when the suite grows by a
+          # meaningful amount, the same way TestHygieneTests.census is raised.
+          FLOOR=240
+          if [ "$COUNT" -lt "$FLOOR" ]; then
+            echo "::error::Only $COUNT unit tests ran; the floor is $FLOOR. Either the suite shrank or a filter is dropping tests."
+            exit 1
+          fi
