@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { GoogleButton } from "../components/GoogleButton";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { AuthNotice } from "../components/AuthNotice";
 import { LanguageSelector } from "../components/LanguageSelector";
@@ -8,7 +9,6 @@ import { useToast } from "../contexts/ToastContext";
 import { useLanguage } from "../hooks/useLanguage";
 import { emailFieldProps, newPasswordFieldProps } from "../utils/formFields";
 import { mapAuthError } from "../utils/authErrors";
-import PawIcon from "../components/PawIcon";
 import { AuthShell } from "../components/AuthShell";
 import { PasswordStrengthIndicator } from "../components/PasswordStrengthIndicator";
 import { validatePassword } from "../utils/passwordValidator";
@@ -49,28 +49,6 @@ function LockIcon() {
   );
 }
 
-function GoogleIcon() {
-  return (
-    <svg className="h-5 w-5" viewBox="0 0 48 48" aria-hidden="true">
-      <path
-        fill="#EA4335"
-        d="M24 9.5c3.54 0 6.7 1.22 9.19 3.6l6.87-6.87C35.87 2.38 30.33 0 24 0 14.62 0 6.5 5.38 2.56 13.22l8.02 6.22C12.59 13.09 17.87 9.5 24 9.5z"
-      />
-      <path
-        fill="#4285F4"
-        d="M46.5 24.5c0-1.56-.14-3.06-.4-4.5H24v9h12.65c-.55 2.96-2.18 5.47-4.61 7.16l7.11 5.52c4.16-3.84 6.35-9.5 6.35-17.18z"
-      />
-      <path
-        fill="#FBBC05"
-        d="M10.58 28.87A14.5 14.5 0 0 1 9.5 24c0-1.7.29-3.35.81-4.9l-8.02-6.22A23.98 23.98 0 0 0 0 24c0 3.86.92 7.5 2.56 10.78l8.02-6.91z"
-      />
-      <path
-        fill="#34A853"
-        d="M24 48c6.33 0 11.64-2.08 15.52-5.64l-7.11-5.52c-2 1.35-4.56 2.16-8.41 2.16-6.13 0-11.41-3.59-13.42-8.69l-8.02 6.91C6.5 42.62 14.62 48 24 48z"
-      />
-    </svg>
-  );
-}
 
 type SignUpNotice = {
   title: string;
@@ -226,27 +204,12 @@ export function SignUp() {
   };
 
   return (
-    <AuthShell gradient="bg-gradient-to-br from-sky-500 via-teal-400 to-emerald-400">
-      <div className="mb-6 flex justify-end">
-        <LanguageSelector compact />
-      </div>
-      <div className="mb-8 text-center">
-        <div className="flex justify-center">
-          <PawIcon size={48} />
-        </div>
-        <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
-          {t("common.appName")}
-        </h1>
-        <p className="mx-auto mt-3 inline-flex rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200">
-          {t("signup.badge")}
-        </p>
-        <h2 className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">
-          {t("signup.heading")}
-        </h2>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
-          {t("signup.tagline")}
-        </p>
-      </div>
+    <AuthShell
+      title={t("signup.heading")}
+      subtitle={t("signup.tagline")}
+      exitLabel={t("auth.backToBrowsing")}
+      topRight={<LanguageSelector compact />}
+    >
 
       {notice ? (
         <div className="mb-4">
@@ -365,15 +328,12 @@ export function SignUp() {
         <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
       </div>
 
-      <button
-        type="button"
+      <GoogleButton
         onClick={handleGoogle}
-        disabled={googleLoading}
-        className="flex w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-all duration-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-      >
-        <GoogleIcon />
-        {googleLoading ? t("login.connecting") : t("login.continueWithGoogle")}
-      </button>
+        loading={googleLoading}
+        label={t("login.continueWithGoogle")}
+        loadingLabel={t("login.connecting")}
+      />
 
       <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-300">
         {t("signup.haveAccount")}

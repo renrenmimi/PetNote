@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { Bell } from "lucide-react";
 import { useScrollRestoration } from "../hooks/useScrollRestoration";
 import { Navbar } from "../components/Navbar";
 import { EmptyState } from "../components/EmptyState";
@@ -28,7 +29,7 @@ export function Notifications() {
   } = useNotifications(user?.uid ?? null);
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20 dark:bg-slate-900">
+    <div className="min-h-screen bg-slate-50 pb-nav dark:bg-slate-900">
       <Navbar />
 
       <main className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
@@ -58,7 +59,7 @@ export function Notifications() {
 
         {!loading && notifications.length === 0 ? (
           <EmptyState
-            icon="🔔"
+            Icon={Bell}
             title={t("notifications.emptyTitle")}
             description={t("notifications.emptyDescription")}
           />

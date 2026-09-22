@@ -31,6 +31,24 @@ const config: CapacitorConfig = {
        * than double-counting.
        */
       resize: KeyboardResize.Native,
+      /*
+       * Tint the strip the web view vacates, instead of leaving the native
+       * view showing through it.
+       *
+       * Native resize shrinks the web view frame the instant the keyboard is
+       * announced, while the keyboard itself slides up over about 250 ms.
+       * For that quarter second there is a bare native rectangle where the
+       * keyboard is about to be, and with the default 'off' it is black —
+       * which is what someone typing on the device sees and what a settled
+       * screenshot never catches.
+       *
+       * 'dom' rather than 'auto': 'auto' prefers a fixed colour from this
+       * file, and a fixed colour cannot be right in both light and dark.
+       * 'dom' re-reads the body background every time the keyboard is about
+       * to show, so it follows the theme, and `--app-backdrop` in index.css
+       * lets a surface with its own background say what that colour is.
+       */
+      autoBackdropColor: "dom",
     },
   },
 };

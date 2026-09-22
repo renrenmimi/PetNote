@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, X } from "lucide-react";
+import { useBodyScrollLock } from "../hooks/useBodyScrollLock";
 import { doc, getDoc, serverTimestamp } from "firebase/firestore";
 import Avatar from "./Avatar";
 import { auth, db } from "../services/firebase";
@@ -56,6 +58,7 @@ const formatInviteCode = (value: string): string => {
 };
 
 export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
+  useBodyScrollLock(true);
   // Namespaced per user: a previous account abandoning onboarding at step 3
   // on this browser must not make the next new account skip the early steps.
   // Versioned: the step indices changed when the two decorative screens were
@@ -420,7 +423,25 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
       // (up to 8 suggested pets) exceed short phone viewports; without a
       // scrollable container the final "Start Exploring" button was
       // unreachable and onboarding could not be completed.
-      className="fixed inset-0 z-50 flex flex-col items-center justify-between overflow-y-auto bg-white px-6 py-10 text-center dark:bg-slate-900"
+      // z above the tab bar, which is also z-50 and painted later — so a
+      // full-screen takeover had the navigation sitting on top of it, and you
+      // could tap through to Places or Meetups mid-onboarding.
+      //
+      // Safe-area padding because there is no chrome up there to hide behind:
+      // "Choose your username" was being clipped by the Dynamic Island.
+      // justify-start, not justify-between. With a short step in a tall
+      // scrollable column, "between" left Skip and Continue floating around
+      // the middle of the screen above a large void. Content now starts at the
+      // top and the actions sink to the bottom with mt-auto, so every step has
+      // the same rhythm regardless of how much it contains.
+      className="fixed inset-0 z-[60] flex flex-col items-center justify-start overflow-y-auto bg-white px-6 text-center dark:bg-slate-900"
+      style={{
+        paddingTop: "calc(env(safe-area-inset-top, 0px) + 1.5rem)",
+        paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 1.5rem)",
+      }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Set up your profile"
       onTouchStart={(event) => {
         touchStartRef.current = event.touches[0].clientX;
         touchStartYRef.current = event.touches[0].clientY;
@@ -479,9 +500,19 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
                   usernameChecking ? (
                     <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-purple-500" />
                   ) : canContinueUsername ? (
-                    <span className="text-green-500">✓</span>
+                    <Check
+                      size={18}
+                      strokeWidth={2.6}
+                      className="text-green-500"
+                      aria-hidden="true"
+                    />
                   ) : (
-                    <span className="text-red-500">✕</span>
+                    <X
+                      size={18}
+                      strokeWidth={2.6}
+                      className="text-red-500"
+                      aria-hidden="true"
+                    />
                   )
                 ) : null}
               </div>
@@ -509,7 +540,7 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
               <p className="text-sm text-green-500">Username available</p>
             ) : null}
 
-            <div className="flex items-center justify-between">
+            <div className="mt-auto flex w-full items-center justify-between pt-8">
               <button
                 type="button"
                 onClick={handleNext}
@@ -727,7 +758,7 @@ export function OnboardingFlow({ userId, onComplete }: OnboardingFlowProps) {
               </div>
             )}
 
-            <div className="flex items-center justify-between">
+            <div className="mt-auto flex w-full items-center justify-between pt-8">
               <button
                 type="button"
                 onClick={handleNext}

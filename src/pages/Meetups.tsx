@@ -21,8 +21,13 @@ import { batchGetLocations, type Location } from "../services/locations";
 
 type FilterKey = "nearby" | "week" | "mine" | "dogs" | "cats" | "other";
 
+/*
+ * The first filter's label depends on whether an area is known, because what
+ * it queries depends on that too: getNearbyMeetups with one, getUpcomingMeetups
+ * without. "Nearby" was printed either way.
+ */
 const filters: Array<{ key: FilterKey; label: string; Icon: typeof MapPin; color: string }> = [
-  { key: "nearby", label: "Nearby", Icon: MapPin, color: "text-blue-500" },
+  { key: "nearby", label: "Upcoming", Icon: Calendar, color: "text-blue-500" },
   { key: "week", label: "This Week", Icon: Calendar, color: "text-green-500" },
   { key: "mine", label: "My Meetups", Icon: User, color: "text-purple-500" },
   { key: "dogs", label: "Dogs", Icon: PawPrint, color: "text-amber-600" },
@@ -86,20 +91,43 @@ export function Meetups() {
     Record<string, Location>
   >({});
   const [storedUserLocation, setStoredUserLocation] = useState<UserLocation | null>(null);
+  /*
+   * Why there is no location, not just that there isn't one.
+   *
+   * The page defaulted to a filter called "Nearby" and, with no location,
+   * quietly ran getUpcomingMeetups instead — so a visitor was shown a list
+   * labelled "Nearby" and an empty state reading "No meetups nearby", neither
+   * of which the app had any basis for. These four states get four different
+   * answers: a guest has no stored area and no way to set one from here; a
+   * signed-in person may simply not have set theirs; the lookup itself can
+   * fail; and only "ready" licenses the word "nearby" or a distance.
+   */
+  const [locationStatus, setLocationStatus] = useState<
+    "guest" | "unset" | "ready" | "failed"
+  >("guest");
   const userLocation = user?.uid ? storedUserLocation : null;
+  const hasArea = locationStatus === "ready" && !!userLocation;
 
   useEffect(() => {
     let ignore = false;
-    if (!user?.uid) return;
+    if (!user?.uid) {
+      setStoredUserLocation(null);
+      setLocationStatus("guest");
+      return;
+    }
     const loadLocation = async () => {
       try {
         const locationData = await getUserLocation(user.uid);
         if (!ignore) {
           setStoredUserLocation(locationData);
+          setLocationStatus(locationData ? "ready" : "unset");
         }
       } catch {
         if (!ignore) {
           setStoredUserLocation(null);
+          // Not the same as "you have not set one": say so rather than
+          // silently claiming to know where they are not.
+          setLocationStatus("failed");
         }
       }
     };
@@ -244,13 +272,13 @@ export function Meetups() {
   }, [meetups, userLocation]);
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20 dark:bg-slate-900">
+    <div className="min-h-screen bg-slate-50 pb-nav dark:bg-slate-900">
       <Navbar />
 
       <main className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
         <div className="flex items-center justify-between">
           <h1 className="text-base font-semibold text-slate-900 dark:text-white">
-            Meetups 🐾
+            Meetups
           </h1>
           <button
             type="button"
@@ -264,13 +292,17 @@ export function Meetups() {
         <div className="-mx-4 overflow-x-auto py-2 px-4 scrollbar-hide">
           <div className="flex gap-2">
             {filters.map((filter) => {
+              // Only the first chip changes, and only when an area is known.
+              const label =
+                filter.key === "nearby" && hasArea ? "Nearby" : filter.label;
               const active = activeFilter === filter.key;
-              const Icon = filter.Icon;
+              const Icon =
+                filter.key === "nearby" && hasArea ? MapPin : filter.Icon;
               return (
                 <FilterTag
                   key={filter.key}
                   icon={<Icon size={14} className={active ? "text-white" : filter.color} />}
-                  label={filter.label}
+                  label={label}
                   active={active}
                   onClick={() => setActiveFilter(filter.key)}
                 />
@@ -278,6 +310,32 @@ export function Meetups() {
             })}
           </div>
         </div>
+
+        {/*
+          Offered, not demanded. The page does not ask for a location
+          permission on entry; it says what it is showing and where to change
+          that. A guest is told the one thing that is true for them — there is
+          no area to read — without being pushed at a sign-up wall for a
+          browsing task.
+        */}
+        {activeFilter === "nearby" && !hasArea ? (
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {locationStatus === "failed"
+              ? "Could not read your area, so this is everything upcoming."
+              : locationStatus === "guest"
+                ? "Showing everything upcoming. Log in and set your area to see what is close by."
+                : "Showing everything upcoming."}
+            {locationStatus === "unset" ? (
+              <button
+                type="button"
+                onClick={() => navigate("/edit-profile")}
+                className="ml-1 font-semibold text-purple-600 underline underline-offset-2 hover:text-purple-500"
+              >
+                Set your area
+              </button>
+            ) : null}
+          </p>
+        ) : null}
 
         {loading ? (
           <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-400 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-500">
@@ -293,13 +351,15 @@ export function Meetups() {
           />
         ) : meetups.length === 0 ? (
           <EmptyState
-            icon="📍"
+            Icon={Calendar}
             title={
               activeFilter === "mine"
                 ? "No meetups of yours yet"
                 : activeFilter === "week"
                   ? "No meetups this week"
-                  : "No meetups nearby"
+                  : hasArea
+                    ? "No meetups near your area"
+                    : "No upcoming meetups"
             }
             description="Be the first to organize one!"
             actionText="Create Meetup"
