@@ -1,8 +1,91 @@
-# PetNote Swift 第一阶段 · 状态表
+# PetNote Swift 客户端 · 状态表
 
 这是**唯一**的状态表。每批工作收口后更新这一份，不另写过程总结。
+审查目录里的 `evidence/ios-native/acceptance-status.md` 是**第一阶段验收矩阵**（按
+`SWIFT-CLIENT-ACCEPTANCE.md` 条目编号记证据），不是状态表；功能迁移进度只记在这里。
 
-**更新** 2026-09-21 · 分支 `feature/ios-native-prototype` · PR [#204](https://github.com/renrenmimi/PetNote/pull/204)（Draft，不合并）
+**更新** 2026-09-22 · 分支 `feature/ios-native-prototype` · PR [#204](https://github.com/renrenmimi/PetNote/pull/204)（Draft，不合并）
+
+---
+
+## 功能迁移清单（旧版用户侧功能 → Swift）
+
+范围来自旧版 `src/pages` 的 28 个页面与其组件，按旧代码核对，不按印象。
+`AdminPanel` 是管理端，不在用户侧迁移范围内。**不换算成百分比。**
+
+**等级**（只记已达到的最高一级，不跳级）
+① 未实现 · ② 模型验证通过（单元测试，不经界面）· ③ UI 验证通过（隔离模拟器 + emulator，真实界面操作）·
+④ 与真实测试后端联调通过（`petnote-devtest`）· ⑤ 真机验证通过（带版本）· ⑥ 外部阻塞或明确延期
+
+「界面已接入」**不是一个等级**：它只说明入口存在、页面能被点到，不说明任何流程被验证过。
+上传一律是**本地替身**（`a2-media-server.py`），不是真实 Cloudinary；emulator 里翻转验证位
+**不是**真实邮件往返。这两条在任何一级都不会被写成已通过。
+
+### 账号
+
+| 功能 | 等级 | 证据 / 环境 | 未验证、阻塞 |
+| --- | --- | --- | --- |
+| 邮箱密码登录 | ⑤ @`4ba1c57` | `AuthUITests`（emulator）；真机 TESTCLOUD | 当前候选版待真机回归 |
+| 冷启动恢复会话 | ③ | `testColdStartRestoresTheSessionWithoutShowingSignIn` | — |
+| 退出登录；换账号无残留 | ③ | `testSignOutReturnsToSignIn`、`testTheNextAccountInheritsNothingFromTheLastOne` | 新 Tab 壳下的残留未重跑 |
+| 会话被吊销 | ③ | `testARevokedSessionEndsTheSessionAndGivesTheScreenBack` | — |
+| 注册（显示名唯一） | ② | `AuthSignUpTests`、`UserAccountTests` · `8c6073b` | 登录页入口在；**注册 UI 流程未验** |
+| 邮箱验证状态 | ② | `AuthEmailVerificationTests` · 横幅在本批接入首页 | UI 未验；真实邮件往返 ⑥（emulator 不发信） |
+| 忘记密码（链接方式） | ② | `AuthPasswordResetTests` | UI 未验；真实邮件 ⑥。验证码重置**有意不接**（生产未配置） |
+| Google 登录 | ① → ⑥ | 旧版 `contexts/AuthContext.tsx` 使用 | 需要测试项目的 iOS OAuth 客户端，**待授权** |
+
+### 资料与设置
+
+| 功能 | 等级 | 证据 / 环境 | 未验证、阻塞 |
+| --- | --- | --- | --- |
+| 首次引导 | ② | `ProfileOnboardingTests` · 本批接入（`onboardingComplete` 为假时全屏出现） | UI 未验 |
+| 个人主页 | ② | `ProfileOverviewTests` · 本批成为「我的」Tab | UI 未验；旧版的「已收藏」「签到」两个分栏 ① |
+| 编辑资料 / 头像 | ② | `ProfileEditTests` · `8c6073b` | UI 未验；头像上传只到替身 |
+| 我的宠物列表 | ② | 本批新增 `App/MyPetsSection.swift` | 无单元测试、UI 未验 |
+| 设置页（通知偏好、深色、语言、位置、改密码） | ① | 旧版 `Settings.tsx` | 第 5 批 |
+| 中文界面 | ① | 旧版支持 en / zh（默认 en）；**Swift 全部是英文硬编码** | 横跨所有页面，未排批次 |
+| 注销账号 | ① | `Callables.deleteUserAccount` 已登记，无调用 | 第 5 批；共享宠物的处理照服务端规则 |
+| 屏蔽用户 / 屏蔽列表 | ① | 旧版 `BlockedUsers.tsx` | 第 5 批 |
+| 举报 | ① | 旧版 `ReportModal.tsx` | 第 5 批 |
+| 联系我们、隐私政策、服务条款 | ① | 旧版 `ContactUs` / `PrivacyPolicy` / `TermsOfService` | 第 5 批 |
+| 账号被封提示 | ① | 旧版 `SuspendedBanner.tsx` | 第 5 批 |
+
+### 宠物
+
+| 功能 | 等级 | 证据 / 环境 | 未验证、阻塞 |
+| --- | --- | --- | --- |
+| 创建 / 编辑宠物 | ② | `PetEditorViewModelTests`、`PetCallableErrorTests` · `7a3ed35` · 本批接入「我的宠物 → Add a pet」 | UI 未验；头像只到替身 |
+| 宠物主页 | ② | `PetProfileViewModelTests` · 本批可从我的宠物、链接 `/pet/<id>` 进入 | UI 未验 |
+| 删除宠物（最后一位主人） | ② | `PetOwnershipTests` | UI 未验；多主人时由服务端拒绝，客户端只按 `isPrimary` 决定显示 |
+| 关注 / 取消关注、关注列表 | ① | 第 3 批进行中（独立副本，未并入） | — |
+| 共同主人：邀请、兑换、撤销、移除、退出、转让 | ① | 第 3 批进行中 | 不改任何授权规则 |
+| 生日庆祝、宠物聚光 | ① | 旧版 `BirthdayCelebration` / `PetSpotlight` | 未排批次 |
+
+### 内容
+
+| 功能 | 等级 | 证据 / 环境 | 未验证、阻塞 |
+| --- | --- | --- | --- |
+| Feed、刷新、分页 | ⑤ @`4ba1c57` | `RefreshAndPagingUITests`、`NavigationUITests`；真机中文内容 | 当前候选版待回归 |
+| 帖子详情、返回位置 | ⑤ @`4ba1c57` | `NavigationUITests` | 可中断返回的两个细节真机未确认 |
+| 图片、全屏看图 | ③ | `ImageUITests` | 真机未专项验 |
+| 视频播放、断流恢复 | ⑤ @`4ba1c57`（播放） | `VideoPlaybackUITests`；断流恢复只到 ③ | 当前 CI 有 3 条视频用例红，修复中 |
+| 点赞 | ⑤ @`4ba1c57` | 真机 `Like/0 → Unlike/1`，云端 `counted=True` | `LikeUITests` 本轮出现新失败，原因未定 |
+| 评论（写） | ⑤ @`4ba1c57` | `CommentUITests`；真机中文输入 | — |
+| 删除自己的评论 | ① | `Callables.deleteComment` 已登记，无界面 | 未排批次 |
+| 收藏 | ② | `PostWriteManageTests` · 本批放进详情页菜单 | UI 未验；「已收藏」列表 ① |
+| 发帖（图片 / 视频、选宠物、标签） | ② | `ComposePublishTests`、`ComposeDraftTests`、`UploadPreparationTests` · `7535cf8` · 本批接入中间 Tab | UI 未验；上传只到替身；**真实 Cloudinary 待授权** |
+| 发帖草稿 | ② | `ComposeDraftTests` | UI 未验 |
+| 发帖滤镜 | ① | 旧版 `ImageFilter.tsx` | 未排批次 |
+| 编辑 / 删除 / 置顶自己的帖子 | ② | `PostWriteManageTests` · 本批放进详情页菜单 | UI 未验；删除后 Feed 同步只有模型测试 |
+| 分享 | ① | 旧版 `ShareMenu` / `ShareCard` | 未排批次 |
+| 搜索、话题、发现 | ① | 第 3 批进行中 | — |
+| 他人主页 | ① | 第 3 批进行中 | — |
+| 通知列表、全部已读 | ① | 旧版 `Notifications.tsx` | 第 5 批；推送旧版没有 |
+
+### 地点与聚会（第 4 批，均 ①）
+
+地点列表、地点详情、添加地点、地点照片、签到、评分评价；聚会列表、详情、创建、编辑、取消、报名。
+旧版底部导航是 首页 / 地点 / 发布 / 聚会 / 我的，**Swift 目前只有 首页 / 发布 / 我的**，另两个 Tab 等功能做完再加，不放空 Tab。
 
 ---
 

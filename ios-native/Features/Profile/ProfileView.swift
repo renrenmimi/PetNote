@@ -12,16 +12,26 @@ struct ProfileView: View {
     private let uid: String
 
     @State private var isEditing = false
+    /// What sits under the identity once it has loaded — the web client's
+    /// pets / saved / check-ins area.
+    ///
+    /// Supplied by the shell rather than built here, for the reason in the
+    /// comment above: those sections read collections this screen does not
+    /// own. `AnyView` rather than a generic parameter so adding it did not
+    /// change the type of every existing `ProfileView` in tests and previews.
+    private let accessory: AnyView?
 
     init(
         uid: String,
         email: String,
         users: any UserRepository,
-        uploader: any AvatarUploading
+        uploader: any AvatarUploading,
+        accessory: AnyView? = nil
     ) {
         self.uid = uid
         self.users = users
         self.uploader = uploader
+        self.accessory = accessory
         _model = State(initialValue: ProfileModel(uid: uid, email: email, users: users))
     }
 
@@ -37,6 +47,7 @@ struct ProfileView: View {
                     identity(profile)
                     bio(profile)
                     editButton
+                    if let accessory { accessory }
                 case .failed(let message, let isRetryable):
                     failure(message: message, isRetryable: isRetryable)
                 }

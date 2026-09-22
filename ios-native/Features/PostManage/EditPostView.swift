@@ -180,26 +180,36 @@ struct PostActionsMenu: View {
                     systemImage: model.isBookmarked ? "bookmark.fill" : "bookmark"
                 )
             }
+            .accessibilityIdentifier("post.actions.bookmark")
             if model.isOwnPost {
                 Button { onEdit(model.post.id) } label: {
                     Label("Edit", systemImage: "pencil")
                 }
+                .accessibilityIdentifier("post.actions.edit")
                 Button {
                     Task { await model.togglePin() }
                 } label: {
-                    Label(model.isPinned ? "Unpin from profile" : "Pin to profile", systemImage: "pin")
+                    Label(
+                        model.isPinned ? "Unpin from profile" : "Pin to profile",
+                        systemImage: model.isPinned ? "pin.slash" : "pin"
+                    )
                 }
+                .accessibilityIdentifier("post.actions.pin")
                 Button(role: .destructive) {
                     isConfirmingDelete = true
                 } label: {
                     Label("Delete", systemImage: "trash")
                 }
+                .accessibilityIdentifier("post.actions.delete")
             }
         } label: {
             Image(systemName: "ellipsis")
                 .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget)
                 .contentShape(.rect)
         }
+        // One action at a time: a second tap while a delete is in flight would
+        // otherwise be a second delete of a post that may already be gone.
+        .disabled(model.isWorking)
         .accessibilityIdentifier("post.actions")
         .accessibilityLabel("Post actions")
         .task { await model.refresh() }
@@ -214,6 +224,28 @@ struct PostActionsMenu: View {
             // Says what is lost, because the cascade takes the comments and
             // likes with it and nothing brings them back.
             Text("The post, its comments and its likes are removed. This cannot be undone.")
+        }
+        // The model says "that did not go through" rather than pretending a
+        // delete or pin happened. Until this alert, nothing on screen read it,
+        // so a failed delete looked exactly like a tap that did nothing.
+        .alert(
+            "Couldn't complete that",
+            isPresented: Binding(
+                get: { model.failureMessage != nil },
+                set: { if !$0 { model.failureMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { model.failureMessage = nil }
+        } message: {
+            Text(model.failureMessage ?? "")
+        }
+        .onChange(of: model.notice) { _, notice in
+            guard let notice else { return }
+            // Pinning has no other visible result on this screen; VoiceOver
+            // users are told, and the menu's label already reads the new way
+            // round for everyone else.
+            AccessibilityNotification.Announcement(notice).post()
+            model.notice = nil
         }
     }
 }

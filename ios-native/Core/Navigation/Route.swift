@@ -8,6 +8,14 @@ import Foundation
 enum Route: Hashable, Sendable {
     case feed
     case postDetail(postID: String)
+    /// A pet's page — the web client's `/pet/:petId`.
+    ///
+    /// Only the screens a person *navigates to* are routes. Editors (compose,
+    /// a pet's details, a post's text) are presented modally and owned by the
+    /// shell, because they are things you finish or cancel rather than places
+    /// you go back through — and because a route is also a link target, and
+    /// nothing should be able to open an editor from a URL.
+    case pet(petID: String)
 }
 
 /// Turns an incoming link into a `Route`.
@@ -70,6 +78,11 @@ enum DeepLink {
         case "post":
             guard decoded.count == 2, let id = validDocumentID(decoded[1]) else { return .feed }
             return .postDetail(postID: id)
+        case "pet":
+            // Same checks as a post id, for the same reason: the id reaches a
+            // Firestore read, and it is validated after percent-decoding.
+            guard decoded.count == 2, let id = validDocumentID(decoded[1]) else { return .feed }
+            return .pet(petID: id)
         case "feed", nil, "":
             return .feed
         default:

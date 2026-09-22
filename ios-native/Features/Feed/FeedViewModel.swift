@@ -515,6 +515,19 @@ final class FeedViewModel {
         return min(abs(moved), abs(owed)) * owed.signum()
     }
 
+    /// Drops a post the server has already deleted.
+    ///
+    /// Told, not discovered: without this the feed goes on showing a row that
+    /// points at nothing until someone pulls to refresh, and opening it lands
+    /// on "this post was deleted" about something the same person deleted a
+    /// moment ago. The scroll anchor is cleared too if it was that row — coming
+    /// back to the feed would otherwise try to restore a position on a post
+    /// that is no longer in the list.
+    func removePost(id: String) {
+        posts.removeAll { $0.id == id }
+        if scrollAnchor == id { scrollAnchor = nil }
+    }
+
     func rememberScrollAnchor(_ postID: String) { scrollAnchor = postID }
     func clearScrollAnchor() { scrollAnchor = nil }
 

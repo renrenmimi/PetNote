@@ -28,6 +28,44 @@ struct DeepLinkTests {
         #expect(DeepLink.route(forPath: "/") == .feed)
     }
 
+    /// The web client's `/pet/:petId`, reachable the same three ways a post is.
+    @Test func aPetLinkOpensThePet() {
+        #expect(DeepLink.route(for: URL(string: "petnote://pet/pet-7")!) == .pet(petID: "pet-7"))
+        #expect(DeepLink.route(for: URL(string: "https://petnote.app/pet/pet-7")!) == .pet(petID: "pet-7"))
+        #expect(DeepLink.route(forPath: "/pet/pet-7") == .pet(petID: "pet-7"))
+    }
+
+    /// The pet id goes through the same validation as a post id — after
+    /// decoding — because it reaches the same kind of Firestore read. A new
+    /// route is the easiest place for that check to be forgotten.
+    @Test func aPetLinkGetsThePostLinksValidation() {
+        #expect(DeepLink.route(for: URL(string: "petnote://pet/..%2F..%2Fusers")!) == .feed)
+        #expect(DeepLink.route(forPath: "/pet/a%2Fb") == .feed)
+        #expect(DeepLink.route(forPath: "/pet/__reserved__") == .feed)
+        #expect(DeepLink.route(forPath: "/pet/") == .feed)
+        #expect(DeepLink.route(forPath: "/pet/a/b") == .feed)
+    }
+
+    /// Editors are not link targets. A link can open a place to look at; it
+    /// must not be able to open a screen that writes.
+    ///
+    /// The `switch` is the half that matters and it is checked by the
+    /// compiler rather than at run time: it names every `Route`, so adding an
+    /// editor-shaped case — `.editPet`, `.compose` — stops this file compiling
+    /// until someone decides, here, whether a URL may reach it.
+    @Test func noLinkOpensAnEditor() {
+        func isAPlaceToLook(_ route: Route) -> Bool {
+            switch route {
+            case .feed, .postDetail, .pet: return true
+            }
+        }
+        for path in ["/pet/abc/edit", "/create", "/post/abc/edit", "/profile/edit", "/compose"] {
+            let route = DeepLink.route(forPath: path)
+            #expect(isAPlaceToLook(route), "\(path) produced \(route)")
+            #expect(route == .feed, "\(path) should not resolve to anything but the feed, got \(route)")
+        }
+    }
+
     // MARK: - Another origin must never be routed
 
     @Test func anotherHostIsNotOurs() {
@@ -88,7 +126,11 @@ struct DeepLinkTests {
     // MARK: - Unknown shapes land on the feed without erroring
 
     @Test func unknownShapesFallToTheFeed() {
-        #expect(DeepLink.route(for: URL(string: "petnote://pet/mochi")!) == .feed)
+        // `petnote://pet/mochi` used to be here, as a shape with no route. It
+        // has one now (`aPetLinkOpensThePet`); what stays unknown is a pet
+        // link with the wrong number of segments.
+        #expect(DeepLink.route(for: URL(string: "petnote://pet/mochi/extra")!) == .feed)
+        #expect(DeepLink.route(for: URL(string: "petnote://pet")!) == .feed)
         #expect(DeepLink.route(for: URL(string: "https://petnote.app/admin")!) == .feed)
         #expect(DeepLink.route(for: URL(string: "https://petnote.app/post/abc/extra")!) == .feed)
         #expect(DeepLink.route(for: URL(string: "https://petnote.app/post")!) == .feed)
