@@ -107,10 +107,14 @@ struct VideoPlayerView: View {
         } else {
             ZStack(alignment: .bottomTrailing) {
                 surface
-                // A sibling of the surface, not a child of it: the surface is
-                // one accessibility element so that a test can ask it what it
-                // is showing, and a control buried inside such an element
-                // cannot be reached by VoiceOver or by a tap in a test.
+                // Stage two of a stall: a way out, once the automatic attempts
+                // are spent. A sibling for the same reason the mute button is
+                // one — the surface is a single accessibility element with
+                // `children: .ignore`, and a control buried inside such an
+                // element is unreachable by VoiceOver and by a tap in a test.
+                if case .stalled(offeringRecovery: true) = phase {
+                    stallRecovery
+                }
                 if coordinator.activePlayer(for: id) != nil {
                     muteButton
                 }
@@ -155,6 +159,23 @@ struct VideoPlayerView: View {
                     .allowsHitTesting(false)   // playback is decided by the coordinator
                     .accessibilityHidden(true)
             }
+
+            // Stage one of a stall, and the *only* thing drawn about waiting.
+            //
+            // Not a child of the player layer and not a cover over it: the
+            // frame the decoder last produced stays exactly where it was, with
+            // a small badge over it. A stream that broke halfway is not a
+            // video that vanished.
+            //
+            // The spinner is deliberately bounded. It appears
+            // `VideoStallPolicy.feedbackDelay` after the clock stops and is
+            // replaced by the static recovery card at `recoveryOfferDelay`, so
+            // there is no state in which this app animates forever — which
+            // matters beyond taste, because a permanently animating view is an
+            // app XCUITest can never call idle.
+            if case .stalled(offeringRecovery: false) = phase {
+                bufferingIndicator
+            }
         }
         // **The rectangle this row claims to occupy is its own.**
         //
@@ -181,10 +202,79 @@ struct VideoPlayerView: View {
         .onTapGesture { onTapPicture?() }
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("video.surface")
-        .accessibilityLabel(coordinator.playingID == id ? "Video" : "Video, not playing")
+        .accessibilityLabel(accessibilityLabelText)
         // Empty unless a test asked for it: nobody should hear "state=picture
         // playing=true size=320x240" read aloud.
         .accessibilityValue(Self.isProbing ? stateDescription : "")
+    }
+
+    /// Three states a person can hear apart, not two.
+    ///
+    /// This said only "Video" or "Video, not playing", and the state added
+    /// this round — a stall — fell into the first one: a video stuck buffering
+    /// read exactly like a video playing normally. The spinner that says so to
+    /// everyone else is `accessibilityHidden`, and the state string next to it
+    /// is filled in only when a test is probing, so for the ten seconds before
+    /// the retry button appears a VoiceOver user had nothing at all.
+    ///
+    /// Deliberately not the internal state name. `waitingItsTurn`,
+    /// `pausedByViewer` and `suspended` are all "not playing" as far as
+    /// somebody listening is concerned, and reading nine case names aloud is
+    /// worse than reading three.
+    private var accessibilityLabelText: String {
+        if case .stalled = phase { return "Video, stopped loading" }
+        return coordinator.playingID == id ? "Video" : "Video, not playing"
+    }
+
+    /// What this row is doing, asked once per redraw and never decided here.
+    ///
+    /// The view owns no playback state — that rule is what stopped a row
+    /// holding a player the coordinator had already evicted — and "is this
+    /// video waiting?" is exactly the kind of thing two owners would disagree
+    /// about within one scroll.
+    private var phase: VideoPlaybackState { coordinator.state(for: id) }
+
+    private var bufferingIndicator: some View {
+        ProgressView()
+            .progressViewStyle(.circular)
+            .tint(Palette.textOnBrand)
+            .padding(Spacing.s)
+            .controlScrim()
+            // Pixels about waiting are not a control. The surface above
+            // already carries the label and the machine-readable state, and a
+            // tap here must still open the post.
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    /// A card, not a full-bleed cover.
+    ///
+    /// Two reasons, both load-bearing: the frame that is already on the glass
+    /// keeps showing round it, so a broken stream does not turn the row into a
+    /// grey box the way an outright failure does; and the picture outside the
+    /// card still opens the post, so a stalled video is not also a dead end.
+    private var stallRecovery: some View {
+        Button {
+            coordinator.recoverNow(id: id)
+        } label: {
+            VStack(spacing: Spacing.xs) {
+                Image(systemName: "arrow.clockwise")
+                Text("Playback stopped. Tap to try again.")
+                    .font(Typography.caption)
+                    .multilineTextAlignment(.center)
+            }
+            .foregroundStyle(Palette.textOnBrand)
+            .padding(Spacing.m)
+            .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget)
+            .controlScrim()
+            // The tap area is this card and nothing more. The `.frame` below
+            // only centres it; a layout frame adds no hit region, so the
+            // picture around it goes on belonging to the surface.
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("video.stalled.retry")
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var poster: some View {
@@ -228,7 +318,22 @@ struct VideoPlayerView: View {
         } else {
             state = "picture"
         }
+        // `state=` is what it always was — poster / opening / picture / failed,
+        // which is about what is *drawn*. `phase=` is the new axis: **why** the
+        // picture is or is not moving. They are orthogonal on purpose; a
+        // stalled video has `state=picture` and `phase=stalled`, and a test
+        // that could only read the first one would call it healthy.
+        // `rebuilds=` is here so a test can tell "the picture did not move"
+        // from "the picture did not move except for the recovery that happened
+        // in between". A recovery replays up to
+        // `VideoStallPolicy.recoverySeekToleranceBefore` seconds, which is
+        // long enough to change the colour of a fixture that changes every
+        // second — so two samples taken around one read as a picture that
+        // moved while the row claimed to be stalled, and both endpoints
+        // honestly say `phase=stalled`.
         return "state=\(state) playing=\(coordinator.playingID == id) "
+            + "phase=\(phase.name) "
+            + "rebuilds=\(coordinator.automaticRecoveryAttempts(for: id)) "
             + "size=\(Int(size.width))x\(Int(size.height)) "
             + "advanced=\(coordinator.advanced.contains(id))"
     }

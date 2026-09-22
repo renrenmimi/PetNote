@@ -999,6 +999,439 @@ struct VideoPlaybackTests {
         )
         try await waitUntil("playback to come back", timeout: 5) { coordinator.playingID == "a" }
     }
+
+    // MARK: - 6. A stream that breaks (5D.8, the half that had no coverage)
+
+    /// **The defect, reproduced before it is fixed.**
+    ///
+    /// Measured against `/a2-cutoff.mp4`, which delivers the index and the
+    /// first third of the media data at a little over real time and then stops
+    /// sending without hanging up. The player timeline from that run, host-side
+    /// and before any of this existed:
+    ///
+    ///     1.1s t=0.10  item=ready control=playing  buffered=0.0-1.0  frames=2
+    ///     5.6s t=4.64  item=ready control=playing  buffered=0.0-5.0  frames=17
+    ///     6.4s t=4.90  item=ready control=waiting  buffered=0.0-5.0  frames=18
+    ///    13.9s t=4.90  item=ready control=waiting  buffered=0.0-5.0  frames=18
+    ///     END item=ready error=none duration=16.0
+    ///
+    /// Eleven of the sixteen seconds never play, the item is `.readyToPlay`
+    /// throughout and `error` is nil — so `markFailed`, which only fires on
+    /// `status == .failed`, has *nothing to fire on*. The row held its last
+    /// frame with no indication and no way out.
+    ///
+    /// Four claims are kept apart here, because three of them stay true while
+    /// the screen is frozen: the bytes arrived over HTTP, the item opened, the
+    /// clock advanced, and the picture changed. Only the last two stop.
+    @Test(.enabled(if: MediaServer.isAnswering))
+    func aStreamThatDiesMidPlaybackIsNoticedEvenThoughNothingFails() async throws {
+        await MediaServer.reach("/a2-cut")
+        let coordinator = VideoPlaybackCoordinator()
+        coordinator.reportVisibility(id: "cut", fraction: 0.9, distanceFromCentre: 0)
+        let player = try #require(coordinator.player(for: "cut", url: MediaServer.url("/a2-cutoff.mp4")))
+        let watcher = FrameWatcher()
+
+        // 1 — HTTP worked: the index arrived, so this is a stream that breaks
+        //     and not a file that never opened.
+        try await waitUntil("the item to open", timeout: 20) {
+            player.currentItem?.status == .readyToPlay
+        }
+        let duration = try #require(player.currentItem?.duration.seconds)
+        #expect(duration > 15, "the whole index arrived, so the clip knows it is 16s long")
+
+        // 2 — the item is ready, and 3/4 — it really plays and really draws.
+        try await waitUntil("playback to pass 1.5s with the picture moving", timeout: 25, describe: {
+            "t=\(coordinator.currentTime(of: "cut") ?? -1) frames=\(watcher.newFrames)"
+        }) {
+            watcher.look(at: player)
+            return (coordinator.currentTime(of: "cut") ?? 0) > 1.5 && watcher.newFrames > 4
+        }
+        let framesWhileHealthy = watcher.newFrames
+
+        // Now the bytes run out.
+        try await waitUntil("the stall to be noticed", timeout: 30, describe: {
+            "phase=\(coordinator.state(for: "cut").name) t=\(coordinator.currentTime(of: "cut") ?? -1)"
+        }) {
+            watcher.look(at: player)
+            return coordinator.isBuffering(for: "cut")
+        }
+
+        let frozenAt = try #require(coordinator.currentTime(of: "cut"))
+        let framesAtFreeze = watcher.newFrames
+        #expect(frozenAt < duration - 1, "it stopped in the middle, not at the end — t=\(frozenAt) of \(duration)")
+        #expect(framesAtFreeze > framesWhileHealthy, "the picture was moving before the break")
+
+        // 3 and 4 have stopped; 1 and 2 have not. That gap is the whole defect.
+        try await Task.sleep(for: .seconds(1))
+        watcher.look(at: player)
+        // Not advancing — rather than "unchanged". An automatic recovery may
+        // already have rebuilt the item and seeked back to the nearest earlier
+        // keyframe, so the clock is allowed to go *backwards* here. What it may
+        // not do is go on.
+        #expect(
+            (coordinator.currentTime(of: "cut") ?? -1) <= frozenAt + 0.05,
+            "the clock went on past where the bytes stopped"
+        )
+        #expect(watcher.newFrames == framesAtFreeze, "and no new frame was decoded")
+        #expect(coordinator.failure(for: "cut") == nil, "a broken stream is not a load failure")
+        #expect(
+            player.currentItem?.status != .failed,
+            "the item never reports .failed — which is why a check on status alone had zero coverage here"
+        )
+        #expect(coordinator.state(for: "cut") == .stalled(offeringRecovery: false))
+    }
+
+    /// **Nothing is shown before the threshold, and it is shown just after.**
+    ///
+    /// The boundary is read from `VideoStallPolicy` rather than repeated, so a
+    /// change to the policy moves the test with it instead of leaving a stale
+    /// number to argue with.
+    @Test(.enabled(if: MediaServer.isAnswering))
+    func briefJitterShowsNothingAndARealStallShowsSomething() async throws {
+        await MediaServer.reach("/a2-cut")
+        let coordinator = VideoPlaybackCoordinator()
+        coordinator.reportVisibility(id: "cut", fraction: 0.9, distanceFromCentre: 0)
+        let player = try #require(coordinator.player(for: "cut", url: MediaServer.url("/a2-cutoff.mp4")))
+
+        // **Somebody has to be asking for the pictures.** See `FrameWatcher`.
+        let watcher = FrameWatcher()
+        try await waitUntil("playback to start moving", timeout: 25) {
+            watcher.look(at: player)
+            return (coordinator.currentTime(of: "cut") ?? 0) > 0.5
+        }
+
+        // Sample fast and keep the whole sequence: a single reading cannot tell
+        // "it has not changed" from "it has not changed yet".
+        var lastMoving = Date()
+        var shownAt: Date?
+        var previous = coordinator.currentTime(of: "cut") ?? 0
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline, shownAt == nil {
+            try await Task.sleep(for: .milliseconds(40))
+            watcher.look(at: player)
+            let now = coordinator.currentTime(of: "cut") ?? 0
+            if abs(now - previous) > 0.01 { lastMoving = Date() }
+            previous = now
+            if coordinator.isBuffering(for: "cut") { shownAt = Date() }
+        }
+
+        let shown = try #require(shownAt, "the stall was never shown at all")
+        let waited = shown.timeIntervalSince(lastMoving)
+        print("MEASURED: buffering shown \(String(format: "%.2f", waited))s after the clock stopped")
+        #expect(
+            waited >= VideoStallPolicy.feedbackDelay,
+            "shown after only \(waited)s — a hiccup shorter than the threshold would flicker"
+        )
+        // One poll late at worst, plus slack for a loaded machine. The upper
+        // bound matters as much as the lower one: a threshold nobody ever
+        // reaches is the same as no feedback at all.
+        #expect(
+            waited < VideoStallPolicy.feedbackDelay + VideoStallPolicy.pollInterval * 6,
+            "took \(waited)s to say anything"
+        )
+    }
+
+    /// **The network comes back, and playback resumes under the existing rules
+    /// — without turning the sound on.**
+    @Test(.enabled(if: MediaServer.isAnswering))
+    func whenTheStreamComesBackItPlaysOnAndStaysMuted() async throws {
+        await MediaServer.reach("/a2-cut")
+        let coordinator = VideoPlaybackCoordinator()
+        coordinator.reportVisibility(id: "cut", fraction: 0.9, distanceFromCentre: 0)
+        let player = try #require(coordinator.player(for: "cut", url: MediaServer.url("/a2-cutoff.mp4")))
+        let watcher = FrameWatcher()
+
+        try await waitUntil("the stall", timeout: 30, describe: {
+            "phase=\(coordinator.state(for: "cut").name)"
+        }) {
+            watcher.look(at: player)
+            return coordinator.isBuffering(for: "cut")
+        }
+        let frozenAt = try #require(coordinator.currentTime(of: "cut"))
+        let framesAtFreeze = watcher.newFrames
+
+        // The network comes back. Nothing else is touched: no retry is tapped,
+        // no row is scrolled.
+        await MediaServer.reach("/a2-mend")
+
+        try await waitUntil("playback to pass where it stopped", timeout: 40, describe: {
+            "phase=\(coordinator.state(for: "cut").name) t=\(coordinator.currentTime(of: "cut") ?? -1) frames=\(watcher.newFrames)"
+        }) {
+            watcher.look(at: player)
+            return (coordinator.currentTime(of: "cut") ?? 0) > frozenAt + 0.5
+        }
+
+        #expect(watcher.newFrames > framesAtFreeze, "the picture is moving again, not just the clock")
+        #expect(!coordinator.isBuffering(for: "cut"), "and the feedback went away")
+        #expect(coordinator.playingID == "cut")
+
+        // §5D.4. The whole recovery path rebuilds an item on the same player,
+        // so the mute flag is never in a position to be lost — and this is
+        // what keeps that true.
+        #expect(coordinator.isMuted, "recovering must not unmute the feed")
+        #expect(player.isMuted, "and the player itself is still silent")
+        await MediaServer.reach("/a2-cut")
+    }
+
+    /// The two numbers that have to be read together.
+    ///
+    /// A recovery seeks back before the stall so it lands inside bytes that
+    /// already arrived. Whatever it replays counts as playback, and enough
+    /// playback refunds the automatic-recovery budget. So if a recovery can
+    /// replay more than the refund threshold, every failed recovery buys
+    /// itself another one and "three attempts, then ask a person" never
+    /// terminates.
+    ///
+    /// Not hypothetical: `toleranceBefore` was `.positiveInfinity`, a recovery
+    /// replayed the whole healthy 5.6s of the 16s test clip, and
+    /// `automaticRecoveryIsBoundedAndThenOffersAWayOut` sat at
+    /// `phase=playing attempts=1` until its sixty-second deadline.
+    ///
+    /// Pinned as arithmetic rather than left to the integration test, because
+    /// that one takes a minute to fail and then says "timed out" instead of
+    /// naming the two constants that stopped agreeing.
+    @Test func recoverySeekLandsInsideTheRefundWindow() {
+        #expect(
+            VideoStallPolicy.recoverySeekToleranceBefore
+                < VideoStallPolicy.healthyProgressToRefundBudget,
+            """
+            A recovery may replay up to \(VideoStallPolicy.recoverySeekToleranceBefore)s, \
+            and \(VideoStallPolicy.healthyProgressToRefundBudget)s of playback refunds the \
+            budget, so a failed recovery can pay for the next one.
+            """
+        )
+    }
+
+
+    /// **The automatic attempts are bounded, and then the person gets a
+    /// button.**
+    ///
+    /// The bound is the request-storm guarantee: a dead stream in the middle of
+    /// the screen may cost at most `maximumAutomaticRecoveries` rebuilds, not
+    /// one per poll for as long as someone leaves the app open.
+    @Test(.enabled(if: MediaServer.isAnswering))
+    func automaticRecoveryIsBoundedAndThenOffersAWayOut() async throws {
+        await MediaServer.reach("/a2-cut")
+        let coordinator = VideoPlaybackCoordinator()
+        coordinator.reportVisibility(id: "cut", fraction: 0.9, distanceFromCentre: 0)
+        let player = try #require(coordinator.player(for: "cut", url: MediaServer.url("/a2-cutoff.mp4")))
+        // **Somebody has to be asking for the pictures.** See `FrameWatcher`.
+        let watcher = FrameWatcher()
+
+        try await waitUntil("the recovery offer", timeout: 60, describe: {
+            "phase=\(coordinator.state(for: "cut").name) attempts=\(coordinator.automaticRecoveryAttempts(for: "cut"))"
+        }) {
+            watcher.look(at: player)
+            return coordinator.needsManualRecovery(for: "cut")
+        }
+
+        #expect(coordinator.state(for: "cut") == .stalled(offeringRecovery: true))
+        let spent = coordinator.automaticRecoveryAttempts(for: "cut")
+        print("MEASURED automatic rebuilds before the offer appeared: \(spent)")
+        #expect(spent >= 1, "nothing was tried automatically before asking a person")
+        #expect(
+            spent <= VideoStallPolicy.maximumAutomaticRecoveries,
+            "the bound was exceeded: \(spent) rebuilds"
+        )
+
+        // And it stops there. Left alone for several more poll intervals, the
+        // count must not creep.
+        for _ in 0..<40 {
+            try await Task.sleep(for: .milliseconds(100))
+            watcher.look(at: player)
+        }
+        let after = coordinator.automaticRecoveryAttempts(for: "cut")
+        print("MEASURED automatic rebuilds four seconds later: \(after)")
+        #expect(
+            after <= VideoStallPolicy.maximumAutomaticRecoveries,
+            "the budget refilled while the stream was still dead: \(after) rebuilds"
+        )
+    }
+
+    /// **A server that connects and then says nothing.**
+    ///
+    /// The failure with no error anywhere: the socket is open, the response
+    /// headers are valid, and no byte of media ever arrives. Nothing below
+    /// AVFoundation reports a problem, so this is indistinguishable from a slow
+    /// load right up until it is not.
+    ///
+    /// It stays `.opening` — the poster and its play badge are already on
+    /// screen and are the honest thing to show — and it is never called a
+    /// failure. What it gets is the way out.
+    @Test(.enabled(if: MediaServer.isAnswering))
+    func aServerThatSendsNothingIsStillOpeningAndThenOffersAWayOut() async throws {
+        let coordinator = VideoPlaybackCoordinator()
+        coordinator.reportVisibility(id: "void", fraction: 0.9, distanceFromCentre: 0)
+        _ = try #require(coordinator.player(for: "void", url: MediaServer.url("/a2-blackhole.mp4")))
+
+        // Well past the point where a stall is confirmed, this is still just a
+        // video that is opening: no picture, so no spinner over the poster.
+        try await Task.sleep(for: .seconds(VideoStallPolicy.feedbackDelay + 1.5))
+        #expect(!coordinator.hasPicture(for: "void"))
+        #expect(coordinator.state(for: "void") == .opening, "a slow first load is not an error")
+        #expect(
+            coordinator.automaticRecoveryAttempts(for: "void") == 0,
+            "a video that has never opened is left to AVFoundation's own retry"
+        )
+
+        try await waitUntil("the way out", timeout: 40, describe: {
+            "phase=\(coordinator.state(for: "void").name)"
+        }) { coordinator.needsManualRecovery(for: "void") }
+        #expect(coordinator.state(for: "void") == .stalled(offeringRecovery: true))
+        #expect(coordinator.failure(for: "void") == nil, "it has not failed; it has not arrived")
+    }
+
+    /// **An error response is a failure, and must not be dressed up as one.**
+    ///
+    /// The other end of the same axis: a 500 is unambiguous, AVFoundation says
+    /// `.failed`, and the row should get the existing full retry rather than a
+    /// spinner that will never stop.
+    @Test(.enabled(if: MediaServer.isAnswering))
+    func anErrorResponseIsAFailureAndNotAStall() async throws {
+        let coordinator = VideoPlaybackCoordinator()
+        coordinator.reportVisibility(id: "five", fraction: 0.9, distanceFromCentre: 0)
+        _ = coordinator.player(for: "five", url: MediaServer.url("/a2-error500.mp4"))
+
+        try await waitUntil("the failure", timeout: 30, describe: {
+            "phase=\(coordinator.state(for: "five").name)"
+        }) { coordinator.failure(for: "five") != nil }
+
+        #expect(coordinator.state(for: "five") == .failed("Video failed to load. Tap to retry."))
+        #expect(!coordinator.isBuffering(for: "five"), "a definite failure must not show as buffering")
+        #expect(coordinator.livePlayerCount == 0, "and it does not keep a decoder")
+    }
+
+    // MARK: - 7. The five silences that are not stalls
+
+    /// Every reason a video can be still without anything being wrong, and the
+    /// one reason that is. One test, because the claim is about the *set*:
+    /// exactly one of these may draw anything.
+    @Test(.enabled(if: MediaServer.isAnswering))
+    func onlyOneOfTheSixStatesMayShowBufferingFeedback() async throws {
+        let url = try await clip()
+
+        // 1 — first load. A player, no picture yet.
+        let opening = VideoPlaybackCoordinator()
+        opening.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 0)
+        _ = opening.player(for: "a", url: MediaServer.url("/a2-blackhole.mp4"))
+        #expect(opening.state(for: "a") == .opening)
+
+        // 2 — the person stopped it. Pointed at a stream that is dead on
+        //     purpose: however long it stays dead, a paused video is not a
+        //     stalled one.
+        await MediaServer.reach("/a2-cut")
+        let paused = VideoPlaybackCoordinator()
+        paused.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 0)
+        _ = paused.player(for: "a", url: MediaServer.url("/a2-cutoff.mp4"))
+        paused.setViewerPaused(true, id: "a")
+        try await Task.sleep(for: .seconds(VideoStallPolicy.feedbackDelay + 1))
+        #expect(paused.state(for: "a") == .pausedByViewer)
+        #expect(!paused.isBuffering(for: "a"), "a video the person stopped never reports trouble")
+        #expect(!paused.isActuallyPlaying(id: "a"))
+        // And starting it again puts it back under the ordinary rules.
+        paused.setViewerPaused(false, id: "a")
+        #expect(paused.playingID == "a")
+
+        // 3 — the app went to the background.
+        let backgrounded = VideoPlaybackCoordinator()
+        backgrounded.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 0)
+        _ = backgrounded.player(for: "a", url: MediaServer.url("/a2-cutoff.mp4"))
+        backgrounded.suspendAll(reason: "test")
+        try await Task.sleep(for: .seconds(VideoStallPolicy.feedbackDelay + 1))
+        #expect(backgrounded.state(for: "a") == .suspended)
+        #expect(!backgrounded.isBuffering(for: "a"), "a backgrounded app never reports trouble")
+
+        // 4 — on screen, healthy, and simply not the chosen one.
+        let second = VideoPlaybackCoordinator()
+        second.reportVisibility(id: "near", fraction: 0.95, distanceFromCentre: 0)
+        _ = second.player(for: "near", url: url)
+        second.reportVisibility(id: "far", fraction: 0.8, distanceFromCentre: 300)
+        _ = second.player(for: "far", url: url)
+        #expect(second.playingID == "near")
+        #expect(second.state(for: "far") == .waitingItsTurn)
+        #expect(!second.isBuffering(for: "far"))
+
+        // 5 — off screen entirely.
+        second.reportOffscreen(id: "far")
+        #expect(second.state(for: "far") == .idle)
+        #expect(!second.isBuffering(for: "far"))
+
+        // 6 — an explicit failure is its own thing, and is not buffering.
+        let broken = VideoPlaybackCoordinator()
+        broken.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 0)
+        _ = broken.player(for: "a", url: TestVideoFixture.missingFileURL())
+        try await waitUntil("the failure") { broken.failure(for: "a") != nil }
+        #expect(!broken.isBuffering(for: "a"))
+    }
+
+    /// **A clip that ran out is not a clip that stopped.**
+    ///
+    /// The third cause of a frozen clock, and the one that looks most like the
+    /// other two from outside: nothing downloaded, downloaded but not decoding,
+    /// and *the clip is simply over*. `t` alone matches all three.
+    ///
+    /// The clips in this feed are four seconds long, so a row crosses this seam
+    /// every four seconds for as long as anyone looks at it. A stall detector
+    /// that cannot tell the seam from a break would put a spinner on every
+    /// healthy video in the feed, four seconds after it started.
+    @Test func playingThroughTheEndAndLoopingIsNeverReportedAsAStall() async throws {
+        let url = try await clip()
+        let coordinator = VideoPlaybackCoordinator()
+        coordinator.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 0)
+        let player = try #require(coordinator.player(for: "a", url: url))
+        try await waitUntil("a picture") { coordinator.hasPicture(for: "a") }
+
+        // Long enough to cross the end at least once, sampled densely enough
+        // that a spinner lasting a single poll would still be caught.
+        var everBuffered: [String] = []
+        var wrapped = false
+        var previous = coordinator.currentTime(of: "a") ?? 0
+        let deadline = Date().addingTimeInterval(TestVideoFixture.duration + 4)
+        while Date() < deadline {
+            try await Task.sleep(for: .milliseconds(80))
+            let now = coordinator.currentTime(of: "a") ?? 0
+            if now + 1 < previous { wrapped = true }
+            previous = now
+            if coordinator.isBuffering(for: "a") {
+                everBuffered.append(String(format: "t=%.2f", now))
+            }
+        }
+
+        #expect(wrapped, "the clip never reached its end, so the seam was not exercised")
+        #expect(
+            everBuffered.isEmpty,
+            "a healthy looping clip was reported as stalled at \(everBuffered)"
+        )
+        #expect(coordinator.playingID == "a")
+        #expect(player.timeControlStatus == .playing)
+    }
+
+    /// And the state itself is reachable: a clip that runs out while it is not
+    /// the chosen one is parked, and says `ended` rather than `stalled`.
+    @Test func aClipThatRanOutWhileNotChosenReportsEndedRatherThanStalled() async throws {
+        let url = try await clip()
+        let coordinator = VideoPlaybackCoordinator()
+        coordinator.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 0)
+        let player = try #require(coordinator.player(for: "a", url: url))
+        try await waitUntil("a picture") { coordinator.hasPicture(for: "a") }
+
+        // It loses the centre, and then runs out where it stands. The winner is
+        // whichever eligible video is *closest to the middle* — not whichever
+        // has the larger visible fraction — so "a" has to be moved away for "b"
+        // to take over. Two rows both reporting distance 0 is a tie the
+        // coordinator is entitled to break either way.
+        coordinator.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 400)
+        coordinator.reportVisibility(id: "b", fraction: 0.95, distanceFromCentre: 0)
+        _ = coordinator.player(for: "b", url: url)
+        #expect(coordinator.playingID == "b")
+
+        await player.seek(to: CMTime(seconds: TestVideoFixture.duration - 0.2, preferredTimescale: 600))
+        player.play()
+        try await waitUntil("the clip to run out", timeout: 15, describe: {
+            "phase=\(coordinator.state(for: "a").name)"
+        }) { coordinator.state(for: "a") == .ended }
+        #expect(!coordinator.isBuffering(for: "a"))
+    }
 }
 
 // MARK: - A yes/no a notification can raise
@@ -1073,5 +1506,115 @@ struct Colour: CustomStringConvertible {
 
     var description: String {
         String(format: "(r %.2f g %.2f b %.2f)", r, g, b)
+    }
+}
+
+// MARK: - The controllable media server
+
+/// The same deterministic server the UI tests use, reached from the unit tests.
+///
+/// Why these tests need a server at all, when everything else here plays a
+/// local file: a file is either there or it is not. Every failure this section
+/// is about happens *while bytes are arriving* — half of them delivered and
+/// then nothing, a socket that opens and stays silent, a 500 — and none of
+/// those shapes can be made out of a `file://` URL. The server can also be
+/// told to mend itself, which is the only way "it recovers when the network
+/// comes back" can be a test rather than a hope.
+enum MediaServer {
+    static let host = "http://127.0.0.1:8123"
+
+    static func url(_ path: String) -> URL {
+        // Force-unwrapped against a literal: if this is nil the test file does
+        // not compile a meaningful thing anyway.
+        URL(string: host + path)!
+    }
+
+    /// Synchronous on purpose. `.enabled(if:)` is evaluated while tests are
+    /// being collected, which is not an async context; and a suite that fails
+    /// red because nobody started a server is the fastest way to teach everyone
+    /// to ignore it.
+    nonisolated static let isAnswering: Bool = {
+        var request = URLRequest(url: URL(string: host + "/a2-long.mp4")!)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 3
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        let done = DispatchSemaphore(value: 0)
+        var ok = false
+        URLSession.shared.dataTask(with: request) { _, response, _ in
+            ok = (response as? HTTPURLResponse)?.statusCode == 200
+            done.signal()
+        }.resume()
+        _ = done.wait(timeout: .now() + 6)
+        if !ok {
+            print("""
+                SKIPPING the stream-break tests: nothing on \(host), or no \
+                a2-long.mp4 there. Start it with ios-native/scripts/a2-test-media.sh
+                """)
+        }
+        return ok
+    }()
+
+    /// Flips a switch on the server and **waits for the answer**.
+    ///
+    /// Awaited rather than fired and forgotten: a test that mends the stream
+    /// and immediately asserts recovery is racing the server, and the version
+    /// of that race that passes on a quiet machine is the one that fails in a
+    /// full run.
+    @discardableResult
+    static func reach(_ path: String) async -> Bool {
+        var request = URLRequest(url: url(path))
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.timeoutInterval = 5
+        return (try? await URLSession.shared.data(for: request)) != nil
+    }
+}
+
+// MARK: - Did the picture actually change?
+
+/// Counts decoded frames, across an item being replaced underneath it.
+///
+/// Four things get conflated whenever a video "does not work", and three of
+/// them can be true while the screen is frozen: the bytes arrived, the item
+/// opened, the clock advanced, and **a new picture was decoded**. Only this
+/// last one is what a person sees, and `playingID` cannot speak to it.
+///
+/// Re-attaching per item matters: recovering from a stall hands the player a
+/// new `AVPlayerItem`, and an output added to the old one simply stops
+/// producing buffers — which would read exactly like "the video never came
+/// back" when in fact it had.
+///
+/// **And attaching one is not optional in a stall test.** Measured, and it cost
+/// two red tests before it was understood: an `AVPlayer` with nothing pulling
+/// frames out of it — no layer, no output — does not decode, so it has no
+/// reason to wait for bytes it cannot use. Pointed at a stream that dies at
+/// 4.9s of 16, such a player runs its clock all the way to 16.0 and posts
+/// `didPlayToEndTime`, without a single stall. Both tests that lacked a render
+/// target therefore reported `phase=playing` and failed, while the two that had
+/// one caught the stall in under a second. The app always has an
+/// `AVPlayerLayer`, so the app always has the demand; a test has to supply it
+/// deliberately or it is measuring a player nobody is watching.
+@MainActor
+final class FrameWatcher {
+    private var outputs: [ObjectIdentifier: AVPlayerItemVideoOutput] = [:]
+    private(set) var newFrames = 0
+    private(set) var colours: [Colour] = []
+
+    func look(at player: AVPlayer) {
+        guard let item = player.currentItem else { return }
+        let key = ObjectIdentifier(item)
+        guard let output = outputs[key] else {
+            let fresh = AVPlayerItemVideoOutput(pixelBufferAttributes: [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+            ])
+            item.add(fresh)
+            outputs[key] = fresh
+            return   // nothing is decoded into it yet
+        }
+        let time = player.currentTime()
+        guard output.hasNewPixelBuffer(forItemTime: time),
+              let buffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil)
+        else { return }
+        newFrames += 1
+        colours.append(Colour(averageOf: buffer))
     }
 }

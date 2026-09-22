@@ -120,6 +120,18 @@ final class VideoPlaybackUITests: XCTestCase {
             .map { ($0, $0.value as? String ?? "") }
     }
 
+    /// `rebuilds=N` out of the probe string, or nil if it is not there.
+    ///
+    /// nil rather than 0 on purpose: "the field is missing" and "no recovery
+    /// has happened" are different, and treating the first as the second would
+    /// let this comparison pass by accident on a build whose probe never
+    /// reported the number.
+    static func rebuilds(in state: String) -> Int? {
+        guard let range = state.range(of: "rebuilds=") else { return nil }
+        let tail = state[range.upperBound...].prefix { $0.isNumber }
+        return Int(tail)
+    }
+
     private func playingSurface(_ app: XCUIApplication) -> (element: XCUIElement, state: String)? {
         surfaces(app).first { $0.state.contains("playing=true") }
     }
@@ -482,6 +494,150 @@ final class VideoPlaybackUITests: XCTestCase {
         Self.reachMediaServer(path: "/a2-break")
     }
 
+    // MARK: - A stream that breaks while it is playing
+
+    /// **The defect, in the real interface.**
+    ///
+    /// `/a2-cutoff.mp4` delivers the index and the first third of the media
+    /// data at a little over real time and then stops sending — without
+    /// closing the socket, which is what keeps it a *stall* rather than a load
+    /// error. The row therefore plays for a few seconds and then freezes on
+    /// the frame it last decoded, with `AVPlayerItem` still `.readyToPlay`.
+    /// Before this work that produced nothing at all: no message, no control,
+    /// and a `state=picture playing=true` reading that a test would call
+    /// healthy.
+    ///
+    /// Three separate claims, in order, because each can hold while the next
+    /// fails: the row *was* playing, the picture then *stopped changing*, and
+    /// the interface *says so and offers a way out*.
+    func testAStreamThatBreaksMidPlaybackSaysSoAndOffersAWayOut() throws {
+        Self.reachMediaServer(path: "/a2-cut")
+        let app = launch(videoPath: "/a2-cutoff.mp4")
+
+        // 1 — it really played.
+        let playing = scrollToAPlayingVideo(app)
+        XCTAssertTrue(playing.contains("playing=true"), "nothing ever played: \(playing)")
+        let moving = waitForState(app, contains: "advanced=true", timeout: 30)
+        XCTAssertTrue(moving.contains("advanced=true"), "the clock never moved: \(moving)")
+
+        // 2 — and then the bytes ran out. Read from the row's own state rather
+        //     than inferred from a frozen screenshot: "it looks the same" and
+        //     "it is stalled" are different claims and this test needs both.
+        let stalled = waitForState(app, contains: "phase=stalled", timeout: 40)
+        XCTAssertTrue(
+            stalled.contains("phase=stalled"),
+            "the stream broke and the row never noticed: \(stalled)"
+        )
+        XCTAssertTrue(
+            stalled.contains("state=picture"),
+            "the frame it had decoded should still be on the glass: \(stalled)"
+        )
+
+        // 3 — the picture really is frozen. Two samples far enough apart that a
+        //     playing clip would be a different colour in the second one: the
+        //     fixture changes colour every second.
+        // 4 — and the person is given something to press. This is the whole
+        //     point: the old behaviour was a frozen frame with no control on it
+        //     at all, which cannot be escaped without scrolling away.
+        let recover = app.buttons["video.stalled.retry"].firstMatch
+        XCTAssertTrue(
+            recover.waitForExistence(timeout: 30),
+            "a stream that has been dead for \(VideoStallUI.recoveryOfferDelay)s offered nothing to press"
+        )
+
+        // 3 — the picture really is frozen, asked **after** the button arrived.
+        //
+        // It used to be asked right after the row first said `phase=stalled`,
+        // and it failed there for a reason that is not a frozen picture: an
+        // automatic recovery seeks back up to
+        // `VideoStallPolicy.recoverySeekToleranceBefore` seconds and replays
+        // them, so the glass legitimately changes colour while the row is
+        // still stalled. Guarding on the rebuild count was not enough either —
+        // a rebuild that landed just *before* the first sample replays across
+        // both of them without the count moving, which is what
+        // `across rebuilds=1` in the failure output meant.
+        //
+        // Once the button is up, the automatic budget is spent by definition:
+        // that is what `recoveryOfferDelay` and the bound together mean. So
+        // nothing can rebuild, nothing can seek, and a picture that changes
+        // now is a picture that changed on its own.
+        if let surface = playingSurface(app),
+           let first = Self.centreColour(of: surface.element, in: app) {
+            let spent = Self.rebuilds(in: surface.state) ?? -1
+            Thread.sleep(forTimeInterval: 1.4)
+            if let second = Self.centreColour(of: surface.element, in: app) {
+                print("MEASURED frozen frame after the offer: \(first) then \(second) "
+                      + "(rebuilds spent=\(spent))")
+                XCTAssertTrue(
+                    first.isNear(second, tolerance: 0.15),
+                    "the picture changed after automatic recovery was spent: \(first) then \(second)"
+                )
+            }
+        }
+
+        // Still the feed. A recovery control that navigated somewhere would
+        // satisfy every reading above and be a worse bug than the one it fixes.
+        XCTAssertTrue(app.navigationBars["PetNote"].exists, "the stall took the feed away")
+
+        // 5 — the network comes back and the tap gets playback going again.
+        Self.reachMediaServer(path: "/a2-mend")
+        recover.tap()
+        let recovered = waitForState(app, contains: "phase=playing", timeout: 40)
+        print("MEASURED state after recovery: \(recovered)")
+        XCTAssertTrue(
+            recovered.contains("phase=playing"),
+            "the way out did not lead anywhere: \(recovered)"
+        )
+        XCTAssertFalse(
+            app.buttons["video.stalled.retry"].firstMatch.exists,
+            "the recovery control outstayed the problem"
+        )
+
+        // §5D.4 survives the whole round trip: recovery rebuilds an item on the
+        // same player, so the mute flag is never in a position to be lost — and
+        // the speaker is the only thing that can prove it from out here.
+        let mute = app.buttons["video.mute"].firstMatch
+        if mute.waitForExistence(timeout: 10) {
+            XCTAssertEqual(
+                mute.label, "Unmute video",
+                "recovering from a stall turned the sound on"
+            )
+        }
+        Self.reachMediaServer(path: "/a2-cut")
+    }
+
+    /// **A video the person is not being shown must never complain.**
+    ///
+    /// Same dead stream, but the app goes to the background. Coming back is
+    /// deliberately quiet (§5D.6), so the row is silent — and a silent row that
+    /// has been told to be silent may not grow a spinner or a retry button,
+    /// however dead the network underneath it is.
+    func testABackgroundedAppNeverShowsAStalledVideoAnyTrouble() {
+        Self.reachMediaServer(path: "/a2-cut")
+        let app = launch(videoPath: "/a2-cutoff.mp4")
+        let playing = scrollToAPlayingVideo(app)
+        XCTAssertTrue(playing.contains("playing=true"), "nothing ever played: \(playing)")
+
+        XCUIDevice.shared.press(.home)
+        Thread.sleep(forTimeInterval: 2)
+        app.activate()
+        XCTAssertTrue(app.navigationBars["PetNote"].waitForExistence(timeout: 20))
+
+        // Long past every threshold, and nothing may have appeared.
+        Thread.sleep(forTimeInterval: VideoStallUI.recoveryOfferDelay + 3)
+        let readings = surfaces(app).map(\.state)
+        print("MEASURED states after returning from the background: \(readings)")
+        XCTAssertFalse(
+            readings.contains(where: { $0.contains("phase=stalled") }),
+            "a backgrounded app reported a stall: \(readings)"
+        )
+        XCTAssertFalse(
+            app.buttons["video.stalled.retry"].firstMatch.exists,
+            "a video nobody asked to play offered a recovery button"
+        )
+        Self.reachMediaServer(path: "/a2-cut")
+    }
+
     // MARK: - Thirty videos, in a real list
 
     /// The ceiling and the accumulation question, asked of the real list.
@@ -527,6 +683,27 @@ final class VideoPlaybackUITests: XCTestCase {
             "only \(distinctPlayed.count) videos ever played, so thirty was never exercised"
         )
         XCTAssertLessThanOrEqual(peak, 2, "player count exceeded the ceiling during a real scroll")
+
+        // Still on the feed, and it never left.
+        //
+        // This test was cited as the evidence that scrolling past videos does
+        // not trigger navigation, and it asserted nothing of the kind — the
+        // name and the two-minute runtime made it look like it did. Every
+        // reading above is taken on the feed, so a stray push would have made
+        // the probe unreadable rather than made this fail; the check has to be
+        // explicit.
+        XCTAssertTrue(
+            app.navigationBars["PetNote"].exists,
+            "scrolling navigated away from the feed"
+        )
+        XCTAssertFalse(
+            app.navigationBars["Post"].exists,
+            "a scroll opened a post"
+        )
+        XCTAssertFalse(
+            app.textFields["composer.field"].exists,
+            "a scroll landed on the detail screen"
+        )
         XCTAssertLessThanOrEqual(
             Self.players(in: probe(app)) ?? 99, 2,
             "players left over after the scroll settled"
@@ -557,6 +734,16 @@ final class VideoPlaybackUITests: XCTestCase {
         print("MEASURED readings: \(readings.prefix(4).joined(separator: " | "))")
         XCTAssertFalse(readings.isEmpty, "the probe was never readable")
         XCTAssertLessThanOrEqual(peak, 2)
+
+        // A fast fling is the likeliest way to land a stray tap on a card, and
+        // this test's name only ever promised the ceiling. Say the other half
+        // out loud instead of leaving it to the reader: an accidental push
+        // would make the probe unreadable, which fails above as "never
+        // readable" — a confusing way to learn that navigation broke.
+        XCTAssertTrue(app.navigationBars["PetNote"].exists,
+                      "flinging navigated away from the feed")
+        XCTAssertFalse(app.navigationBars["Post"].exists,
+                       "a fling opened a post")
     }
 
     // MARK: - Detail, and back
@@ -846,4 +1033,16 @@ struct Sample: CustomStringConvertible {
     }
 
     var description: String { String(format: "(r %.2f g %.2f b %.2f)", r, g, b) }
+}
+
+/// The one wait from `VideoStallPolicy` that a UI test needs to know.
+///
+/// Restated rather than imported: a UI test bundle does not link the app, so
+/// `VideoStallPolicy` is not reachable from here. Kept to the single number the
+/// tests actually wait on, with the source named, so the duplication is one
+/// obvious line rather than a second scattered set of timings.
+enum VideoStallUI {
+    /// Mirrors `VideoStallPolicy.recoveryOfferDelay` in
+    /// ios-native/Core/Media/VideoPlaybackCoordinator.swift.
+    static let recoveryOfferDelay: TimeInterval = 10
 }

@@ -17,7 +17,10 @@ PORT="${1:-8123}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 MEDIA="${TMPDIR:-/tmp}/petnote-a2-media"
 mkdir -p "$MEDIA"
-if [ ! -f "$MEDIA/a2-clip.mp4" ]; then
+# Both clips, or neither. `a2-long.mp4` arrived later than `a2-clip.mp4`, and a
+# check for only the first one would leave anyone with a warm cache serving a
+# 404 for the long clip and reading it as a playback defect.
+if [ ! -f "$MEDIA/a2-clip.mp4" ] || [ ! -f "$MEDIA/a2-long.mp4" ]; then
   swift "$HERE/a2-make-test-media.swift" "$MEDIA"
 fi
 exec python3 "$HERE/a2-media-server.py" "$MEDIA" "$PORT"
