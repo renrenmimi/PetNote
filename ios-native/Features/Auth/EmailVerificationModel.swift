@@ -80,7 +80,9 @@ final class EmailVerificationModel {
 
     /// Picks up anything sign-up left behind, once.
     func adoptNotice(from setup: AccountSetupService) {
-        guard let notice = setup.consumeNotice() else { return }
+        guard let uid = auth.currentAccount?.uid,
+              let notice = setup.consumeNotice(for: uid)
+        else { return }
         setupNotice = notice.message
     }
 

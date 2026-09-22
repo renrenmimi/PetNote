@@ -130,7 +130,12 @@ final class FakeAccountAuth: AccountAuthenticating, @unchecked Sendable {
     func createAccount(email: String, password: String) async throws(AuthError) -> String {
         createdAccounts.append((email, password))
         switch createResult {
-        case .success(let uid): return uid
+        case .success(let uid):
+            // Firebase signs the new account in as it creates it. This fake
+            // used to leave `currentAccount` on whoever was there before, which
+            // made "is this about the account now signed in?" untestable.
+            account = AccountSnapshot(uid: uid, email: email, isEmailVerified: false)
+            return uid
         case .failure(let error): throw error
         }
     }

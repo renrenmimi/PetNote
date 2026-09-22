@@ -65,6 +65,11 @@ final class AccountSetupService {
     }
 
     private(set) var pendingNotice: Notice?
+    /// Whose sign-up the notice is about. The service is one per process and
+    /// outlives any account, so without this the next person to sign in on the
+    /// device would be told that "we could not send the verification email to"
+    /// somebody else's address.
+    private var noticeOwner: String?
 
     /// The finishing work, held so it cannot be cancelled by the screen that
     /// started it going away.
@@ -127,12 +132,15 @@ final class AccountSetupService {
         }
 
         // The verification email is the one the person has to act on, so it
-        // wins when both failed. An unfinished profile repairs itself; an
-        // email that never went out does not.
+        // wins when both failed. An unfinished profile is repaired the next
+        // time the signed-in tree appears (`ProfileRepair`); an email that
+        // never went out is not.
         if !verificationSent {
             pendingNotice = .verificationEmailNotSent(email: email)
+            noticeOwner = uid
         } else if !profileCreated {
             pendingNotice = .profileSetupIncomplete
+            noticeOwner = uid
         }
 
         return Outcome(uid: uid, profileCreated: profileCreated, verificationSent: verificationSent)
@@ -146,10 +154,13 @@ final class AccountSetupService {
         return await finishing.value
     }
 
-    /// Hands the notice over once. Read by the banner in the signed-in tree.
-    func consumeNotice() -> Notice? {
-        defer { pendingNotice = nil }
-        return pendingNotice
+    /// Hands the notice over once, and only to the account it is about. Read
+    /// by the banner in the signed-in tree.
+    func consumeNotice(for uid: String) -> Notice? {
+        guard noticeOwner == uid, let notice = pendingNotice else { return nil }
+        pendingNotice = nil
+        noticeOwner = nil
+        return notice
     }
 }
 

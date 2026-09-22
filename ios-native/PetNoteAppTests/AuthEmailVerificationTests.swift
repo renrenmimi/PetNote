@@ -181,6 +181,27 @@ struct AuthEmailVerificationTests {
         #expect(second.setupNotice == nil)
     }
 
+    /// Sign-up leaves the notice on a service that outlives the account. If
+    /// somebody else is signed in by the time a banner appears, it is not
+    /// theirs to read.
+    @Test func aNoticeFromAnotherAccountsSignUpIsNotShown() async {
+        let auth = unverified()
+        auth.verificationSendError = .networkUnavailable
+        let setup = AccountSetupService(auth: auth, users: FakeUserRepository())
+        _ = try? await setup.createAccount(email: "someone@example.com", password: "Passw0rd!")
+        _ = await setup.awaitSetup()
+
+        auth.account = AccountSnapshot(uid: "u2", email: "other@example.com", isEmailVerified: false)
+        let other = EmailVerificationModel(auth: auth)
+        other.adoptNotice(from: setup)
+        #expect(other.setupNotice == nil)
+
+        auth.account = AccountSnapshot(uid: "new-uid", email: "someone@example.com", isEmailVerified: false)
+        let owner = EmailVerificationModel(auth: auth)
+        owner.adoptNotice(from: setup)
+        #expect(owner.setupNotice?.contains("someone@example.com") == true)
+    }
+
     /// A resend answers whatever the previous attempt said, so the carried
     /// notice must not survive it and go on accusing a send that has since
     /// worked.
