@@ -4,7 +4,7 @@
 审查目录里的 `evidence/ios-native/acceptance-status.md` 是**第一阶段验收矩阵**（按
 `SWIFT-CLIENT-ACCEPTANCE.md` 条目编号记证据），不是状态表；功能迁移进度只记在这里。
 
-**更新** 2026-09-22 · 分支 `feature/ios-native-prototype` · PR [#204](https://github.com/renrenmimi/PetNote/pull/204)（Draft，不合并）
+**更新** 2026-09-22（下午）· 分支 `feature/ios-native-prototype` · PR [#204](https://github.com/renrenmimi/PetNote/pull/204)（Draft，不合并）
 
 ---
 
@@ -18,8 +18,8 @@
 ④ 与真实测试后端联调通过（`petnote-devtest`）· ⑤ 真机验证通过（带版本）· ⑥ 外部阻塞或明确延期
 
 「界面已接入」**不是一个等级**：它只说明入口存在、页面能被点到，不说明任何流程被验证过。
-上传一律是**本地替身**（`a2-media-server.py`），不是真实 Cloudinary；emulator 里翻转验证位
-**不是**真实邮件往返。这两条在任何一级都不会被写成已通过。
+UI 测试里的上传一律走**本地替身**（`ios-native/scripts/upload-standin.py`，仅 Emulator 构建可切换），
+不是真实 Cloudinary；emulator 里翻转验证位**不是**真实邮件往返。这两条在任何一级都不会被写成已通过。
 
 ### 账号
 
@@ -29,8 +29,8 @@
 | 冷启动恢复会话 | ③ | `testColdStartRestoresTheSessionWithoutShowingSignIn` | — |
 | 退出登录；换账号无残留 | ③ | `testSignOutReturnsToSignIn`、`testTheNextAccountInheritsNothingFromTheLastOne` | 新 Tab 壳下的残留未重跑 |
 | 会话被吊销 | ③ | `testARevokedSessionEndsTheSessionAndGivesTheScreenBack` | — |
-| 注册（显示名唯一） | ② | `AuthSignUpTests`、`UserAccountTests` · `8c6073b` | 登录页入口在；**注册 UI 流程未验** |
-| 邮箱验证状态 | ② | `AuthEmailVerificationTests` · 横幅在本批接入首页 | UI 未验；真实邮件往返 ⑥（emulator 不发信） |
+| 注册（显示名唯一） | ③ | `JourneyUITests`（emulator，真实界面操作）；`AuthSignUpTests`、`UserAccountTests` | 名字并发抢占只有服务端事务保证，客户端预检不算 |
+| 邮箱验证状态 | ③ | `JourneyUITests`：未验证账号出现横幅，服务端置为已验证后点「I've verified」横幅消失 | **是在 emulator 上翻转状态，不是真实邮件往返**；真实邮件 ⑥ |
 | 忘记密码（链接方式） | ② | `AuthPasswordResetTests` | UI 未验；真实邮件 ⑥。验证码重置**有意不接**（生产未配置） |
 | Google 登录 | ① → ⑥ | 旧版 `contexts/AuthContext.tsx` 使用 | 需要测试项目的 iOS OAuth 客户端，**待授权** |
 
@@ -38,10 +38,10 @@
 
 | 功能 | 等级 | 证据 / 环境 | 未验证、阻塞 |
 | --- | --- | --- | --- |
-| 首次引导 | ② | `ProfileOnboardingTests` · 本批接入（`onboardingComplete` 为假时全屏出现） | UI 未验 |
-| 个人主页 | ② | `ProfileOverviewTests` · 本批成为「我的」Tab | UI 未验；旧版的「已收藏」「签到」两个分栏 ① |
-| 编辑资料 / 头像 | ② | `ProfileEditTests` · `8c6073b` | UI 未验；头像上传只到替身 |
-| 我的宠物列表 | ② | 本批新增 `App/MyPetsSection.swift` | 无单元测试、UI 未验 |
+| 首次引导 | ③ | `JourneyUITests`：新账号出现引导，改名后服务端 `displayName` 与 `onboardingComplete` 均已写入 | 「跳过」是否该写入名字仍是产品决定 |
+| 个人主页 | ③ | `JourneyUITests`（经「我的」Tab） | 旧版的「已收藏」「签到」两个分栏 ① |
+| 编辑资料 / 头像 | ③（简介）/ ②（头像） | `JourneyUITests`：改简介，页面与服务端一致 | 头像换图 UI 未验 |
+| 我的宠物列表 | ③ | `JourneyUITests`（Add a pet 入口）。旅程测试发现容器标识符覆盖了按钮的标识符，已修 | 多只宠物、刷新失败的界面状态未验 |
 | 设置页（通知偏好、深色、语言、位置、改密码） | ① | 旧版 `Settings.tsx` | 第 5 批 |
 | 中文界面 | ① | 旧版支持 en / zh（默认 en）；**Swift 全部是英文硬编码** | 横跨所有页面，未排批次 |
 | 注销账号 | ① | `Callables.deleteUserAccount` 已登记，无调用 | 第 5 批；共享宠物的处理照服务端规则 |
@@ -54,11 +54,11 @@
 
 | 功能 | 等级 | 证据 / 环境 | 未验证、阻塞 |
 | --- | --- | --- | --- |
-| 创建 / 编辑宠物 | ② | `PetEditorViewModelTests`、`PetCallableErrorTests` · `7a3ed35` · 本批接入「我的宠物 → Add a pet」 | UI 未验；头像只到替身 |
-| 宠物主页 | ② | `PetProfileViewModelTests` · 本批可从我的宠物、链接 `/pet/<id>` 进入 | UI 未验 |
+| 创建 / 编辑宠物 | ③（创建）/ ②（编辑） | `JourneyUITests`：建宠物后服务端有这只宠物，创建者在它的 family 里 | 编辑宠物、宠物头像 UI 未验 |
+| 宠物主页 | ③ | `JourneyUITests`：保存后打开新宠物的主页 | 帖子/签到分栏 UI 未验 |
 | 删除宠物（最后一位主人） | ② | `PetOwnershipTests` | UI 未验；多主人时由服务端拒绝，客户端只按 `isPrimary` 决定显示 |
-| 关注 / 取消关注、关注列表 | ① | 第 3 批进行中（独立副本，未并入） | — |
-| 共同主人：邀请、兑换、撤销、移除、退出、转让 | ① | 第 3 批进行中 | 不改任何授权规则 |
+| 关注 / 取消关注、关注列表 | ② | `SocialFollowTests`、`SocialListsTests`、`SocialCallableErrorTests`；界面已接入宠物页和「我的」 | UI 未验 |
+| 共同主人：邀请、兑换、撤销、移除、退出、转让 | ② | `FamilyInviteTests`、`FamilyManageTests`、`FamilyCallableErrorTests`；界面已接入：宠物页「Owners & invites」、「我的 → Join a pet's family」 | UI 未验；两个账号互相邀请的旅程还没写；授权规则没改 |
 | 生日庆祝、宠物聚光 | ① | 旧版 `BirthdayCelebration` / `PetSpotlight` | 未排批次 |
 
 ### 内容
@@ -72,14 +72,14 @@
 | 点赞 | ⑤ @`4ba1c57` | 真机 `Like/0 → Unlike/1`，云端 `counted=True` | `LikeUITests` 本轮出现新失败，原因未定 |
 | 评论（写） | ⑤ @`4ba1c57` | `CommentUITests`；真机中文输入 | — |
 | 删除自己的评论 | ① | `Callables.deleteComment` 已登记，无界面 | 未排批次 |
-| 收藏 | ② | `PostWriteManageTests` · 本批放进详情页菜单 | UI 未验；「已收藏」列表 ① |
-| 发帖（图片 / 视频、选宠物、标签） | ② | `ComposePublishTests`、`ComposeDraftTests`、`UploadPreparationTests` · `7535cf8` · 本批接入中间 Tab | UI 未验；上传只到替身；**真实 Cloudinary 待授权** |
+| 收藏 | ② | `PostWriteManageTests` · 详情页菜单 | UI 未验；「已收藏」列表 ① |
+| 发帖（图片 / 视频、选宠物、标签） | ③（图片，**上传替身**） | `JourneyUITests`：系统相册选图 → 带签名的 multipart 上传到本地替身 → `createPostCallable`（emulator 里 URL 校验真实执行）→ Feed 第一条就是它；服务端的 `authorId`、`petId` 和媒体 URL 都核对过 | **不是**真实 Cloudinary（替身不校验签名，返回的 URL 在 CDN 上不存在，所以图片不显示）；视频、标签的 UI 未验；**真实 Cloudinary 待授权** |
 | 发帖草稿 | ② | `ComposeDraftTests` | UI 未验 |
 | 发帖滤镜 | ① | 旧版 `ImageFilter.tsx` | 未排批次 |
-| 编辑 / 删除 / 置顶自己的帖子 | ② | `PostWriteManageTests` · 本批放进详情页菜单 | UI 未验；删除后 Feed 同步只有模型测试 |
+| 编辑 / 删除 / 置顶自己的帖子 | ③（编辑、删除）/ ②（置顶） | `JourneyUITests`：编辑后详情页不重进就显示新文字，服务端已更新；删除后回到 Feed、帖子消失、服务端文档不存在 | 置顶 UI 未验；删除失败的提示 UI 未验 |
 | 分享 | ① | 旧版 `ShareMenu` / `ShareCard` | 未排批次 |
-| 搜索、话题、发现 | ① | 第 3 批进行中 | — |
-| 他人主页 | ① | 第 3 批进行中 | — |
+| 搜索、话题、发现 | ② | `SearchModelTests`、`SearchExploreTests`；界面已接入首页顶栏搜索 | UI 未验 |
+| 他人主页 | ② | `UserProfileModelTests`；从搜索、粉丝列表进入，链接 `/profile/<uid>` | UI 未验 |
 | 通知列表、全部已读 | ① | 旧版 `Notifications.tsx` | 第 5 批；推送旧版没有 |
 
 ### 地点与聚会（第 4 批，均 ①）
@@ -138,6 +138,8 @@
 ---
 
 ## 未提交改动（HEAD = `f947da0`）
+
+> **已过期（2026-09-22）**：下面列的改动早已提交（`f947da0` 之后的提交），当前分支顶端和未提交内容以 `git log` / `git status` 为准。保留原文作为当时的记录。
 
 上一批 8 个改动文件已全部提交，落成 `0e81c59`…`f947da0` 六个 commit。
 当前工作区是**第二批，三个 agent 正在并行写**，所以这份清单随时在动：

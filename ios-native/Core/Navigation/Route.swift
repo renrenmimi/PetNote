@@ -16,6 +16,20 @@ enum Route: Hashable, Sendable {
     /// you go back through — and because a route is also a link target, and
     /// nothing should be able to open an editor from a URL.
     case pet(petID: String)
+    /// Somebody's profile — the web client's `/profile/:userId`.
+    case user(userID: String)
+    /// Search and discovery, optionally opened on one tag.
+    case search(tag: String?)
+    /// Who follows a pet. The name is carried for the title, not looked up.
+    case petFollowers(petID: String, petName: String)
+    /// The pets the signed-in person follows.
+    case followingPets
+    /// A pet's owners and invitations. Management, so — like the editors — it
+    /// is reached from the pet's page and never from a link.
+    case family(petID: String)
+    /// Joining a pet's family with an invitation code. An action, not a place,
+    /// so it is not a link target either.
+    case joinFamily
 }
 
 /// Turns an incoming link into a `Route`.
@@ -83,6 +97,16 @@ enum DeepLink {
             // Firestore read, and it is validated after percent-decoding.
             guard decoded.count == 2, let id = validDocumentID(decoded[1]) else { return .feed }
             return .pet(petID: id)
+        case "profile":
+            // `/profile/edit` is not a person. The web router would render a
+            // profile page for a user called "edit"; here it lands on the feed,
+            // so no link can look like it opens an editor.
+            guard decoded.count == 2, decoded[1] != "edit",
+                  let id = validDocumentID(decoded[1]) else { return .feed }
+            return .user(userID: id)
+        case "search":
+            guard decoded.count == 1 else { return .feed }
+            return .search(tag: nil)
         case "feed", nil, "":
             return .feed
         default:

@@ -35,6 +35,19 @@ struct DeepLinkTests {
         #expect(DeepLink.route(forPath: "/pet/pet-7") == .pet(petID: "pet-7"))
     }
 
+    @Test func aProfileLinkOpensThatPerson() {
+        #expect(DeepLink.route(forPath: "/profile/user-9") == .user(userID: "user-9"))
+        #expect(DeepLink.route(for: URL(string: "https://petnote.app/profile/user-9")!) == .user(userID: "user-9"))
+        #expect(DeepLink.route(forPath: "/profile/..%2Fadmin") == .feed)
+        #expect(DeepLink.route(forPath: "/profile") == .feed)
+        #expect(DeepLink.route(forPath: "/profile/a/b") == .feed)
+    }
+
+    @Test func theSearchLinkOpensSearch() {
+        #expect(DeepLink.route(forPath: "/search") == .search(tag: nil))
+        #expect(DeepLink.route(forPath: "/search/extra") == .feed)
+    }
+
     /// The pet id goes through the same validation as a post id — after
     /// decoding — because it reaches the same kind of Firestore read. A new
     /// route is the easiest place for that check to be forgotten.
@@ -56,7 +69,10 @@ struct DeepLinkTests {
     @Test func noLinkOpensAnEditor() {
         func isAPlaceToLook(_ route: Route) -> Bool {
             switch route {
-            case .feed, .postDetail, .pet: return true
+            case .feed, .postDetail, .pet, .user, .search, .petFollowers, .followingPets: return true
+            // Management, not a place to look: the one case a link must never
+            // produce, and the reason this switch has no `default`.
+            case .family, .joinFamily: return false
             }
         }
         for path in ["/pet/abc/edit", "/create", "/post/abc/edit", "/profile/edit", "/compose"] {

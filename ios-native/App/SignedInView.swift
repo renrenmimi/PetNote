@@ -202,6 +202,20 @@ struct SignedInView: View {
                         }
                     }
                     ToolbarItem(placement: .topBarTrailing) {
+                        // The web client's navbar search, one tap from the
+                        // feed. Pushed on this stack so back returns to the
+                        // same place in the list.
+                        Button {
+                            path.append(.search(tag: nil))
+                        } label: {
+                            Image(systemName: "magnifyingglass")
+                                .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget)
+                                .contentShape(.rect)
+                        }
+                        .accessibilityLabel("Search")
+                        .accessibilityIdentifier("feed.search")
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
                         // The bar holds the *entry*, not the action: ending a
                         // session is a row in a menu we lay out ourselves,
                         // where its hit region can be stated as a number.
@@ -260,13 +274,19 @@ struct SignedInView: View {
                 users: repositories.users,
                 uploader: repositories.avatars,
                 accessory: AnyView(
-                    MyPetsSection(
-                        uid: user.uid,
-                        source: repositories.petChoices,
-                        reloadToken: petsChanged,
-                        onOpenPet: { profilePath.append(.pet(petID: $0)) },
-                        onAddPet: { editor = .createPet }
-                    )
+                    VStack(alignment: .leading, spacing: Spacing.xl) {
+                        MyPetsSection(
+                            uid: user.uid,
+                            source: repositories.petChoices,
+                            reloadToken: petsChanged,
+                            onOpenPet: { profilePath.append(.pet(petID: $0)) },
+                            onAddPet: { editor = .createPet }
+                        )
+                        ProfileLinks(
+                            onJoinFamily: { profilePath.append(.joinFamily) },
+                            onFollowing: { profilePath.append(.followingPets) }
+                        )
+                    }
                 )
             )
             .navigationDestination(for: Route.self) { route in
@@ -334,7 +354,77 @@ struct SignedInView: View {
                         stack.wrappedValue.removeLast()
                     }
                 },
+                onOpenPost: { stack.wrappedValue.append(.postDetail(postID: $0)) },
+                socialRow: { pet, ownership in
+                    AnyView(PetSocialActions(
+                        pet: pet,
+                        viewerID: user.uid,
+                        ownership: ownership,
+                        repository: repositories.social,
+                        onOpenFollowers: {
+                            stack.wrappedValue.append(.petFollowers(petID: pet.id, petName: pet.name))
+                        },
+                        onOpenFamily: { stack.wrappedValue.append(.family(petID: pet.id)) }
+                    ))
+                }
+            )
+        case .user(let userID):
+            UserProfileView(
+                userID: userID,
+                viewerID: user.uid,
+                social: repositories.social,
+                onOpenPet: { stack.wrappedValue.append(.pet(petID: $0)) },
+                onOpenFollowing: { stack.wrappedValue.append(.followingPets) }
+            )
+        case .search(let tag):
+            SearchView(
+                viewerID: user.uid,
+                search: repositories.search,
+                social: repositories.social,
+                initialTag: tag,
+                onOpenPet: { stack.wrappedValue.append(.pet(petID: $0)) },
+                onOpenUser: { stack.wrappedValue.append(.user(userID: $0)) },
                 onOpenPost: { stack.wrappedValue.append(.postDetail(postID: $0)) }
+            )
+        case .petFollowers(let petID, let petName):
+            PetFollowersView(
+                petID: petID,
+                petName: petName,
+                social: repositories.social,
+                onOpenUser: { stack.wrappedValue.append(.user(userID: $0)) }
+            )
+        case .followingPets:
+            FollowingPetsView(
+                viewerID: user.uid,
+                social: repositories.social,
+                onOpenPet: { stack.wrappedValue.append(.pet(petID: $0)) }
+            )
+        case .family(let petID):
+            FamilyView(
+                petID: petID,
+                viewerID: user.uid,
+                pets: repositories.pets,
+                family: repositories.family,
+                onOpenUser: { stack.wrappedValue.append(.user(userID: $0)) },
+                onLeft: {
+                    // No longer an owner: the family screen and the pet page
+                    // under it were both drawn for one. Back past both, and
+                    // re-read the pet lists.
+                    petsChanged += 1
+                    stack.wrappedValue.removeAll { $0 == .family(petID: petID) || $0 == .pet(petID: petID) }
+                }
+            )
+        case .joinFamily:
+            JoinFamilyView(
+                viewerID: user.uid,
+                family: repositories.family,
+                onOpenPet: { petID in
+                    // Joined: the join screen is done, the pet is now one of
+                    // theirs, and its page is where to go.
+                    petsChanged += 1
+                    if stack.wrappedValue.last == .joinFamily { stack.wrappedValue.removeLast() }
+                    stack.wrappedValue.append(.pet(petID: petID))
+                }
             )
         }
     }
@@ -464,6 +554,9 @@ struct Repositories {
     let media: any MediaUploading
     let avatars: any AvatarUploading
     let auth: any AccountAuthenticating
+    let social: any SocialRepository
+    let family: any FamilyRepository
+    let search: any SearchRepository
 
     static var live: Repositories {
         Repositories(
@@ -477,7 +570,10 @@ struct Repositories {
             pins: FirestorePinnedPostSource(),
             media: CloudinaryUploadClient(),
             avatars: CloudinaryAvatarUploader(),
-            auth: LiveAccountAuth()
+            auth: LiveAccountAuth(),
+            social: FirestoreSocialRepository(),
+            family: FirestoreFamilyRepository(),
+            search: FirestoreSearchRepository()
         )
     }
 }

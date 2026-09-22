@@ -16,6 +16,10 @@ struct PetProfileView: View {
     var onEdit: ((String) -> Void)?
     var onDeleted: (() -> Void)?
     var onOpenPost: ((String) -> Void)?
+    /// Follow, followers and the way into the family, supplied by the shell:
+    /// they belong to the social batch, and this screen does not need to know
+    /// its repositories to show them.
+    var socialRow: ((Pet, PetOwnership?) -> AnyView)?
 
     enum Tab: String, CaseIterable, Identifiable {
         case posts
@@ -43,6 +47,7 @@ struct PetProfileView: View {
                     }
                 case .loaded(let pet):
                     header(pet)
+                    if let socialRow { socialRow(pet, model.ownership) }
                     owners
                     tabPicker
                     switch tab {
