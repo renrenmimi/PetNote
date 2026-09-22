@@ -465,7 +465,7 @@ enum JourneyAdmin {
         try documentNames(in: "pets", field: "name", equals: name)
     }
 
-    private static func documentNames(in collection: String, field: String, equals value: String) throws -> [String] {
+    static func documentNames(in collection: String, field: String, equals value: String) throws -> [String] {
         let body: [String: Any] = [
             "structuredQuery": [
                 "from": [["collectionId": collection]],

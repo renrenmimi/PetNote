@@ -93,6 +93,14 @@ extension XCTestCase {
     ///
     /// At the default type size nothing is off screen and no swipe happens, so
     /// the tests that open the same post twice still get the same post.
+    /// Moves a list up by about a quarter of the screen, slowly enough that it
+    /// stops where it is put rather than flinging on past the row.
+    func nudgeListUp(_ app: XCUIApplication) {
+        let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65))
+        let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+        from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.3)
+    }
+
     func openFirstPost(_ app: XCUIApplication) {
         let comments = app.buttons.matching(identifier: "post.comments").firstMatch
         XCTAssertTrue(waitForExistence(of: comments, in: app, timeout: 60), "the feed has no posts")
@@ -101,7 +109,15 @@ extension XCTestCase {
         for _ in 0..<10 {
             dismissSavePasswordSheetIfPresent(app)
             if comments.exists, comments.isHittable { reachable = true; break }
-            app.swipeUp()
+            // In the lower half, the first card's action row is under the tab
+            // bar or just past the list's edge: a small move brings it up. A
+            // full swipe from there carried that card off the top of the
+            // screen, and the next card's row landed under the bar again.
+            if comments.exists, comments.frame.midY > app.windows.firstMatch.frame.midY {
+                nudgeListUp(app)
+            } else {
+                app.swipeUp()
+            }
         }
         XCTAssertTrue(reachable, "a post's comments button could not be reached by scrolling")
 

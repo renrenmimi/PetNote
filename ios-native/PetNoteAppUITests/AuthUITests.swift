@@ -278,10 +278,18 @@ final class AuthUITests: XCTestCase {
         // accessibility tree, and a control that is off screen is not hittable
         // by definition — counting those would report a defect that is really
         // just scrolling.
+        //
+        // And not under the tab bar, for the same reason: a feed row passing
+        // behind the bar is a row that has not been scrolled to, and is no
+        // more hittable than one below the screen. The bar's own items are
+        // the system's, laid out like the navigation bar's.
         let window = app.windows.firstMatch.frame
+        let tabBar = app.tabBars.firstMatch
+        let underBar = tabBar.exists ? tabBar.frame : .null
         let ours = app.buttons.allElementsBoundByIndex.filter {
             $0.exists && $0.isEnabled && !$0.identifier.isEmpty
                 && !$0.frame.isEmpty && window.intersects($0.frame)
+                && !underBar.intersects($0.frame)
         }
         XCTAssertFalse(ours.isEmpty, "No identified controls found to check")
 

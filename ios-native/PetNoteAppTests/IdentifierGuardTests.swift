@@ -50,6 +50,33 @@ struct IdentifierGuardTests {
         return names
     }
 
+    /// Identifiers the app builds per item — `"join.relationship.\(option.rawValue)"`,
+    /// `"profile.pet.\(pet.id)"` — as the fixed part before the interpolation.
+    ///
+    /// Only prefixes that end in a dot count, so a name a test uses is
+    /// accepted when it is that prefix plus a suffix, and not when it merely
+    /// starts with the same letters.
+    static func declaredPrefixes() -> Set<String> {
+        var prefixes: Set<String> = []
+        let pattern = #"accessibilityIdentifier\(\s*"([^"\\]+)\\\("#
+        for file in swiftFiles(in: ["App", "Core", "Features", "DesignSystem", "Support"]) {
+            let range = NSRange(file.text.startIndex..., in: file.text)
+            let regex = try! NSRegularExpression(pattern: pattern)
+            for match in regex.matches(in: file.text, range: range) {
+                if let r = Range(match.range(at: 1), in: file.text) {
+                    let prefix = String(file.text[r])
+                    if prefix.hasSuffix(".") { prefixes.insert(prefix) }
+                }
+            }
+        }
+        return prefixes
+    }
+
+    static func isKnown(_ name: String, known: Set<String>, prefixes: Set<String>) -> Bool {
+        known.contains(name)
+            || prefixes.contains { name.hasPrefix($0) && name.count > $0.count }
+    }
+
     /// Names in the tests that look like our identifiers.
     ///
     /// Dotted lowercase, which is the convention everywhere in this project.
@@ -64,6 +91,7 @@ struct IdentifierGuardTests {
 
     @Test func everyIdentifierATestNamesExistsInTheApp() {
         let known = Self.declared()
+        let prefixes = Self.declaredPrefixes()
         #expect(known.count > 10, "found almost no identifiers; the scan is looking in the wrong place")
 
         // Only strings handed to a query, not every dotted literal.
@@ -93,7 +121,8 @@ struct IdentifierGuardTests {
                 // save-password sheet's button, "PetNote" and "Post" are
                 // navigation bar titles rather than identifiers.
                 guard name.contains("."), !name.contains(" ") else { continue }
-                guard !known.contains(name), !Self.notIdentifiers.contains(name) else { continue }
+                guard !Self.isKnown(name, known: known, prefixes: prefixes),
+                      !Self.notIdentifiers.contains(name) else { continue }
                 unknown.append("\(file.name): \"\(name)\"")
             }
         }
@@ -116,5 +145,16 @@ struct IdentifierGuardTests {
         #expect(known.contains("fullImage.close"), "the app should set fullImage.close")
         #expect(!known.contains("image.full"))
         #expect(!known.contains("detail.root"))
+    }
+
+    /// And the per-item names widen it by exactly their prefix.
+    @Test func aPerItemIdentifierIsKnownByItsPrefixOnly() {
+        let known = Self.declared()
+        let prefixes = Self.declaredPrefixes()
+        #expect(prefixes.contains("join.relationship."), "the scan did not find the per-item identifiers")
+        #expect(Self.isKnown("join.relationship.caretaker", known: known, prefixes: prefixes))
+        #expect(!Self.isKnown("join.relationship.", known: known, prefixes: prefixes))
+        #expect(!Self.isKnown("join.relation.caretaker", known: known, prefixes: prefixes))
+        #expect(!Self.isKnown("full.close", known: known, prefixes: prefixes))
     }
 }

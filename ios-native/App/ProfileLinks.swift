@@ -17,24 +17,26 @@ struct ProfileLinks: View {
                 title: "Join a pet's family",
                 detail: "Use an invitation code from one of its owners",
                 systemImage: "person.2.badge.plus",
-                identifier: "profile.joinFamily",
                 action: onJoinFamily
             )
+            // Literals at the call site, not a parameter: the identifier guard
+            // reads the source, and a name passed in is one it cannot see.
+            .accessibilityIdentifier("profile.joinFamily")
             Divider().overlay(Palette.separator)
             row(
                 title: "Pets you follow",
                 detail: nil,
                 systemImage: "heart.text.square",
-                identifier: "profile.following",
                 action: onFollowing
             )
+            .accessibilityIdentifier("profile.following")
         }
         .background(Palette.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: Radius.card))
     }
 
     private func row(
-        title: String, detail: String?, systemImage: String, identifier: String,
+        title: String, detail: String?, systemImage: String,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -68,6 +70,5 @@ struct ProfileLinks: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityIdentifier(identifier)
     }
 }

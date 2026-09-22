@@ -591,14 +591,6 @@ final class LikeUITests: XCTestCase {
         return true
     }
 
-    /// Moves the list up by about a quarter of the screen, slowly enough that
-    /// it stops where it is put rather than flinging on past the card.
-    private func nudgeListUp(_ app: XCUIApplication) {
-        let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65))
-        let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
-        from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.3)
-    }
-
     /// The like button belonging to one particular card.
     ///
     /// By geometry, because the cards are siblings in the tree and nothing
