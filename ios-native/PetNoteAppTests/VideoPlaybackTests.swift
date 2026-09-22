@@ -50,65 +50,104 @@ struct VideoPlaybackTests {
     /// is put through the identical interleaving and does not.
     ///
     /// Bytes rather than playback, because the question is about server state
-    /// and an `AVPlayer` in the middle would only add ways to be wrong. The cut
-    /// file is roughly 24,000 bytes and the whole one roughly 61,000, which is
-    /// far past any ambiguity.
+    /// and an `AVPlayer` in the middle would only add ways to be wrong.
     @Test(.enabled(if: MediaServer.isAnswering))
     func sharedStateCrossTalksAndSeparateSessionsDoNot() async throws {
         // **Ask for the last kilobyte, not for the whole file.**
         //
-        // The cut response declares `Content-Length: 61263` and sends 24003
-        // bytes — that is how it simulates a stream dying mid-transfer, and
+        // The cut response declares the whole length and then stops sending
+        // part-way — that is how it simulates a stream dying mid-transfer, and
         // `URLSession` correctly reports the short read as `-1005 "The network
         // connection was lost"`. So measuring the body size with URLSession
-        // cannot work against the very file this test is about, and my first
-        // attempt at fixing it — a fresh session per request, on a guess about
-        // connection reuse — treated a symptom I had not established.
+        // cannot work against the very file this test is about.
         //
-        // The last kilobyte is past the cut by a wide margin. A cut stream
-        // cannot serve it; a mended one serves it whole. One boolean, no
-        // partial-read semantics, and no arithmetic about where the cut falls.
+        // The last kilobyte is past the cut by a wide margin: the fixture puts
+        // `moov` at the front, so the tail is media data, and the cut falls at
+        // 35% of it. A cut stream cannot serve it; a mended one serves it
+        // whole.
+        //
+        // **Where "the last kilobyte" starts is asked, never assumed.** This
+        // used to be the literal `bytes=60239-61262`, which is the tail of the
+        // `a2-long.mp4` rendered on one Mac (61,263 bytes). CI renders its own
+        // with `a2-make-test-media.swift` on a different OS and encoder and got
+        // 60,164 bytes, so the literal range started 75 bytes past the end of
+        // the file. The fixture answered that with an empty body whether the
+        // stream was cut or mended (`206-index 0 bytes` and `206 0 bytes` in
+        // run 35755470453's server log), both readings came out `false`, and
+        // the test reported cross-talk that had nothing to do with sessions.
+        // So the length comes from the fixture's own `Content-Range` in answer
+        // to `bytes=0-0`, and the tail is computed from it.
         //
         // **The cut case does not fail, it goes silent — so the timeout is the
         // measurement.** That is usually a smell and here it is the fixture's
         // designed behaviour: a range entirely past the cut gets honest headers
-        // (`206`, `Content-Range: bytes 60239-61262/61263`,
-        // `Content-Length: 1024`) and then nothing, with the socket held open.
-        // There is no error to catch; silence is the whole signal.
+        // (`206`, the requested `Content-Range`, `Content-Length: 1024`) and
+        // then nothing, with the socket held open. There is no error to catch;
+        // silence is the whole signal. Everything *else* — a 404, a 416, a
+        // body of the wrong size, a connection that drops — is neither
+        // "served" nor "silent", and is recorded as a failure of the fixture
+        // rather than being counted as a cut.
         //
         // Five seconds because the mended case is a 1 KB range off a loopback
         // server and answers in milliseconds — a hundredfold margin — while
         // fifteen made each cut probe cost fifteen seconds for no extra
         // certainty.
         //
-        // Verified against the running fixture before being relied on, with
-        // this exact range and session:
+        // Verified against the running fixture before being relied on:
         //
-        //   mended: 206, Content-Range bytes 60239-61262/61263, 1024 bytes,
-        //           byte-identical to the source file's last 1024 bytes
-        //   cut:    206 and the same headers, then 0 of 1024 bytes
-        //   absent path: 404, so a missing file cannot be mistaken for a cut
-        //   same session switched back to mend: 1024 bytes again
+        //   bytes=0-0, cut or mended: 206, Content-Range bytes 0-0/<length>
+        //   tail, mended: 206, 1024 bytes, byte-identical to the file's last
+        //                 1024 bytes
+        //   tail, cut:    206 and the same headers, then no body until the
+        //                 client gives up
+        //   a range starting past the end: 416 (it used to be an empty 206)
+        //   absent path:  404
         //
         // **This checks the fixture, not the app.** That a cut stream stops
         // serving says nothing about whether playback notices, recovers, or
         // tells anyone — `automaticRecoveryIsBoundedAndThenOffersAWayOut` and
         // its siblings are where that is asserted.
-        func servesPastTheCut(_ url: URL) async -> Bool {
-            var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
-            request.setValue("bytes=60239-61262", forHTTPHeaderField: "Range")
-            request.timeoutInterval = 5
+        func servesPastTheCut(_ url: URL) async throws -> Bool {
             let session = URLSession(configuration: .ephemeral)
             defer { session.finishTasksAndInvalidate() }
-            guard let (data, _) = try? await session.data(for: request) else { return false }
-            return !data.isEmpty
+
+            var lengthProbe = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
+            lengthProbe.setValue("bytes=0-0", forHTTPHeaderField: "Range")
+            lengthProbe.timeoutInterval = 5
+            let (_, lengthResponse) = try await session.data(for: lengthProbe)
+            let lengthAnswer = try #require(lengthResponse as? HTTPURLResponse)
+            let contentRange = lengthAnswer.value(forHTTPHeaderField: "Content-Range") ?? ""
+            try #require(
+                lengthAnswer.statusCode == 206,
+                "bytes=0-0 of \(url) answered \(lengthAnswer.statusCode), so there is no length to take the tail of"
+            )
+            let length = try #require(
+                contentRange.split(separator: "/").last.flatMap { Int($0) },
+                "bytes=0-0 of \(url) came back without a usable Content-Range: '\(contentRange)'"
+            )
+            try #require(length > 1024, "\(url) is \(length) bytes, too short to have a tail past the cut")
+
+            var tail = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
+            tail.setValue("bytes=\(length - 1024)-\(length - 1)", forHTTPHeaderField: "Range")
+            tail.timeoutInterval = 5
+            do {
+                let (data, response) = try await session.data(for: tail)
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                try #require(
+                    status == 206 && data.count == 1024,
+                    "the tail of \(url) answered \(status) with \(data.count) bytes — neither served nor silent"
+                )
+                return true
+            } catch let error as URLError where error.code == .timedOut {
+                return false
+            }
         }
 
         // --- the old shape: one namespace, two actors, interleaved on purpose
         _ = await MediaServer.reach("/a2-cut")
-        let sharedWhileCut = await servesPastTheCut(MediaServer.url("/a2-cutoff.mp4"))
+        let sharedWhileCut = try await servesPastTheCut(MediaServer.url("/a2-cutoff.mp4"))
         _ = await MediaServer.reach("/a2-mend")          // "another test" mends
-        let sharedAfterSomeoneElseMended = await servesPastTheCut(MediaServer.url("/a2-cutoff.mp4"))
+        let sharedAfterSomeoneElseMended = try await servesPastTheCut(MediaServer.url("/a2-cutoff.mp4"))
 
         print("MEASURED shared namespace: servesPastTheCut \(sharedWhileCut) "
               + "then after another actor mended \(sharedAfterSomeoneElseMended)")
@@ -125,12 +164,12 @@ struct VideoPlaybackTests {
         let mine = MediaServer.session()
         let theirs = MediaServer.session() + "-other"
         _ = await MediaServer.reach("/a2-cut", session: mine)
-        let mineWhileCut = await servesPastTheCut(MediaServer.url("/a2-cutoff.mp4", session: mine))
+        let mineWhileCut = try await servesPastTheCut(MediaServer.url("/a2-cutoff.mp4", session: mine))
         _ = await MediaServer.reach("/a2-mend", session: theirs)
-        let mineAfterTheirsMended = await servesPastTheCut(
+        let mineAfterTheirsMended = try await servesPastTheCut(
             MediaServer.url("/a2-cutoff.mp4", session: mine)
         )
-        let theirsServes = await servesPastTheCut(MediaServer.url("/a2-cutoff.mp4", session: theirs))
+        let theirsServes = try await servesPastTheCut(MediaServer.url("/a2-cutoff.mp4", session: theirs))
 
         print("MEASURED sessions: mine \(mineWhileCut) -> \(mineAfterTheirsMended), "
               + "theirs \(theirsServes)")
@@ -582,8 +621,22 @@ struct VideoPlaybackTests {
         try await waitUntil("the clock to wrap back to the start", timeout: 15, describe: {
             "t=\(coordinator.currentTime(of: "a") ?? -1) status=\(player.timeControlStatus.rawValue)"
         }) { (coordinator.currentTime(of: "a") ?? .greatestFiniteMagnitude) < 1.0 }
-
-        #expect(player.timeControlStatus == .playing, "it wrapped but stopped playing")
+        let wrappedAt = Date()
+        let clockAtTheWrap = coordinator.currentTime(of: "a") ?? -1
+        // **Read, not asserted.** This reading is taken at the one instant the
+        // loop is mid-seek: the clock has just been put back under 1.0 by
+        // `seek(to: .zero)` and the `play()` issued in the same call is what
+        // happens next. What `timeControlStatus` says at that instant differs
+        // by OS and is not something the loop promises. Measured: on iOS 27
+        // (this Mac), 378 samples four milliseconds apart across the seam never
+        // once read `.paused`; on iOS 26.2 (CI run 35755470453) the first
+        // reading under 1.0 was `.paused` — and in that same run a red frame
+        // was decoded after the wrap and the clock went on past 1.2 about 1.2s
+        // after the loop, which is continuous playback. Nothing in the app
+        // restarts a player after the loop has run, so a clock that carries on
+        // is proof that the loop's own `play()` took. That is asserted below,
+        // where the answer no longer depends on which instant was sampled.
+        let statusAtTheWrap = player.timeControlStatus
         #expect(coordinator.playingID == "a")
 
         // And the picture really is the first block again, not a still frame
@@ -613,6 +666,14 @@ struct VideoPlaybackTests {
         try await waitUntil("the clock to carry on past the seam", timeout: 20, describe: {
             "t=\(coordinator.currentTime(of: "a") ?? -1) status=\(player.timeControlStatus.rawValue)"
         }) { (coordinator.currentTime(of: "a") ?? 0) > 1.2 }
+        print(
+            "MEASURED seam: at the wrap t=\(String(format: "%.3f", clockAtTheWrap)) "
+                + "status=\(statusAtTheWrap.rawValue); past 1.2 after "
+                + "\(String(format: "%.2f", Date().timeIntervalSince(wrappedAt)))s"
+        )
+        // And playing *now*, on the far side of the seam: the claim the old
+        // reading at the wrap was standing in for.
+        #expect(player.timeControlStatus == .playing, "it carried on past the seam and then stopped playing")
     }
 
     /// **Looping is not a property of the first video.**
@@ -1350,12 +1411,57 @@ struct VideoPlaybackTests {
         // **Somebody has to be asking for the pictures.** See `FrameWatcher`.
         let watcher = FrameWatcher()
 
-        try await waitUntil("the recovery offer", timeout: 60, describe: {
-            "phase=\(coordinator.state(for: "cut").name) attempts=\(coordinator.automaticRecoveryAttempts(for: "cut"))"
-        }) {
-            watcher.look(at: player)
-            return coordinator.needsManualRecovery(for: "cut")
+        // One line per change of phase, budget or item, so a failure says what
+        // the player did rather than only where it ended up. The far edge of
+        // `loadedTimeRanges` is in it because it is the one number that tells
+        // a player waiting for bytes (the edge sits where the cut is) from a
+        // player nobody is watching (the edge is the whole clip, and its clock
+        // runs to the end with nothing to show). CI run 35755470453 failed
+        // here with `phase=stalled attempts=3` after the budget had been
+        // refunded twice — once while a rebuilt item's clock ran from ~5s to
+        // the clip's end on bytes the server never sent — and this is what
+        // would have said which of the two it was.
+        var timeline: [String] = []
+        var lastKey = ""
+        let started = Date()
+        func note() {
+            let item = player.currentItem.map { String(UInt(bitPattern: ObjectIdentifier($0).hashValue) % 10_000) } ?? "-"
+            let phase = coordinator.state(for: "cut").name
+            let attempts = coordinator.automaticRecoveryAttempts(for: "cut")
+            let key = "\(phase)/\(attempts)/\(item)"
+            guard key != lastKey else { return }
+            lastKey = key
+            let edge = (player.currentItem?.loadedTimeRanges ?? [])
+                .map { ($0.timeRangeValue.start + $0.timeRangeValue.duration).seconds }
+                .max() ?? -1
+            timeline.append(String(
+                format: "w=%.1f t=%.2f %@ attempts=%d item=%@ loadedTo=%.2f frames=%d",
+                Date().timeIntervalSince(started), coordinator.currentTime(of: "cut") ?? -1,
+                phase, attempts, item, edge, watcher.newFrames
+            ))
         }
+
+        // Sixty seconds, against a designed worst case of about forty: the
+        // first stall comes after the healthy ~5s of the clip at the fixture's
+        // drip rate (~7s of wall clock), then the three automatic attempts at
+        // 1.5, 4 and 9s into their episodes, each followed by a replay of at
+        // most `recoverySeekToleranceBefore` plus a fresh 0.6s confirmation,
+        // then `recoveryOfferDelay` (10s) into the last episode. Measured on
+        // this Mac: 35s from the player being made to the offer.
+        do {
+            try await waitUntil("the recovery offer", timeout: 60, describe: {
+                "phase=\(coordinator.state(for: "cut").name) attempts=\(coordinator.automaticRecoveryAttempts(for: "cut")) "
+                    + "timeline: \(timeline.joined(separator: " | "))"
+            }) {
+                watcher.look(at: player)
+                note()
+                return coordinator.needsManualRecovery(for: "cut")
+            }
+        } catch {
+            for line in timeline { print("MEASURED recovery timeline: \(line)") }
+            throw error
+        }
+        for line in timeline { print("MEASURED recovery timeline: \(line)") }
 
         #expect(coordinator.state(for: "cut") == .stalled(offeringRecovery: true))
         let spent = coordinator.automaticRecoveryAttempts(for: "cut")
@@ -1654,7 +1760,12 @@ struct Colour: CustomStringConvertible {
 /// told to mend itself, which is the only way "it recovers when the network
 /// comes back" can be a test rather than a hope.
 enum MediaServer {
-    static let host = "http://127.0.0.1:8123"
+    /// `PETNOTE_MEDIA_SERVER` (passed as `TEST_RUNNER_PETNOTE_MEDIA_SERVER` to
+    /// `xcodebuild`) points these tests at a second fixture server without
+    /// touching the shared one on 8123 — which is how a fixture rendered on a
+    /// different machine, with a different length, can be reproduced here.
+    static let host = ProcessInfo.processInfo.environment["PETNOTE_MEDIA_SERVER"]
+        ?? "http://127.0.0.1:8123"
 
     static func url(_ path: String) -> URL {
         // Force-unwrapped against a literal: if this is nil the test file does
@@ -1787,31 +1898,59 @@ enum MediaServer {
 /// producing buffers — which would read exactly like "the video never came
 /// back" when in fact it had.
 ///
-/// **And attaching one is not optional in a stall test.** Measured, and it cost
+/// **And a consumer is not optional in a stall test.** Measured, and it cost
 /// two red tests before it was understood: an `AVPlayer` with nothing pulling
 /// frames out of it — no layer, no output — does not decode, so it has no
 /// reason to wait for bytes it cannot use. Pointed at a stream that dies at
-/// 4.9s of 16, such a player runs its clock all the way to 16.0 and posts
-/// `didPlayToEndTime`, without a single stall. Both tests that lacked a render
-/// target therefore reported `phase=playing` and failed, while the two that had
-/// one caught the stall in under a second. The app always has an
-/// `AVPlayerLayer`, so the app always has the demand; a test has to supply it
-/// deliberately or it is measuring a player nobody is watching.
+/// 4.9s of 16, such a player reports the whole clip as loaded
+/// (`loadedTimeRanges` 0–16 on about a third of its bytes), runs its clock all
+/// the way to 16.0 and posts `didPlayToEndTime`, without a single stall.
+///
+/// **The consumer belongs to the player, as the app's does — not to each
+/// item.** This used to rely on the per-item output alone, and an output can
+/// only be attached to a rebuilt item *after* the coordinator has handed it to
+/// the player, on this watcher's next poll. What CI run 35755470453 showed on
+/// iOS 26.2: the item from the first automatic rebuild ran its clock from ~5s
+/// to the clip's end and looped, on bytes the server log shows were never sent
+/// — the signature of a player nobody is watching — and the playback it
+/// "made" refunded the recovery budget, so the bound never bit inside the
+/// deadline. *Why* that item had no effective consumer was not reproduced
+/// here: on iOS 27 an output attached 300ms or even 1.5s late still makes the
+/// item wait for its bytes. But the app never has the gap at all:
+/// `VideoPlayerView` gives the *player* an `AVPlayerLayer`, and `rebuildItem`
+/// swaps the item underneath a layer that is already there. So this does the
+/// same. Measured on this Mac, a detached `AVPlayerLayer` with no output at all
+/// is sufficient demand: the item stops at the cut (`loadedTimeRanges` ending
+/// at 5.0), and every rebuilt item after it does too. The outputs are still
+/// attached per item, but only to count frames.
+///
+/// Holding the watched item, rather than keying outputs by `ObjectIdentifier`,
+/// is so an item freed by a rebuild cannot hand its address — and with it, a
+/// stale output attached to a dead item — to a later one. Not hypothetical:
+/// in the first local run of `automaticRecoveryIsBoundedAndThenOffersAWayOut`
+/// with its timeline, the item from the third rebuild came back at the
+/// original item's address, which the old dictionary would have answered with
+/// the original's output and never given the new item one.
 @MainActor
 final class FrameWatcher {
-    private var outputs: [ObjectIdentifier: AVPlayerItemVideoOutput] = [:]
+    private var layer: AVPlayerLayer?
+    private var watchedItem: AVPlayerItem?
+    private var output: AVPlayerItemVideoOutput?
     private(set) var newFrames = 0
     private(set) var colours: [Colour] = []
 
     func look(at player: AVPlayer) {
+        if layer?.player !== player {
+            layer = AVPlayerLayer(player: player)
+        }
         guard let item = player.currentItem else { return }
-        let key = ObjectIdentifier(item)
-        guard let output = outputs[key] else {
+        guard item === watchedItem, let output else {
             let fresh = AVPlayerItemVideoOutput(pixelBufferAttributes: [
                 kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
             ])
             item.add(fresh)
-            outputs[key] = fresh
+            watchedItem = item
+            output = fresh
             return   // nothing is decoded into it yet
         }
         let time = player.currentTime()
