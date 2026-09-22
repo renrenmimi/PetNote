@@ -65,18 +65,25 @@ echo "1. Calibration — can the instrument recover sizes that are already known
 run "$CONTROL_LOG" \
   PetNoteAppUITests/HitRegionBoundaryUITests/testTheSearchRecoversAKnownExtent \
   PetNoteAppUITests/HitRegionBoundaryUITests/testTheInstrumentAgreesWithTheKnownGeometryOfTheFeedActionRow \
-  PetNoteAppUITests/TouchTargetUITests/testTheProbeCanTellInsideFromOutside
+  PetNoteAppUITests/TouchTargetUITests/testEachOutcomeIsReachable \
+  PetNoteAppUITests/HitRegionBoundaryUITests/testBackButtonHitRegionBoundaries
 CONTROL_STATUS=$?
 
 # "0 tests ran" must not read as "calibration passed" — the same shape that let
 # a filter typo report success elsewhere in this project.
+#
+# It caught one immediately, and it took a while to notice: this script named
+# `testTheProbeCanTellInsideFromOutside`, which had been renamed to
+# `testEachOutcomeIsReachable` hours before the script was written. Two of three
+# filters matched, RAN stuck at 2, and every run exited 2 INCONCLUSIVE without
+# ever reaching the measurement step. The guard did its job; nobody read it.
 RAN=$(grep -c "Test Case '.*' started" "$CONTROL_LOG" 2>/dev/null || echo 0)
 grep -E "^MEASURED (synthetic|like|comments)" "$CONTROL_LOG" | sed 's/^/    /'
 echo "   calibration tests executed: $RAN"
 
-if [ "$RAN" -lt 3 ]; then
+if [ "$RAN" -lt 4 ]; then
   echo ""
-  echo "   INCONCLUSIVE: expected 3 calibration tests, $RAN ran."
+  echo "   INCONCLUSIVE: expected 4 calibration tests, $RAN ran."
   echo "   No measurement is taken and none may be quoted. Log: $CONTROL_LOG"
   exit 2
 fi

@@ -54,7 +54,11 @@ struct ImageLoaderBehaviourTests {
         // second layer that also dedupes would hide whether it works.
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        StubURLProtocol.install(stub)
+        // The token travels on every request this session makes, so the stub
+        // that answers is this test's and no one else's.
+        configuration.httpAdditionalHeaders = [
+            StubURLProtocol.tokenHeader: StubURLProtocol.install(stub)
+        ]
         return (ImageLoader(session: URLSession(configuration: configuration)), stub)
     }
 
@@ -447,11 +451,40 @@ final class StubTransport: @unchecked Sendable {
 /// coalescing, and a hand-rolled seam would let the thing under test be the
 /// thing that is faked.
 final class StubURLProtocol: URLProtocol {
-    nonisolated(unsafe) private static var transport: StubTransport?
+    /// Transports by token, **not one global "current" transport**.
+    ///
+    /// `install` used to replace a single static, and every request was
+    /// attributed to whatever was installed at the moment it was handled. A
+    /// test's `URLSession` is torn down asynchronously and `.serialized` does
+    /// not wait for that, so one test's traffic could be counted by the next
+    /// test's stub.
+    ///
+    /// The first fix only moved `recordCancel` onto the transport that started
+    /// the request, which closed the cancel path and left the request path
+    /// open: `aRowScrollingAwayDoesNotCancelTheRowBesideIt` then failed on
+    /// `stub.requestCount == 1` instead of `stub.cancelCount == 0` — the same
+    /// leak through a different counter, and a reminder that fixing the symptom
+    /// that was observed is not the same as fixing the thing that caused it.
+    ///
+    /// A token on the session, carried by every request it makes, decides which
+    /// transport hears about it. Traffic from a session that has gone away
+    /// carries that session's token and is counted there, where nobody is
+    /// looking any more, instead of landing in the next test's numbers.
+    nonisolated(unsafe) private static var transports: [String: StubTransport] = [:]
     private static let lock = NSLock()
 
-    static func install(_ transport: StubTransport) {
-        lock.withLock { Self.transport = transport }
+    static let tokenHeader = "X-PetNote-Stub-Token"
+
+    /// Registers a transport and returns the token that routes traffic to it.
+    static func install(_ transport: StubTransport) -> String {
+        let token = UUID().uuidString
+        lock.withLock { Self.transports[token] = transport }
+        return token
+    }
+
+    private static func transport(for request: URLRequest) -> StubTransport? {
+        guard let token = request.value(forHTTPHeaderField: tokenHeader) else { return nil }
+        return lock.withLock { Self.transports[token] }
     }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
@@ -483,7 +516,10 @@ final class StubURLProtocol: URLProtocol {
 
     override func startLoading() {
         guard let url = request.url,
-              let transport = Self.lock.withLock({ Self.transport }) else {
+              let transport = Self.transport(for: request) else {
+            // No token, or a token whose transport is gone: answer with an
+            // error rather than picking whichever transport happens to be
+            // registered. Guessing here is the defect this replaced.
             client?.urlProtocol(self, didFailWithError: URLError(.badURL))
             return
         }
