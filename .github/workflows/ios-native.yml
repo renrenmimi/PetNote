@@ -87,6 +87,13 @@ jobs:
                       print(d['udid']); raise SystemExit
           raise SystemExit('no available iPhone simulator')
           ")
+          # Empty here means the python above printed nothing and the job
+          # would go on to hand xcodebuild a blank destination. Fail where the
+          # cause is, not three steps later.
+          if [ -z "$UDID" ]; then
+            echo "::error::No available iPhone simulator on this runner."
+            exit 1
+          fi
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
           xcrun simctl list devices available | grep -m1 iPhone
 
@@ -94,7 +101,14 @@ jobs:
       # mean "zero tests ran". A scheme misconfiguration does exactly that.
       - name: Unit tests
         run: |
-          set -o pipefail
+          # **The result of the tests decides this step.** It used to end
+          # `| grep … || true`, which discarded xcodebuild's exit status: the
+          # only way the job could go red was too few tests running. On
+          # c955449 the run really did fail — `Test run with 280 tests in 22
+          # suites failed … with 1 issue`, `Suite ImageLoaderBehaviourTests
+          # failed` — and the job reported success. Every "ios-native CI is
+          # green" before this commit means "it compiled and enough tests ran".
+          TEST_STATUS=0
           xcodebuild test \
             -project PetNoteApp.xcodeproj \
             -scheme PetNote-Emulator \
@@ -102,7 +116,9 @@ jobs:
             -only-testing:PetNoteAppTests \
             -derivedDataPath build/dd \
             -clonedSourcePackagesDirPath build/spm \
-            | tee test.log | grep -E '^(✔|✘)|Test run with|TEST (SUCCEEDED|FAILED)' || true
+            > test.log 2>&1 || TEST_STATUS=$?
+          grep -E '^(✔|✘)|Test run with|TEST (SUCCEEDED|FAILED)' test.log || true
+
           COUNT=$(grep -oE 'Test run with ([0-9]+) tests' test.log | grep -oE '[0-9]+' | head -1)
           echo "tests executed: ${COUNT:-0}"
           if [ "${COUNT:-0}" -lt 1 ]; then
@@ -122,3 +138,38 @@ jobs:
             echo "::error::Only $COUNT unit tests ran; the floor is $FLOOR. Either the suite shrank or a filter is dropping tests."
             exit 1
           fi
+
+          # A total is not coverage. 280 tests could all come from the guard
+          # suites while every behaviour suite silently stopped being built, so
+          # the ones that carry the product are named and checked by name.
+          MISSING=""
+          for suite in FeedViewModelTests PostDetailViewModelTests \
+                       ImageLoaderBehaviourTests VideoPlaybackTests \
+                       CommentCountSyncTests LikeConvergenceRegressionTests \
+                       SessionLifecycleTests DeepLinkTests \
+                       ReleaseHygieneTests ClaimGuardTests; do
+            grep -qE "Suite $suite (passed|failed)" test.log || MISSING="$MISSING $suite"
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::These suites did not run at all:$MISSING"
+            exit 1
+          fi
+
+          if [ "$TEST_STATUS" -ne 0 ]; then
+            echo "::error::xcodebuild test exited $TEST_STATUS - a test failed. See the ✘ lines above."
+            exit "$TEST_STATUS"
+          fi
+
+      # `always()`, because the run that needs its log is the one that failed.
+      # Without this the only evidence of a red job is whatever fitted in the
+      # step's own output.
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-native-test-diagnostics-${{ github.run_id }}
+          path: |
+            ios-native/test.log
+            ios-native/build/dd/Logs/Test/*.xcresult
+          retention-days: 14
+          if-no-files-found: warn
