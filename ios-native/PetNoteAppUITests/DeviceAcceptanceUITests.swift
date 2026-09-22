@@ -47,7 +47,7 @@ final class DeviceAcceptanceUITests: XCTestCase {
         let app = launch()
         XCTAssertTrue(app.staticTexts["login.title"].waitForExistence(timeout: 60),
                       "sign-in never appeared\n\(app.debugDescription)")
-        signIn(app)
+        typeCredentialsAndSubmit(app)
         XCTAssertTrue(waitForExistence(of: app.navigationBars["PetNote"], in: app, timeout: 90),
                       "never reached the feed")
 
@@ -114,7 +114,7 @@ final class DeviceAcceptanceUITests: XCTestCase {
 
     func test5AVideoPlaysOnTheDevice() {
         let app = launch(probe: true)
-        if app.staticTexts["login.title"].waitForExistence(timeout: 60) { signIn(app) }
+        if app.staticTexts["login.title"].waitForExistence(timeout: 60) { typeCredentialsAndSubmit(app) }
         XCTAssertTrue(waitForExistence(of: app.navigationBars["PetNote"], in: app, timeout: 90))
         XCTAssertTrue(app.staticTexts.matching(identifier: "post.text").firstMatch
                         .waitForExistence(timeout: 90))
@@ -153,12 +153,20 @@ final class DeviceAcceptanceUITests: XCTestCase {
 
     private func signedInApp() -> XCUIApplication {
         let app = launch()
-        if app.staticTexts["login.title"].waitForExistence(timeout: 60) { signIn(app) }
+        if app.staticTexts["login.title"].waitForExistence(timeout: 60) { typeCredentialsAndSubmit(app) }
         XCTAssertTrue(waitForExistence(of: app.navigationBars["PetNote"], in: app, timeout: 90))
         return app
     }
 
-    private func signIn(_ app: XCUIApplication) {
+    /// Types the credentials and submits. Deliberately checks nothing — every
+    /// caller asserts the feed appeared on the next line, with a device-sized
+    /// timeout of its own.
+    ///
+    /// Not called `signIn`: that name belongs to `SessionFlow.signIn`, which
+    /// asserts it reached the feed. Two helpers with one name and opposite
+    /// failure semantics is how a test that checks nothing gets read as one
+    /// that does.
+    private func typeCredentialsAndSubmit(_ app: XCUIApplication) {
         let email = app.textFields["login.email"]
         email.tap(); email.typeText("accept-a@example.com")
         let password = app.secureTextFields["login.password"]
@@ -189,7 +197,7 @@ extension DeviceAcceptanceUITests {
     /// taken before the comment existed.
     func test6CommentCountIsRightOnTheFeedAfterComingBack() {
         let app = launch()
-        if app.staticTexts["login.title"].waitForExistence(timeout: 60) { signIn(app) }
+        if app.staticTexts["login.title"].waitForExistence(timeout: 60) { typeCredentialsAndSubmit(app) }
         XCTAssertTrue(waitForExistence(of: app.navigationBars["PetNote"], in: app, timeout: 90))
 
         let first = app.staticTexts.matching(identifier: "post.text").firstMatch
@@ -251,7 +259,7 @@ extension DeviceAcceptanceUITests {
     /// the number beside the post on the *detail* screen did not move either.
     func test7CommentCountIsRightOnTheDetailScreenItself() {
         let app = launch()
-        if app.staticTexts["login.title"].waitForExistence(timeout: 60) { signIn(app) }
+        if app.staticTexts["login.title"].waitForExistence(timeout: 60) { typeCredentialsAndSubmit(app) }
         XCTAssertTrue(waitForExistence(of: app.navigationBars["PetNote"], in: app, timeout: 90))
         XCTAssertTrue(app.staticTexts.matching(identifier: "post.text").firstMatch
                         .waitForExistence(timeout: 90))
