@@ -31,9 +31,34 @@ struct FeedViewModelTests {
         /// again does not recurse.
         var whileInFlight: (@Sendable () async -> Void)?
 
+        /// The same window, for a read that is going to **fail**.
+        ///
+        /// `whileInFlight` runs after the page has been chosen, so a read with
+        /// `error` set throws before ever reaching it — and "what is on screen
+        /// while a refresh that will fail is still out" is exactly one of the
+        /// things that has to be checked. This one runs first, before the
+        /// error is consulted, so the failing half of every round trip has an
+        /// open window too.
+        ///
+        /// One-shot, like the other.
+        var beforeAnswering: (@Sendable () async -> Void)?
+
         func posts(after cursor: PageCursor?, limit: Int) async throws -> Page<Post> {
             cursorsRequested.append(cursor)
+            if let hook = beforeAnswering {
+                beforeAnswering = nil
+                await hook()
+            }
             if let error { throw error }
+            // A first-page read retires every cursor, exactly as
+            // `FirestoreFeedRepository` does with `resumePoints`. Without it
+            // the tokens issued before a refresh stay in the list and shift
+            // the position of every token issued after one, so paging after a
+            // refresh reads off the end and answers `.empty` — a fake
+            // answering differently from the thing it stands for, which is
+            // the one kind of test failure that says nothing about the app.
+            // `aRefreshClearsALostPageAndItsCursor` is the test that found it.
+            if cursor == nil { issued.removeAll() }
             let index: Int
             if let cursor, let position = issued.firstIndex(of: cursor) {
                 index = position + 1
@@ -518,5 +543,257 @@ struct FeedViewModelTests {
         #expect(model.displayLikeCount(for: model.posts[0]) >= 0, "a count is never negative")
         // Serialized: every tap produced exactly one call, in order.
         #expect(likes.likeCalls.count == 5)
+    }
+
+    // MARK: - Refresh and paging failure, with the round trip held open
+    //
+    // Every test in this section fixes the moment it is asking about rather
+    // than sampling for it. The previous round could not reproduce any of
+    // these against the emulator and said so — a local round trip is 90ms, and
+    // "the rows were still there afterwards" is not an answer about what was
+    // on screen *during*. `beforeAnswering` and `whileInFlight` run inside an
+    // open read, so the window is constructed rather than waited for, and a
+    // passing test here passes because that interleaving happened.
+    //
+    // These are assertions about the model. What the *screen* does with them
+    // is `RefreshAndPagingUITests` and `CommentUITests`, which are separate on
+    // purpose: this file cannot see a view, and a view test cannot see a
+    // generation counter.
+
+    /// 1. A refresh does not take the rows away while it is running.
+    ///
+    /// `reload()` moves to `.loadingFirstPage` whatever was on screen, so the
+    /// property that keeps the list up is not the state — it is that `posts`
+    /// is left alone until a replacement arrives. That is what is checked
+    /// here, at the one instant it can be checked: inside the open read.
+    @Test func aRefreshInFlightStillHoldsTheRowsItIsReplacing() async {
+        let feed = FakeFeed()
+        feed.pages = [[Self.post("a"), Self.post("b")]]
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 2)
+        await model.loadFirstPageIfNeeded()
+
+        let during = Reading()
+        feed.pages = [[Self.post("c"), Self.post("d")]]
+        feed.whileInFlight = { @MainActor @Sendable in during.take(from: model) }
+        await model.reload()
+
+        #expect(during.postIDs == ["a", "b"], "the rows were dropped mid-refresh: \(during.postIDs)")
+        #expect(during.state == .loadingFirstPage, "the window sampled was not the refresh")
+        #expect(model.posts.map(\.id) == ["c", "d"], "and the replacement did arrive")
+    }
+
+    /// 2. A refresh that fails keeps what was readable and says so separately.
+    ///
+    /// Both halves: the rows are there while the doomed read is still out, and
+    /// they are still there after it fails. `.failed` with a non-empty `posts`
+    /// is the state the banner is drawn from; `.failed` with an empty one is
+    /// the whole-screen error, and the two must stay distinguishable.
+    @Test func aFailedRefreshKeepsTheRowsAndStaysRetryable() async {
+        let feed = FakeFeed()
+        feed.pages = [[Self.post("a"), Self.post("b")]]
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 2)
+        await model.loadFirstPageIfNeeded()
+
+        let during = Reading()
+        feed.error = NSError(domain: "FIRFirestoreErrorDomain", code: 13)
+        feed.beforeAnswering = { @MainActor @Sendable in during.take(from: model) }
+        await model.reload()
+
+        #expect(during.postIDs == ["a", "b"], "the rows went before the failure did")
+        #expect(model.posts.map(\.id) == ["a", "b"], "a failed refresh deleted the answer it was reporting on")
+        #expect(model.state == .failed(.server))
+
+        // The retry the banner offers is `reload()` again, and it recovers.
+        feed.error = nil
+        feed.pages = [[Self.post("c")]]
+        await model.reload()
+        #expect(model.state == .loaded)
+        #expect(model.posts.map(\.id) == ["c"])
+    }
+
+    /// 2b. The other side of the same branch: with nothing to keep, a failure
+    /// is a whole-screen failure. Losing this distinction would make the
+    /// banner the only thing an empty, broken feed ever showed.
+    @Test func aFailedFirstLoadWithNothingToKeepIsStillAWholeScreenFailure() async {
+        let feed = FakeFeed()
+        feed.error = NSError(domain: NSURLErrorDomain, code: -1009)
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 2)
+
+        await model.loadFirstPageIfNeeded()
+
+        #expect(model.posts.isEmpty)
+        #expect(model.state == .failed(.offline))
+    }
+
+    /// 3. Losing page three does not take pages one and two with it.
+    @Test func aFailedNextPageKeepsThePagesAlreadyRead() async {
+        let feed = FakeFeed()
+        feed.pages = [[Self.post("a")], [Self.post("b")], [Self.post("c")]]
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1)
+        await model.loadFirstPageIfNeeded()
+        await model.loadMoreIfNeeded(currentItem: model.posts.last)
+        #expect(model.posts.map(\.id) == ["a", "b"])
+
+        let during = Reading()
+        feed.error = NSError(domain: "test", code: 13)
+        feed.beforeAnswering = { @MainActor @Sendable in during.take(from: model) }
+        await model.loadMoreIfNeeded(currentItem: model.posts.last)
+
+        #expect(during.postIDs == ["a", "b"], "the read that was going to fail already had the rows off")
+        #expect(during.isLoadingMore, "the window sampled was not the page request")
+        #expect(model.posts.map(\.id) == ["a", "b"], "a lost page took the read ones with it")
+        #expect(model.state == .loaded, "a lost page is not a broken screen")
+        #expect(model.pagingFailure == .server, "and it is reported where it happened")
+    }
+
+    /// 4. An answer from a refresh that has been overtaken describes a list
+    /// that no longer exists, and is dropped whole.
+    ///
+    /// Refresh A is held open; refresh B runs to completion inside it and
+    /// brings back different rows; A then answers with what it sampled before
+    /// B existed. Splicing A in would put the older list back under the
+    /// person's finger.
+    @Test func aLateRefreshAnswerDoesNotOverwriteANewerOne() async {
+        let feed = FakeFeed()
+        feed.pages = [[Self.post("first")]]
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1)
+        await model.loadFirstPageIfNeeded()
+
+        // A samples ["stale"], then B runs inside A's open read and brings
+        // back ["newest"]. A's answer arrives afterwards.
+        feed.pages = [[Self.post("stale")]]
+        feed.whileInFlight = { @MainActor @Sendable in
+            feed.pages = [[Self.post("newest")]]
+            await model.reload()
+        }
+        await model.reload()
+
+        #expect(model.posts.map(\.id) == ["newest"], "the overtaken refresh was applied: \(model.posts.map(\.id))")
+        #expect(model.state == .loaded)
+    }
+
+    /// 4b. The same for a *failure* that arrives late. A refresh that has been
+    /// superseded must not put the screen into `.failed` — the newer one
+    /// succeeded, and the person would be told the feed is broken while
+    /// looking at a feed that is not.
+    @Test func aLateRefreshFailureDoesNotOverwriteANewerSuccess() async {
+        let feed = FakeFeed()
+        feed.pages = [[Self.post("first")]]
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1)
+        await model.loadFirstPageIfNeeded()
+
+        feed.error = NSError(domain: "test", code: 13)
+        feed.beforeAnswering = { @MainActor @Sendable in
+            feed.error = nil
+            feed.pages = [[Self.post("newest")]]
+            await model.reload()
+            feed.error = NSError(domain: "test", code: 13)
+        }
+        await model.reload()
+
+        #expect(model.state == .loaded, "a superseded failure broke a screen that had just loaded")
+        #expect(model.posts.map(\.id) == ["newest"])
+    }
+
+    /// 5. Retrying a lost page fetches the page that was lost — not the one
+    /// after it — and adds it exactly once.
+    ///
+    /// Both failures are silent from the outside. A skip leaves rows nothing
+    /// can ever page back to; a repeat shows the same post twice. The cursor
+    /// trail is asserted directly because `posts` alone cannot tell the two
+    /// apart from a fake that happens to answer consistently.
+    @Test func retryingALostPageAddsItOnceAndSkipsNothing() async {
+        let feed = FakeFeed()
+        feed.pages = [[Self.post("a")], [Self.post("b")], [Self.post("c")]]
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1)
+        await model.loadFirstPageIfNeeded()
+
+        feed.error = NSError(domain: "test", code: 13)
+        await model.loadMoreIfNeeded(currentItem: model.posts.last)
+        #expect(model.pagingFailure != nil)
+        let failedCursor = feed.cursorsRequested.last
+
+        feed.error = nil
+        await model.retryPaging()
+
+        #expect(feed.cursorsRequested.last == failedCursor, "the retry skipped the page that was lost")
+        #expect(model.posts.map(\.id) == ["a", "b"], "got \(model.posts.map(\.id))")
+        #expect(model.pagingFailure == nil)
+
+        // And paging carries on from there rather than from a hole.
+        await model.loadMoreIfNeeded(currentItem: model.posts.last)
+        #expect(model.posts.map(\.id) == ["a", "b", "c"], "got \(model.posts.map(\.id))")
+        #expect(Set(model.posts.map(\.id)).count == model.posts.count, "a row was added twice")
+    }
+
+    /// 5b. The retry is idempotent under the thing that produced it: a list
+    /// still being flung asks repeatedly, and the recovered cursor must not be
+    /// spent twice either.
+    @Test func retryingTwiceDoesNotFetchThePageTwice() async {
+        let feed = FakeFeed()
+        feed.pages = [[Self.post("a")], [Self.post("b")], [Self.post("c")]]
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1)
+        await model.loadFirstPageIfNeeded()
+
+        feed.error = NSError(domain: "test", code: 13)
+        await model.loadMoreIfNeeded(currentItem: model.posts.last)
+        feed.error = nil
+
+        await model.retryPaging()
+        await model.loadMoreIfNeeded(currentItem: model.posts.last)
+        await model.loadMoreIfNeeded(currentItem: model.posts.last)
+
+        #expect(model.posts.map(\.id) == ["a", "b", "c"], "got \(model.posts.map(\.id))")
+        let spent = feed.cursorsRequested.compactMap { $0 }
+        // The lost page's cursor is requested twice on purpose — once losing,
+        // once recovering. Nothing else may be.
+        let counts = Dictionary(grouping: spent, by: { $0 }).mapValues(\.count)
+        #expect(counts.values.filter { $0 > 1 }.count == 1, "a cursor was spent more than once: \(counts.values.sorted())")
+    }
+
+    /// 5c. A refresh landing on top of a lost page clears the failure rather
+    /// than leaving a retry button pointing at a cursor from a list that has
+    /// been replaced. Tapping that button after a refresh would page from the
+    /// wrong place.
+    @Test func aRefreshClearsALostPageAndItsCursor() async {
+        let feed = FakeFeed()
+        feed.pages = [[Self.post("a")], [Self.post("b")]]
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1)
+        await model.loadFirstPageIfNeeded()
+
+        feed.error = NSError(domain: "test", code: 13)
+        await model.loadMoreIfNeeded(currentItem: model.posts.last)
+        #expect(model.pagingFailure != nil)
+
+        feed.error = nil
+        feed.pages = [[Self.post("x")], [Self.post("y")]]
+        await model.reload()
+
+        #expect(model.pagingFailure == nil, "the old page's failure outlived the list it belonged to")
+        #expect(model.posts.map(\.id) == ["x"])
+        await model.loadMoreIfNeeded(currentItem: model.posts.last)
+        #expect(model.posts.map(\.id) == ["x", "y"], "got \(model.posts.map(\.id))")
+    }
+}
+
+/// One instant of what the feed was holding, taken from inside an open read.
+///
+/// A class rather than captured locals because the hook that fills it is an
+/// escaping `@Sendable` closure. `@MainActor` on the type is what makes it
+/// `Sendable` without an `@unchecked`, and it is the same actor the model
+/// lives on, so the reading is taken without a hop that could let the model
+/// move underneath it.
+@MainActor
+final class Reading {
+    var postIDs: [String] = []
+    var state: FeedViewModel.LoadState = .idle
+    var pagingFailure: FeedViewModel.FailureKind?
+    var isLoadingMore = false
+
+    func take(from model: FeedViewModel) {
+        postIDs = model.posts.map(\.id)
+        state = model.state
+        pagingFailure = model.pagingFailure
+        isLoadingMore = model.isLoadingMore
     }
 }

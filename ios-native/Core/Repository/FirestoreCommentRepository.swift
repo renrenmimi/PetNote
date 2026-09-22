@@ -28,7 +28,95 @@ actor FirestoreCommentRepository: CommentRepository {
         self.environment = environment
     }
 
-    func comments(postID: String, after cursor: PageCursor?, limit: Int) async throws -> Page<Comment> {
+    // MARK: - Fault injection: reads
+
+    /// The comment-list failures a healthy emulator cannot be asked for.
+    ///
+    /// `PostDetailView.commentsSection` carried a note saying that this file's
+    /// fault injection covered `create` only, so there was no way to make page
+    /// three fail while pages one and two were up, and that the branch in the
+    /// view was therefore the only evidence available. This is the part that
+    /// note was missing.
+    ///
+    /// Same two properties as `FirestoreFeedRepository.Fault`: one-shot, so a
+    /// retry can be shown working, and the injected answer is distinguishable,
+    /// so a test that reads the screen too late fails instead of passing.
+    /// `#if PETNOTE_FAULT_INJECTION` plus a `-petnote-` name, for the reasons
+    /// spelled out on `FirestoreFeedRepository.Fault`: the condition is
+    /// narrower than `DEBUG`, which `Debug-TestCloud` — the package that goes
+    /// on the phone — also sets, and the name is what lets the package audit
+    /// prove the absence by grepping the binary instead of by reading this.
+    #if PETNOTE_FAULT_INJECTION
+    enum ReadFault: String, CaseIterable, Sendable {
+        /// Pages of three, so a second page exists on any post with a few
+        /// comments and is reachable without a scroll of thirty rows.
+        case tinyPages = "-petnote-comments-tiny-pages"
+        /// The first cursored read fails. Retrying the same cursor works.
+        case failNextPageOnce = "-petnote-comments-next-page-fails-once"
+        /// The first refresh stalls, and then answers empty.
+        case stallThenEmptyRefresh = "-petnote-comments-refresh-stalls-then-empties"
+        /// The first refresh fails outright.
+        case failRefreshOnce = "-petnote-comments-refresh-fails-once"
+    }
+
+    /// All of them, not the first match: `tinyPages` has to be combinable with
+    /// a failure, and `first(where:)` would honour one and drop the other.
+    private static var injectedReadFaults: Set<ReadFault> {
+        let arguments = ProcessInfo.processInfo.arguments
+        return Set(ReadFault.allCases.filter { arguments.contains($0.rawValue) })
+    }
+
+    private static let readStall = Duration.seconds(8)
+    private static let tinyPageSize = 3
+
+    private var spentReadFaults: Set<ReadFault> = []
+    /// Reads of the first page answered so far. The first is the screen
+    /// filling up; anything after it is a refresh.
+    private var firstPageReads = 0
+
+    private func injectedCommentAnswer(for cursor: PageCursor?) async throws -> Page<Comment>? {
+        let faults = Self.injectedReadFaults.subtracting(spentReadFaults)
+        let isRefresh = cursor == nil && firstPageReads > 0
+
+        if isRefresh, faults.contains(.failRefreshOnce) {
+            spentReadFaults.insert(.failRefreshOnce)
+            log.info("fault: failing a comment refresh")
+            throw Self.injectedReadFailure
+        }
+        if isRefresh, faults.contains(.stallThenEmptyRefresh) {
+            spentReadFaults.insert(.stallThenEmptyRefresh)
+            log.info("fault: stalling a comment refresh, then answering empty")
+            try? await Task.sleep(for: Self.readStall)
+            resumePoints.removeAll()
+            return .empty
+        }
+        if cursor != nil, faults.contains(.failNextPageOnce) {
+            spentReadFaults.insert(.failNextPageOnce)
+            log.info("fault: failing one cursored comment read")
+            throw Self.injectedReadFailure
+        }
+        return nil
+    }
+
+    private static var injectedReadFailure: Error {
+        NSError(
+            domain: "FIRFirestoreErrorDomain", code: 13,
+            userInfo: [NSLocalizedDescriptionKey: "injected comment read failure"]
+        )
+    }
+    #endif
+
+    func comments(
+        postID: String, after cursor: PageCursor?, limit requestedLimit: Int
+    ) async throws -> Page<Comment> {
+        #if PETNOTE_FAULT_INJECTION
+        if let injected = try await injectedCommentAnswer(for: cursor) { return injected }
+        if cursor == nil { firstPageReads += 1 }
+        let limit = Self.injectedReadFaults.contains(.tinyPages) ? Self.tinyPageSize : requestedLimit
+        #else
+        let limit = requestedLimit
+        #endif
+
         guard let validID = DeepLink.validDocumentID(postID) else { return .empty }
         if cursor == nil { resumePoints.removeAll() }
 
@@ -89,10 +177,13 @@ actor FirestoreCommentRepository: CommentRepository {
     /// really never learns the outcome — which is what makes "did it land?"
     /// checkable against the server afterwards.
     ///
-    /// Debug-only and argument-gated, like `-petnote-start-signed-out`: a
-    /// release build has no code that can reach these, and nothing in the app's
-    /// own UI passes them.
-    #if DEBUG
+    /// Behind `PETNOTE_FAULT_INJECTION` and argument-gated. It used to be
+    /// `#if DEBUG`, which was not the same claim: `Debug-TestCloud` sets
+    /// `DEBUG` and is the configuration installed on the phone, so a switch
+    /// that loses a comment's response was compiled into the acceptance
+    /// package. Only `Debug-Emulator` sets this one. Nothing in the app's own
+    /// UI passes any of them.
+    #if PETNOTE_FAULT_INJECTION
     enum Fault: String, CaseIterable {
         /// Let the callable run, then throw the answer away.
         case loseResponseAfterWrite = "-petnote-comment-lose-response"
@@ -133,7 +224,7 @@ actor FirestoreCommentRepository: CommentRepository {
             throw CommentError.transport(Transport.unavailable)
         }
 
-        #if DEBUG
+        #if PETNOTE_FAULT_INJECTION
         if Self.injectedFault == .neverSend {
             log.info("fault: refusing to send, as if there were no connection")
             throw Self.map(NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet))
@@ -163,7 +254,7 @@ actor FirestoreCommentRepository: CommentRepository {
                 log.error("createCommentCallable returned an unexpected shape")
                 throw CommentError.outcomeUnknown
             }
-            #if DEBUG
+            #if PETNOTE_FAULT_INJECTION
             if Self.injectedFault == .loseResponseAfterWrite {
                 // The comment exists. We are throwing away the only thing that
                 // said so, which is exactly what a dropped response does.

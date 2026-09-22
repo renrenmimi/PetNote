@@ -190,11 +190,13 @@ struct PostDetailView: View {
     /// whole area, and with something on screen the failure is a line under
     /// the comments it failed to add to.
     ///
-    /// Read off the code, not off a screen. `FirestoreCommentRepository`'s
-    /// fault injection covers `create` only, so there is no way from a test
-    /// to make page three fail while pages one and two are up, and none was
-    /// added for this — the branch above is the evidence, and it is the kind
-    /// that a run cannot currently improve on.
+    /// This used to be read off the code and not off a screen, because
+    /// `FirestoreCommentRepository`'s fault injection covered `create` only
+    /// and there was no way from a test to make page three fail while pages
+    /// one and two were up. `ReadFault.failNextPageOnce` is that way, and
+    /// `CommentUITests.testALostCommentPageKeepsTheCommentsAlreadyReadAndThe-
+    /// RetryAddsThem` is the run: page one stays on screen, the failure is a
+    /// line under it, and the retry brings page two in.
     @ViewBuilder
     private var commentsSection: some View {
         if model.comments.isEmpty {
@@ -213,13 +215,29 @@ struct PostDetailView: View {
                     .accessibilityIdentifier("detail.noComments")
             }
         } else {
+            // A failed *refresh* goes above the rows, not after them. The
+            // person pulled down at the top; that is where they are looking,
+            // and on a post with a long comment list "after the last row" is
+            // far enough down that SwiftUI had not built it — so the notice
+            // was neither visible nor in the accessibility tree, and the only
+            // thing that told us was a test that could not find it.
+            if case .failed(let message) = model.commentsState,
+               model.commentsFailureCameFromARefresh {
+                commentsFailure(message)
+            }
             ForEach(model.comments) { comment in
                 CommentRow(comment: comment)
                     .task { await model.loadMoreCommentsIfNeeded(currentItem: comment) }
             }
-            if case .failed(let message) = model.commentsState {
+            // …and a page that failed to arrive stays at the bottom, where the
+            // reader was heading when it did not turn up.
+            if case .failed(let message) = model.commentsState,
+               !model.commentsFailureCameFromARefresh {
                 commentsFailure(message)
             } else if model.hasMoreComments {
+                // `hasMoreComments` is set false on failure, so this cannot
+                // draw a "loading more" spinner underneath a refresh that just
+                // failed above.
                 ProgressView()
                     .frame(maxWidth: .infinity)
                     .accessibilityLabel("Loading more comments")

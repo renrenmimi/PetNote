@@ -30,6 +30,17 @@ final class PostDetailViewModel {
     private(set) var state: LoadState = .loading
     private(set) var comments: [Comment] = []
     private(set) var commentsState: CommentsState = .loading
+    /// Whether the current failure came from a refresh rather than from
+    /// reaching for another page.
+    ///
+    /// The two belong in different places on the screen and it took a test to
+    /// notice. A page that fails to arrive belongs at the bottom, where the
+    /// reader was heading. A *refresh* that fails belongs at the top, because
+    /// the person pulled down at the top and that is where they are looking —
+    /// and on the post this suite uses, "after the last comment" was far
+    /// enough down that it had not been rendered at all, so the notice was
+    /// neither seen nor findable.
+    private(set) var commentsFailureCameFromARefresh = false
     private(set) var hasMoreComments = true
     /// The count as the server last reported it. Everything else about the
     /// like is an offset from this, never a replacement for it.
@@ -400,15 +411,27 @@ final class PostDetailViewModel {
             // as this used to, wiped page 1 and then returned without asking
             // for a replacement.
             commentGeneration += 1
-            comments.removeAll()
             nextCursor = nil
             requestedCursors.removeAll()
             hasMoreComments = true
             isLoadingComments = false
             commentsState = .loading
+            // **The comments themselves are not cleared here.** They used to
+            // be, and the cost was paid by the person pulling to refresh: the
+            // list they were reading went blank for the length of the round
+            // trip, and if the refresh failed it stayed blank and said "could
+            // not load" about comments it had just thrown away. Against the
+            // local emulator that blank is 90ms and invisible, which is why it
+            // survived; the length of it is the length of the network, not of
+            // a loopback. They are replaced below, when there is something to
+            // replace them with.
         }
         guard hasMoreComments, !isLoadingComments else { return }
-        if let cursor = nextCursor {
+        // Read once and carried, so the `catch` can give it back. `nextCursor`
+        // is not a safe thing to re-read there — a refresh that landed in the
+        // meantime has already set it to nil.
+        let cursor = nextCursor
+        if let cursor {
             guard !requestedCursors.contains(cursor) else { return }
             requestedCursors.insert(cursor)
         }
@@ -420,20 +443,36 @@ final class PostDetailViewModel {
         do {
             let page = try await commentRepository.comments(
                 postID: postID,
-                after: nextCursor,
+                after: cursor,
                 limit: pageSize
             )
             guard thisGeneration == commentGeneration else { return }
-            let known = Set(comments.map(\.id))
-            comments.append(contentsOf: page.items.filter { !known.contains($0.id) })
+            if reset {
+                // Replaced rather than merged: a comment the server no longer
+                // returns has been deleted, and a refresh that kept it would
+                // be the one place it could never go away.
+                comments = page.items
+            } else {
+                let known = Set(comments.map(\.id))
+                comments.append(contentsOf: page.items.filter { !known.contains($0.id) })
+            }
             nextCursor = page.next
             hasMoreComments = page.hasMore
             commentsState = .loaded
         } catch {
             guard thisGeneration == commentGeneration else { return }
+            // Spent cursors are spent once — except by the request that lost
+            // them. Without this the retry below walks into its own
+            // re-entrancy guard and returns having done nothing, leaving the
+            // screen on `.loading` with a spinner that never resolves: the
+            // failure is reported, the button is offered, and pressing it is
+            // silently a no-op. The feed's paging path has released the cursor
+            // on failure since it was written; this one never did.
+            if let cursor { requestedCursors.remove(cursor) }
             log.error("comments failed: \(error.localizedDescription, privacy: .public)")
             // Not silence: an empty list after a failure reads as "no comments",
             // which is a different fact.
+            commentsFailureCameFromARefresh = reset
             commentsState = .failed(Self.message(for: error))
             hasMoreComments = false
         }
@@ -442,7 +481,12 @@ final class PostDetailViewModel {
     func retryComments() async {
         commentsState = .loading
         hasMoreComments = true
-        await loadComments(reset: comments.isEmpty)
+        // "Is there a page to resume from", not "is the list empty". A refresh
+        // that failed now leaves the rows up *and* no cursor, so asking about
+        // the rows sent the retry down the append path with a nil cursor — it
+        // re-read page one and merged it into itself, which is the one reading
+        // where a deleted comment could never go away.
+        await loadComments(reset: nextCursor == nil)
     }
 
     func loadMoreCommentsIfNeeded(currentItem: Comment) async {

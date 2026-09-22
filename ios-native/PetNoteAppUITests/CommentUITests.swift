@@ -750,6 +750,178 @@ final class CommentUITests: XCTestCase {
         XCTAssertLessThan(after, before, "the list did not move at all")
     }
 
+
+    // MARK: - 5C.11's other half: what a lost comment page does to the ones already read
+    //
+    // `PostDetailView.commentsSection` carried a note saying this could not be
+    // driven from a test — the fault injection in `FirestoreCommentRepository`
+    // covered `create` only, so there was no way to make page two fail while
+    // page one was up, and the branch in the view was the only evidence
+    // available. `ReadFault` is the part that note was missing, and these are
+    // the runs it makes possible. Every fault is one-shot and behind
+    // `#if DEBUG`.
+
+    /// A held pull that returns as soon as the drag is over.
+    ///
+    /// The shared `pullToRefreshFeed` settles afterwards, which is the window
+    /// a stalled refresh has to be looked at inside. The gesture is the same
+    /// one, and for the same reason: `swipeDown()` is a flick and does not
+    /// trigger `.refreshable`.
+    private func startPullToRefresh(_ app: XCUIApplication) {
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9))
+        start.press(forDuration: 0.2, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.8)
+    }
+
+    private func waitUntilGone(_ element: XCUIElement, timeout: TimeInterval = 30) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if !element.exists { return true }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        return !element.exists
+    }
+
+    /// Losing page two must not take page one off the screen, and the retry
+    /// offered for it must actually fetch something.
+    ///
+    /// The retry is the half that was broken. `loadComments` inserted the
+    /// cursor into `requestedCursors` before the request and never took it out
+    /// when the request failed, so `retryComments` walked straight into its
+    /// own spent-cursor guard and returned having done nothing — leaving the
+    /// screen on `.loading`, which draws a spinner under the comments that
+    /// never resolves. From outside, a button that reports nothing when
+    /// pressed. The assertion that catches it is "new comments appeared",
+    /// not "the error went away": the error goes away either way.
+    func testALostCommentPageKeepsTheCommentsAlreadyReadAndTheRetryAddsThem() throws {
+        let app = launchOnSignIn(extraArguments: [
+            "-petnote-comments-tiny-pages",
+            "-petnote-comments-next-page-fails-once",
+        ])
+        signIn(app, email: "accept-a@example.com")
+        try openTheMostCommentedPost(app)
+
+        let rows = app.staticTexts.matching(identifier: "comment.row")
+        XCTAssertTrue(waitForExistence(of: rows.firstMatch, in: app, timeout: 40),
+                      "the first page of comments never arrived")
+
+        var reported = false
+        for _ in 0..<10 {
+            if app.staticTexts["detail.commentsError"].exists { reported = true; break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(reported, "the lost comment page was never reported\n\(app.debugDescription)")
+        XCTAssertTrue(app.buttons["detail.commentsRetry"].exists, "the failure offers no retry")
+
+        let kept = labels(of: rows)
+        print("MEASURED comments kept through a lost page: \(kept.count)")
+        XCTAssertFalse(kept.isEmpty, "the comments went with the page that was lost")
+        XCTAssertFalse(app.staticTexts["detail.noComments"].exists,
+                       "a list with comments in it reported itself empty")
+        XCTAssertEqual(Set(kept).count, kept.count, "duplicate comments after the failure")
+
+        app.buttons["detail.commentsRetry"].tap()
+
+        var seen = Set(kept)
+        for _ in 0..<8 {
+            let sample = labels(of: rows)
+            XCTAssertEqual(Set(sample).count, sample.count, "a comment was on screen twice")
+            seen.formUnion(sample)
+            if seen.count > kept.count { break }
+            Thread.sleep(forTimeInterval: 0.5)
+            app.swipeUp()
+        }
+        print("MEASURED comments after the retry: \(seen.count) (kept \(kept.count))")
+        XCTAssertGreaterThan(
+            seen.count, kept.count,
+            "the retry brought nothing back — the cursor it needed was still marked spent"
+        )
+    }
+
+    /// A refresh that fails must keep the comments and say so separately,
+    /// rather than reporting "could not load" about comments it deleted on the
+    /// way to saying it.
+    func testACommentRefreshThatFailsKeepsTheCommentsOnScreen() throws {
+        let app = launchOnSignIn(extraArguments: ["-petnote-comments-refresh-fails-once"])
+        signIn(app, email: "accept-a@example.com")
+        try openTheMostCommentedPost(app)
+
+        let rows = app.staticTexts.matching(identifier: "comment.row")
+        XCTAssertTrue(waitForExistence(of: rows.firstMatch, in: app, timeout: 40))
+        let before = labels(of: rows)
+        XCTAssertFalse(before.isEmpty)
+
+        startPullToRefresh(app)
+        XCTAssertTrue(
+            waitForExistence(of: app.staticTexts["detail.commentsError"], in: app, timeout: 30),
+            "the refresh did not fail, so nothing below is about a failed refresh"
+        )
+
+        let after = labels(of: rows)
+        print("MEASURED comments before=\(before.count) after a failed refresh=\(after.count)")
+        XCTAssertFalse(after.isEmpty, "a failed refresh emptied the comment list")
+        XCTAssertFalse(app.staticTexts["detail.noComments"].exists,
+                       "a failed refresh made the list look empty rather than stale")
+        XCTAssertTrue(app.buttons["detail.commentsRetry"].exists, "no way to try again")
+    }
+
+    /// A stalled refresh answers, and the screen follows the answer.
+    ///
+    /// **This used to claim more than XCUITest can see, and failed saying so
+    /// in a way that read like the app's fault.** It sampled the list for 6.5s
+    /// after starting the pull and asserted at least one sample found rows.
+    /// Every run reported `every reading during the refresh found an empty
+    /// list: []` — and that `[]` is the sample array, not the list. No sample
+    /// was ever taken.
+    ///
+    /// The reason is structural, not a matter of timing. Every XCUITest
+    /// operation — synthesized gestures *and* element queries — waits for the
+    /// app to go quiescent first. The injected fault stalls the refresh for
+    /// eight seconds and `.refreshable` spins for all of it, so the app is not
+    /// quiescent; `startPullToRefresh` returned only once the stall was over,
+    /// and a query issued from another thread would have waited on the same
+    /// thing. **"The list did not go blank while the refresh was in flight" is
+    /// not observable from outside the process.**
+    ///
+    /// So it is asserted where it can be: `PostDetailViewModelTests`'s
+    /// `aCommentsRefreshInFlightStillHoldsTheCommentsItIsReplacing` reads
+    /// `model.comments` while the repository call is held open, which is the
+    /// same property one layer down. That is unit-level evidence and is
+    /// recorded as unit-level evidence.
+    ///
+    /// What is left here is what the UI really can settle: the stall ends, the
+    /// screen ends up agreeing with the answer that arrived, and nothing is
+    /// left spinning.
+    func testACommentRefreshInFlightDoesNotBlankTheList() throws {
+        let app = launchOnSignIn(extraArguments: ["-petnote-comments-refresh-stalls-then-empties"])
+        signIn(app, email: "accept-a@example.com")
+        try openTheMostCommentedPost(app)
+
+        let rows = app.staticTexts.matching(identifier: "comment.row")
+        XCTAssertTrue(waitForExistence(of: rows.firstMatch, in: app, timeout: 40))
+        XCTAssertFalse(labels(of: rows).isEmpty)
+
+        let pulled = Date()
+        startPullToRefresh(app)
+        let heldFor = Date().timeIntervalSince(pulled)
+        // Printed because it is the evidence for the paragraph above: the
+        // gesture call itself spans the stall. If this ever comes back well
+        // under the injected eight seconds, the quiescence argument no longer
+        // holds and sampling from inside the window becomes worth revisiting.
+        print(String(format: "MEASURED the pull gesture call returned after %.1fs", heldFor))
+
+        XCTAssertTrue(
+            waitForExistence(of: app.staticTexts["detail.noComments"], in: app, timeout: 30),
+            "the stalled refresh never answered"
+        )
+        XCTAssertTrue(labels(of: rows).isEmpty,
+                      "the answer was empty but rows from before it are still on screen")
+        XCTAssertFalse(app.staticTexts["detail.commentsError"].exists,
+                       "an answer arrived, so this is not an error state")
+        XCTAssertTrue(app.textFields["composer.field"].isHittable,
+                      "the screen is still usable after the stall")
+    }
+
     private func labels(of query: XCUIElementQuery) -> [String] {
         query.allElementsBoundByIndex.filter { $0.exists }.map { $0.label }
     }

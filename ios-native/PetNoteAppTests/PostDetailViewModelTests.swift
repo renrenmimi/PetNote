@@ -35,6 +35,22 @@ struct PostDetailViewModelTests {
         var releaseCreate: AsyncStream<Void>.Continuation?
         private var stream: AsyncStream<Void>?
         fileprivate var issued: [PageCursor] = []
+        /// Every cursor a read was asked for, in order. A skipped page and a
+        /// repeated one both look correct in `comments` alone if the fake
+        /// answers consistently; this is what tells them apart.
+        var cursorsRequested: [PageCursor?] = []
+
+        /// Runs at the very start of a read, before `readError` is consulted.
+        ///
+        /// The same window `FeedViewModelTests.FakeFeed.beforeAnswering`
+        /// opens, for the same reason: what the screen is holding while a read
+        /// that is going to fail is still out cannot be sampled after it.
+        /// One-shot.
+        var beforeAnswering: (@Sendable () async -> Void)?
+        /// Runs after the page has been chosen and before it is handed back,
+        /// so a second refresh can overtake this one and the page this read
+        /// returns is genuinely the one it sampled first. One-shot.
+        var whileInFlight: (@Sendable () async -> Void)?
 
         func holdCreate() {
             let (s, c) = AsyncStream<Void>.makeStream()
@@ -43,6 +59,11 @@ struct PostDetailViewModelTests {
         }
 
         func comments(postID: String, after cursor: PageCursor?, limit: Int) async throws -> Page<PetNote.Comment> {
+            cursorsRequested.append(cursor)
+            if let hook = beforeAnswering {
+                beforeAnswering = nil
+                await hook()
+            }
             if let readError { throw readError }
             let index: Int
             if let cursor, let position = issued.firstIndex(of: cursor) { index = position + 1 } else { index = 0 }
@@ -53,7 +74,12 @@ struct PostDetailViewModelTests {
                 issued.append(token)
                 next = token
             }
-            return Page(items: pages[index], next: next)
+            let page = Page(items: pages[index], next: next)
+            if let hook = whileInFlight {
+                whileInFlight = nil
+                await hook()
+            }
+            return page
         }
 
         func create(postID: String, text: String, replyTo: String?) async throws -> String {
@@ -910,5 +936,176 @@ struct PostDetailViewModelTests {
         // Sending again is possible — it will fail again, and say why again.
         await model.send(authorID: "uid", authorName: "A")
         #expect(comments.createCalls.count == 2)
+    }
+
+    // MARK: - Comment refresh and paging failure, with the round trip held open
+    //
+    // Same discipline as `FeedViewModelTests`' section of the same name: the
+    // moment being asked about is constructed with `beforeAnswering` /
+    // `whileInFlight` rather than sampled for. The comment list had all of the
+    // feed's refresh problems one screen further in, and two of its own.
+
+    private func detailLoaded(
+        _ comments: FakeComments, pageSize: Int = 30
+    ) async -> PostDetailViewModel {
+        let feed = FakeFeed()
+        feed.post = Self.post()
+        let model = PostDetailViewModel(
+            postID: "p1", feed: feed, comments: comments, pageSize: pageSize
+        )
+        await model.load()
+        return model
+    }
+
+    /// 1. Pulling to refresh does not empty the list while the read is out.
+    ///
+    /// `loadComments(reset:)` cleared `comments` at the top and refilled it
+    /// when the answer came back, so everything the person was reading was
+    /// gone for the length of the round trip — 90ms on a loopback, and the
+    /// length of the network anywhere else.
+    @Test func aCommentsRefreshInFlightStillHoldsTheCommentsItIsReplacing() async {
+        let comments = FakeComments()
+        comments.pages = [[Self.comment("c1"), Self.comment("c2")]]
+        let model = await detailLoaded(comments)
+        #expect(model.comments.map(\.id) == ["c1", "c2"])
+
+        let during = CommentReading()
+        comments.pages = [[Self.comment("c3")]]
+        comments.whileInFlight = { @MainActor @Sendable in during.take(from: model) }
+        await model.loadComments(reset: true)
+
+        #expect(during.commentIDs == ["c1", "c2"], "the list went blank mid-refresh: \(during.commentIDs)")
+        #expect(model.comments.map(\.id) == ["c3"], "and the replacement did arrive")
+    }
+
+    /// 2. A refresh that fails keeps the comments and offers a retry, rather
+    /// than reporting "could not load comments" about comments it deleted on
+    /// the way to saying so.
+    @Test func aFailedCommentsRefreshKeepsTheCommentsAndStaysRetryable() async {
+        let comments = FakeComments()
+        comments.pages = [[Self.comment("c1"), Self.comment("c2")]]
+        let model = await detailLoaded(comments)
+
+        let during = CommentReading()
+        comments.readError = NSError(domain: "test", code: 13)
+        comments.beforeAnswering = { @MainActor @Sendable in during.take(from: model) }
+        await model.loadComments(reset: true)
+
+        #expect(during.commentIDs == ["c1", "c2"], "the rows went before the failure did")
+        #expect(model.comments.map(\.id) == ["c1", "c2"], "a failed refresh emptied the list")
+        if case .failed = model.commentsState {} else {
+            Issue.record("expected .failed, got \(model.commentsState)")
+        }
+
+        // And the retry the failure line offers actually re-reads.
+        comments.readError = nil
+        comments.pages = [[Self.comment("c9")]]
+        await model.retryComments()
+        #expect(model.commentsState == .loaded)
+        #expect(model.comments.map(\.id) == ["c9"], "got \(model.comments.map(\.id))")
+    }
+
+    /// 3. Losing page two does not take page one off the screen.
+    @Test func aFailedNextCommentPageKeepsThePagesAlreadyRead() async {
+        let comments = FakeComments()
+        comments.pages = [[Self.comment("c1")], [Self.comment("c2")], [Self.comment("c3")]]
+        let model = await detailLoaded(comments, pageSize: 1)
+        #expect(model.comments.map(\.id) == ["c1"])
+
+        let during = CommentReading()
+        comments.readError = NSError(domain: "test", code: 13)
+        comments.beforeAnswering = { @MainActor @Sendable in during.take(from: model) }
+        await model.loadMoreCommentsIfNeeded(currentItem: model.comments[0])
+
+        #expect(during.commentIDs == ["c1"], "page one was already gone while page two was out")
+        #expect(model.comments.map(\.id) == ["c1"], "a lost page took the read one with it")
+        if case .failed = model.commentsState {} else {
+            Issue.record("expected .failed, got \(model.commentsState)")
+        }
+    }
+
+    /// 4. A refresh that has been overtaken must not put its older answer back.
+    @Test func aLateCommentsRefreshAnswerDoesNotOverwriteANewerOne() async {
+        let comments = FakeComments()
+        comments.pages = [[Self.comment("first")]]
+        let model = await detailLoaded(comments)
+
+        comments.pages = [[Self.comment("stale")]]
+        comments.whileInFlight = { @MainActor @Sendable in
+            comments.pages = [[Self.comment("newest")]]
+            await model.loadComments(reset: true)
+        }
+        await model.loadComments(reset: true)
+
+        #expect(model.comments.map(\.id) == ["newest"], "the overtaken refresh was applied: \(model.comments.map(\.id))")
+        #expect(model.commentsState == .loaded)
+    }
+
+    /// 4b. And a failure from an overtaken refresh must not break a screen the
+    /// newer one has just filled.
+    @Test func aLateCommentsFailureDoesNotOverwriteANewerSuccess() async {
+        let comments = FakeComments()
+        comments.pages = [[Self.comment("first")]]
+        let model = await detailLoaded(comments)
+
+        comments.readError = NSError(domain: "test", code: 13)
+        comments.beforeAnswering = { @MainActor @Sendable in
+            comments.readError = nil
+            comments.pages = [[Self.comment("newest")]]
+            await model.loadComments(reset: true)
+            comments.readError = NSError(domain: "test", code: 13)
+        }
+        await model.loadComments(reset: true)
+
+        #expect(model.commentsState == .loaded, "a superseded failure broke a screen that had just loaded")
+        #expect(model.comments.map(\.id) == ["newest"])
+    }
+
+    /// 5. Retrying a lost comment page fetches the page that was lost, adds it
+    /// once, and leaves paging able to carry on.
+    ///
+    /// Before the cursor was released on failure this could not work at all:
+    /// `retryComments` walked into the spent-cursor guard and returned having
+    /// done nothing, so the screen sat on `.loading` — the spinner under the
+    /// comments, forever, from a button that reported nothing when pressed.
+    @Test func retryingALostCommentPageAddsItOnceAndSkipsNothing() async {
+        let comments = FakeComments()
+        comments.pages = [[Self.comment("c1")], [Self.comment("c2")], [Self.comment("c3")]]
+        let model = await detailLoaded(comments, pageSize: 1)
+
+        comments.readError = NSError(domain: "test", code: 13)
+        await model.loadMoreCommentsIfNeeded(currentItem: model.comments[0])
+        let failedCursor = comments.cursorsRequested.last
+
+        comments.readError = nil
+        await model.retryComments()
+
+        #expect(comments.cursorsRequested.last == failedCursor, "the retry skipped the page that was lost")
+        #expect(model.comments.map(\.id) == ["c1", "c2"], "got \(model.comments.map(\.id))")
+        #expect(model.commentsState == .loaded, "got \(model.commentsState)")
+
+        // Paging carries on from there rather than from a hole. Driven from
+        // the last row rather than from index 1: when this fails it fails by
+        // leaving one comment on screen, and indexing would turn a reported
+        // expectation into a trap that takes the rest of the suite with it.
+        guard let lastRow = model.comments.last else { return }
+        await model.loadMoreCommentsIfNeeded(currentItem: lastRow)
+        #expect(model.comments.map(\.id) == ["c1", "c2", "c3"], "got \(model.comments.map(\.id))")
+        let ids = model.comments.map(\.id)
+        #expect(Set(ids).count == ids.count, "a comment was added twice: \(ids)")
+    }
+}
+
+/// One instant of what the detail screen was holding, taken from inside an
+/// open read. The comment half of `Reading`; see it for why this is a
+/// `@MainActor` class rather than captured locals.
+@MainActor
+final class CommentReading {
+    var commentIDs: [String] = []
+    var state: PostDetailViewModel.CommentsState = .loading
+
+    func take(from model: PostDetailViewModel) {
+        commentIDs = model.comments.map(\.id)
+        state = model.commentsState
     }
 }
