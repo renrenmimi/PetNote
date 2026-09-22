@@ -68,8 +68,8 @@ UI 测试里的上传一律走**本地替身**（`ios-native/scripts/upload-stan
 | Feed、刷新、分页 | ⑤ @`4ba1c57` | `RefreshAndPagingUITests`、`NavigationUITests`；真机中文内容 | 当前候选版待回归 |
 | 帖子详情、返回位置 | ⑤ @`4ba1c57` | `NavigationUITests` | 可中断返回的两个细节真机未确认 |
 | 图片、全屏看图 | ③ | `ImageUITests` | 真机未专项验 |
-| 视频播放、断流恢复 | ⑤ @`4ba1c57`（播放） | `VideoPlaybackUITests`；断流恢复只到 ③ | 当前 CI 有 3 条视频用例红，修复中 |
-| 点赞 | ⑤ @`4ba1c57` | 真机 `Like/0 → Unlike/1`，云端 `counted=True` | `LikeUITests` 本轮出现新失败，原因未定 |
+| 视频播放、断流恢复 | ⑤ @`4ba1c57`（播放） | `VideoPlaybackUITests`；断流恢复只到 ③。`08c1105` 上 CI 的 3 条红：测试写死了字节范围，CI 渲染的测试视频长度随 runner 变化（测试代码相同，`0867749` 上又通过了）；已改成先问夹具要长度（`14ddb6d`），本地 52/52 | 断流恢复真机未验 |
+| 点赞 | ⑤ @`4ba1c57` | 真机 `Like/0 → Unlike/1`，云端 `counted=True`；`LikeUITests` 在 Tab 栏下 7/7（`98bd1b7`） | 此前那条失败已查明：点击落在离屏幕底边 3.7pt 处，App 没收到，不是点赞逻辑的问题 |
 | 评论（写） | ⑤ @`4ba1c57` | `CommentUITests`；真机中文输入 | — |
 | 删除自己的评论 | ① | `Callables.deleteComment` 已登记，无界面 | 未排批次 |
 | 收藏 | ② | `PostWriteManageTests` · 详情页菜单 | UI 未验；「已收藏」列表 ① |
