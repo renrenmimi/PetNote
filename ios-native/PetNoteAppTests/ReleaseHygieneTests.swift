@@ -42,7 +42,16 @@ struct ReleaseHygieneTests {
     /// accident — without this file having to change on the same commit as the
     /// xcconfigs. Either way `theReleaseConfigurationDefinesNoDebugOnlyCondition`
     /// is what makes the name mean something.
-    private static let debugOnlyConditions: Set<String> = ["DEBUG", "PETNOTE_TEST_HOOKS"]
+    /// `PETNOTE_FAULT_INJECTION` is the dedicated condition this comment
+    /// anticipated, and it is narrower than `DEBUG` on purpose: `DEBUG` is set
+    /// in `Debug-TestCloud`, which is the configuration that goes on the
+    /// owner's phone, so a switch that makes a refresh fail was reaching the
+    /// acceptance package. Read-only probes stay behind `DEBUG`; anything that
+    /// makes the app misbehave is behind this, and `Debug-Emulator` is the
+    /// only configuration that sets it.
+    private static let debugOnlyConditions: Set<String> = [
+        "DEBUG", "PETNOTE_TEST_HOOKS", faultInjection,
+    ]
 
     // MARK: - What counts as a test switch
 
@@ -376,6 +385,101 @@ struct ReleaseHygieneTests {
             Config/\(name).xcconfig defines none of \
             \(Self.debugOnlyConditions.sorted().joined(separator: ", ")), so nothing behind a \
             #if DEBUG can be reached from it — including the fault injection the UI tests need.
+            """
+        )
+    }
+
+    /// The condition that turns on code whose job is to make the app
+    /// misbehave is set by exactly one configuration.
+    ///
+    /// `debugConfigurationsDefineADebugOnlyCondition` cannot say this. It asks
+    /// whether each debug configuration defines *at least one* debug-only
+    /// condition, and `Debug-TestCloud` satisfies that with `DEBUG` alone —
+    /// which is exactly how a refresh that fails on purpose came to be
+    /// compiled into the package that goes on the owner's phone. The rule that
+    /// actually has to hold points the other way and names the condition.
+    ///
+    /// `Release` is in the list for completeness even though
+    /// `theReleaseConfigurationDefinesNoDebugOnlyCondition` already covers it:
+    /// this is the test somebody reads when they are about to add a line to an
+    /// xcconfig, and a list with a hole in it invites the hole to be filled.
+    @Test(arguments: ["Debug-Prod", "Debug-TestCloud", "Release"])
+    func onlyTheEmulatorConfigurationTurnsOnFaultInjection(name: String) throws {
+        let conditions = try Self.compilationConditions(inConfigNamed: name)
+        #expect(
+            !conditions.contains(Self.faultInjection),
+            """
+            Config/\(name).xcconfig defines \(Self.faultInjection), so every \
+            refresh that fails on purpose, every read that stalls for eight \
+            seconds and every page that never arrives is compiled into that \
+            build — and into anything installed from it. Only Debug-Emulator \
+            may define it; the failure tests run on the simulator and nothing \
+            on a phone ever asks for one.
+            """
+        )
+    }
+
+    /// And the one configuration that must define it, does.
+    ///
+    /// The mirror image, and the quieter failure: a gate that is compiled
+    /// nowhere looks exactly like a gate that works, right up to the UI test
+    /// that cannot reach the fault it was written for and passes because the
+    /// screen never changed.
+    @Test func theEmulatorConfigurationTurnsFaultInjectionOn() throws {
+        let conditions = try Self.compilationConditions(inConfigNamed: "Debug-Emulator")
+        #expect(
+            conditions.contains(Self.faultInjection),
+            """
+            Config/Debug-Emulator.xcconfig does not define \(Self.faultInjection), \
+            so nothing behind that gate is compiled anywhere — including the \
+            refresh and paging faults RefreshAndPagingUITests and CommentUITests \
+            launch the app with.
+            """
+        )
+    }
+
+    /// Named once. It appears in `debugOnlyConditions`, in both tests above,
+    /// and in two xcconfigs; a typo in any of them fails open.
+    private static let faultInjection = "PETNOTE_FAULT_INJECTION"
+
+    /// And only `Debug-Emulator` turns fault injection on.
+    ///
+    /// The mirror of the test above, and the one that actually keeps the
+    /// device package clean. `debugConfigurationsDefineADebugOnlyCondition`
+    /// asks whether a configuration has *at least one* debug-only condition,
+    /// which `Debug-TestCloud` satisfies with `DEBUG` alone — so it would go on
+    /// passing on the day somebody added `PETNOTE_FAULT_INJECTION` to
+    /// `Debug-TestCloud.xcconfig` and put eleven ways of breaking the app back
+    /// into the build that goes on the owner's phone.
+    ///
+    /// Read-only probes are a different question and are deliberately not
+    /// covered here: device acceptance needs `-petnote-start-signed-out` and
+    /// the video state probe, and the evidence from the last device session
+    /// came from them.
+    @Test(arguments: ["Debug-Prod", "Debug-TestCloud", "Release"])
+    func onlyTheEmulatorConfigurationEnablesFaultInjection(name: String) throws {
+        let conditions = try Self.compilationConditions(inConfigNamed: name)
+        #expect(
+            !conditions.contains("PETNOTE_FAULT_INJECTION"),
+            """
+            Config/\(name).xcconfig defines PETNOTE_FAULT_INJECTION. That gate holds \
+            the switches that make the app fail on purpose — a refresh that fails, a page \
+            that never arrives, a stream that stalls. Only Debug-Emulator may define it; \
+            \(name) is a configuration somebody installs and uses.
+            """
+        )
+    }
+
+    /// …and `Debug-Emulator` really does, or the fault-injection UI tests are
+    /// testing a build where the fault cannot happen and passing for the wrong
+    /// reason.
+    @Test func theEmulatorConfigurationEnablesFaultInjection() throws {
+        let conditions = try Self.compilationConditions(inConfigNamed: "Debug-Emulator")
+        #expect(
+            conditions.contains("PETNOTE_FAULT_INJECTION"),
+            """
+            Config/Debug-Emulator.xcconfig no longer defines PETNOTE_FAULT_INJECTION, so every \
+            fault-injection test is exercising a build with no faults in it.
             """
         )
     }

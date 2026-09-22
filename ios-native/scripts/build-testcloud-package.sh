@@ -20,11 +20,17 @@
 #   --control-app PATH   reuse an existing Debug-Emulator *device* .app as the
 #                        scan's positive control instead of building one
 #   --skip-control       skip the control (the switch scan is then reported
-#                        UNVERIFIED, never "clean")
+#                        UNVERIFIED, never "clean", and the script exits 2)
 #   --release-check      also build Release for a device and scan it; that is
 #                        the package that must contain no switches at all
 #   --keep-going         do not stop the remaining steps after a failure
 #   -h | --help
+#
+# Exit codes:
+#   0  every check reached a verdict and none failed
+#   1  at least one check FAILED
+#   2  nothing failed, but at least one check could not reach a verdict
+#      ("inconclusive" is not "clean" - see the note at the bottom)
 #
 # Nothing here touches the cloud, runs firebase, or writes to any project.
 
@@ -81,6 +87,11 @@ LOGDIR="$ROOT/build/dd-pkg-logs"
 mkdir -p "$LOGDIR"
 REPORT="$LOGDIR/audit-$STAMP.txt"
 
+# The help text is this file's own header. Finding where that header ends by
+# reading the file beats hard-coding a line number: the last time a few lines
+# were added to it, `--help` silently started cutting the last section off.
+HELP_LAST_LINE="$(awk 'NR>1 && !/^#/ { print NR - 1; exit }' "${BASH_SOURCE[0]}")"
+
 CONTROL_APP=""
 SKIP_CONTROL=0
 RELEASE_CHECK=0
@@ -91,7 +102,7 @@ while [ $# -gt 0 ]; do
     --skip-control) SKIP_CONTROL=1; shift ;;
     --release-check) RELEASE_CHECK=1; shift ;;
     --keep-going) KEEP_GOING=1; shift ;;
-    -h|--help) sed -n '2,29p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n "2,${HELP_LAST_LINE}p" "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -479,6 +490,45 @@ else
   record BLOCKED "switch inventory UNVERIFIED (no valid control)" "re-run without --skip-control"
 fi
 
+# --- fault injection: the part of the inventory that must NOT be here --------
+#
+# "This is a Debug package so switches are expected" is true of probes and
+# false of fault injection. A probe reads state; a fault switch makes the app
+# fail on purpose. Device acceptance needs the first and never asks for the
+# second, so nothing that breaks the app belongs in the package a person runs.
+#
+# The list is read out of the sources rather than matched by name, because a
+# naming rule only holds for as long as everybody remembers it. Anything behind
+# `#if PETNOTE_FAULT_INJECTION` is compiled out of every configuration except
+# Debug-Emulator, so its string literals should be absent from this binary -
+# and absence of a literal is something `strings` can settle.
+say ""
+FAULT_LITERALS="$(bash "$ROOT/scripts/fault-switches.sh" 2>/dev/null)"
+nfault="$(printf '%s\n' "$FAULT_LITERALS" | grep -c . )"
+if [ "$nfault" -eq 0 ]; then
+  # Nothing declared means nothing to look for, and a scan that looks for
+  # nothing finds nothing. That is not evidence.
+  record FACT "no fault-injection switches are declared behind PETNOTE_FAULT_INJECTION" \
+    "scripts/fault-switches.sh returned an empty list, so this package has nothing to be clean of"
+else
+  # `tokens` is this package's inventory from step 3, already stripped of the
+  # `strings` file prefix. The scanner's regex has no leading dash, so compare
+  # against the literal with its dash removed.
+  present=""
+  for literal in $FAULT_LITERALS; do
+    if printf '%s\n' "$tokens" | grep -qxF -- "${literal#-}"; then
+      present="$present $literal"
+    fi
+  done
+  if [ -n "$present" ]; then
+    record FAIL "the device package carries fault-injection switch(es):$present" \
+      "these make the app fail on purpose and must not exist outside Debug-Emulator"
+  else
+    record PASS "0 of $nfault fault-injection switches are in the device package" \
+      "checked by literal: $(printf '%s ' $FAULT_LITERALS)"
+  fi
+fi
+
 fi  # end: package exists
 
 # --- 3e. optional: the Release candidate must be clean -----------------------
@@ -575,5 +625,26 @@ done
 say "  $nf failing, $nb blocked."
 say "  report: $REPORT"
 
-[ "$nf" -gt 0 ] && exit 1
+# Three exit codes, because "it failed" and "it could not tell" are different
+# answers and a caller reads the code, not the prose above it.
+#
+# This previously exited 0 whenever nothing outright FAILED, which meant a run
+# where the switch scan had no valid control - the run that explicitly refuses
+# to report the package as clean - still reported success to whoever called it.
+# The text said "not reporting it as clean" and the exit code said "clean".
+#
+#   0  every check reached a verdict and none failed
+#   1  at least one check failed
+#   2  no check failed, but at least one could not reach a verdict
+#      (--skip-control lands here on purpose: you asked for no control, so the
+#      scan is inconclusive, and an inconclusive scan is not a pass)
+if [ "$nf" -gt 0 ]; then
+  say "  exit 1: $nf check(s) failed."
+  exit 1
+fi
+if [ "$nb" -gt 0 ]; then
+  say "  exit 2: nothing failed, but $nb check(s) could not reach a verdict."
+  say "          这不是通过。没有结论的扫描不能当作干净。"
+  exit 2
+fi
 exit 0
