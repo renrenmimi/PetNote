@@ -100,7 +100,15 @@ struct SocialFollowTests {
     /// Not optimistic: until the server has answered, the button does not
     /// claim a follow that has not happened. And a second tap in that window
     /// sends nothing.
-    @Test func aSecondTapWhileTheFirstIsInFlightSendsNothing() async {
+    ///
+    /// The watchdog is what lets this test *fail*. With the in-flight guard
+    /// removed, the second tap goes to the repository and waits on the same
+    /// closed gate, and the `gate.open()` below it is never reached: the
+    /// test hung instead of failing, and took a whole test run with it. The
+    /// watchdog opens the gate after two seconds, so a second call gets
+    /// through, is counted, and the count below catches it.
+    @Test(.timeLimit(.minutes(1)))
+    func aSecondTapWhileTheFirstIsInFlightSendsNothing() async {
         let repository = FakeSocialRepository()
         let gate = SocialGate()
         repository.followGate = gate
@@ -111,8 +119,10 @@ struct SocialFollowTests {
         #expect(follow.isBusy)
         #expect(follow.status == .notFollowing, "the button claimed a follow the server had not confirmed")
 
+        let watchdog = Task { try? await Task.sleep(for: .seconds(2)); gate.open() }
         await follow.toggle()
         gate.open()
+        watchdog.cancel()
         await first.value
 
         #expect(repository.followCalls.count == 1)

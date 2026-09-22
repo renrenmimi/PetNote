@@ -303,6 +303,10 @@ final class FakeSearchRepository: SearchRepository, @unchecked Sendable {
     var countsError: Error?
     var popularTagResult: [Hashtag] = []
     var popularTagError: Error?
+    /// Holds the tags read open, so a test can make it answer *after* the
+    /// other modules — the only order in which "one failure empties the
+    /// others" is visible.
+    var popularTagGate: SocialGate?
     var recentPosts: [Post] = []
     var recentError: Error?
     var byFollowers: [Pet] = []
@@ -350,6 +354,7 @@ final class FakeSearchRepository: SearchRepository, @unchecked Sendable {
     }
 
     func popularTags(limit: Int) async throws -> [Hashtag] {
+        if let popularTagGate { await popularTagGate.wait() }
         if let popularTagError { throw popularTagError }
         return popularTagResult
     }

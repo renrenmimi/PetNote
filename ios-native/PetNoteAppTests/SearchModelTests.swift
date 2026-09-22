@@ -228,14 +228,24 @@ struct SearchExploreTests {
     }
 
     /// One module failing must not empty the others.
+    ///
+    /// The failure is made to arrive **last**. The modules load concurrently,
+    /// and when the tags failed first, a failure path that emptied the other
+    /// modules ran before they had anything in them — so it cleared nothing,
+    /// and a version of the model that did exactly that passed this test.
     @Test func oneModuleFailingLeavesTheOthersOnScreen() async {
         let repository = FakeSearchRepository()
         repository.popularTagError = SocialFixture.readFailure
+        let tagsAnswer = SocialGate()
+        repository.popularTagGate = tagsAnswer
         repository.recentPosts = [SocialFixture.post("p1")]
         repository.byFollowers = [SocialFixture.pet("pet-a")]
         let explore = model(repository)
 
-        await explore.load()
+        let loading = Task { await explore.load() }
+        await socialEventually { !explore.trendingPosts.isEmpty && !explore.discoverPets.isEmpty }
+        tagsAnswer.open()
+        await loading.value
 
         #expect(explore.failed == [.tags])
         #expect(explore.trendingPosts.map(\.id) == ["p1"])
