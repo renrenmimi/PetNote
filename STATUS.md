@@ -89,6 +89,22 @@ UI 测试里的上传一律走**本地替身**（`ios-native/scripts/upload-stan
 
 ---
 
+## 待授权（一次列全）
+
+新功能在模拟器上能过，但要到「④ 与真实测试后端联调」，还需要主人批准下面几项。**都只涉及测试项目 `petnote-devtest`，不碰生产。** 未经批准我一项都不会做。
+
+| # | 要做什么 | 为什么 | 费用 |
+| --- | --- | --- | --- |
+| A | 在 `petnote-devtest` 上加部署 28 个**不带密钥**的函数：账号资料 3 个（`ensureUserProfile`、`checkDisplayNameAvailability`、`updateUserProfile`）+ 触发器 `onUserUpdated`、`onFamilyCreated`；宠物 4 个（`createPet`、`updatePet`、`deletePet`、`getPetCheckins`）+ `onPetDeleted`；发帖管理 5 个（`createPost`、`updatePost`、`deletePost`、`getPublishStatus`、`setPinnedPost`）+ `onPostWritten`、`onPostDeleted`；社交 9 个（`followPet`、`unfollowPet`、5 个邀请函数、`removeFamilyMember`、`transferPetPrimary`）+ `onFollowingPetCreated`、`onFollowingPetDeleted` | 现在云上只有评论和点赞的 6 个函数，注册、建宠物、发帖、关注、邀请在云上都跑不起来 | 按调用计费，测试流量很小；沿用现有的 $1 预算告警 |
+| B | **照片上传二选一**：① 开一个独立的**测试** Cloudinary 账号（免费套餐），服务端的云名改成按部署配置（改 `functions/src/platform.ts`，属于后端代码改动）；② 在测试项目里放生产 Cloudinary 的密钥 —— **这违反「不把生产密钥复制到测试环境」，我不建议** | 服务端只认云名 `dgeunvmmn` 的图片地址，而那是生产账号。不解决这一条，云端测试就发不了带图的帖子 | ① 免费套餐为 0 |
+| C | Google 登录：在 `petnote-devtest` 建 iOS OAuth 客户端、导出新的 `GoogleService-Info.plist`、引入 GoogleSignIn SDK（新依赖） | 旧版有 Google 登录，Swift 还没有 | 0 |
+| D | 一个主人能收信的测试邮箱 | 验证邮件和重置密码邮件的真实往返（Firebase Auth 自己发信，不需要密钥） | 0 |
+| E | 真机：插线，并在 **2026-09-25** 描述文件到期前重签 | 手机上装的还是 `4ba1c57`，这一轮的改动全都没上过真机 | 0 |
+
+**明确不在清单里的**：`deleteCloudinaryAssetsCallable`（媒体删除权限）、三个在线重算、验证码重置、`resumeAbandonedPetDeletions`、`deleteUserAccount`（等第 5 批再议）。
+
+---
+
 ## 真机验收断点（主人已拔线离开）
 
 真机自动化、截图、安装、启动、连接重试**全部已停止**。不再查询设备。
