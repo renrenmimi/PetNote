@@ -101,17 +101,26 @@ struct LoginView: View {
     /// no account.
     private var alternatives: some View {
         VStack(alignment: .leading, spacing: Spacing.m) {
-            Button("Forgot your password?") { path.append(.forgotPassword) }
-                .font(Typography.body)
-                .foregroundStyle(Palette.brandPrimary)
-                .frame(minHeight: Layout.minTouchTarget)
-                .accessibilityIdentifier("login.forgotPassword")
+            // The height goes on the label, inside the button. On the button
+            // it made the row taller and left the control — what a finger and
+            // VoiceOver get — at the text's own 17pt at the smallest type size.
+            Button { path.append(.forgotPassword) } label: {
+                Text("Forgot your password?")
+                    .frame(minHeight: Layout.minTouchTarget)
+                    .contentShape(.rect)
+            }
+            .font(Typography.body)
+            .foregroundStyle(Palette.brandPrimary)
+            .accessibilityIdentifier("login.forgotPassword")
 
-            Button("New here? Create an account") { path.append(.signUp) }
-                .font(Typography.body)
-                .foregroundStyle(Palette.brandPrimary)
-                .frame(minHeight: Layout.minTouchTarget)
-                .accessibilityIdentifier("login.signUp")
+            Button { path.append(.signUp) } label: {
+                Text("New here? Create an account")
+                    .frame(minHeight: Layout.minTouchTarget)
+                    .contentShape(.rect)
+            }
+            .font(Typography.body)
+            .foregroundStyle(Palette.brandPrimary)
+            .accessibilityIdentifier("login.signUp")
         }
         .disabled(isSubmitting)
     }

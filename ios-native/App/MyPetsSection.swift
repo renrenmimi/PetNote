@@ -121,8 +121,11 @@ struct MyPetsSection: View {
                 Text(message)
                     .font(Typography.caption)
                     .foregroundStyle(Palette.secondaryText)
-                Button("Try again") { Task { await model.load() } }
-                    .frame(minHeight: Layout.minTouchTarget)
+                Button { Task { await model.load() } } label: {
+                    Text("Try again")
+                        .frame(minHeight: Layout.minTouchTarget)
+                        .contentShape(.rect)
+                }
                     .accessibilityIdentifier("profile.pets.retry")
             }
         case .loaded(let pets) where pets.isEmpty:

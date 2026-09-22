@@ -135,10 +135,13 @@ struct ProfileView: View {
                 .multilineTextAlignment(.center)
                 .accessibilityIdentifier("profile.error")
             if isRetryable {
-                Button("Try again") { Task { await model.load() } }
+                Button { Task { await model.load() } } label: {
+                    Text("Try again")
+                        .frame(minHeight: Layout.minTouchTarget)
+                        .contentShape(.rect)
+                }
                     .font(Typography.body)
                     .foregroundStyle(Palette.brandPrimary)
-                    .frame(minHeight: Layout.minTouchTarget)
                     .accessibilityIdentifier("profile.retry")
             }
         }

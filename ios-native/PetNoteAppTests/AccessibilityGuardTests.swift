@@ -124,4 +124,63 @@ struct AccessibilityGuardTests {
             """
         )
     }
+
+    // MARK: - A touch target sized from outside the button
+
+    /// `Button("Title") { … }.frame(minHeight: 44)` looks like a 44pt control
+    /// and is not one. The frame is outside the button: it makes the row
+    /// taller, and leaves the button — what a finger and VoiceOver get — at
+    /// its text's height. `AccessibilityUITests` measured it: "Forgot your
+    /// password?" was 17pt tall at the smallest type size, and six "Try again"
+    /// buttons were written the same way. The height belongs on the label.
+    static func buttonsSizedFromOutside(in text: String, named name: String) -> [String] {
+        let lines = text.components(separatedBy: .newlines)
+        var found: [String] = []
+        for (index, line) in lines.enumerated() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.hasPrefix("//"),
+                  trimmed.range(of: #"Button\("[^"]*"(, role: [^)]*)?\)"#, options: .regularExpression) != nil
+            else { continue }
+            // The modifiers attached to that button: the lines that follow and
+            // start with a dot, up to the first one that does not.
+            for next in lines.dropFirst(index + 1).prefix(6) {
+                let modifier = next.trimmingCharacters(in: .whitespaces)
+                guard modifier.hasPrefix(".") else { break }
+                if modifier.hasPrefix(".frame(minHeight: Layout.minTouchTarget")
+                    || modifier.hasPrefix(".frame(minWidth: Layout.minTouchTarget") {
+                    found.append("\(name) line \(index + 1): \(trimmed)")
+                    break
+                }
+            }
+        }
+        return found
+    }
+
+    @Test func noButtonIsSizedFromOutsideItsLabel() throws {
+        let found = try Self.appSources().flatMap { Self.buttonsSizedFromOutside(in: $0.text, named: $0.name) }
+        #expect(
+            found.isEmpty,
+            """
+            These buttons get their 44pt from a frame outside the button, which             sizes the row and not the control. Put the frame and a             .contentShape(.rect) on the label instead:
+            \(found.joined(separator: "\n"))
+            """
+        )
+    }
+
+    @Test func theOutsideSizingGuardCatchesTheShapeItIsFor() {
+        let violation = """
+            Button("Try again") { retry() }
+                .font(Typography.body)
+                .frame(minHeight: Layout.minTouchTarget)
+            """
+        let fixed = """
+            Button { retry() } label: {
+                Text("Try again")
+                    .frame(minHeight: Layout.minTouchTarget)
+                    .contentShape(.rect)
+            }
+            """
+        #expect(Self.buttonsSizedFromOutside(in: violation, named: "v").count == 1)
+        #expect(Self.buttonsSizedFromOutside(in: fixed, named: "f").isEmpty)
+    }
 }

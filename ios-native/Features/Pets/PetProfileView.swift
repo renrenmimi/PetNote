@@ -393,10 +393,13 @@ struct PetProfileView: View {
             Text(message)
                 .font(Typography.body)
                 .foregroundStyle(Palette.primaryText)
-            Button("Try again") { Task { await retry() } }
+            Button { Task { await retry() } } label: {
+                Text("Try again")
+                    .frame(minHeight: Layout.minTouchTarget)
+                    .contentShape(.rect)
+            }
                 .font(Typography.body)
                 .foregroundStyle(Palette.brandPrimary)
-                .frame(minHeight: Layout.minTouchTarget)
                 .contentShape(.rect)
                 .accessibilityIdentifier("\(identifier).retry")
         }

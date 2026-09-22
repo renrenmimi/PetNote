@@ -299,8 +299,27 @@ struct SignedInView: View {
 
     /// One builder for both stacks, so a pet page or a post opened from the
     /// profile behaves exactly as the same screen opened from the feed.
-    @ViewBuilder
     private func destination(_ route: Route, stack: Binding<[Route]>) -> some View {
+        destinationContent(route, stack: stack)
+            .toolbar(Self.showsTabBar(on: route) ? .visible : .hidden, for: .tabBar)
+    }
+
+    /// The web client's rule (`App.tsx`, `showBottomNav`): the bottom bar is on
+    /// the top-level pages — feed, search, profile, and later places, meetups
+    /// and notifications — and gone on everything pushed from them.
+    ///
+    /// Not only parity. The detail screen's comment composer was laid out and
+    /// verified on a device with nothing below it; under a tab bar it left a
+    /// 99pt dead strip beneath itself, which `AccessibilityUITests` caught.
+    static func showsTabBar(on route: Route) -> Bool {
+        switch route {
+        case .feed, .search: return true
+        case .postDetail, .pet, .user, .petFollowers, .followingPets, .family, .joinFamily: return false
+        }
+    }
+
+    @ViewBuilder
+    private func destinationContent(_ route: Route, stack: Binding<[Route]>) -> some View {
         switch route {
         case .feed:
             FeedView(model: feedModel, path: stack).environment(video)

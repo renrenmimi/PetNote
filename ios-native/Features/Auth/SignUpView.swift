@@ -74,10 +74,13 @@ struct SignUpView: View {
                 // it, carrying the address across so it does not have to be
                 // typed again.
                 if case .emailAlreadyInUse(let email) = notice {
-                    Button("Sign in instead") { onUseExistingAccount(email) }
+                    Button { onUseExistingAccount(email) } label: {
+                        Text("Sign in instead")
+                            .frame(minHeight: Layout.minTouchTarget)
+                            .contentShape(.rect)
+                    }
                         .font(Typography.body)
                         .foregroundStyle(Palette.brandPrimary)
-                        .frame(minHeight: Layout.minTouchTarget)
                         .accessibilityIdentifier("signup.useExistingAccount")
                 }
             }
