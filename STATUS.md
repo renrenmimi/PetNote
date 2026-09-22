@@ -54,22 +54,220 @@
 
 ---
 
-## 未提交改动（HEAD = `4ba1c57`）
+## 未提交改动（HEAD = `f947da0`）
+
+上一批 8 个改动文件已全部提交，落成 `0e81c59`…`f947da0` 六个 commit。
+当前工作区是**第二批，三个 agent 正在并行写**，所以这份清单随时在动：
 
 ```
-M  App/SignedInView.swift                  详情页回调接线
-M  Core/Model/Post.swift                   withCommentCount
-M  Features/Feed/FeedView.swift            用显示计数
-M  Features/Feed/FeedViewModel.swift       评论计数收敛
-M  Features/PostDetail/PostDetailView.swift    用实时计数
-M  Features/PostDetail/PostDetailViewModel.swift  本屏偏移 + 回调
-M  PetNoteApp.xcodeproj/.../PetNote-TestCloud.xcscheme  启用 UI 测试
-M  PetNoteAppUITests/UITestSupport.swift   弹窗竞态
-?? PetNoteAppTests/CommentCountSyncTests.swift      6 条回归
-?? PetNoteAppUITests/DeviceAcceptanceUITests.swift  7 条真机用例
+M  Core/Media/VideoPlayerView.swift            断流状态机（agent 在改）
+M  Core/Media/VideoPlaybackCoordinator.swift   同上
+M  PetNoteAppTests/FeedViewModelTests.swift    刷新/分页失败（agent 在改）
+M  PetNoteAppTests/PostDetailViewModelTests.swift  同上
+M  PetNoteAppUITests/HitRegionBoundaryUITests.swift 触控区探针修复（agent 在改）
+M  PetNoteAppUITests/TouchTargetUITests.swift  同上
+M  scripts/a2-*                                可控媒体服务（agent 在改）
+M  PetNoteAppUITests/VideoPlaybackUITests.swift  我：补两条导航断言
+?? PetNoteAppTests/ClaimGuardTests.swift        我：名字≠断言的守卫
+?? scripts/with-build-lock.sh                   我：构建锁
 ```
 
-**待办**：跑完全量确认无回退后提交。
+**待办**：三个 agent 收工后跑全量回归，确认无回退再提交。
+
+---
+
+## 第二批（四个缺口）的实际结果
+
+三个并行 agent 在 15:3x 全部因会话额度中断，之后由我接手。以下是**我独立核对过代码与日志**得出的，不是转述它们的自述。
+
+### 1. 视频断流 —— 已实现，并在复核中发现一个真缺陷
+
+状态机九个，阈值集中在 `VideoStallPolicy`，每个默认值都有论证（0.6s 出反馈取
+Nielsen 1s 界限之下、0.1–0.3s 噪音带之上；重试 1.5/4/9s 三次封顶）。
+界面上**只有 `.stalled` 会画东西**，`.pausedByViewer` / `.suspended` /
+`.waitingItsTurn` / `.ended` 都不画——「暂停、离屏、切后台不误报错误」成立。
+恢复时不改静音（`entry.player.isMuted = isMuted`，沿用用户的选择）。
+
+**复核时发现的缺陷：重试上限实际上不生效。**
+
+`automaticRecoveryIsBoundedAndThenOffersAWayOut` 连续两次在 60 秒后超时，
+最后状态 `phase=playing attempts=1`。病因是两个常量互相打架：
+
+| 常量 | 值 | 作用 |
+| --- | --- | --- |
+| `rebuildItem` 的 `toleranceBefore` | **`.positiveInfinity`** | 恢复后 seek 回断点**之前**，落点无下界 |
+| `healthyProgressToRefundBudget` | 3.0s | 播够这么久就退还一次重试预算 |
+
+注释写的是「落在断点或之前，绝不之后」——理由正确（后面的字节正是缺失的那段），
+但「之前」没有下界，包含**文件开头**。16 秒测试素材在 35% 处断流，
+于是一次恢复重播了整个完好的 5.6 秒，远超 3 秒阈值，
+**每一次失败的恢复都把预算还给了自己**，「三次之后问用户」变成了死循环。
+
+改为 `recoverySeekToleranceBefore = 1.5`（不到退还阈值的一半），
+并加了一条算术不变式测试 `recoverySeekLandsInsideTheRefundWindow` 钉住这层关系——
+集成测试要一分钟才失败，且只会说「超时」，不会说是哪两个常量不再相容。
+
+**另一处：VoiceOver 分不清「在播」和「卡住」。** 标签只有 `Video` /
+`Video, not playing` 两种，断流落进第一种；说明卡顿的那个转圈是
+`accessibilityHidden(true)`，而状态字符串只在探针模式下填。
+也就是说在出现重试按钮之前的 10 秒里，VoiceOver 用户什么都得不到。
+已加第三种标签 `Video, stopped loading`。**这一处目前没有测试覆盖**，
+记为已实现·未验证。
+
+### 2. 刷新与分页失败 —— 已实现
+
+九条单测用 `FakeFeed` 测试替身，四条真机 UI 测试
+（`RefreshAndPagingUITests`）用确定性启动参数驱动真实界面，两套证据分开记。
+不靠固定延时等网络变慢——正面回应了「emulator 只有 90ms 复现不了」。
+
+`PostDetailViewModel` 修了三个缺陷：
+
+1. 刷新不再先清空列表。在 emulator 上那段空白只有 90ms 所以一直没人发现，
+   真实网络下它的长度就是整个往返，且刷新失败时会停在空白并说「加载失败」，
+   说的是它自己刚扔掉的那些评论。
+2. 刷新改为**替换**而非合并——否则服务端已删除的评论会成为唯一永远删不掉的东西。
+3. 失败时释放已用游标。**没有这一条，重试按钮按下去是静默的空操作**：
+   它撞进自己的重入保护，返回时什么也没做，界面停在转圈。
+   Feed 的分页路径从一开始就释放了，详情页这条从来没有。
+
+### 3. 触控区 —— **不交付数字，工具未通过校准**
+
+按要求先用已知尺寸的对照组验证工具。**两轮都没通过**：
+
+| 轮次 | like 按钮实际 48.33 × 44 | 结论 |
+| --- | --- | --- |
+| 14:48 | 高 `[28.1, 28.8)`、宽 `[0, 0.54)` | 塌缩成一个点：左右边界都落在 40.167，正是水平中心 |
+| 17:0x（修过探针后） | 高 `[61.9, 62.5)`、宽 UNRESOLVED | 反过来高估约 40% |
+
+二分搜索算法本身是对的——合成探针（纯函数，真值 18/44/60/44.165）那条一直通过，
+且 44.000 正确地报 UNCONFIRMED。坏的是**探针判定「这一下是不是命中了目标控件」**。
+
+读代码可以排除「对照组期望值错了」这个可能：like 按钮的 `contentShape(.rect)`
+套在 `.frame(minWidth: 44, minHeight: 44)` 上，命中区就应当等于无障碍 frame。
+
+所以按你定的规矩——工具没通过校准就不去量核心控件——**本轮不产出任何触控区数字**，
+上一轮 02:23 那批旧数据也不冒充成本轮结果。那条对照组测试留在树里红着，
+它是这条线唯一真实的产出。
+
+### 4. 验收记录 —— 已按版本重写
+
+见 `evidence/ios-native/acceptance-status.md`。要点：中文输入恢复为
+**真机通过 @`4ba1c57`**（主人亲自确认），`f947da0` 标**当前候选版待回归**并写明
+待回归的具体范围；返回手势拆成「手势可用（通过）」与「中途取消/草稿保留（未验证）」
+两行，不外推；VoiceOver 改为「主人未给出结果」。
+
+---
+
+## 诊断代码与真机包：`#if DEBUG` 挡不住
+
+问构建系统核实的四个配置：
+
+```
+Debug-Emulator  → DEBUG PETNOTE_FAULT_INJECTION
+Debug-Prod      → DEBUG PETNOTE_READ_ONLY
+Debug-TestCloud → DEBUG PETNOTE_TEST_CLOUD      ← 装到手机上的就是这个
+Release         → PETNOTE_READ_ONLY
+```
+
+`Debug-TestCloud` 是 Debug 配置，所以 `#if DEBUG` 里的东西**会进真机包**。
+11 个故障注入开关（让刷新失败、让读卡住 8 秒、让某页丢失）本来都在那里面。
+
+拆成两类门：只读探针留 `#if DEBUG`（真机验收要靠它们取证），
+故障注入改用新的 `#if PETNOTE_FAULT_INJECTION`，只有 Debug-Emulator 定义。
+
+**并且不靠读源码相信**：`scripts/fault-switches.sh` 从源码里自动读出落在该门后的
+字面量清单（现为 11 个），包审计断言它们在真机包二进制里一个都不存在。
+提取器用五种情形的对照组验过（无门不计、嵌套 `#if DEBUG` 内计、`&&` 组合式计、
+`!` 取反不计）。清单为空时报 FACT 而非 PASS——**找不到东西的扫描不算证据**。
+
+两条方向相反的守卫钉住配置：非 Emulator 配置不得定义该条件；
+Emulator 必须定义（否则所有故障注入测试会**因为故障根本不会发生而通过**）。
+
+### 顺带修的两个真缺陷
+
+- 包审计脚本在开关扫描**因缺对照组而没得出结论**时仍 `exit 0`，
+  正文写着「不报告为干净」而退出码说「干净」。现在无结论 `exit 2`。
+- CI 只断言执行数 ≥1，挡得住「一个都没跑」，挡不住「265 个只跑了 3 个」。
+  加了下限 `FLOOR=240`，并写明是下限不是精确值。
+
+---
+
+## 「测试名称不能代替业务证据」：全量审计结果
+
+起因是主人点出的一条：`testThirtyVideosInARealListNeverExceedTheCeiling`
+被我当作「滚动不误触导航」的证据，但它只断言了播放器数量上限，
+**通篇没有任何关于导航的断言**。名字带着一个承诺，断言没有兑现，
+而被读走的是名字。
+
+### 已修
+
+| 用例 | 补了什么 |
+| --- | --- |
+| `testThirtyVideosInARealListNeverExceedTheCeiling` | feed 导航栏仍在、无 `Post` 栏、无 `composer.field` |
+| `testFlingingPastVideosStaysWithinTheCeiling` | 同上（快速滑动最容易误触，同一形状） |
+
+### 全量扫描：340 个测试，0 条「只有名字没有断言」
+
+扫描器剥掉注释与字符串字面量后解析 `@Test` 与 `func test…()` 两种方言，
+判定「一条断言都没有」的用例。**只有三种情况可以没有断言，且必须显式声明**：
+名字以 `record` 开头的记录器、断言在会 throw 的 helper 里、显式 skip。
+
+工具本身做了对照验证，因为这一轮它骗了我两次：
+
+1. 第一版用 XCTest 的 `func test…` 模式扫单元测试，解析到 **0 个**测试，
+   于是报告「0 条可疑」。单元测试用的是 Swift Testing（`@Test` + `#expect`），
+   258 个一个都没解析到。**一个什么都没解析到的解析器，永远报 0。**
+2. 第二版修好解析后报「0 条红」。往真实文件里注入一条零断言测试，
+   **它仍然报 0** —— 中间那版生成脚本时转义套多了一层，正则变成了字面量。
+
+第三版通过注入对照：340 → 341 个测试，注入的
+`theCeilingIsNeverExceededUnderLoad` 被抓到，还原后回到 0。
+
+3. **然后注入对照自己也漏了一个。** 加了一条元检查（白名单里的 helper
+   必须自己判失败）之后，它指控 `TestVideoFixture.waitUntil` 不判失败——
+   而那个 helper 正是整条规则围绕着写的，它明明 `throw WaitedTooLong`。
+   真正的原因是解析器：`waitUntil` 的参数里有个默认值闭包
+   `describe: @escaping () -> String = { "" }`，取「函数名之后的第一个 `{`」
+   咬住的是那个闭包，函数体被读成了两个字符 `""`。
+   **凡是带默认闭包参数的函数，全都被读错了。**
+   而第 2 步的注入对照没发现，因为我注入的那条签名很普通，
+   走的是本来就好用的那条路径。
+
+改成「跳过参数列表后的第一个 `{`」，并补了一条专门钉这个形状的对照。
+重新注入两种形状（带默认闭包的零断言测试、同名但不判失败的 helper），
+两条都被抓到，还原后回到 0。
+
+**先证明工具抓得住，再相信它给的零。** 这一轮它骗了我三次，
+每次都是「0」看起来像结论、实际是仪器没工作。
+
+这套规则已经钉成 `PetNoteAppTests/ClaimGuardTests.swift`，
+含 4 条正/负对照和 2 条解析器自身的对照，下一个新测试犯同样的错会直接红。
+
+### 顺带查出的一个真隐患：同名 helper，失败语义相反
+
+白名单按**名字**匹配，而名字不是函数。查下来项目里有三个 `waitUntil`：
+
+| 定义 | 超时行为 |
+| --- | --- |
+| `TestVideoFixture.waitUntil` | `throw WaitedTooLong` → 测试红 |
+| `ImageLoaderTests.waitUntil` | `Issue.record(...)` → 测试红 |
+| `TouchTargetUITests.waitUntil` | **只 `return false`** → 测试不红 |
+
+还有两个 `signIn`：`SessionFlow.signIn` 断言「到达 feed」，
+`DeviceAcceptanceUITests.signIn` 什么都不检查。
+
+调用第三个 `waitUntil` 而没检查返回值的测试，就是一条永远不会失败的测试，
+而守卫会凭「另外两个同名的都判失败」把它放行。两处都已改名：
+`becomesTrue(within:)`（touch agent 改）、`typeCredentialsAndSubmit`（我改，
+5 处调用同步更新）。元检查现在会保证白名单上每个名字的**所有**定义都判失败。
+
+### 顺带查清的两条「零断言」，都是合理的
+
+- `theSessionIsAmbientBeforeTheFirstFrameIsShown` —— 断言在 `waitUntil` 里，
+  它超时会 `throw WaitedTooLong`。已核实该 helper 确实 throw 而不是静默返回
+  （本项目出现过 helper 把「查询被拒」吞成「零结果」，让四条断言保持绿色）。
+- `recordTheDisabledSubmitButtonRatio` —— 自己的注释就写着「不是断言，是记录」。
+  禁用态控件不在 WCAG 1.4.3 范围内，没有阈值可断言。
 
 ---
 
