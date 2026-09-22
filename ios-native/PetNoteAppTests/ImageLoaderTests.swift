@@ -233,6 +233,46 @@ struct ImageLoaderBehaviourTests {
         #expect(stub.requestCount == 1, "it was restarted rather than shared")
     }
 
+    /// A cancellation belongs to the stub that started the request.
+    ///
+    /// This is the timing that made `aRowScrollingAwayDoesNotCancelTheRowBesideIt`
+    /// fail intermittently, written down so it fails on purpose instead of by
+    /// luck. `StubURLProtocol` is installed globally and each test replaces
+    /// the previous one; `.serialized` orders the tests but does not wait for
+    /// `URLSession` to finish tearing a cancelled request down. So a stop
+    /// belonging to an earlier test could arrive after the next test had
+    /// installed its own stub and be counted there — a cancellation appearing
+    /// in a test that never cancelled anything.
+    ///
+    /// Reproduced here without waiting for luck: one request is left open, a
+    /// second stub is installed underneath it exactly as the next test would,
+    /// and only then is the first request cancelled.
+    @Test func aCancellationIsCountedByTheTransportThatStartedTheRequest() async throws {
+        let (first, startedIt) = loader()
+        startedIt.respond(with: try Self.png(side: 200), status: 200, delay: .seconds(5))
+
+        let request = Task { try await first.image(for: photo, maxPixelSize: 300) }
+        try await Self.waitUntil("the request to reach the transport") {
+            startedIt.requestCount == 1
+        }
+
+        // The next test's fixture arrives while that request is still open.
+        let (_, theNextTestsStub) = loader()
+
+        request.cancel()
+        _ = try? await request.value
+        try await Self.waitUntil("the transport to be told to stop") {
+            startedIt.cancelCount == 1
+        }
+
+        #expect(startedIt.cancelCount == 1,
+                "the stub that started the request did not see its cancellation")
+        #expect(theNextTestsStub.cancelCount == 0,
+                "a cancellation from an earlier request was counted by the stub installed after it")
+        #expect(theNextTestsStub.requestCount == 0,
+                "the second stub answered a request that was not made through it")
+    }
+
     /// The register must not outlive the work, or the next screenful joins a
     /// request that finished long ago — or, worse, one that was cancelled.
     @Test func nothingIsLeftBehindAfterAScreenfulComesAndGoes() async throws {
@@ -424,12 +464,30 @@ final class StubURLProtocol: URLProtocol {
     /// Raised once the response has been handed over in full.
     private let delivered = NSLock.Flag()
 
+    /// The transport that **started** this request.
+    ///
+    /// `stopLoading` used to ask `Self.transport` for the transport to record
+    /// against, which is the one installed *now* rather than the one this
+    /// request belongs to. `URLSession` tears a cancelled request down
+    /// asynchronously, and `.serialized` orders the tests without waiting for
+    /// that, so a cancellation raised by one test could be counted by the
+    /// next test's stub. The suite has a test three above this one that
+    /// cancels on purpose and asserts `cancelCount == 1`; its stop arriving
+    /// late is a cancellation appearing in a test that never cancelled
+    /// anything.
+    ///
+    /// That is what `aRowScrollingAwayDoesNotCancelTheRowBesideIt` was
+    /// reporting — intermittently, on CI as well as locally, which is what
+    /// ruled out machine load.
+    private var owner: StubTransport?
+
     override func startLoading() {
         guard let url = request.url,
               let transport = Self.lock.withLock({ Self.transport }) else {
             client?.urlProtocol(self, didFailWithError: URLError(.badURL))
             return
         }
+        owner = transport
         let (data, status, delay) = transport.record(url)
         let client = self.client
         let response = HTTPURLResponse(
@@ -437,9 +495,21 @@ final class StubURLProtocol: URLProtocol {
         )!
         let deliver = { [weak self] in
             guard let self, !self.stopped.isSet else { return }
+            // **Raised before the handover, not after it.** `stopLoading`
+            // counts a stop as a cancellation when `delivered` is not yet set,
+            // so a teardown landing between `didLoad` and `delivered.set()`
+            // used to be counted as "the download was stopped" about bytes
+            // that had just been handed over. This stub delivers the whole
+            // response in one go, so there is no partial state that raising
+            // the flag first could misreport.
+            //
+            // Latent rather than observed: unlike the attribution defect above
+            // it, nothing has been seen to land in that window. It is closed
+            // because it is the same false positive by a second route, and
+            // three lines is cheaper than telling the two apart later.
+            self.delivered.set()
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: data)
-            self.delivered.set()
             client?.urlProtocolDidFinishLoading(self)
         }
         if delay == .zero {
@@ -454,7 +524,8 @@ final class StubURLProtocol: URLProtocol {
         stopped.set()
         // Only a stop that arrives before the bytes did is a cancellation.
         guard !hadFinished, let url = request.url else { return }
-        Self.lock.withLock { Self.transport }?.recordCancel(url)
+        // `owner`, not `Self.transport`: see the note on `owner`.
+        owner?.recordCancel(url)
     }
 }
 
