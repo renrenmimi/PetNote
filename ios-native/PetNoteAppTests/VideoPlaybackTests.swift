@@ -1025,10 +1025,11 @@ struct VideoPlaybackTests {
     /// clock advanced, and the picture changed. Only the last two stop.
     @Test(.enabled(if: MediaServer.isAnswering))
     func aStreamThatDiesMidPlaybackIsNoticedEvenThoughNothingFails() async throws {
-        await MediaServer.reach("/a2-cut")
+        let mediaSession = MediaServer.session()
+        await MediaServer.reach("/a2-cut", session: mediaSession)
         let coordinator = VideoPlaybackCoordinator()
         coordinator.reportVisibility(id: "cut", fraction: 0.9, distanceFromCentre: 0)
-        let player = try #require(coordinator.player(for: "cut", url: MediaServer.url("/a2-cutoff.mp4")))
+        let player = try #require(coordinator.player(for: "cut", url: MediaServer.url("/a2-cutoff.mp4", session: mediaSession)))
         let watcher = FrameWatcher()
 
         // 1 — HTTP worked: the index arrived, so this is a stream that breaks
@@ -1088,10 +1089,11 @@ struct VideoPlaybackTests {
     /// number to argue with.
     @Test(.enabled(if: MediaServer.isAnswering))
     func briefJitterShowsNothingAndARealStallShowsSomething() async throws {
-        await MediaServer.reach("/a2-cut")
+        let mediaSession = MediaServer.session()
+        await MediaServer.reach("/a2-cut", session: mediaSession)
         let coordinator = VideoPlaybackCoordinator()
         coordinator.reportVisibility(id: "cut", fraction: 0.9, distanceFromCentre: 0)
-        let player = try #require(coordinator.player(for: "cut", url: MediaServer.url("/a2-cutoff.mp4")))
+        let player = try #require(coordinator.player(for: "cut", url: MediaServer.url("/a2-cutoff.mp4", session: mediaSession)))
 
         // **Somebody has to be asking for the pictures.** See `FrameWatcher`.
         let watcher = FrameWatcher()
@@ -1135,10 +1137,11 @@ struct VideoPlaybackTests {
     /// — without turning the sound on.**
     @Test(.enabled(if: MediaServer.isAnswering))
     func whenTheStreamComesBackItPlaysOnAndStaysMuted() async throws {
-        await MediaServer.reach("/a2-cut")
+        let mediaSession = MediaServer.session()
+        await MediaServer.reach("/a2-cut", session: mediaSession)
         let coordinator = VideoPlaybackCoordinator()
         coordinator.reportVisibility(id: "cut", fraction: 0.9, distanceFromCentre: 0)
-        let player = try #require(coordinator.player(for: "cut", url: MediaServer.url("/a2-cutoff.mp4")))
+        let player = try #require(coordinator.player(for: "cut", url: MediaServer.url("/a2-cutoff.mp4", session: mediaSession)))
         let watcher = FrameWatcher()
 
         try await waitUntil("the stall", timeout: 30, describe: {
@@ -1152,7 +1155,7 @@ struct VideoPlaybackTests {
 
         // The network comes back. Nothing else is touched: no retry is tapped,
         // no row is scrolled.
-        await MediaServer.reach("/a2-mend")
+        await MediaServer.reach("/a2-mend", session: mediaSession)
 
         try await waitUntil("playback to pass where it stopped", timeout: 40, describe: {
             "phase=\(coordinator.state(for: "cut").name) t=\(coordinator.currentTime(of: "cut") ?? -1) frames=\(watcher.newFrames)"
@@ -1170,7 +1173,7 @@ struct VideoPlaybackTests {
         // what keeps that true.
         #expect(coordinator.isMuted, "recovering must not unmute the feed")
         #expect(player.isMuted, "and the player itself is still silent")
-        await MediaServer.reach("/a2-cut")
+        await MediaServer.reach("/a2-cut", session: mediaSession)
     }
 
     /// The two numbers that have to be read together.
@@ -1211,10 +1214,11 @@ struct VideoPlaybackTests {
     /// one per poll for as long as someone leaves the app open.
     @Test(.enabled(if: MediaServer.isAnswering))
     func automaticRecoveryIsBoundedAndThenOffersAWayOut() async throws {
-        await MediaServer.reach("/a2-cut")
+        let mediaSession = MediaServer.session()
+        await MediaServer.reach("/a2-cut", session: mediaSession)
         let coordinator = VideoPlaybackCoordinator()
         coordinator.reportVisibility(id: "cut", fraction: 0.9, distanceFromCentre: 0)
-        let player = try #require(coordinator.player(for: "cut", url: MediaServer.url("/a2-cutoff.mp4")))
+        let player = try #require(coordinator.player(for: "cut", url: MediaServer.url("/a2-cutoff.mp4", session: mediaSession)))
         // **Somebody has to be asking for the pictures.** See `FrameWatcher`.
         let watcher = FrameWatcher()
 
@@ -1308,21 +1312,22 @@ struct VideoPlaybackTests {
     /// exactly one of these may draw anything.
     @Test(.enabled(if: MediaServer.isAnswering))
     func onlyOneOfTheSixStatesMayShowBufferingFeedback() async throws {
+        let mediaSession = MediaServer.session()
         let url = try await clip()
 
         // 1 — first load. A player, no picture yet.
         let opening = VideoPlaybackCoordinator()
         opening.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 0)
-        _ = opening.player(for: "a", url: MediaServer.url("/a2-blackhole.mp4"))
+        _ = opening.player(for: "a", url: MediaServer.url("/a2-blackhole.mp4", session: mediaSession))
         #expect(opening.state(for: "a") == .opening)
 
         // 2 — the person stopped it. Pointed at a stream that is dead on
         //     purpose: however long it stays dead, a paused video is not a
         //     stalled one.
-        await MediaServer.reach("/a2-cut")
+        await MediaServer.reach("/a2-cut", session: mediaSession)
         let paused = VideoPlaybackCoordinator()
         paused.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 0)
-        _ = paused.player(for: "a", url: MediaServer.url("/a2-cutoff.mp4"))
+        _ = paused.player(for: "a", url: MediaServer.url("/a2-cutoff.mp4", session: mediaSession))
         paused.setViewerPaused(true, id: "a")
         try await Task.sleep(for: .seconds(VideoStallPolicy.feedbackDelay + 1))
         #expect(paused.state(for: "a") == .pausedByViewer)
@@ -1335,7 +1340,7 @@ struct VideoPlaybackTests {
         // 3 — the app went to the background.
         let backgrounded = VideoPlaybackCoordinator()
         backgrounded.reportVisibility(id: "a", fraction: 0.9, distanceFromCentre: 0)
-        _ = backgrounded.player(for: "a", url: MediaServer.url("/a2-cutoff.mp4"))
+        _ = backgrounded.player(for: "a", url: MediaServer.url("/a2-cutoff.mp4", session: mediaSession))
         backgrounded.suspendAll(reason: "test")
         try await Task.sleep(for: .seconds(VideoStallPolicy.feedbackDelay + 1))
         #expect(backgrounded.state(for: "a") == .suspended)
@@ -1529,6 +1534,31 @@ enum MediaServer {
         URL(string: host + path)!
     }
 
+    /// A namespace of one test's own on the server.
+    ///
+    /// The server's switches used to be one dict for the whole process. Every
+    /// test that wanted a broken stream called `/a2-cut` first, so ordering
+    /// alone looked sufficient — and
+    /// `automaticRecoveryIsBoundedAndThenOffersAWayOut` still failed with
+    /// `phase=playing attempts=0`, which is what a stream that never broke
+    /// looks like.
+    ///
+    /// Defaulting to `#function` means the token is the test's own name: it
+    /// cannot collide, and it appears in the server's `SWITCH session=...`
+    /// log, so a later failure can be read back to "did this test's own cut
+    /// arrive, and what did its session look like afterwards".
+    ///
+    /// It also gives the test its own URL, which rules out a second candidate
+    /// that could not otherwise be told apart: an asset cached under one
+    /// test's URL answering another's request.
+    static func session(_ name: String = #function) -> String {
+        String(name.prefix(while: { $0 != "(" }))
+    }
+
+    static func url(_ path: String, session: String) -> URL {
+        URL(string: "\(host)\(path)?s=\(session)")!
+    }
+
     /// Synchronous on purpose. `.enabled(if:)` is evaluated while tests are
     /// being collected, which is not an async context; and a suite that fails
     /// red because nobody started a server is the fastest way to teach everyone
@@ -1561,6 +1591,10 @@ enum MediaServer {
     /// of that race that passes on a quiet machine is the one that fails in a
     /// full run.
     @discardableResult
+    static func reach(_ path: String, session: String) async -> Bool {
+        await reach("\(path)?s=\(session)")
+    }
+
     static func reach(_ path: String) async -> Bool {
         var request = URLRequest(url: url(path))
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData

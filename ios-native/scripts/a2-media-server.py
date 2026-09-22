@@ -45,8 +45,50 @@ import time
 
 DIRECTORY = sys.argv[1]
 PORT = int(sys.argv[2])
-STATE = {"healed": False, "mended": False}
-LOCK = threading.Lock()
+# **State is per session, not global.**
+#
+# It used to be one dict for the whole server. Every test that needed a broken
+# stream called /a2-cut first, so ordering alone should have been enough — but
+# one test mends on purpose, the tests share a process, and nothing made the
+# windows disjoint. `automaticRecoveryIsBoundedAndThenOffersAWayOut` failed
+# with `phase=playing attempts=0`, which is what a stream that never broke
+# looks like.
+#
+# A session token in the query string (?s=...) gives each test its own
+# switches, and as a side effect its own URL — so an asset cached under one
+# test's URL cannot answer another's.
+#
+# Requests without ?s share the "" session, which is exactly the old
+# behaviour, so anything not yet converted keeps working.
+# **Reentrant.** `session_state` takes this lock, and the switch branches in
+# `serve` call it from inside a `with LOCK:` of their own. A plain Lock is not
+# reentrant, so that combination deadlocks the worker thread: the connection is
+# accepted, never answered, and curl reports 000 with nothing in the log — which
+# reads like the server is down rather than like one handler is stuck.
+LOCK = threading.RLock()
+SESSIONS = {}
+
+
+def log_switch(token, path, state):
+    """One line per switch flip, so a later failure can be read back.
+
+    Printed rather than counted: when a test says the stream never broke, the
+    question is whether its own /a2-cut arrived and what the session looked
+    like afterwards, and that is two facts on one line.
+    """
+    print("SWITCH session=%r %s -> %r" % (token or "<shared>", path, state), flush=True)
+
+
+def session_state(query):
+    """The switch dict for this request's session, created on first use."""
+    token = ""
+    if query:
+        for pair in query.split("&"):
+            if pair.startswith("s="):
+                token = pair[2:]
+                break
+    with LOCK:
+        return token, SESSIONS.setdefault(token, {"healed": False, "mended": False})
 
 # How far into the media data /a2-cutoff.mp4 keeps working. 0.35 of the mdat
 # region: comfortably past the point where playback has started and the first
@@ -152,18 +194,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.serve(with_body=False)
 
     def serve(self, with_body):
-        path = self.path.split("?")[0]
+        path, _, query = self.path.partition("?")
 
         if path in ("/a2-heal", "/a2-break"):
             with LOCK:
-                STATE["healed"] = path == "/a2-heal"
+                _, st = session_state(query)
+                st["healed"] = path == "/a2-heal"
             self.simple(200, b"ok", "text/plain", with_body)
             self.note(200, 2)
             return
 
         if path in ("/a2-mend", "/a2-cut"):
             with LOCK:
-                STATE["mended"] = path == "/a2-mend"
+                token, st = session_state(query)
+                st["mended"] = path == "/a2-mend"
+                log_switch(token, path, st)
             self.simple(200, b"ok", "text/plain", with_body)
             self.note(200, 2)
             return
@@ -190,7 +235,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         if path == "/a2-cutoff.mp4":
             with LOCK:
-                mended = STATE["mended"]
+                _, st = session_state(query)
+                mended = st["mended"]
             if mended:
                 path = "/a2-long.mp4"
             else:
@@ -211,7 +257,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         if path == "/a2-flaky.mp4":
             with LOCK:
-                healed = STATE["healed"]
+                _, st = session_state(query)
+                healed = st["healed"]
             if not healed:
                 self.simple(404, b"not yet", "text/plain", with_body)
                 self.note(404, 0)
