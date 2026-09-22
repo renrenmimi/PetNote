@@ -73,6 +73,39 @@ private func fmt(_ value: CGFloat) -> String { String(format: "%.3f", value) }
 /// That is why a verdict here has three values and not two. `UNCONFIRMED` is
 /// not the search stopping early; it is the evidence that would settle it
 /// being finer than the instrument.
+///
+/// ## What a hit region turned out to be, which is not what this file assumed
+///
+/// For two rounds the control group failed and the instrument was blamed. It
+/// was right the second time. A touch region is **not** the view's frame, and
+/// how far it exceeds it depends on who laid the control out:
+///
+///     control        accessibility frame    measured hit region
+///     back            (16, 62) 44 x 44       44.0 x 44.0    the frame
+///     account.menu    (349, 66) 30 x 36      43.8 x 43.7    grown to 44
+///     session.signOut (8, 710.8) 386 x 53.8  83.3 x 386.3   +15 above/below
+///     post.like       (16, 753) 48.3 x 44    62.0 x >= 75.3 see below
+///
+/// The two in the middle are the platform: UIKit grows an undersized bar item
+/// to 44, and a SwiftUI control with room around it is given about 15pt of it.
+/// Where two interactive regions would overlap, the space between them is
+/// split down the middle — `post.like` and `post.comments` are 24pt apart and
+/// their regions meet at 76.333, which both searches found independently.
+///
+/// Three consequences for anyone reading numbers out of this file:
+///
+///   1. **A frame is a lower bound on a hit region, never an upper one.** The
+///      §6.4 question "is this control at least 44pt" is answered *more*
+///      easily than the layout suggests, and the interesting question is
+///      whether a control is big enough *before* the platform helps.
+///   2. **`post.comments` cannot be measured from the feed at all.** In
+///      `FeedView` its action is `open(post)` and so is the card's
+///      `onOpenPost`, so "the button fired" and "the photo above it fired"
+///      are one event. Its vertical boundaries here are the *card's*, not the
+///      button's, which is why they run to the limit. Only its left boundary
+///      is its own, because the thing on the other side is a different button.
+///   3. **A control sitting alone reads much larger than it is laid out.**
+///      `session.signOut` is 56pt by construction and measures 83.
 final class HitRegionBoundaryUITests: XCTestCase {
     override func setUp() {
         // These are measurements. A boundary that cannot be found must not
@@ -152,12 +185,32 @@ final class HitRegionBoundaryUITests: XCTestCase {
         /// open, and getting that backwards misstates the result by a pixel in
         /// the direction that matters.
         let searchedUpwards: Bool
+        /// Whether the furthest point this search was allowed to try was the
+        /// edge of the window or merely the end of its own `reach`.
+        ///
+        /// **These are different results and were reported as the same one.**
+        /// When `outside` is nil the search never found a point that failed to
+        /// activate, and the reason matters: at the window edge there is
+        /// genuinely nowhere further to tap, and the region's true end is not
+        /// observable from outside the app. At the end of `reach` the region
+        /// simply continues past where this search bothered to look, and the
+        /// honest report is "look further", not "the screen ran out".
+        ///
+        /// `comments.top` was reported for two rounds as reaching the window
+        /// edge. Its limit was 735 and the window starts at 0. What actually
+        /// happened is that the probe cannot tell the comments button from the
+        /// card above it — they run the same action — so it kept activating
+        /// for as far as the search looked.
+        let limitIsWindowEdge: Bool
         let probes: Int
 
         var description: String {
             guard let outside else {
-                return "\(name): still activating at \(fmt(inside)), which is the window edge — "
-                    + "no outer boundary is visible from outside the app"
+                let why = limitIsWindowEdge
+                    ? "which is the window edge — no outer boundary is visible from outside the app"
+                    : "which is as far as this search was told to look (reach); the region "
+                      + "continues past it and this is not a measurement of where it ends"
+                return "\(name): still activating at \(fmt(inside)), \(why)"
             }
             // Searching towards larger coordinates, the boundary is the *last*
             // coordinate inside, so it lies in [inside, outside). Searching
@@ -184,6 +237,7 @@ final class HitRegionBoundaryUITests: XCTestCase {
         name: String,
         inside: CGFloat,
         limit: CGFloat,
+        limitIsWindowEdge: Bool,
         tolerance: CGFloat,
         probe: (CGFloat) -> TouchOutcome
     ) -> Edge {
@@ -199,7 +253,8 @@ final class HitRegionBoundaryUITests: XCTestCase {
         let atLimit = test(limit)
         if atLimit == .activated {
             return Edge(name: name, inside: limit, outside: nil, outsideOutcome: atLimit,
-                        searchedUpwards: upwards, probes: probes)
+                        searchedUpwards: upwards, limitIsWindowEdge: limitIsWindowEdge,
+                        probes: probes)
         }
         var good = inside
         var bad = limit
@@ -215,7 +270,8 @@ final class HitRegionBoundaryUITests: XCTestCase {
             }
         }
         return Edge(name: name, inside: good, outside: bad, outsideOutcome: badOutcome,
-                    searchedUpwards: upwards, probes: probes)
+                    searchedUpwards: upwards, limitIsWindowEdge: limitIsWindowEdge,
+                    probes: probes)
     }
 
     /// An extent, as the interval the two brackets allow.
@@ -238,8 +294,14 @@ final class HitRegionBoundaryUITests: XCTestCase {
         _ control: String, _ axis: String, from low: Edge, to high: Edge, requirement: CGFloat
     ) -> Extent? {
         guard let lowOutside = low.outside, let highOutside = high.outside else {
-            print("MEASURED \(control) \(axis): UNRESOLVED — the region runs to the window edge "
-                  + "on at least one side, so its extent is not observable by tapping")
+            let open = [low, high].filter { $0.outside == nil }
+            let why = open.allSatisfy(\.limitIsWindowEdge)
+                ? "the region runs to the window edge on at least one side, so its extent is "
+                  + "not observable by tapping"
+                : "the search kept activating as far as it was told to look on "
+                  + open.filter { !$0.limitIsWindowEdge }.map(\.name).joined(separator: " and ")
+                  + "; the region is larger than the reach, and this is not its extent"
+            print("MEASURED \(control) \(axis): UNRESOLVED — \(why)")
             return nil
         }
         let atLeast = high.inside - low.inside
@@ -270,7 +332,8 @@ final class HitRegionBoundaryUITests: XCTestCase {
     @discardableResult
     private func band(_ name: String, from low: Edge, to high: Edge) -> Extent? {
         guard let lowOutside = low.outside, let highOutside = high.outside else {
-            print("MEASURED \(name): UNRESOLVED — one of the two regions runs to the window edge")
+            print("MEASURED \(name): UNRESOLVED — one of the two boundaries was never closed, "
+                  + "so there is no outer edge to measure the band between")
             return nil
         }
         let measured = Extent(
@@ -303,13 +366,19 @@ final class HitRegionBoundaryUITests: XCTestCase {
         func at(_ value: CGFloat) -> CGPoint {
             vertical ? CGPoint(x: centre.x, y: value) : CGPoint(x: value, y: centre.y)
         }
+        // Which of the two bounds actually bound: the clamp, or `reach`. Only
+        // the clamp means "there is nowhere further to tap".
+        let lowIsWindow = lowLimit > (vertical ? centre.y : centre.x) - reach
+        let highIsWindow = highLimit < (vertical ? centre.y : centre.x) + reach
         let low = findEdge(
             name: "\(control).\(vertical ? "top" : "left")",
-            inside: centreValue, limit: lowLimit, tolerance: conditions.tolerance
+            inside: centreValue, limit: lowLimit, limitIsWindowEdge: lowIsWindow,
+            tolerance: conditions.tolerance
         ) { probe(at($0)) }
         let high = findEdge(
             name: "\(control).\(vertical ? "bottom" : "right")",
-            inside: centreValue, limit: highLimit, tolerance: conditions.tolerance
+            inside: centreValue, limit: highLimit, limitIsWindowEdge: highIsWindow,
+            tolerance: conditions.tolerance
         ) { probe(at($0)) }
         return (low, high)
     }
@@ -400,9 +469,9 @@ final class HitRegionBoundaryUITests: XCTestCase {
                 (value >= low && value <= high) ? .activated : .nothing
             }
             let top = findEdge(name: "synthetic.top", inside: 400, limit: 400 - 80,
-                               tolerance: tolerance, probe: probe)
+                               limitIsWindowEdge: false, tolerance: tolerance, probe: probe)
             let bottom = findEdge(name: "synthetic.bottom", inside: 400, limit: 400 + 80,
-                                  tolerance: tolerance, probe: probe)
+                                  limitIsWindowEdge: false, tolerance: tolerance, probe: probe)
             guard let measured = extent("synthetic\(fmt(size))", "extent",
                                         from: top, to: bottom, requirement: 44) else {
                 XCTFail("the search could not close a synthetic region of \(size)")
@@ -438,25 +507,81 @@ final class HitRegionBoundaryUITests: XCTestCase {
         }
     }
 
-    // MARK: - The feed's action row: a 44pt control and a 24pt gap
+    // MARK: - The feed's action row: two known frames and the boundary between them
 
-    /// The like and comments buttons, and the clear space between them.
+    /// The like and comments buttons, and the boundary they share.
     ///
     /// **This is the control group for everything else in this file, and it is
-    /// also two of the controls under test.** Both buttons are laid out by us
-    /// at `Layout.minTouchTarget` (44) tall, and the `HStack` that holds them
-    /// uses `Spacing.xl` (24) between them. So one run of the instrument has to
-    /// produce ~44 on the buttons and ~24 on the gap: a target that is
-    /// obviously smaller must read obviously smaller. An instrument that
-    /// saturates — every probe a hit, or every probe a miss — cannot do both,
-    /// and the last round's could not: with `somethingElse` dead and a
-    /// fixed-sleep single read, its negatives were free.
+    /// also two of the controls under test.**
     ///
-    /// The width of the like button is the third reading, and it is not 44: the
-    /// label is a heart and a count, wider than the minimum, so `minWidth`
-    /// does not bind. That number has to come out near the reported frame
-    /// width rather than near 44, which is a fourth way for a saturating
-    /// instrument to be caught.
+    /// ## The premise this test used to hold, and the measurement that broke it
+    ///
+    /// It used to assert that the like button's hit region *equals* its
+    /// accessibility frame: 44 tall by construction, 48.33 wide from the
+    /// label, with `Spacing.xl` (24) of clear space before the comments
+    /// button. The reasoning was that `.contentShape(.rect)` sits on
+    /// `.frame(minWidth: 44, minHeight: 44)`, so the shape follows the frame.
+    /// That reasoning describes where SwiftUI *draws* the shape. It does not
+    /// describe where a touch is delivered, and the two are not the same:
+    ///
+    ///     like a11y frame          x[16.000,  64.333]  y[753, 797]
+    ///     like hit region          x[ 1.000,  76.333]  y[747, 809]
+    ///
+    /// Three of those four boundaries are exact functions of the layout, and
+    /// none of them is the frame:
+    ///
+    ///   * `747.000` is the midpoint of the `Spacing.m` (12) gap between the
+    ///     photo above and the action row — the photo opens the post, the
+    ///     button likes it, and the space between them is split down the
+    ///     middle;
+    ///   * `809.000` is the card's own bottom edge, `actions.maxY` plus the
+    ///     card's `Spacing.m` bottom padding, where there is no neighbour to
+    ///     split with;
+    ///   * `76.333` is the midpoint of the `Spacing.xl` (24) gap to the
+    ///     comments button.
+    ///
+    /// The reading was called an instrument fault twice — "collapsed to a
+    /// point" in the first round and "inflated by 40%" in the second — and the
+    /// first of those really was one (`dismissStrayOverlays` looked for a name
+    /// the app never sets, so every probe after a cover opened was recorded as
+    /// a miss). The second was not. It is the touch region, and it is bigger
+    /// than the view.
+    ///
+    /// ## Why this is the instrument being right rather than the test being
+    /// relaxed
+    ///
+    /// Four independent results, from runs that reproduce bit for bit:
+    ///
+    ///   1. **The system back button reads exactly its frame.** 44x44
+    ///      reported, `[43.828, 44.172)` by `[43.570, 44.133)` measured — four
+    ///      boundaries each within one device pixel of the frame. An
+    ///      instrument that inflates cannot return that.
+    ///   2. **The account entry reads 44x44 from a 30x36 frame** — the
+    ///      documented UIKit minimum for a bar item, recovered rather than
+    ///      assumed.
+    ///   3. **`like.right` and `comments.left` agree.** They are searched
+    ///      independently, from opposite directions, by two different probes
+    ///      with two different activation signals, and they bracket the same
+    ///      coordinate to within one device pixel — the coordinate the layout
+    ///      predicts. An instrument that saturates in either direction cannot
+    ///      produce a shared boundary at a predicted place.
+    ///   4. **One run still yields three different numbers**: ~62 for the
+    ///      like button's height, ~75 for the comments button's width, and ~0
+    ///      for the band between the two, which used to be asserted at 24 and
+    ///      is not there — the regions are adjacent.
+    ///
+    /// So the assertions below are the claims that survive: the region has to
+    /// *contain* the control, it has to stop short of the *neighbouring*
+    /// control, and the boundary between the two has to land where the layout
+    /// says. Those are predictions made from `likeFrame` and `commentsFrame`
+    /// as read at runtime, not numbers copied back out of a log. The old
+    /// assertion is not loosened, it is replaced: "the region equals the
+    /// frame" was disproved, and "the region contains the frame and stops at
+    /// the midpoint" is the thing that can now be shown false.
+    ///
+    /// What is *not* claimed here is a §6.4 verdict on the two buttons. Their
+    /// frames are 44 and their touch regions are larger than their frames;
+    /// that is recorded, and the verdict line still prints.
     func testTheInstrumentAgreesWithTheKnownGeometryOfTheFeedActionRow() {
         let app = XCUIApplication()
         XCTAssertTrue(launchSignedInForProbing(app), "could not sign in")
@@ -529,55 +654,121 @@ final class HitRegionBoundaryUITests: XCTestCase {
                                     to: commentsVertical.high, requirement: 44)
         let commentsWidth = extent("comments", "width", from: commentsHorizontal.low,
                                    to: commentsHorizontal.high, requirement: 44)
-        let clear = band("like|comments", from: likeHorizontal.high, to: commentsHorizontal.low)
+        // Printed, not asserted at 24 any more: the two regions meet, so this
+        // band is zero to within a bracket. It is kept because a band that
+        // stopped being zero would mean the arbitration between the two
+        // regions had changed, and that is worth seeing.
+        band("like|comments", from: likeHorizontal.high, to: commentsHorizontal.low)
 
         // --- the control group, as assertions rather than as a paragraph
-        guard let likeHeight, let likeWidth, let clear else {
-            XCTFail("the control group could not be measured; nothing below this file is trustworthy")
-            return
-        }
+        //
+        // Stated over *edges* rather than over closed extents on purpose. The
+        // like button's region reaches x=1, which is one device pixel inside
+        // the window, so its width cannot be closed by tapping and `extent`
+        // rightly reports UNRESOLVED. That is a fact about the screen, not a
+        // failure of the run, and it must not take the other seven boundaries
+        // down with it — which is what the old `guard let likeWidth` did.
+        let slack = 2 * conditions.tolerance
 
-        // 44 by construction: `Layout.minTouchTarget` on the label, with a
-        // `.contentShape(.rect)` so the shape follows the frame. Half a point
-        // of slack each way because the frame arrives through a float round
-        // trip — this project has an assertion that failed at 43.99999999999997
-        // — and half a point is far below the resolution of any tap.
+        // 1. Containment. Whatever else the hit region is, it has to include
+        //    the control that was laid out. This is the assertion that fails
+        //    when the probe's negatives are free: the first round's collapsed
+        //    reading — 28.1pt tall, both horizontal boundaries on the button's
+        //    own centre — is caught here and by nothing else below.
+        XCTAssertLessThanOrEqual(
+            likeVertical.low.inside, likeFrame.minY + slack,
+            "the measured region does not reach the top of the control it is measuring: "
+            + "activates no higher than \(fmt(likeVertical.low.inside)), frame starts at "
+            + "\(fmt(likeFrame.minY))"
+        )
         XCTAssertGreaterThanOrEqual(
-            likeHeight.atLeast, 43.5,
-            "a control laid out at 44pt measured shorter than 44pt: \(likeHeight.description)"
+            likeVertical.high.inside, likeFrame.maxY - slack,
+            "the measured region does not reach the bottom of the control it is measuring: "
+            + "activates no lower than \(fmt(likeVertical.high.inside)), frame ends at "
+            + "\(fmt(likeFrame.maxY))"
         )
         XCTAssertLessThanOrEqual(
-            likeHeight.lessThan, 45.5,
-            "a control laid out at 44pt measured taller than 44pt — the instrument is reporting "
-            + "something larger than the control: \(likeHeight.description)"
+            likeHorizontal.low.inside, likeFrame.minX + slack,
+            "the measured region does not reach the left edge of the control: activates no "
+            + "further left than \(fmt(likeHorizontal.low.inside)), frame starts at "
+            + "\(fmt(likeFrame.minX))"
         )
-        // The width is the label's, not the minimum: the instrument has to
-        // follow the control rather than the constant.
-        XCTAssertGreaterThanOrEqual(likeWidth.atLeast, likeFrame.width - 1.5,
-                                    "the measured width is short of the reported frame")
-        XCTAssertLessThanOrEqual(likeWidth.lessThan, likeFrame.width + 1.5,
-                                 "the measured width runs past the reported frame")
-        // `Spacing.xl` between the two buttons. Two points of slack, which is
-        // six device pixels and three times the error the two brackets allow.
-        XCTAssertGreaterThan(
-            clear.lessThan, 22.0,
-            "the gap between two buttons laid out 24pt apart measured under 22pt: \(clear.description)"
-        )
-        XCTAssertLessThan(
-            clear.atLeast, 26.0,
-            "the gap between two buttons laid out 24pt apart measured over 26pt: \(clear.description)"
-        )
-        // And the point of all three together: one instrument, one run, three
-        // targets of different known sizes, three different answers.
-        XCTAssertLessThan(
-            clear.lessThan, likeHeight.atLeast,
-            "the 24pt gap did not read smaller than the 44pt button — the instrument is not "
-            + "resolving size, it is returning the same number for everything"
+        XCTAssertGreaterThanOrEqual(
+            likeHorizontal.high.inside, likeFrame.maxX - slack,
+            "the measured region does not reach the right edge of the control: activates no "
+            + "further right than \(fmt(likeHorizontal.high.inside)), frame ends at "
+            + "\(fmt(likeFrame.maxX))"
         )
 
-        print("MEASURED VERDICT like height=\(likeHeight.verdict) width=\(likeWidth.verdict)")
+        // 2. Non-engulfment. The like button's region must stop before the
+        //    comments button's frame and vice versa, or the instrument is
+        //    reporting the row rather than the control — the saturation the
+        //    24pt band used to be there to catch.
+        XCTAssertLessThan(
+            likeHorizontal.high.inside, commentsFrame.minX,
+            "the like button's hit region reaches into the comments button's own frame; "
+            + "the instrument is measuring the row, not the control"
+        )
+        XCTAssertGreaterThan(
+            commentsHorizontal.low.inside, likeFrame.maxX,
+            "the comments button's hit region reaches into the like button's own frame"
+        )
+
+        // 3. The shared boundary, which is the calibration.
+        //
+        //    `like.right` and `comments.left` are found by two different
+        //    probes, with two different activation signals, searching in
+        //    opposite directions. They have to bracket one coordinate, and it
+        //    has to be the one the layout predicts: the middle of the gap
+        //    between the two frames. Nothing about this is copied out of a
+        //    measurement — both frames are read at runtime, a line above.
+        guard let likeRightOutside = likeHorizontal.high.outside,
+              let commentsLeftOutside = commentsHorizontal.low.outside else {
+            XCTFail("the boundary between the two buttons could not be closed from both sides")
+            return
+        }
+        let midpoint = (likeFrame.maxX + commentsFrame.minX) / 2
+        print("MEASURED like|comments shared boundary: like.right in "
+              + "[\(fmt(likeHorizontal.high.inside)), \(fmt(likeRightOutside))), comments.left in "
+              + "(\(fmt(commentsLeftOutside)), \(fmt(commentsHorizontal.low.inside))], "
+              + "layout predicts \(fmt(midpoint))")
+        XCTAssertLessThanOrEqual(
+            abs(commentsHorizontal.low.inside - likeHorizontal.high.inside), 2 * slack,
+            "two independent searches from opposite directions disagree about where the "
+            + "boundary between the two buttons is"
+        )
+        XCTAssertGreaterThanOrEqual(
+            midpoint, likeHorizontal.high.inside - slack,
+            "the boundary the layout predicts is below the last point that activated the like "
+            + "button: predicted \(fmt(midpoint)), activates at \(fmt(likeHorizontal.high.inside))"
+        )
+        XCTAssertLessThanOrEqual(
+            midpoint, commentsHorizontal.low.inside + slack,
+            "the boundary the layout predicts is above the first point that activated the "
+            + "comments button: predicted \(fmt(midpoint)), activates at "
+            + "\(fmt(commentsHorizontal.low.inside))"
+        )
+
+        // 4. Resolution: one run, more than one answer. The two buttons have
+        //    identical frames and different neighbourhoods, so their regions
+        //    must not come out the same size. An instrument returning one
+        //    number for everything fails here.
+        guard let likeHeight, let commentsWidth else {
+            XCTFail("neither the like button's height nor the comments button's width closed; "
+                    + "there is no second reading to compare the first against")
+            return
+        }
+        XCTAssertGreaterThan(
+            abs(commentsWidth.atLeast - likeHeight.atLeast), 5,
+            "two extents that differ in the layout measured the same: the instrument is not "
+            + "resolving size. like height \(likeHeight.description), comments width "
+            + "\(commentsWidth.description)"
+        )
+
+        print("MEASURED VERDICT like height=\(likeHeight.verdict) "
+              + "width=\(likeWidth?.verdict ?? "UNRESOLVED")")
         print("MEASURED VERDICT comments height=\(commentsHeight?.verdict ?? "UNRESOLVED") "
-              + "width=\(commentsWidth?.verdict ?? "UNRESOLVED")")
+              + "width=\(commentsWidth.verdict)")
     }
 
     // MARK: - The account entry in the feed's navigation bar
@@ -756,5 +947,37 @@ final class HitRegionBoundaryUITests: XCTestCase {
 
         // Recorded, not asserted into a pass — see the account entry above.
         XCTAssertNotNil(height ?? width, "neither boundary pair could be closed")
+
+        // --- and separately from the §6.4 verdict: this control is the one
+        // place in the app where the hit region and the frame are the same
+        // rectangle, so it is the instrument's exactness check.
+        //
+        // UIKit lays this button out at 44x44 and gives it no expansion — the
+        // bar is crowded, and 44 is already the minimum a bar item is grown
+        // to. Every other control measured in this file reads larger than its
+        // frame (the account entry is grown from 30x36 to 44x44; the feed's
+        // buttons and the sign-out row are given room around them). If *this*
+        // one also read larger, the excess would be the instrument's and not
+        // the platform's, and every other figure in this file would be worth
+        // nothing.
+        //
+        // Two brackets of slack, which is the most two bisections can leave
+        // open. Asserted rather than recorded because it says nothing about
+        // the product: a failure here is a defect in the measuring, which is
+        // exactly the kind of failure that should stop a run.
+        let slack = 2 * conditions.tolerance
+        for (name, measured, expected) in [
+            ("top", vertical.low.inside, frame.minY),
+            ("bottom", vertical.high.inside, frame.maxY),
+            ("left", horizontal.low.inside, frame.minX),
+            ("right", horizontal.high.inside, frame.maxX)
+        ] {
+            XCTAssertLessThanOrEqual(
+                abs(measured - expected), slack,
+                "the instrument put the back button's \(name) boundary at \(fmt(measured)), "
+                + "and the button UIKit laid out has it at \(fmt(expected)). This control has "
+                + "no expansion around it, so the difference is the instrument's."
+            )
+        }
     }
 }

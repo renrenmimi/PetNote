@@ -55,23 +55,65 @@ struct VideoPlaybackTests {
     /// far past any ambiguity.
     @Test(.enabled(if: MediaServer.isAnswering))
     func sharedStateCrossTalksAndSeparateSessionsDoNot() async throws {
-        func size(_ url: URL) async throws -> Int {
-            let (data, _) = try await URLSession.shared.data(
-                for: URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
-            )
-            return data.count
+        // **Ask for the last kilobyte, not for the whole file.**
+        //
+        // The cut response declares `Content-Length: 61263` and sends 24003
+        // bytes — that is how it simulates a stream dying mid-transfer, and
+        // `URLSession` correctly reports the short read as `-1005 "The network
+        // connection was lost"`. So measuring the body size with URLSession
+        // cannot work against the very file this test is about, and my first
+        // attempt at fixing it — a fresh session per request, on a guess about
+        // connection reuse — treated a symptom I had not established.
+        //
+        // The last kilobyte is past the cut by a wide margin. A cut stream
+        // cannot serve it; a mended one serves it whole. One boolean, no
+        // partial-read semantics, and no arithmetic about where the cut falls.
+        //
+        // **The cut case does not fail, it goes silent — so the timeout is the
+        // measurement.** That is usually a smell and here it is the fixture's
+        // designed behaviour: a range entirely past the cut gets honest headers
+        // (`206`, `Content-Range: bytes 60239-61262/61263`,
+        // `Content-Length: 1024`) and then nothing, with the socket held open.
+        // There is no error to catch; silence is the whole signal.
+        //
+        // Five seconds because the mended case is a 1 KB range off a loopback
+        // server and answers in milliseconds — a hundredfold margin — while
+        // fifteen made each cut probe cost fifteen seconds for no extra
+        // certainty.
+        //
+        // Verified against the running fixture before being relied on, with
+        // this exact range and session:
+        //
+        //   mended: 206, Content-Range bytes 60239-61262/61263, 1024 bytes,
+        //           byte-identical to the source file's last 1024 bytes
+        //   cut:    206 and the same headers, then 0 of 1024 bytes
+        //   absent path: 404, so a missing file cannot be mistaken for a cut
+        //   same session switched back to mend: 1024 bytes again
+        //
+        // **This checks the fixture, not the app.** That a cut stream stops
+        // serving says nothing about whether playback notices, recovers, or
+        // tells anyone — `automaticRecoveryIsBoundedAndThenOffersAWayOut` and
+        // its siblings are where that is asserted.
+        func servesPastTheCut(_ url: URL) async -> Bool {
+            var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
+            request.setValue("bytes=60239-61262", forHTTPHeaderField: "Range")
+            request.timeoutInterval = 5
+            let session = URLSession(configuration: .ephemeral)
+            defer { session.finishTasksAndInvalidate() }
+            guard let (data, _) = try? await session.data(for: request) else { return false }
+            return !data.isEmpty
         }
 
         // --- the old shape: one namespace, two actors, interleaved on purpose
         _ = await MediaServer.reach("/a2-cut")
-        let cutInShared = try await size(MediaServer.url("/a2-cutoff.mp4"))
+        let sharedWhileCut = await servesPastTheCut(MediaServer.url("/a2-cutoff.mp4"))
         _ = await MediaServer.reach("/a2-mend")          // "another test" mends
-        let afterSomeoneElseMended = try await size(MediaServer.url("/a2-cutoff.mp4"))
+        let sharedAfterSomeoneElseMended = await servesPastTheCut(MediaServer.url("/a2-cutoff.mp4"))
 
-        print("MEASURED shared namespace: cut=\(cutInShared) "
-              + "then after another actor mended=\(afterSomeoneElseMended)")
+        print("MEASURED shared namespace: servesPastTheCut \(sharedWhileCut) "
+              + "then after another actor mended \(sharedAfterSomeoneElseMended)")
         #expect(
-            afterSomeoneElseMended > cutInShared,
+            sharedWhileCut == false && sharedAfterSomeoneElseMended == true,
             """
             The shared namespace did not cross-talk, so this test is not \
             reproducing what it claims to reproduce and the comparison below \
@@ -83,21 +125,24 @@ struct VideoPlaybackTests {
         let mine = MediaServer.session()
         let theirs = MediaServer.session() + "-other"
         _ = await MediaServer.reach("/a2-cut", session: mine)
-        let cutInMine = try await size(MediaServer.url("/a2-cutoff.mp4", session: mine))
+        let mineWhileCut = await servesPastTheCut(MediaServer.url("/a2-cutoff.mp4", session: mine))
         _ = await MediaServer.reach("/a2-mend", session: theirs)
-        let mineAfterTheirsMended = try await size(MediaServer.url("/a2-cutoff.mp4", session: mine))
-        let theirsSize = try await size(MediaServer.url("/a2-cutoff.mp4", session: theirs))
+        let mineAfterTheirsMended = await servesPastTheCut(
+            MediaServer.url("/a2-cutoff.mp4", session: mine)
+        )
+        let theirsServes = await servesPastTheCut(MediaServer.url("/a2-cutoff.mp4", session: theirs))
 
-        print("MEASURED sessions: mine=\(cutInMine) -> \(mineAfterTheirsMended), theirs=\(theirsSize)")
+        print("MEASURED sessions: mine \(mineWhileCut) -> \(mineAfterTheirsMended), "
+              + "theirs \(theirsServes)")
         #expect(
-            mineAfterTheirsMended == cutInMine,
+            mineAfterTheirsMended == mineWhileCut,
             """
             another session's mend changed what this session is served: \
-            \(cutInMine) became \(mineAfterTheirsMended)
+            \(mineWhileCut) became \(mineAfterTheirsMended)
             """
         )
         #expect(
-            theirsSize > mineAfterTheirsMended,
+            theirsServes,
             """
             the other session's mend did not take effect in its own namespace, \
             so the two sessions are not independent — they are both broken
