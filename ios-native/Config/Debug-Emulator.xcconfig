@@ -1,0 +1,10 @@
+// Stage 1's only backend: the Firebase emulator on the Mac's LAN address.
+// PETNOTE_EMULATOR_HOST is machine-specific, so it comes from Local.xcconfig.
+#include "Base.xcconfig"
+
+PETNOTE_BACKEND = emulator
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG
+ONLY_ACTIVE_ARCH = YES
+SWIFT_OPTIMIZATION_LEVEL = -Onone
+GCC_OPTIMIZATION_LEVEL = 0
+ENABLE_TESTABILITY = YES

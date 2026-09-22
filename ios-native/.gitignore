@@ -1,0 +1,12 @@
+# Personal signing identity and machine-specific host. See README.md.
+Config/Local.xcconfig
+
+# Python bytecode from the measurement scripts
+__pycache__/
+*.pyc
+
+# Xcode user state and build output
+xcuserdata/
+*.xcuserstate
+build/
+DerivedData/

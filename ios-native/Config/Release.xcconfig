@@ -1,0 +1,10 @@
+// Performance measurement build (acceptance stage 7). Writes nothing.
+#include "Base.xcconfig"
+
+PETNOTE_BACKEND = production
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = PETNOTE_READ_ONLY
+ONLY_ACTIVE_ARCH = NO
+SWIFT_OPTIMIZATION_LEVEL = -O
+GCC_OPTIMIZATION_LEVEL = s
+ENABLE_TESTABILITY = NO
+VALIDATE_PRODUCT = YES
