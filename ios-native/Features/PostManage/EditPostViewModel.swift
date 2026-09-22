@@ -98,6 +98,9 @@ final class EditPostViewModel {
     }
 
     func commitTagInput() {
+        // Same filter as the composer, and the same reason to say so:
+        // `updatePostCallable` refuses the whole edit over one unusable tag.
+        if let refusal = ComposeViewModel.tagRefusal(in: tagInput) { failureMessage = refusal }
         let next = ComposeViewModel.normalized(tagInput, addingTo: tags)
         tagInput = ""
         tags = next

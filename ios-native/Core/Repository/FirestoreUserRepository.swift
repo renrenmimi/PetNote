@@ -346,11 +346,17 @@ actor FirestoreUserRepository: UserRepository {
                 displayName: displayName, avatarURL: avatarURL,
                 bio: bio, onboardingComplete: onboardingComplete
             )
-        } catch let error as ProfileError where error.isRetryable {
+        } catch let error as ProfileError where error.isRetryable || error == .outcomeUnknown {
             // One retry after a second, which is what createUserProfile in
             // src/services/users.ts does. The call is idempotent server-side,
             // so repeating it cannot create a second profile — and the profile
             // is what every later screen depends on existing.
+            //
+            // `outcomeUnknown` is retried here and only here: an existing
+            // profile is returned rather than written again
+            // (functions/src/users.ts:309-321), so an attempt that did commit
+            // answers its own retry. It also keeps the 503 retry this had
+            // before `.unavailable` stopped mapping to `.offline`.
             log.info("ensureUserProfile failed once; retrying after a second")
             try await Task.sleep(for: .seconds(1))
             return try await callEnsure(
@@ -605,9 +611,13 @@ actor FirestoreUserRepository: UserRepository {
             return .rejected(message)
         case .resourceExhausted:
             return .rateLimited
-        case .unavailable:
-            return .offline
-        case .deadlineExceeded, .aborted, .cancelled:
+        case .deadlineExceeded, .aborted, .cancelled, .unavailable:
+            // `.unavailable` is **not** `.offline`. From `call()` it is an
+            // HTTP 503 that came back (FunctionsError `init(httpStatusCode:)`),
+            // so the request left the device and the handler may have run —
+            // and `.offline` is the one answer that licenses deleting a
+            // freshly uploaded avatar. The pet, post and comment mappers all
+            // read it as unknown; this one had read it as "never sent".
             return .outcomeUnknown
         default:
             return .transport("functions-\(nsError.code)")

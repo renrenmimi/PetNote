@@ -343,7 +343,17 @@ actor FirestorePetRepository: PetRepository {
             return .notAnOwner
 
         case .failedPrecondition:
-            if message.contains("account has been deleted") { return .accountDeleted }
+            // Both halves of `assertCallerAccountActive` refuse with this code
+            // before any pet-specific check runs (functions/src/
+            // notifications.ts:112-156): `assertActorNotDeleting` while a
+            // deletion is in progress — which `deleteUserAccount` leaves set,
+            // Auth intact, when a cleanup step fails — and the tombstone after
+            // it. Both have to be recognised here, or a deleting account is
+            // told it already has five pets.
+            if message.contains("account has been deleted")
+                || message.contains("account deletion is in progress") {
+                return .accountDeleted
+            }
             switch operation {
             case .create:
                 return .petLimitReached

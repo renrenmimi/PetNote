@@ -111,6 +111,14 @@ struct AuthSignUpTests {
         await model.submit()
         _ = await service.awaitSetup()
         #expect(users.generateCalls == 1)
+        // Generating a name proves nothing unless it is the name sent. The
+        // avatar is the server's own default (`getDefaultAvatar`), a host
+        // `ensureUserProfileCallable` accepts.
+        #expect(users.ensureRequests.count == 1)
+        #expect(users.ensureRequests.first?.displayName == "SparklyHedgehog77")
+        #expect(users.ensureRequests.first?.avatarURL
+            == "https://api.dicebear.com/7.x/thumbs/svg?seed=new-uid")
+        #expect(users.ensureRequests.first?.onboardingComplete == false)
     }
 
     // MARK: The two failures that are not failed sign-ups

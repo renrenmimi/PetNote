@@ -327,6 +327,25 @@ struct ProfileEditTests {
         #expect(model.outcome == .failed(ProfileError.outcomeUnknown.message))
     }
 
+    /// The same danger reached through the real mapping rather than a
+    /// hand-picked `ProfileError`: a 503 from the callable is an answer that
+    /// came back, not a request that never left, so the image stays.
+    @Test func apictureIsNotReclaimedWhenTheCallableAnsweredUnavailable() async {
+        let users = loadedRepository()
+        users.updateResult = .failure(
+            FirestoreUserRepository.map(callableFailure(GRPCStatus.unavailable))
+        )
+        let uploader = FakeAvatarUploader()
+        let model = makeModel(users: users, uploader: uploader)
+        await model.load()
+        model.pickImage(data: Self.onePixelPNG)
+
+        await model.save()
+
+        #expect(users.updateCalls.count == 1, "the save never reached the callable")
+        #expect(uploader.discarded.isEmpty, "an image the profile may reference was deleted")
+    }
+
     @Test func afailedUploadLeavesTheProfileAloneAndSaysWhy() async {
         let users = loadedRepository()
         let uploader = FakeAvatarUploader()

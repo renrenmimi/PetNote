@@ -302,25 +302,68 @@ final class ComposeViewModel {
 
     // MARK: - Tags
 
-    /// Mirrors the server's `normalizeTags`: lowercase, strip a leading `#`,
-    /// drop empty and over-long tags, dedupe, cap the total.
+    /// Mirrors the server's `validateIncomingTags` (functions/src/posts.ts:79),
+    /// which is what `createPostCallable` and `updatePostCallable` actually
+    /// run — not `normalizeTags`, which is the aggregation trigger's lenient
+    /// reader. Lowercase, strip a leading `#`, dedupe, cap the total, and
+    /// **leave out any tag the callable would refuse**: over the length limit,
+    /// or unusable as a `hashtags/{tag}` document id. Sending one gets the
+    /// whole post refused with `invalid-argument`, and every retry with it.
     static func normalized(_ input: String, addingTo existing: [String]) -> [String] {
         var result = existing
-        let pieces = input.split(whereSeparator: { $0 == "," || $0.isWhitespace })
-        for piece in pieces {
+        for tag in tagPieces(input) {
             guard result.count < maxTags else { break }
-            var tag = piece.trimmingCharacters(in: .whitespaces).lowercased()
-            if tag.hasPrefix("#") { tag.removeFirst() }
-            guard !tag.isEmpty, tag.count <= maxTagLength else { continue }
+            guard !tag.isEmpty, refusal(forTag: tag) == nil else { continue }
             guard !result.contains(tag) else { continue }
             result.append(tag)
         }
         return result
     }
 
+    /// The server's own words for the first tag in `input` it would refuse,
+    /// or nil. `normalized` leaves such a tag out; this is how the person is
+    /// told why, which the server's comment asks for — "a person who typed
+    /// `dogs/cats` should be told, not have it disappear".
+    static func tagRefusal(in input: String) -> String? {
+        tagPieces(input).lazy.filter { !$0.isEmpty }.compactMap(refusal(forTag:)).first
+    }
+
+    /// `normalizeTagText`: trimmed, lowercased, one leading `#` removed.
+    private static func tagPieces(_ input: String) -> [String] {
+        input.split(whereSeparator: { $0 == "," || $0.isWhitespace }).map { piece in
+            var tag = piece.trimmingCharacters(in: .whitespaces).lowercased()
+            if tag.hasPrefix("#") { tag.removeFirst() }
+            return tag
+        }
+    }
+
+    /// `TAG_FORBIDDEN_CHARACTERS` in functions/src/posts.ts.
+    private static let forbiddenTagCharacters: Set<Character> = [".", "*", "~", "/", "[", "]"]
+
+    /// Why the callable would refuse this (already normalised) tag, in its
+    /// own words, or nil.
+    ///
+    /// Length in **UTF-16 units**, because the server's `tag.length` is
+    /// JavaScript's: 21 emoji are 21 Characters and 42 units, and the server
+    /// refuses them.
+    private static func refusal(forTag tag: String) -> String? {
+        if tag.utf16.count > maxTagLength {
+            return "Tags must be \(maxTagLength) characters or fewer."
+        }
+        // `/^__.*__$/` is Firestore's reserved id shape; the server rejects
+        // it with the same sentence as the forbidden characters.
+        let reserved = tag.count >= 4 && tag.hasPrefix("__") && tag.hasSuffix("__")
+        if reserved || tag.contains(where: forbiddenTagCharacters.contains) {
+            return "Tags cannot contain . * ~ / [ ] characters."
+        }
+        return nil
+    }
+
     func commitTagInput() {
+        let refusal = Self.tagRefusal(in: tagInput)
         let next = Self.normalized(tagInput, addingTo: tags)
         tagInput = ""
+        if let refusal { notice = refusal }
         guard next != tags else { return }
         tags = next
         persistDraft()
