@@ -76,6 +76,81 @@ M  PetNoteAppUITests/VideoPlaybackUITests.swift  我：补两条导航断言
 
 ---
 
+## 收口结果（2026-09-21 晚）
+
+**候选 commit `c955449`**，7 个提交已推送，未 force push，Draft PR 不合并。
+
+### CI
+
+`c955449` 上 `ci` 与 `ios-native` 两个工作流**均通过**。
+
+### 本地全量回归
+
+| | 结果 |
+| --- | --- |
+| 单元测试 | 280 条，**1 条间歇性失败** |
+| 界面测试 | 90 条，7 条跳过，**2 条失败** |
+
+界面从本批初次运行的 6 条失败降到 2 条。剩下两条：
+
+1. `testTheInstrumentAgreesWithTheKnownGeometryOfTheFeedActionRow`
+   —— 触控仪器校准未通过，**故意保留为红**。详见下文与验收矩阵「第五次」。
+2. `testEachOutcomeIsReachable`
+   —— `Failed to synthesize event: Timed out while synthesizing event`。
+   **不是断言失败**，是自动化框架在高负载下合成触摸事件超时；同一条在当日
+   早些时候的运行中通过（36.7 秒）。
+
+### 那条间歇性单测，按观察记录而不是按结论记录
+
+`ImageLoaderBehaviourTests.aRowScrollingAwayDoesNotCancelTheRowBesideIt`
+断言「一行滚走时，旁边那行还需要的共享下载不能被取消」。
+
+| 环境 | 结果 |
+| --- | --- |
+| CI（干净机器） | 通过 |
+| 本机全量单测（当日早些时候） | 通过 |
+| 本机最终全量回归 | **失败** |
+| 本机 8 次连续重复 | 全部通过 |
+
+**11 次观察失败 1 次，原因未查明。** 不写「偶发」：那是一个结论，
+而「还没找到原因」是另一个。本轮已经因为混淆这两者错过一次
+（把「一次都没采样到」当成「每次采到的都是空」）。建议单独排一轮。
+
+**期间我自己踩了一次本轮一直在防的坑**：第一次测量的过滤器写的是**文件名**
+`ImageLoaderTests`，而 Swift Testing 按**类型名**匹配（`ImageLoaderBehaviourTests`），
+于是一条都没跑，xcodebuild 照样报 `** TEST SUCCEEDED **`。
+按退出码读就会写成「8 次全过」。重跑时先核对「这条实际跑了几次」，
+为 0 直接判结果无效。
+
+### 真机候选包审计：`--release-check` 退出码 0
+
+| | |
+| --- | --- |
+| 1 BUILD | **PASS** |
+| 2 SIGN | **PASS**（`codesign --verify --strict` 通过，主人手机在描述文件里） |
+| 3 INSTALL | TODO —— 设备 `unavailable`，脚本从不代为声称 |
+| 4 LAUNCH | TODO —— 同上 |
+
+诊断代码的闭环证据：
+
+```
+[PASS] control yields 19 distinct switch tokens - the scan reaches Swift code
+[PASS] 0 of 11 fault-injection switches are in the device package
+[PASS] Release device package: 0 test switches, with a control that finds 19
+```
+
+**第一行是第二行成立的前提**：先证明扫描器确实扫得到 Swift 里的开关（找到 19 个），
+「0 个故障注入开关」才是真的零，而不是扫描器没工作。
+
+真机包仍带 8 个只读探针 token，这是 `Debug-TestCloud` 应有的——
+真机验收要靠它们取证。必须为零的是 Release 包，已实测为零。
+
+两条 WARN 记下来不掩盖：包里还带着 `GoogleService-Info-Emulator.plist`
+（`PROJECT_ID=petnote-test`，emulator 配置，非生产密钥）；
+描述文件 **2026-09-25 到期，还剩 3 天**，届时重新生成即可，不是项目损坏。
+
+---
+
 ## 第二批（四个缺口）的实际结果
 
 三个并行 agent 在 15:3x 全部因会话额度中断，之后由我接手。以下是**我独立核对过代码与日志**得出的，不是转述它们的自述。
