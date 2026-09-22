@@ -97,9 +97,49 @@ jobs:
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
           xcrun simctl list devices available | grep -m1 iPhone
 
+      # **The stream-break tests need a server, and until now there was none.**
+      #
+      # They are `.enabled(if: MediaServer.isAnswering)`, nothing here started
+      # one, and `.enabled(if:)` disables quietly — so
+      # `automaticRecoveryIsBoundedAndThenOffersAWayOut` and its two siblings
+      # appeared zero times in this log for every run up to c4d9089 while the
+      # job reported success. A disabled test and a test with nothing to say
+      # look identical from outside.
+      - name: Start the media server
+        run: |
+          mkdir -p "$RUNNER_TEMP/media"
+          # Fixtures first and in the foreground: generating them inside the
+          # server's own startup would make "not answering yet" and "still
+          # rendering a 16-second clip" the same observation.
+          swift scripts/a2-make-test-media.swift "$RUNNER_TEMP/media"
+          nohup python3 scripts/a2-media-server.py "$RUNNER_TEMP/media" 8123 \
+            > "$RUNNER_TEMP/media-server.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/media-server.pid"
+
+      # A health check that fails the job, not a sleep that hopes. The tests
+      # below are required here, so a server that never came up has to be a red
+      # step with its own name rather than twenty quiet skips.
+      - name: Wait for the media server
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS -o /dev/null --max-time 3 http://127.0.0.1:8123/a2-long.mp4; then
+              echo "media server answering after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::The media server never answered on 127.0.0.1:8123."
+          echo "--- media-server.log ---"
+          cat "$RUNNER_TEMP/media-server.log" || true
+          exit 1
+
       # Not -quiet, and the count is asserted: a green job must not be able to
       # mean "zero tests ran". A scheme misconfiguration does exactly that.
       - name: Unit tests
+        env:
+          # Turns "the server is not up" from a silent skip into a failure, in
+          # this environment only. See `MediaServer.isRequired`.
+          PETNOTE_REQUIRE_MEDIA_SERVER: "1"
         run: |
           # **The result of the tests decides this step.** It used to end
           # `| grep … || true`, which discarded xcodebuild's exit status: the
@@ -155,6 +195,25 @@ jobs:
             exit 1
           fi
 
+          # **These three by name, because the suite check cannot see them.**
+          # `VideoPlaybackTests` appearing proves the suite ran; its
+          # media-dependent members can still be disabled inside it, which is
+          # exactly what was happening. Skipped and executed are different
+          # words here on purpose.
+          ABSENT=""
+          for t in automaticRecoveryIsBoundedAndThenOffersAWayOut \
+                   briefJitterShowsNothingAndARealStallShowsSomething \
+                   aStreamThatDiesMidPlaybackIsNoticedEvenThoughNothingFails; do
+            grep -qE "Test $t\(\) (passed|failed|recorded)" test.log || ABSENT="$ABSENT $t"
+          done
+          if [ -n "$ABSENT" ]; then
+            echo "::error::These stream-break tests did not execute:$ABSENT"
+            echo "They are .enabled(if: MediaServer.isAnswering); a skip here means the"
+            echo "server was not reachable from the test host even though the health"
+            echo "check passed."
+            exit 1
+          fi
+
           if [ "$TEST_STATUS" -ne 0 ]; then
             echo "::error::xcodebuild test exited $TEST_STATUS - a test failed. See the ✘ lines above."
             exit "$TEST_STATUS"
@@ -171,5 +230,16 @@ jobs:
           path: |
             ios-native/test.log
             ios-native/build/dd/Logs/Test/*.xcresult
+            ${{ runner.temp }}/media-server.log
           retention-days: 14
           if-no-files-found: warn
+
+      # By pid, and only the one this job started. `always()` because a job
+      # that failed halfway is exactly the one that would otherwise leave it
+      # running.
+      - name: Stop the media server
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/media-server.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/media-server.pid")" 2>/dev/null || true
+          fi

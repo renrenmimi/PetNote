@@ -35,6 +35,85 @@ struct VideoPlaybackTests {
 
     // MARK: - The visibility rule
 
+    /// The dependency the stream-break tests need, checked where it is required.
+    ///
+    /// Not `.enabled(if:)` — that is the mechanism being guarded against. This
+    /// one runs everywhere and only has an opinion where the environment says
+    /// the server is mandatory.
+    /// **The cross-talk, reproduced, and then shown not to happen.**
+    ///
+    /// The root cause claimed for `automaticRecoveryIsBoundedAndThenOffersAWayOut`
+    /// was that the server's switches were one dict for the whole process. Three
+    /// passing runs do not establish that — they are consistent with the cause
+    /// being something else that happened to stop. This is the causal part: the
+    /// shared namespace is made to cross-talk on demand, and the per-session one
+    /// is put through the identical interleaving and does not.
+    ///
+    /// Bytes rather than playback, because the question is about server state
+    /// and an `AVPlayer` in the middle would only add ways to be wrong. The cut
+    /// file is roughly 24,000 bytes and the whole one roughly 61,000, which is
+    /// far past any ambiguity.
+    @Test(.enabled(if: MediaServer.isAnswering))
+    func sharedStateCrossTalksAndSeparateSessionsDoNot() async throws {
+        func size(_ url: URL) async throws -> Int {
+            let (data, _) = try await URLSession.shared.data(
+                for: URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
+            )
+            return data.count
+        }
+
+        // --- the old shape: one namespace, two actors, interleaved on purpose
+        _ = await MediaServer.reach("/a2-cut")
+        let cutInShared = try await size(MediaServer.url("/a2-cutoff.mp4"))
+        _ = await MediaServer.reach("/a2-mend")          // "another test" mends
+        let afterSomeoneElseMended = try await size(MediaServer.url("/a2-cutoff.mp4"))
+
+        print("MEASURED shared namespace: cut=\(cutInShared) "
+              + "then after another actor mended=\(afterSomeoneElseMended)")
+        #expect(
+            afterSomeoneElseMended > cutInShared,
+            """
+            The shared namespace did not cross-talk, so this test is not \
+            reproducing what it claims to reproduce and the comparison below \
+            proves nothing.
+            """
+        )
+
+        // --- the new shape: the identical interleaving, separate sessions
+        let mine = MediaServer.session()
+        let theirs = MediaServer.session() + "-other"
+        _ = await MediaServer.reach("/a2-cut", session: mine)
+        let cutInMine = try await size(MediaServer.url("/a2-cutoff.mp4", session: mine))
+        _ = await MediaServer.reach("/a2-mend", session: theirs)
+        let mineAfterTheirsMended = try await size(MediaServer.url("/a2-cutoff.mp4", session: mine))
+        let theirsSize = try await size(MediaServer.url("/a2-cutoff.mp4", session: theirs))
+
+        print("MEASURED sessions: mine=\(cutInMine) -> \(mineAfterTheirsMended), theirs=\(theirsSize)")
+        #expect(
+            mineAfterTheirsMended == cutInMine,
+            "another session's mend changed what this session is served: "
+            + "\(cutInMine) became \(mineAfterTheirsMended)"
+        )
+        #expect(
+            theirsSize > mineAfterTheirsMended,
+            "the other session's mend did not take effect in its own namespace, "
+            + "so the two sessions are not independent — they are both broken"
+        )
+    }
+
+    @Test func theMediaServerIsUpWhereItIsRequired() {
+        guard MediaServer.isRequired else { return }
+        #expect(
+            MediaServer.isAnswering,
+            """
+            PETNOTE_REQUIRE_MEDIA_SERVER=1 but nothing is answering on \
+            \(MediaServer.host). Every stream-break test is `.enabled(if:)` on \
+            that, so they would all be skipped and the run would be green \
+            without having exercised any of them.
+            """
+        )
+    }
+
     @Test func belowTheThresholdGetsNoPlayerAtAll() async throws {
         let url = try await clip()
         let coordinator = VideoPlaybackCoordinator()
@@ -1551,13 +1630,55 @@ enum MediaServer {
     /// It also gives the test its own URL, which rules out a second candidate
     /// that could not otherwise be told apart: an asset cached under one
     /// test's URL answering another's request.
+    /// One per test-host process, so two runs cannot share a namespace.
+    ///
+    /// `#function` alone was not enough and the gap is not theoretical:
+    /// `-test-iterations` runs the same test repeatedly in one process, and a
+    /// second `xcodebuild` against the same server is an ordinary thing to do
+    /// while investigating. Both would have reused one token.
+    nonisolated static let runID: String = String(UUID().uuidString.prefix(8))
+
+    private nonisolated static let iterationLock = NSLock()
+    nonisolated(unsafe) private static var iterations: [String: Int] = [:]
+
+    /// A namespace of one test *run* — process, test, and which time round.
+    ///
+    /// The token is `<runID>-<test>-<n>` and the same string is used for the
+    /// control URL, the media URL, the server's `SWITCH session=…` log line
+    /// and the entry it cleans up, so one identifier follows the whole thing
+    /// rather than four that have to be correlated by timestamp.
     static func session(_ name: String = #function) -> String {
-        String(name.prefix(while: { $0 != "(" }))
+        let base = String(name.prefix(while: { $0 != "(" }))
+        iterationLock.lock()
+        defer { iterationLock.unlock() }
+        let n = (iterations[base] ?? 0) + 1
+        iterations[base] = n
+        return "\(runID)-\(base)-\(n)"
     }
 
     static func url(_ path: String, session: String) -> URL {
         URL(string: "\(host)\(path)?s=\(session)")!
     }
+
+    /// Whether this environment is one where the media server is **required**
+    /// rather than nice to have.
+    ///
+    /// The distinction exists because both policies are right, in different
+    /// places. On a laptop, a developer running the unit suite without having
+    /// started a local HTTP server should get the rest of the suite and a note,
+    /// not a wall of red about a dependency they did not ask for. In CI the
+    /// same silence is a hole: the stream-break tests appeared **zero times**
+    /// in the `ios-native` log for every run up to `c4d9089`, and the job was
+    /// green, because `.enabled(if:)` disables quietly and a disabled test
+    /// looks exactly like a test that has nothing to say.
+    ///
+    /// So CI sets `PETNOTE_REQUIRE_MEDIA_SERVER=1`, and
+    /// `theMediaServerIsUpWhereItIsRequired` turns the silence into a failure.
+    /// The workflow separately greps the log for the three test names, because
+    /// one guard that has to be remembered is not the same as two that
+    /// disagree when something is wrong.
+    nonisolated static let isRequired: Bool =
+        ProcessInfo.processInfo.environment["PETNOTE_REQUIRE_MEDIA_SERVER"] == "1"
 
     /// Synchronous on purpose. `.enabled(if:)` is evaluated while tests are
     /// being collected, which is not an async context; and a suite that fails
