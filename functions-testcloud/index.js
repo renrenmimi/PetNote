@@ -1,5 +1,12 @@
 /**
- * The six functions the independent test project needs, and nothing else.
+ * The functions the independent test project needs, and nothing else.
+ *
+ * Six since 4ba1c57 (comments and likes); 28 more authorized by the owner on
+ * 2026-09-22 for account, pets, posting, follows and families — each audited
+ * first for secrets (none), network calls (none), schedules (none) and side
+ * effects outside Firestore (Firebase Auth updateUser in the two profile
+ * callables). Nothing that binds a secret, runs on a schedule, or deletes
+ * media belongs here; the guards below refuse the first two.
  *
  * Why this file exists at all
  * ---------------------------
@@ -29,15 +36,74 @@
  */
 const posts = require("./lib/posts");
 const notifications = require("./lib/notifications");
+const users = require("./lib/users");
+const pets = require("./lib/pets");
+const places = require("./lib/places");
+const cleanup = require("./lib/cleanup");
+const invitations = require("./lib/invitations");
+const family = require("./lib/family");
 
 const EXPORTS = {
+  // The original six.
   createCommentCallable: posts.createCommentCallable,
   deleteCommentCallable: posts.deleteCommentCallable,
   onLikeCreated: notifications.onLikeCreated,
   onLikeDeleted: notifications.onLikeDeleted,
   onCommentCreated: notifications.onCommentCreated,
   onCommentDeleted: notifications.onCommentDeleted,
+
+  // Account and profile.
+  ensureUserProfileCallable: users.ensureUserProfileCallable,
+  checkDisplayNameAvailabilityCallable: users.checkDisplayNameAvailabilityCallable,
+  updateUserProfileCallable: users.updateUserProfileCallable,
+  onUserUpdated: users.onUserUpdated,
+  onFamilyCreated: users.onFamilyCreated,
+
+  // Pets.
+  createPetCallable: pets.createPetCallable,
+  updatePetCallable: pets.updatePetCallable,
+  deletePetCallable: pets.deletePetCallable,
+  getPetCheckinsCallable: places.getPetCheckinsCallable,
+  onPetDeleted: cleanup.onPetDeleted,
+
+  // Posting and managing posts.
+  createPostCallable: posts.createPostCallable,
+  updatePostCallable: posts.updatePostCallable,
+  deletePostCallable: posts.deletePostCallable,
+  getPublishStatusCallable: posts.getPublishStatusCallable,
+  setPinnedPostCallable: posts.setPinnedPostCallable,
+  onPostWritten: posts.onPostWritten,
+  onPostDeleted: cleanup.onPostDeleted,
+
+  // Follows and families.
+  followPetCallable: pets.followPetCallable,
+  unfollowPetCallable: pets.unfollowPetCallable,
+  onFollowingPetCreated: notifications.onFollowingPetCreated,
+  onFollowingPetDeleted: notifications.onFollowingPetDeleted,
+  createInvitationCallable: invitations.createInvitationCallable,
+  getActiveInvitationCallable: invitations.getActiveInvitationCallable,
+  validateInvitationCallable: invitations.validateInvitationCallable,
+  redeemInvitationCallable: invitations.redeemInvitationCallable,
+  revokeInvitationCallable: invitations.revokeInvitationCallable,
+  removeFamilyMemberCallable: family.removeFamilyMemberCallable,
+  transferPetPrimaryCallable: family.transferPetPrimaryCallable,
 };
+
+// Exactly the authorized set: a name added here by accident is a deployment
+// nobody approved.
+const EXPECTED_COUNT = 34;
+if (Object.keys(EXPORTS).length !== EXPECTED_COUNT) {
+  throw new Error(`testcloud entry: ${Object.keys(EXPORTS).length} exports, ${EXPECTED_COUNT} authorized`);
+}
+
+// No schedules. Two scheduled functions (resumeAbandonedPetDeletions,
+// cleanupOldReadNotifications) are constructed when these modules load; they
+// deploy only if exported, and this makes exporting one fail the deploy.
+for (const [name, fn] of Object.entries(EXPORTS)) {
+  if (fn?.__endpoint?.scheduleTrigger) {
+    throw new Error(`testcloud entry: ${name} is a scheduled function; none is authorized here`);
+  }
+}
 
 for (const [name, fn] of Object.entries(EXPORTS)) {
   if (typeof fn !== "function" && typeof fn !== "object") {
@@ -55,7 +121,7 @@ for (const [name, fn] of Object.entries(EXPORTS)) {
 }
 if (boundSecrets.size > 0) {
   throw new Error(
-    "testcloud entry: one of the six functions now binds a secret — "
+    "testcloud entry: one of these functions now binds a secret — "
     + [...boundSecrets].join(", ")
     + ". Stripping declarations would deploy it without that secret. "
     + "Decide deliberately instead of letting this file guess."
