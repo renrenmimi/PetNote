@@ -56,6 +56,10 @@ struct SignedInView: View {
     @State private var needsOnboarding = false
     /// The web client's `isBanned`, which drives its `SuspendedBanner`.
     @State private var isSuspended = false
+    /// The dot on the bell: anything unread. Read when the feed appears and
+    /// when the app comes back, as the rest of this app reads rather than
+    /// listens.
+    @State private var hasUnreadNotifications = false
     private let repositories: Repositories
     /// The feed the model reads, less blocked authors. In `@State` with the
     /// model, from the same initialisation: this initialiser runs on every
@@ -150,7 +154,10 @@ struct SignedInView: View {
         // the front — which is when a ban issued while it was away would
         // otherwise go unmentioned until the next launch.
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await checkSuspension() } }
+            if phase == .active {
+                Task { await checkSuspension() }
+                Task { await refreshNotificationDot() }
+            }
         }
         // Leaving the home tab leaves the feed's videos behind a screen nobody
         // is looking at. Released for the same reason navigating away is
@@ -181,6 +188,9 @@ struct SignedInView: View {
             FeedView(model: feedModel, path: $path)
                 .environment(video)
                 .suspendedBanner(isSuspended)
+                // Back from the notifications list, or anywhere else, the dot
+                // is read again.
+                .onAppear { Task { await refreshNotificationDot() } }
                 .safeAreaInset(edge: .top, spacing: 0) {
                     if !user.isEmailVerified {
                         EmailVerificationBanner(
@@ -233,6 +243,27 @@ struct SignedInView: View {
                                 .foregroundStyle(Palette.secondaryText)
                                 .accessibilityIdentifier("env.badge")
                         }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        // The web client's navbar bell, with its red dot.
+                        Button {
+                            path.append(.notifications)
+                        } label: {
+                            Image(systemName: "bell")
+                                .overlay(alignment: .topTrailing) {
+                                    if hasUnreadNotifications {
+                                        Circle()
+                                            .fill(Palette.danger)
+                                            .frame(width: Spacing.s, height: Spacing.s)
+                                            .accessibilityHidden(true)
+                                    }
+                                }
+                                .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget)
+                                .contentShape(.rect)
+                        }
+                        .accessibilityLabel("Notifications")
+                        .accessibilityValue(hasUnreadNotifications ? String(localized: "Unread") : "")
+                        .accessibilityIdentifier("feed.notifications")
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         // The web client's navbar search, one tap from the
@@ -352,7 +383,7 @@ struct SignedInView: View {
     /// 99pt dead strip beneath itself, which `AccessibilityUITests` caught.
     static func showsTabBar(on route: Route) -> Bool {
         switch route {
-        case .feed, .search: return true
+        case .feed, .search, .notifications: return true
         case .postDetail, .pet, .user, .petFollowers, .followingPets, .savedPosts, .family, .joinFamily,
              .blockedUsers, .contactUs, .settings: return false
         }
@@ -482,6 +513,11 @@ struct SignedInView: View {
             )
         case .contactUs:
             ContactUsView(sender: repositories.feedback)
+        case .notifications:
+            NotificationsView(
+                model: NotificationsModel(uid: user.uid, source: repositories.notifications),
+                onOpen: { stack.wrappedValue.append($0) }
+            )
         case .settings:
             SettingsView(
                 uid: user.uid,
@@ -592,6 +628,13 @@ struct SignedInView: View {
         )
     }
 
+    private func refreshNotificationDot() async {
+        let account = user.uid
+        guard let unread = try? await repositories.notifications.hasUnread(uid: account),
+              boundAccountID == account else { return }
+        hasUnreadNotifications = unread
+    }
+
     /// A read that fails decides nothing: the banner keeps whatever the last
     /// answer was, rather than appearing or vanishing on a network error.
     private func checkSuspension() async {
@@ -664,6 +707,7 @@ struct Repositories {
     let suspension: any SuspensionReading
     let preferences: any PreferencesStoring
     let security: any AccountSecurity
+    let notifications: any NotificationsReading
 
     static var live: Repositories {
         Repositories(
@@ -686,7 +730,8 @@ struct Repositories {
             saved: FirestoreSavedPostsSource(),
             suspension: FirestoreSuspensionSource(),
             preferences: FirestorePreferencesStore(),
-            security: LiveAccountSecurity()
+            security: LiveAccountSecurity(),
+            notifications: FirestoreNotificationsSource()
         )
     }
 }

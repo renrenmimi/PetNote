@@ -40,6 +40,8 @@ enum Route: Hashable, Sendable {
     case contactUs
     /// The web client's Settings. Management, and never a link target.
     case settings
+    /// The signed-in person's in-app notifications.
+    case notifications
 }
 
 /// Turns an incoming link into a `Route`.
