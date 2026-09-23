@@ -265,11 +265,54 @@ struct ProfileEditTests {
         model.displayName = "SparklyKoala19"
         await model.name.awaitPending()
 
-        async let first: Void = model.save()
-        async let second: Void = model.save()
-        _ = await (first, second)
+        let gate = HeldWrite()
+        users.whileUpdating = { await gate.hold() }
+        let first = Task { await model.save() }
+        #expect(await gate.arrives(), "the first save never reached the server")
+        #expect(model.isSaving)
+
+        await model.save()
+        gate.release()
+        await first.value
 
         #expect(users.updateCalls.count == 1, "the profile was written twice")
+    }
+
+    /// Holds the fake's write until released, and says when one has arrived.
+    private final class HeldWrite: @unchecked Sendable {
+        private let lock = NSLock()
+        private var arrived = false
+        private var released = false
+        private var waiting: CheckedContinuation<Void, Never>?
+
+        func hold() async {
+            await withCheckedContinuation { continuation in
+                let resumeNow = lock.withLock { () -> Bool in
+                    arrived = true
+                    if released { return true }
+                    waiting = continuation
+                    return false
+                }
+                if resumeNow { continuation.resume() }
+            }
+        }
+
+        func arrives() async -> Bool {
+            for _ in 0..<20_000 {
+                if lock.withLock({ arrived }) { return true }
+                await Task.yield()
+            }
+            return false
+        }
+
+        func release() {
+            let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+                released = true
+                defer { waiting = nil }
+                return waiting
+            }
+            continuation?.resume()
+        }
     }
 
     // MARK: The picture
