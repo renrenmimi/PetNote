@@ -4,21 +4,33 @@
 审查目录里的 `evidence/ios-native/acceptance-status.md` 是**第一阶段验收矩阵**（按
 `SWIFT-CLIENT-ACCEPTANCE.md` 条目编号记证据），不是状态表；功能迁移进度只记在这里。
 
-**更新** 2026-09-22（下午）· 分支 `feature/ios-native-prototype` · PR [#204](https://github.com/renrenmimi/PetNote/pull/204)（Draft，不合并）
+**更新** 2026-09-23 · 分支 `feature/ios-native-prototype` · PR [#204](https://github.com/renrenmimi/PetNote/pull/204)（Draft，不合并）
 
 ---
 
-## 当前候选：`e203196`（2026-09-22 晚）
+## 候选与验证（2026-09-23）
 
-| 检查 | 结果 |
-| --- | --- |
-| 本地全部单元测试 | 718 条，57 个 suite，**全部通过** |
-| 本地全部界面测试（emulator；触控区两组按 `regression.sh` 的规定跳过，校准未通过） | 执行 85 条，**0 失败**，7 条跳过（都是 `DeviceAcceptanceUITests`，只在真机上跑） |
-| CI 单元测试 | 718 条里 **1 条红**：`automaticRecoveryIsBoundedAndThenOffersAWayOut`，见「未解决：CI 上的断流恢复测试」 |
-| CI 的 web / functions / 规则 / 触发器 | 通过 |
-| 真机 | **没有上过**，手机上仍是 `4ba1c57` |
+三个版本分开记，不互相代替：
 
----
+| 版本 | 是什么 | CI（iOS 26.2 模拟器） | 本地（iOS 27 模拟器） |
+| --- | --- | --- | --- |
+| `e203196` | 上一轮产品候选 | 2 次里 1 次红：断流恢复测试 | 单元 718 全过；界面执行 85、0 失败 |
+| `262d3e9` | 只改文档，代码同 `e203196` | 2 次都红：同一条断流恢复测试 | 没有另跑（代码没变） |
+| `59c6225` | 候选：视频修复、界面验收、点赞测试去掉真实时钟、邀请码框 | 3 次运行都红：stack 2 上断流恢复又失败一次（第二条路径）；stack 3 上整图测试；顶层一次测试进程崩溃、一次媒体服务器检测失败导致断流测试没跑。详见下面两节 | **本地全量回归通过**：单元 729 条全过；界面执行 92 条、0 失败，跳过 9 条（7 条只在真机跑，2 条要先打开系统的「减弱动态效果」「降低透明度」），用时 64 分钟 |
+
+| `22fd8b6` | 最新候选：在 `59c6225` 上加断流第二条路径的修复、媒体服务器检测重试、CI 保留崩溃报告和 40 分钟上限（下沉到 stack 2），以及删除评论、已收藏列表、账号被封提示 | 推送后见 PR | 单元 745 条全过（新增 16 条）；新写的 4 条界面测试全过（删除评论、已收藏、封号提示第二次才过，前两条各修了一处测试、封号提示改了产品）；视频界面测试 13 条里 12 条过，`testWhileAVideoIsOpeningThePosterIsStillWhatIsOnScreen` 和别的测试一起跑时没拍到「打开中」那一刻，单独重跑通过——它在 `59c6225` 全量里也通过，我判断是这条测试本身的时间窗问题，**未修**。**没有在 `22fd8b6` 上重跑完整界面回归** |
+
+**各 PR 自己的 CI**（不拿顶层通过代替下层）：
+
+| PR | 分支 | 视频修复在不在 | 最近结果 |
+| --- | --- | --- | --- |
+| #207 | `stack-1-foundation` `82ed79e` | 不涉及（这一层没有播放代码） | 通过 |
+| #208 | `stack-2-core` `059db25` | 在（`059db25` 本身就是修复） | 第 1 次红（3 条点赞测试、1 条夹具测试，见下方「CI 上的另外两类红」，与视频无关）；重跑通过 |
+| #209 | `stack-3-models` `fb2c87d` | 在（从 stack 2 合并上来） | 2 次都通过 |
+| #210 / #204 | `feature/ios-native-prototype` `e5b5cfe` | 在 | 2 次里 1 次红：整图测试（见下方），断流恢复两次都过 |
+
+本轮的点赞测试修复同样先落在 stack 2（`1118abb`），再经 stack 3（`318a3be`）合并到顶层（`b1553ef`），三层内容一致。
+断流第二条路径的修复也是这样：stack 2 `e6a8eb8` → stack 3 `7ac6dac` → 顶层 `22fd8b6`。CI 的 40 分钟上限和构建锁看门狗原来只在顶层，这次一起下沉到 stack 2（`93dfc43`）。
 
 ## 功能迁移清单（旧版用户侧功能 → Swift）
 
@@ -51,27 +63,28 @@ UI 测试里的上传一律走**本地替身**（`ios-native/scripts/upload-stan
 | 功能 | 等级 | 证据 / 环境 | 未验证、阻塞 |
 | --- | --- | --- | --- |
 | 首次引导 | ③ | `JourneyUITests`：新账号出现引导，改名后服务端 `displayName` 与 `onboardingComplete` 均已写入 | 「跳过」是否该写入名字仍是产品决定 |
-| 个人主页 | ③ | `JourneyUITests`（经「我的」Tab） | 旧版的「已收藏」「签到」两个分栏 ① |
-| 编辑资料 / 头像 | ③（简介）/ ②（头像） | `JourneyUITests`：改简介，页面与服务端一致 | 头像换图 UI 未验 |
+| 个人主页 | ③ | `JourneyUITests`（经「我的」Tab） | 旧版的「签到」分栏 ①（「已收藏」见下一行） |
+| 已收藏列表 | ③ | `7dd311e`：「我的 → Saved posts」，最近 50 条收藏，按收藏先后，每次 10 个 id 去取帖子再按收藏顺序排，已删除的帖子不显示，空状态用旧版原文。`SavedPostsTests`；`ProfileEditsUITests`：收藏后在列表里找到、从列表打开、在帖子页取消收藏、返回后列表为空 | 屏蔽之后已收藏里还会显示被屏蔽者的帖子（旧版也是这样） |
+| 编辑资料 / 头像 | ③（头像为**上传替身**） | `JourneyUITests`：改简介；`ProfileEditsUITests`：从相册换头像 + 改简介，一次保存，服务端 `avatarUrl` 就是这次上传返回的地址；上传失败（替身不可达）时显示错误、页面不关、输入的简介还在、服务端一个字没写 | 头像**不是**真实 Cloudinary；真实上传待测试 Cloudinary |
 | 我的宠物列表 | ③ | `JourneyUITests`（Add a pet 入口）。旅程测试发现容器标识符覆盖了按钮的标识符，已修 | 多只宠物、刷新失败的界面状态未验 |
 | 设置页（通知偏好、深色、语言、位置、改密码） | ① | 旧版 `Settings.tsx` | 第 5 批 |
 | 中文界面 | ① | 旧版支持 en / zh（默认 en）；**Swift 全部是英文硬编码** | 横跨所有页面，未排批次 |
 | 注销账号 | ① | `Callables.deleteUserAccount` 已登记，无调用 | 第 5 批；共享宠物的处理照服务端规则 |
-| 屏蔽用户 / 屏蔽列表 | ② | `BlockingTests`：只写 `blockedAt`；只取消关注「成员只有对方一人」的宠物；Feed 在模型下面加一层过滤，被过滤空的一页会接着取下一页；取消屏蔽后 Feed 重读。入口：帖子菜单「Block」（旧版只有这一处）、「我的 → Blocked people」 | UI 未验；关注超过 500 只宠物时只检查前 500 只 |
+| 屏蔽用户 / 屏蔽列表 | ③ | `ModerationUITests`：从 Feed 第一条帖子的菜单屏蔽作者 → 回到 Feed，服务端有 `users/{me}/blockedUsers/{作者}`，这条帖子刷新后不在 Feed 里，Feed 不是空的且第一条不是被屏蔽的人；「我的 → Blocked people」里列着他，点 Unblock 后列表变空、服务端文档消失、回 Feed 帖子重新出现。另有 `BlockingTests` | 他人主页、搜索结果里的屏蔽效果未单独走界面；关注超过 500 只宠物时只检查前 500 只 |
 | 举报 | ③ | `ReportUITests`：他人帖子菜单 → Report → 选原因 → Send，服务端 `reports/{uid}_post_{postId}` 的原因、类型、举报人都对；`ReportPostTests` 覆盖「Other」的发送规则、重复举报、结果未知可安全重发 | 旧版只在帖子上提供，评论和用户不提供，这里也一样 |
-| 联系我们 | ② | `ContactUsTests`；入口「我的 → Contact us」 | UI 未验；结果未知时会提示「再发一次可能收到两份」，不自动重发 |
-| 隐私政策、服务条款 | ① | 旧版 `PrivacyPolicy` / `TermsOfService` | 第 5 批 |
-| 账号被封提示 | ① | 旧版 `SuspendedBanner.tsx` | 第 5 批 |
+| 联系我们 | ③（只写进本地 emulator） | `ModerationUITests`：「我的 → Contact us」，四个类型都在，没写内容时 Send 不可点、只写主题也不可点，写完正文可点；发送后出现确认，emulator 的 `feedback` 里恰好一条，类型和主题对得上。**没有向任何外部发送** | 测试云上没有 `submitFeedback`；结果未知时的提示 UI 未验 |
+| 隐私政策、服务条款 | ①，**待主人决定** | 旧版 `PrivacyPolicy` / `TermsOfService` | 旧版原文里有只适用于网页的内容（第 3 节写 Vercel 托管，第 8 节写浏览器存储、关浏览器就清掉草稿），照搬到 iOS 不准确。二选一：App 里直接打开网页版这两页；或照搬后改写这两节（法律文字，要主人定稿） |
+| 账号被封提示 | ③ | `95b5882`：读 `users/{uid}/admin/state` 的 `banned`（和旧版同一处）。登录、换账号、每次回到前台时读取；红条在每个页面自己的顶栏下面。`SuspensionUITests`：emulator 里给新账号设封禁 → 切后台再回来出现红条、不和顶栏重叠、推入的页面也有 → 解封后消失。第一次放在最外层时盖住了顶栏，测试量出来后改了位置 | 旧版是实时监听，这里是回前台才读；真机未验 |
 
 ### 宠物
 
 | 功能 | 等级 | 证据 / 环境 | 未验证、阻塞 |
 | --- | --- | --- | --- |
-| 创建 / 编辑宠物 | ③（创建）/ ②（编辑） | `JourneyUITests`：建宠物后服务端有这只宠物，创建者在它的 family 里 | 编辑宠物、宠物头像 UI 未验 |
+| 创建 / 编辑宠物 | ③ | `JourneyUITests`：建宠物后服务端有这只宠物，创建者在它的 family 里；`ProfileEditsUITests`：宠物页菜单 → Edit → 改名保存，宠物页标题、服务端 `name`、「我的」里的宠物行三处都是新名字 | 宠物头像 UI 未验；编辑保存失败的界面未验 |
 | 宠物主页 | ③ | `JourneyUITests`：保存后打开新宠物的主页 | 帖子/签到分栏 UI 未验 |
 | 删除宠物（最后一位主人） | ② | `PetOwnershipTests` | UI 未验；多主人时由服务端拒绝，客户端只按 `isPrimary` 决定显示 |
 | 关注 / 取消关注、关注列表 | ③（关注、取消关注）/ ②（列表） | `SocialJourneyUITests`：访客从搜索打开宠物，点关注，服务端出现 `users/{uid}/followingPets/{pet}`；再点取消，文档消失。另有 `SocialFollowTests` 等 | 粉丝列表、「我关注的宠物」列表 UI 未验 |
-| 共同主人：邀请、兑换、撤销、移除、退出、转让 | ③（邀请、兑换、退出）/ ②（撤销、移除、转让） | `SocialJourneyUITests`，两个账号：A 生成邀请码（服务端 `pets/{pet}/invitations/{code}` 和 `invitationCodes/{code}` 都在）；B 用邀请码加入，服务端 family 文档的 role 是 `member`；B 退出后文档消失，A 仍在 | 撤销、移除他人、转让主人 UI 未验；授权规则没改 |
+| 共同主人：邀请、兑换、撤销、移除、退出、转让 | ③ | `SocialJourneyUITests`：邀请、兑换、B 退出。`FamilyManageUITests`（两个账号）：A 生成邀请码后撤销，服务端标记为已撤销；B 输入被撤销的码被拒、不出现加入选项；A 的第二个码 B 能用，role 是 `member`；A 把主人转给 B，服务端 B 是 `primary`、A 是 `member`，A 的页面上「移除」按钮随即消失；B 作为新主人移除 A，服务端 A 的 family 文档消失、B 仍是 `primary`。授权规则没改 | 测试云上邀请码仍被缺失的索引阻塞；三个及以上主人的情况未走界面 |
 | 生日庆祝、宠物聚光 | ① | 旧版 `BirthdayCelebration` / `PetSpotlight` | 未排批次 |
 
 ### 内容
@@ -84,12 +97,12 @@ UI 测试里的上传一律走**本地替身**（`ios-native/scripts/upload-stan
 | 视频播放、断流恢复 | ⑤ @`4ba1c57`（播放） | `VideoPlaybackUITests`；断流恢复只到 ③。字节范围写死的问题已改成先问夹具要长度（`14ddb6d`），本地 52/52 | **CI 上仍有 1 条间歇性红**，见下方「未解决：CI 上的断流恢复测试」；断流恢复真机未验 |
 | 点赞 | ⑤ @`4ba1c57` | 真机 `Like/0 → Unlike/1`，云端 `counted=True`；`LikeUITests` 在 Tab 栏下 7/7（`98bd1b7`） | 此前那条失败已查明：点击落在离屏幕底边 3.7pt 处，App 没收到，不是点赞逻辑的问题 |
 | 评论（写） | ⑤ @`4ba1c57` | `CommentUITests`；真机中文输入 | — |
-| 删除自己的评论 | ① | `Callables.deleteComment` 已登记，无界面 | 未排批次 |
-| 收藏 | ② | `PostWriteManageTests` · 详情页菜单 | UI 未验；「已收藏」列表 ① |
+| 删除评论（自己的，或自己帖子下别人的） | ③ + ④（服务端规则） | `fc3ef9f`：评论作者和帖子作者才有删除按钮，先确认，服务端回了才从列表拿掉，两个页面的评论数一起减。`CommentDeleteTests` 9 条；`CommentUITests`：在 emulator 上删掉自己的评论，核对列表、文档、`commentCount` 和 Feed 卡片。测试云上客户端权限验收：别人删被拒、作者删、帖子作者删、重复删仍成功、计数 3 → 0 | App 自己连测试云删评论未走过；真机未验 |
+| 收藏 | ③（收藏 / 取消收藏） | `ProfileEditsUITests`：详情页菜单写着「Save」，点后服务端出现 `users/{me}/bookmarks/{post}`；菜单随即改成「Remove from saved」，再点文档消失 | 旧版在 Feed 卡片上就有收藏按钮，这里只在详情页菜单里 |
 | 发帖（图片 / 视频、选宠物、标签） | ③（图片，**上传替身**） | `JourneyUITests`：系统相册选图 → 带签名的 multipart 上传到本地替身 → `createPostCallable`（emulator 里 URL 校验真实执行）→ Feed 第一条就是它；服务端的 `authorId`、`petId` 和媒体 URL 都核对过 | **不是**真实 Cloudinary（替身不校验签名，返回的 URL 在 CDN 上不存在，所以图片不显示）；视频、标签的 UI 未验；**真实 Cloudinary 待授权** |
 | 发帖草稿 | ② | `ComposeDraftTests` | UI 未验 |
 | 发帖滤镜 | ① | 旧版 `ImageFilter.tsx` | 未排批次 |
-| 编辑 / 删除 / 置顶自己的帖子 | ③（编辑、删除）/ ②（置顶） | `JourneyUITests`：编辑后详情页不重进就显示新文字，服务端已更新；删除后回到 Feed、帖子消失、服务端文档不存在 | 置顶 UI 未验；删除失败的提示 UI 未验 |
+| 编辑 / 删除 / 置顶自己的帖子 | ③ | `JourneyUITests`：编辑后详情页不重进就显示新文字，服务端已更新；置顶后菜单改成「Unpin from profile」、服务端 `pinnedPostId` 是这条，取消后清空；删除后回到 Feed、帖子消失、服务端文档不存在 | 置顶后个人主页上的排序未走界面；删除失败的提示 UI 未验 |
 | 分享 | ① | 旧版 `ShareMenu` / `ShareCard` | 未排批次 |
 | 搜索、话题、发现 | ③（搜宠物）/ ②（其余） | `SocialJourneyUITests` 从首页顶栏搜索按名字找到宠物并打开；`SearchModelTests`、`SearchExploreTests` | 搜人、搜话题、发现页 UI 未验 |
 | 他人主页 | ② | `UserProfileModelTests`；从搜索、粉丝列表进入，链接 `/profile/<uid>` | UI 未验 |
@@ -109,7 +122,7 @@ UI 测试里的上传一律走**本地替身**（`ios-native/scripts/upload-stan
 配置：最小实例 0（空闲不计费），最大实例 20，事件触发器不重试，`onUserUpdated` 为 1 GiB / 540 秒；预算告警和镜像清理策略沿用、未改动。
 **「无密钥」不等于「没有副作用」**：两个资料函数会调用 Firebase Auth 的 `updateUser`；每次点赞或评论都会额外触发一次 `onPostWritten`（按调用计费，测试流量下很小）。
 
-**客户端权限验收**（`functions/scripts/verify-client-features.mjs`：普通用户令牌、在安全规则下执行，不用 Admin 权限）：**34 通过 · 1 阻塞 · 0 失败**，没有留下测试数据。
+**客户端权限验收**（`functions/scripts/verify-client-features.mjs`：普通用户令牌、在安全规则下执行，不用 Admin 权限）：**44 通过 · 1 阻塞 · 0 失败**（2026-09-23 第二次运行，加了评论删除），没有留下测试数据。
 
 | 范围 | 结果 |
 | --- | --- |
@@ -117,6 +130,7 @@ UI 测试里的上传一律走**本地替身**（`ios-native/scripts/upload-stan
 | 宠物：建（创建者为 primary，`onFamilyCreated` 补上名字）、改、删；非成员改被拒；客户端直写宠物和家庭文档被规则拒绝（403） | ④ 通过 |
 | 关注：关注和取消关注，触发器把计数从 0 到 1 再到 0；主人关注自己的宠物被拒 | ④ 通过 |
 | 发帖（文字帖）：创建；同一 operationId 不重复发布；宠物帖子数 +1；非作者改、删被拒；置顶和取消置顶；删帖；未验证邮箱被拒 | ④ 通过（**不含图片**） |
+| 评论删除：B 删不了 A 帖子下 A 的评论；评论作者删自己的；帖子作者删别人的；删已删除的仍返回成功；评论数 3 → 0（两个触发器都跑了），三条文档都不在了 | ④ 通过（服务端规则；App 自己连测试云删评论还没走过） |
 | 邀请码 | **阻塞**：服务端回 `internal`，缺 `invitations.code` 集合组索引 |
 
 **仍然阻塞、需要授权的：**
@@ -126,32 +140,83 @@ UI 测试里的上传一律走**本地替身**（`ios-native/scripts/upload-stan
 
 ---
 
-## 未解决：CI 上的断流恢复测试
+## 视频断流：已修，证据按系统版本分开记
 
-`automaticRecoveryIsBoundedAndThenOffersAWayOut` 在 GitHub 的 runner（iOS 26.2 模拟器）上间歇性失败：`0867749` 通过，`08c1105`、`3f3e86f`、`e203196` 失败。本地 iOS 27 模拟器 52/52 通过。
-CI 日志里的时间线（`e203196`）说明了原因：数据断在 5.73 秒，重建后的播放器时钟却走到了 7.00，然后按「播完」循环回开头；
-重播开头那段已下载好的数据是真实播放，于是自动恢复的次数被退回 0，60 秒内一直走不到「请手动重试」。
+**缺陷**（CI 日志 `e203196`）：数据断在 5.73 秒，重建后的播放器时钟却走到 7.00，然后发出「播完了」，App 按短视频循环回开头；
+重播开头已下载的那段被当成恢复进展，自动恢复次数被退回 0，60 秒内一直走不到「请手动重试」。用户看到的就是开头一段反复重播、没有提示。
 
-**这可能不只是测试问题。** App 支持 iOS 18 起的系统，如果旧系统的播放器在断流时也会这样「提前播完」，用户看到的就是开头一段反复重播、没有任何提示。
+**修法**（`VideoPlaybackCoordinator.swift` 里的 `VideoStallPolicy`，`040a678`，stack 2 上是 `059db25`）：
 
-**修法（下一轮第一项）**：到片尾时，如果已下载的数据还不到片长，按断流处理，不循环重播；恢复进展只计入「向前、且落在已下载数据内」的时钟移动。
-这要改动真机验证过的 `VideoPlaybackCoordinator`，本地复现需要 iOS 26.2 模拟器运行时（数 GB，下载前需主人同意），否则只能靠 CI 验证。
+| 情况 | 现在怎么判断 |
+| --- | --- |
+| 正常循环 | 到片尾时已下载的数据覆盖到片长（差 0.5 秒以内）才算真播完，照旧循环。短视频全部下完，行为不变 |
+| 缓冲后真正恢复 | 时钟向前走、且落在已下载数据以内的部分才计入恢复进展 |
+| 反复播已缓存的片段 | 往回跳（循环、回退）不计进展 |
+| 时钟前进但没有新数据 | 时钟跑到已下载数据之后 0.25 秒以上，按卡住处理；「播完」但数据不够，按断流处理，不循环 |
+| 重建播放器 | 从已下载数据的末尾继续，不从时钟位置 |
+
+离屏和切后台走的是原有的暂停路径，这次没改；对应的单元测试在修后的每次 CI 上都通过，界面测试（含慢速首载 `/a2-slow.mp4`）见「本轮全量回归」。
+
+**证据，按环境分开：**
+
+| 环境 | 结果 |
+| --- | --- |
+| CI，iOS 26.2（23C54），修前 | 失败：`08c1105`、`3f3e86f`、`e203196`（2 次里 1 次）、`262d3e9`（2 次都失败）；通过：`0867749`、`e203196` 的另一次 |
+| CI，iOS 26.2，第一次修后 | 前 6 次全过（stack 2 ×2、stack 3 ×2、顶层 ×2）；**第 7 次（stack 2 `1118abb`，run 35836743915）又失败**，见下 |
+| 本地，iOS 27 | 修后通过；`VideoStallPolicyTests` 11 条用的是 CI 上的真实数字（时钟 7.00 / 已下载 5.73 等） |
+| iOS 18–25 | **没有任何证据**。修好 26.2 不代表这些版本也验证过 |
+| 真机 | 断流恢复**未验**（手机上仍是 `4ba1c57`） |
+
+**第 7 次失败的原因（第二条路径）**：第三次自动重建之后，时钟从 6.48 秒一路走到片尾 16.00 秒，而数据只到 5.53 秒。
+第一次修复已经让它不再循环重播，但播放器停在片尾时系统把它置为「暂停」，而我的采样逻辑把「暂停」理解为「用户没要求播放」，于是清掉了卡顿状态——
+这发生在满 10 秒、该给「手动重试」之前，于是画面停在最后一帧、状态显示正常、没有任何提示，一直到测试超时。
+**修法**：记下「停在数据没到的片尾」的播放器，这种暂停继续按卡顿计，直到重建或给出手动重试；重建、真正播完或离开都会清掉这个标记。
+这条路径只在 CI 的 iOS 26.2 上出现过，本地 iOS 27 复现不出来，所以只能靠 CI 多跑几次验证。
+
+**要补 iOS 18 的证据**，需要下载 iOS 18 模拟器运行时，大小和现有的 iOS 27 运行时相近（本机 27 的是 7.5 GB）。
+本机现在剩 86 GB，下载后约剩 78 GB。**本轮没有下载**，要不要下由主人决定。
+另外我在本地观察到：模拟器开着「降低透明度」时视频画面发白，像素采样会误判。关掉后恢复正常。是否在真机上也这样，需要真机确认，**不算缺陷**。
+
+---
+
+## CI 上的另外两类红（与视频无关）
+
+GitHub 的 runner 在一轮测试刚开始时非常慢：本地不到一秒的测试，在 CI 上报 21–115 秒，而且一批一批同时结束（`e5b5cfe` 那次有几十条在 05:51:02 同一刻结束），说明那段时间主线程轮不到它们。
+凡是断言里含真实时钟的测试，就会在这段时间里失败。
+
+| 测试 | 原因 | 处理 |
+| --- | --- | --- |
+| `twoTapsAreSerialisedInTheOrderTheyWereMade`、`asupersededAnswerStillCorrectsTheCount`、`aPostStillWorksAfterARequestIsAbandoned`（stack 2 第 1 次） | 点赞请求有一个真实的超时（12 秒 / 测试里 20 毫秒）。runner 太慢，超时在测试中途到点，模型按设计放弃了请求 | **已修**（`8febf8b`）：测试里的超时改成由测试决定何时到点，断言一条没改。本地按 CI 的时机手动让超时到点，前两条的失败数字（`calls.count → 2`；`isLiked → false`、计数 10）都复现出来了；第三条同一机制，没有单独复现 |
+| `aWidePhotoIsShownWholeAndNotCropped`（顶层第 1 次） | 20 秒内图片没加载出来（三条色带全无）。原来的报错说「照片两端被裁」，**这是误报**：没有中间那条就说明图根本没到 | 报错改成「加载没完成」，并记下轮询次数，下次能分清是加载慢还是测试没拿到主线程。**仍会失败，原因未修** |
+| `sharedStateCrossTalksAndSeparateSessionsDoNot`（stack 2 第 1 次） | 用 5 秒超时判断「数据断了」，runner 慢时正常响应也可能超过 5 秒。那次的具体报错没留下（重跑覆盖了诊断包） | **未修** |
+| 测试进程崩溃（顶层 `59c6225`，run 35836744989） | 进程收到 SIGSEGV，xcodebuild 把当时在跑的 44 条都记成「崩溃」，重启后只跑了剩下的，门槛因此报「只跑了 52 条」。**原因未知**：CI 关了诊断收集，没有崩溃栈 | CI 现在把模拟器的崩溃报告放进诊断包，下次能看到栈。崩溃时在跑的多是点赞相关测试，我怀疑是测试替身里没有加锁的数组被多个线程同时改，**这是推测，未证实** |
+
+整图测试的新诊断给了答案的一半：`318a3be` 上它失败时写的是「27 秒里只轮询了 1 次」，也就是测试自己根本拿不到主线程，不是图片加载慢。
+CI 上所有主线程测试在开头 40 秒左右一起卡住（最快的纯解码测试也要 40 秒，本地 4 秒），嫌疑最大的是渲染类测试（本地每条 3–4 秒，CI 上 40 秒左右）。
+后两条要根治，得先确认是哪些测试在那段时间占着主线程，还没做。
 
 ---
 
 ## 待授权（一次列全）
 
-新功能在模拟器上能过，但要到「④ 与真实测试后端联调」，还需要主人批准下面几项。**都只涉及测试项目 `petnote-devtest`，不碰生产。** 未经批准我一项都不会做。
+28 个无密钥函数**已按授权部署**（见上方「测试云」）。剩下的都只涉及测试项目 `petnote-devtest`，不碰生产；未经批准我一项都不做。
 
-| # | 要做什么 | 为什么 | 费用 |
-| --- | --- | --- | --- |
-| A | 在 `petnote-devtest` 上加部署 28 个**不带密钥**的函数：账号资料 3 个（`ensureUserProfile`、`checkDisplayNameAvailability`、`updateUserProfile`）+ 触发器 `onUserUpdated`、`onFamilyCreated`；宠物 4 个（`createPet`、`updatePet`、`deletePet`、`getPetCheckins`）+ `onPetDeleted`；发帖管理 5 个（`createPost`、`updatePost`、`deletePost`、`getPublishStatus`、`setPinnedPost`）+ `onPostWritten`、`onPostDeleted`；社交 9 个（`followPet`、`unfollowPet`、5 个邀请函数、`removeFamilyMember`、`transferPetPrimary`）+ `onFollowingPetCreated`、`onFollowingPetDeleted` | 现在云上只有评论和点赞的 6 个函数，注册、建宠物、发帖、关注、邀请在云上都跑不起来 | 按调用计费，测试流量很小；沿用现有的 $1 预算告警 |
-| B | **照片上传二选一**：① 开一个独立的**测试** Cloudinary 账号（免费套餐），服务端的云名改成按部署配置（改 `functions/src/platform.ts`，属于后端代码改动）；② 在测试项目里放生产 Cloudinary 的密钥 —— **这违反「不把生产密钥复制到测试环境」，我不建议** | 服务端只认云名 `dgeunvmmn` 的图片地址，而那是生产账号。不解决这一条，云端测试就发不了带图的帖子 | ① 免费套餐为 0 |
-| C | Google 登录：在 `petnote-devtest` 建 iOS OAuth 客户端、导出新的 `GoogleService-Info.plist`、引入 GoogleSignIn SDK（新依赖） | 旧版有 Google 登录，Swift 还没有 | 0 |
-| D | 一个主人能收信的测试邮箱 | 验证邮件和重置密码邮件的真实往返（Firebase Auth 自己发信，不需要密钥） | 0 |
-| E | 真机：插线，并在 **2026-09-25** 描述文件到期前重签 | 手机上装的还是 `4ba1c57`，这一轮的改动全都没上过真机 | 0 |
+| # | 要做什么 | 为什么 | 费用 | 谁来做 |
+| --- | --- | --- | --- | --- |
+| A | 给 `petnote-devtest` 补 11 条集合组单字段索引（照 `firestore.indexes.json`，只新增不删除） | 没有它们，邀请码、删帖删宠物后的清理、改名同步，以及 App 发帖页的宠物选择都会失败 | 0 | 我（命令显式指定测试项目） |
+| B | 独立的测试 Cloudinary：服务端按项目选云名（方案见下），主人开账号、建两个上传预设、在自己终端里设两个密钥 | 服务端现在只认生产云名 `dgeunvmmn` 的地址 | 免费套餐 0 | 方案待确认；账号和密钥由主人做 |
+| C | Google 登录：主人在 Firebase 控制台为 `petnote-devtest` 打开 Google 登录并重新下载 iOS 配置文件；App 引入 GoogleSignIn（**新依赖**） | 旧版有 Google 登录 | 0 | 控制台两步由主人做；是否引入新依赖请主人定 |
+| D | 一个主人能收信的测试邮箱 | 验证邮件、重置密码邮件的真实往返（测试步骤已写好，OTP 保持关闭） | 0 | 主人 |
+| E | 把 `reportContent`、`submitFeedback` 加进测试部署（可选） | 举报和联系我们在测试云上跑不起来 | 按调用计费，很小 | 我 |
 
-**明确不在清单里的**：`deleteCloudinaryAssetsCallable`（媒体删除权限）、三个在线重算、验证码重置、`resumeAbandonedPetDeletions`、`deleteUserAccount`（等第 5 批再议）。
+**B 的方案（只提交方案，未改代码）**：
+- `functions/src/platform.ts` 的云名从常量改成按项目查：`petnote-devtest` → 测试账号的云名，其余一律仍是 `dgeunvmmn`。**生产项目解析出来的值和现在完全一样**，签名、URL 校验、删除三处代码都不改。
+- 测试部署入口 `functions-testcloud/index.js` 加一条硬检查：解析出来的云名如果是生产的，拒绝加载。只放行上传签名函数用两个 Cloudinary 密钥，媒体删除函数仍不部署。
+- 客户端（iOS 和网页）的云名本来就取自签名函数的返回值，不用改。
+- 主人要做的：注册测试账号 → 建 `petnote_image_signed`、`petnote_video_signed` 两个 **Signed** 预设（不设资产文件夹、不改文件名）→ 在自己终端运行 `firebase functions:secrets:set CLOUDINARY_API_KEY --project petnote-devtest` 和 `CLOUDINARY_API_SECRET` 同样一条 → 只把**云名**告诉我（云名本来就公开在每个图片地址里）。密钥不进聊天、仓库和日志。
+
+**明确不在清单里的**：`deleteCloudinaryAssetsCallable`（媒体删除）、三个在线重算、验证码重置、`resumeAbandonedPetDeletions`、`deleteUserAccount`（等第 5 批再议）。
+真机：不等手机；描述文件到期后下次装机时重签即可。
 
 ---
 
