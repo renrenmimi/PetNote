@@ -10,6 +10,7 @@ import SwiftUI
 struct ProfileLinks: View {
     let onJoinFamily: () -> Void
     let onFollowing: () -> Void
+    let onSaved: () -> Void
     let onBlocked: () -> Void
     let onContact: () -> Void
 
@@ -32,6 +33,14 @@ struct ProfileLinks: View {
                 action: onFollowing
             )
             .accessibilityIdentifier("profile.following")
+            Divider().overlay(Palette.separator)
+            row(
+                title: "Saved posts",
+                detail: nil,
+                systemImage: "bookmark",
+                action: onSaved
+            )
+            .accessibilityIdentifier("profile.saved")
             Divider().overlay(Palette.separator)
             row(
                 title: "Blocked people",

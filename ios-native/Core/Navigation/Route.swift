@@ -24,6 +24,9 @@ enum Route: Hashable, Sendable {
     case petFollowers(petID: String, petName: String)
     /// The pets the signed-in person follows.
     case followingPets
+    /// The posts the signed-in person saved — the web client's profile
+    /// "Saved" tab.
+    case savedPosts
     /// A pet's owners and invitations. Management, so — like the editors — it
     /// is reached from the pet's page and never from a link.
     case family(petID: String)

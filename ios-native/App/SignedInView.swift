@@ -304,6 +304,7 @@ struct SignedInView: View {
                         ProfileLinks(
                             onJoinFamily: { profilePath.append(.joinFamily) },
                             onFollowing: { profilePath.append(.followingPets) },
+                            onSaved: { profilePath.append(.savedPosts) },
                             onBlocked: { profilePath.append(.blockedUsers) },
                             onContact: { profilePath.append(.contactUs) }
                         )
@@ -335,7 +336,7 @@ struct SignedInView: View {
     static func showsTabBar(on route: Route) -> Bool {
         switch route {
         case .feed, .search: return true
-        case .postDetail, .pet, .user, .petFollowers, .followingPets, .family, .joinFamily,
+        case .postDetail, .pet, .user, .petFollowers, .followingPets, .savedPosts, .family, .joinFamily,
              .blockedUsers, .contactUs: return false
         }
     }
@@ -464,6 +465,12 @@ struct SignedInView: View {
             )
         case .contactUs:
             ContactUsView(sender: repositories.feedback)
+        case .savedPosts:
+            SavedPostsView(
+                uid: user.uid,
+                source: repositories.saved,
+                onOpenPost: { stack.wrappedValue.append(.postDetail(postID: $0)) }
+            )
         case .blockedUsers:
             BlockedUsersView(
                 viewerID: user.uid,
@@ -618,6 +625,7 @@ struct Repositories {
     let search: any SearchRepository
     let reports: any ContentReporting
     let feedback: any FeedbackSending
+    let saved: any SavedPostsReading
 
     static var live: Repositories {
         Repositories(
@@ -636,7 +644,8 @@ struct Repositories {
             family: FirestoreFamilyRepository(),
             search: FirestoreSearchRepository(),
             reports: FirestoreContentReporter(),
-            feedback: FirestoreFeedbackSender()
+            feedback: FirestoreFeedbackSender(),
+            saved: FirestoreSavedPostsSource()
         )
     }
 }

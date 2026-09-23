@@ -1,7 +1,8 @@
 import XCTest
 
-/// Changing a picture, editing a pet, saving a post — through the screens,
-/// read back from the emulator, including what a failed upload leaves.
+/// Changing a picture, editing a pet, saving a post and finding it under Saved
+/// posts — through the screens, read back from the emulator, including what a
+/// failed upload leaves.
 ///
 /// Uploads go to scripts/upload-standin.py, not Cloudinary (see
 /// JourneyUITests): the picker, the signed request and the callable that
@@ -124,6 +125,21 @@ final class ProfileEditsUITests: XCTestCase {
         }
         XCTAssertTrue(saved, "the bookmark was not written")
 
+        // Listed under Profile → Saved posts, and it opens the same post.
+        popToTabRoot(app, then: "Profile")
+        let savedList = app.buttons["profile.saved"]
+        for _ in 0..<4 where !(savedList.exists && savedList.isHittable) { app.swipeUp() }
+        XCTAssertTrue(waitUntilHittable(savedList, in: app, timeout: 20), "no Saved posts on the profile")
+        savedList.tap()
+        let tile = app.buttons["saved.post.\(postID)"]
+        XCTAssertTrue(waitUntilHittable(tile, in: app, timeout: 30),
+                      "the saved post is not in Saved posts\n\(app.debugDescription)")
+        tile.tap()
+        let opened = app.staticTexts.matching(identifier: "post.text").firstMatch
+        XCTAssertTrue(waitForExistence(of: opened, in: app, timeout: 30), "the tile opened nothing")
+        XCTAssertEqual(opened.label, text, "the tile opened a different post")
+
+        // Unsaved from the post's own page…
         tapPostMenuItem(app, id: "post.actions.bookmark", expectedLabel: "Remove from saved")
         var gone = false
         for _ in 0..<20 {
@@ -133,6 +149,14 @@ final class ProfileEditsUITests: XCTestCase {
         }
         XCTAssertTrue(gone, "the bookmark was not removed")
         bookmarked = nil
+
+        // …and the list agrees on the way back.
+        let back = app.navigationBars.buttons["BackButton"].firstMatch
+        XCTAssertTrue(waitUntilHittable(back, in: app, timeout: 10))
+        back.tap()
+        XCTAssertTrue(waitForExistence(of: app.descendants(matching: .any)["saved.empty"], in: app, timeout: 30),
+                      "Saved posts still lists a post that was unsaved\n\(app.debugDescription)")
+        XCTAssertFalse(tile.exists)
     }
 
     // MARK: - Steps
