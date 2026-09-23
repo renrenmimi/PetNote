@@ -523,7 +523,7 @@ struct LikeConvergenceRegressionTests {
         #expect(model.isLiked(Self.post(likeCount: 10)), "optimistic while it is in flight")
         #expect(deadline.durations.count == 1, "the request went out with no deadline: \(deadline.durations)")
 
-        deadline.pass()
+        await deadline.passOnceArmed()
         await Self.settle(
             until: { model.likeFailureMessage != nil },
             "the request never settled: this post is wedged for the rest of the session"
@@ -558,7 +558,7 @@ struct LikeConvergenceRegressionTests {
         likes.neverAnswer = true
         model.toggleLike(model.posts[0])
         await Self.settle(until: { likes.calls.count == 1 }, "the like request went out")
-        deadline.pass()
+        await deadline.passOnceArmed()
         await Self.settle(until: { model.likeFailureMessage != nil }, "the first request was not given up on")
         likes.stopNeverAnswering()
         await model.waitForPendingLikes()

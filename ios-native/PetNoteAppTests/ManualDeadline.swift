@@ -1,4 +1,5 @@
 import Foundation
+import Testing
 
 /// A like deadline that passes when the test says so, and not before.
 ///
@@ -37,6 +38,28 @@ final class ManualDeadline: @unchecked Sendable {
     /// Every deadline the model has started, in order, with the length it
     /// asked for — including ones since cancelled because the answer came.
     var durations: [Duration] { lock.withLock { started } }
+
+    /// How many deadlines are parked right now, so that `pass()` would reach
+    /// them. A deadline is in `durations` a moment before it is parked, and a
+    /// test that passes in that moment passes nothing: the model then waits
+    /// for ever. That is how `aPostStillWorksAfterARequestIsAbandoned` failed
+    /// on CI (run 35924362700) — it passed as soon as the request went out,
+    /// and on a slow runner the timer beside it had not parked yet.
+    var armed: Int { lock.withLock { waiting.count } }
+
+    /// Waits until `count` deadlines are parked, then passes them. What the
+    /// tests about giving up should call, rather than `pass()` on a guess.
+    func passOnceArmed(_ count: Int = 1, sourceLocation: SourceLocation = #_sourceLocation) async {
+        for _ in 0..<20_000 {
+            if armed >= count {
+                pass()
+                return
+            }
+            await Task.yield()
+        }
+        Issue.record("no deadline parked to pass (armed \(armed), started \(durations.count))",
+                     sourceLocation: sourceLocation)
+    }
 
     /// Passes every deadline running now. Ones started later wait for the
     /// next call.
