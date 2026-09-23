@@ -58,8 +58,8 @@ UI 测试里的上传一律走**本地替身**（`ios-native/scripts/upload-stan
 | 创建 / 编辑宠物 | ③（创建）/ ②（编辑） | `JourneyUITests`：建宠物后服务端有这只宠物，创建者在它的 family 里 | 编辑宠物、宠物头像 UI 未验 |
 | 宠物主页 | ③ | `JourneyUITests`：保存后打开新宠物的主页 | 帖子/签到分栏 UI 未验 |
 | 删除宠物（最后一位主人） | ② | `PetOwnershipTests` | UI 未验；多主人时由服务端拒绝，客户端只按 `isPrimary` 决定显示 |
-| 关注 / 取消关注、关注列表 | ② | `SocialFollowTests`、`SocialListsTests`、`SocialCallableErrorTests`；界面已接入宠物页和「我的」 | UI 未验 |
-| 共同主人：邀请、兑换、撤销、移除、退出、转让 | ② | `FamilyInviteTests`、`FamilyManageTests`、`FamilyCallableErrorTests`；界面已接入：宠物页「Owners & invites」、「我的 → Join a pet's family」 | UI 未验；两个账号互相邀请的旅程还没写；授权规则没改 |
+| 关注 / 取消关注、关注列表 | ③（关注、取消关注）/ ②（列表） | `SocialJourneyUITests`：访客从搜索打开宠物，点关注，服务端出现 `users/{uid}/followingPets/{pet}`；再点取消，文档消失。另有 `SocialFollowTests` 等 | 粉丝列表、「我关注的宠物」列表 UI 未验 |
+| 共同主人：邀请、兑换、撤销、移除、退出、转让 | ③（邀请、兑换、退出）/ ②（撤销、移除、转让） | `SocialJourneyUITests`，两个账号：A 生成邀请码（服务端 `pets/{pet}/invitations/{code}` 和 `invitationCodes/{code}` 都在）；B 用邀请码加入，服务端 family 文档的 role 是 `member`；B 退出后文档消失，A 仍在 | 撤销、移除他人、转让主人 UI 未验；授权规则没改 |
 | 生日庆祝、宠物聚光 | ① | 旧版 `BirthdayCelebration` / `PetSpotlight` | 未排批次 |
 
 ### 内容
@@ -79,7 +79,7 @@ UI 测试里的上传一律走**本地替身**（`ios-native/scripts/upload-stan
 | 发帖滤镜 | ① | 旧版 `ImageFilter.tsx` | 未排批次 |
 | 编辑 / 删除 / 置顶自己的帖子 | ③（编辑、删除）/ ②（置顶） | `JourneyUITests`：编辑后详情页不重进就显示新文字，服务端已更新；删除后回到 Feed、帖子消失、服务端文档不存在 | 置顶 UI 未验；删除失败的提示 UI 未验 |
 | 分享 | ① | 旧版 `ShareMenu` / `ShareCard` | 未排批次 |
-| 搜索、话题、发现 | ② | `SearchModelTests`、`SearchExploreTests`；界面已接入首页顶栏搜索 | UI 未验 |
+| 搜索、话题、发现 | ③（搜宠物）/ ②（其余） | `SocialJourneyUITests` 从首页顶栏搜索按名字找到宠物并打开；`SearchModelTests`、`SearchExploreTests` | 搜人、搜话题、发现页 UI 未验 |
 | 他人主页 | ② | `UserProfileModelTests`；从搜索、粉丝列表进入，链接 `/profile/<uid>` | UI 未验 |
 | 通知列表、全部已读 | ① | 旧版 `Notifications.tsx` | 第 5 批；推送旧版没有 |
 
