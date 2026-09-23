@@ -27,16 +27,19 @@ enum ProfileRepair {
     /// Throws only when the profile could not be *read*. A repair that fails is
     /// logged and the profile is returned as it was: a screen that shows a
     /// nameless account is recoverable, and the next sign-in tries again.
-    static func run(uid: String, users: any UserRepository) async throws -> UserProfile? {
+    ///
+    /// `suggestedName` is the name the sign-in provider holds — Google's
+    /// account name, for a Google account.
+    static func run(uid: String, users: any UserRepository, suggestedName: String? = nil) async throws -> UserProfile? {
         guard let profile = try await users.profile(uid: uid) else {
-            return await create(uid: uid, users: users)
+            return await create(uid: uid, users: users, suggestedName: suggestedName)
         }
         let missingName = profile.displayName.isEmpty
         let missingAvatar = profile.avatarURL.isEmpty
         guard missingName || missingAvatar else { return profile }
 
         var repaired = profile
-        let name = missingName ? await users.generateUniqueDisplayName() : nil
+        let name = missingName ? await startingName(suggested: suggestedName, users: users) : nil
         let avatar = missingAvatar ? UserProfile.defaultAvatarURL(forUID: uid) : nil
         do {
             // Only the missing keys are sent. The callable treats an absent key
@@ -51,8 +54,21 @@ enum ProfileRepair {
         return repaired
     }
 
-    private static func create(uid: String, users: any UserRepository) async -> UserProfile? {
-        let name = await users.generateUniqueDisplayName()
+    /// The web client's choice (`AuthContext.tsx`, Google sign-in): the
+    /// provider's name when it is one the app accepts and nobody holds it,
+    /// otherwise a generated one. A name check that fails counts as taken —
+    /// a generated name is always safe to ask for. The picture is never the
+    /// provider's; it is the same generated avatar every account starts with.
+    static func startingName(suggested: String?, users: any UserRepository) async -> String {
+        if let suggested, DisplayNameRule.isValid(suggested) {
+            let name = DisplayNameRule.normalize(suggested)
+            if (try? await users.isDisplayNameTaken(name)) == false { return name }
+        }
+        return await users.generateUniqueDisplayName()
+    }
+
+    private static func create(uid: String, users: any UserRepository, suggestedName: String?) async -> UserProfile? {
+        let name = await startingName(suggested: suggestedName, users: users)
         do {
             // The server may keep a different name — a suffix when the
             // reservation is taken, or the existing document's own name if the

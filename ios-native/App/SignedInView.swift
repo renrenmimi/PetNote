@@ -653,7 +653,9 @@ struct SignedInView: View {
         // document at all, and without this it would never get one — and so
         // never be shown the onboarding that lets it pick a name.
         let account = user.uid
-        let profile = try? await ProfileRepair.run(uid: account, users: repositories.users)
+        let profile = try? await ProfileRepair.run(
+            uid: account, users: repositories.users, suggestedName: session.providerDisplayName(for: account)
+        )
         // An answer about the previous account decides nothing for this one:
         // the task for the account now signed in will set it.
         guard boundAccountID == account else { return }

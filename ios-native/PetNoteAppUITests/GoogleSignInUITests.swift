@@ -48,7 +48,9 @@ final class GoogleSignInUITests: XCTestCase {
     }
 
     func testANewGoogleAccountGetsAProfileAndSignsBackInAsItself() throws {
-        let app = launch(standIn: identity())
+        // Unique, so it is free: the name is what the profile should start with.
+        let googleName = "Gee \(run)"
+        let app = launch(standIn: identity(name: googleName))
         tapGoogle(app)
         dismissOnboardingIfShown(app)
         XCTAssertTrue(reachedFeed(app), "a Google sign-in did not reach the feed")
@@ -63,6 +65,11 @@ final class GoogleSignInUITests: XCTestCase {
             Thread.sleep(forTimeInterval: 0.5)
         }
         XCTAssertNotNil(profile, "the new Google account got no profile")
+        // Named after the Google account, as the web does; the picture is the
+        // generated one, not Google's.
+        XCTAssertEqual(JourneyAdmin.string(profile?["displayName"]), googleName)
+        XCTAssertTrue(JourneyAdmin.string(profile?["avatarUrl"])?.contains("dicebear") == true,
+                      "\(String(describing: profile?["avatarUrl"]))")
 
         // Out, and in again: the same account, not a second one.
         signOutFromAccountMenu(app)

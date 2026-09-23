@@ -170,6 +170,13 @@ final class SessionStore {
         }
     }
 
+    /// The name the sign-in provider holds for this account — Google's
+    /// account name, for a Google account. Nil for any other uid.
+    func providerDisplayName(for uid: String) -> String? {
+        guard let user = Auth.auth().currentUser, user.uid == uid else { return nil }
+        return user.displayName
+    }
+
     /// The server has deleted the account. Ends the session as deliberate —
     /// no "your session ended" and no place to go back to — and says why.
     ///
