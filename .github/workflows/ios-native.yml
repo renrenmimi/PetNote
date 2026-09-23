@@ -46,6 +46,19 @@ jobs:
           swift --version
           xcodebuild -showsdks | sed -n '/iOS SDKs/,/^$/p'
 
+      # What this machine is, so a statement about it is a reading and not a
+      # guess. "The runner is slow" was said about timing failures on the
+      # strength of test durations alone; this records the cores, memory and
+      # GPU it actually has.
+      - name: Record the machine
+        run: |
+          echo "cores: $(sysctl -n hw.ncpu) logical, $(sysctl -n hw.physicalcpu) physical"
+          echo "memory: $(( $(sysctl -n hw.memsize) / 1073741824 )) GiB"
+          echo "cpu: $(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo unknown)"
+          echo "model: $(sysctl -n hw.model 2>/dev/null || echo unknown)"
+          system_profiler SPDisplaysDataType 2>/dev/null | grep -E "Chipset Model|Metal|Vendor|Cores" || echo "no display/GPU report"
+          sw_vers
+
       # firebase-ios-sdk pulls 13 transitive packages; resolving them from
       # scratch is the slowest step in this job.
       - name: Cache SwiftPM checkouts
@@ -256,6 +269,50 @@ jobs:
             exit "$TEST_STATUS"
           fi
 
+      # **The guard, shown to fail here.** `theMediaServerIsUpWhereItIsRequired`
+      # is what turns "the server is not up" into a red job instead of a
+      # quietly skipped set of stream-break tests. For a long time it never had
+      # an opinion on CI, because the variable that arms it arrived without
+      # the TEST_RUNNER_ prefix; a check on a Mac cannot prove the variable
+      # reaches the test process on this runner. So the server is stopped and
+      # the guard is run on its own: it has to fail, and fail for that reason.
+      - name: "Control: the media-server guard fails without the server"
+        env:
+          TEST_RUNNER_PETNOTE_REQUIRE_MEDIA_SERVER: "1"
+        run: |
+          kill "$(cat "$RUNNER_TEMP/media-server.pid")" 2>/dev/null || true
+          for i in $(seq 1 20); do
+            curl -s -o /dev/null --max-time 1 http://127.0.0.1:8123/a2-long.mp4 || break
+            sleep 0.5
+          done
+          if curl -s -o /dev/null --max-time 1 http://127.0.0.1:8123/a2-long.mp4; then
+            echo "::error::the media server is still answering; the control cannot run"
+            exit 1
+          fi
+          set +e
+          xcodebuild test-without-building \
+            -project PetNoteApp.xcodeproj \
+            -scheme PetNote-Emulator \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            "-only-testing:PetNoteAppTests/VideoPlaybackTests/theMediaServerIsUpWhereItIsRequired()" \
+            -parallel-testing-enabled NO \
+            -derivedDataPath build/dd \
+            -clonedSourcePackagesDirPath build/spm \
+            > control.log 2>&1
+          CONTROL_STATUS=$?
+          set -e
+          grep -E 'theMediaServerIsUpWhereItIsRequired|Test run with|SKIPPING' control.log || true
+          if [ "$CONTROL_STATUS" -eq 0 ]; then
+            echo "::error::with the media server stopped the guard passed; it is not armed on this runner"
+            exit 1
+          fi
+          if ! grep -q 'Expectation failed: MediaServer.isAnswering' control.log; then
+            echo "::error::the control run failed, but not at the guard's expectation; see control.log"
+            tail -30 control.log
+            exit 1
+          fi
+          echo "the guard failed as it should with the server stopped"
+
       # A crash of the test host is reported by xcodebuild as "Test crashed
       # with signal segv" against every test that was in flight, and nothing
       # more: diagnostics collection is off (it hangs for ten minutes after a
@@ -279,6 +336,7 @@ jobs:
           name: ios-native-test-diagnostics-${{ github.run_id }}
           path: |
             ios-native/test.log
+            ios-native/control.log
             ios-native/build/dd/Logs/Test/*.xcresult
             ${{ runner.temp }}/media-server.log
             ${{ runner.temp }}/crash-reports

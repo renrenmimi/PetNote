@@ -913,11 +913,24 @@ final class VideoPlaybackUITests: XCTestCase {
 
         var openingColour: Sample?
         var sawOpening = false
-        outer: for _ in 0..<12 {
+        // What each glimpse of `opening` was, and why it did not count. The
+        // run that failed (acc3, 2026-09-23) swiped twelve times and said only
+        // "no screenshot"; whether the window was too short or the row was
+        // never far enough on screen to photograph were indistinguishable.
+        var glimpses: [String] = []
+        let started = Date()
+        outer: for swipe in 0..<12 {
             for _ in 0..<12 {
                 let now = surfaces(app)
                 if let opening = now.first(where: { $0.state.contains("state=opening") }) {
                     sawOpening = true
+                    let frame = opening.element.frame
+                    let window = app.windows.firstMatch.frame
+                    let shown = frame.height > 0 ? window.intersection(frame).height / frame.height : 0
+                    glimpses.append(String(
+                        format: "t=%.1fs swipe=%d onScreen=%.0f%% h=%.0f",
+                        Date().timeIntervalSince(started), swipe, shown * 100, frame.height
+                    ))
                     // The sample only counts if the state is still `opening`
                     // *after* the photograph is taken.
                     //
@@ -928,7 +941,7 @@ final class VideoPlaybackUITests: XCTestCase {
                     // photograph came back as the clip's first frame — a red
                     // that says nothing about the poster, from a moment when
                     // the state had already moved on.
-                    if let colour = Self.centreColour(of: opening.element, in: app),
+                    if let colour = Self.centreColourOnScreen(of: opening.element, in: app),
                        surfaces(app).contains(where: {
                            $0.state.contains("state=opening")
                        }) {
@@ -943,8 +956,12 @@ final class VideoPlaybackUITests: XCTestCase {
             Thread.sleep(forTimeInterval: 0.5)
         }
 
+        print("MEASURED opening glimpses: \(glimpses.isEmpty ? "none" : glimpses.joined(separator: " | "))")
         XCTAssertTrue(sawOpening, "never caught a video between having a player and having a picture")
-        let colour = try XCTUnwrap(openingColour, "no screenshot of the opening state")
+        let colour = try XCTUnwrap(
+            openingColour,
+            "no screenshot of the opening state; glimpses: \(glimpses.joined(separator: " | "))"
+        )
         print("MEASURED colour while opening: \(colour)")
         XCTAssertTrue(
             colour.isNear(Self.posterColour, tolerance: 0.3),
@@ -973,6 +990,49 @@ final class VideoPlaybackUITests: XCTestCase {
     ///
     /// So: only rows that are actually on screen, and only the central 40%,
     /// which the picture always covers under aspect-fit.
+    /// The middle of `element`, read from a photograph of the whole screen.
+    ///
+    /// The same square `centreColour` samples — 30% to 70% of the element
+    /// each way — but it only needs *that square* on screen, not 80% of the
+    /// row. Written for the opening test, whose glimpses of `opening` all came
+    /// right after the second swipe with the row 78–85% on screen: a stop at
+    /// 78% refused the photograph although the middle was in full view, and
+    /// that alone decided whether the test passed (measured 2026-09-23, six
+    /// iterations, the fourth failing at 78%).
+    private static func centreColourOnScreen(of element: XCUIElement, in app: XCUIApplication) -> Sample? {
+        guard element.exists else { return nil }
+        let frame = element.frame
+        guard frame.height > 40 else { return nil }
+        let middle = CGRect(
+            x: frame.minX + frame.width * 0.3, y: frame.minY + frame.height * 0.3,
+            width: frame.width * 0.4, height: frame.height * 0.4
+        )
+        let window = app.windows.firstMatch.frame
+        guard window.contains(middle), window.width > 0 else { return nil }
+        guard let full = XCUIScreen.main.screenshot().image.cgImage else { return nil }
+        let scale = CGFloat(full.width) / window.width
+        let pixels = CGRect(
+            x: middle.minX * scale, y: middle.minY * scale,
+            width: middle.width * scale, height: middle.height * scale
+        ).integral
+        guard let cropped = full.cropping(to: pixels) else { return nil }
+        return average(of: cropped)
+    }
+
+    private static func average(of image: CGImage) -> Sample? {
+        var pixel = [UInt8](repeating: 0, count: 4)
+        guard let context = CGContext(
+            data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        context.interpolationQuality = .medium
+        context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        return Sample(
+            r: Double(pixel[0]) / 255, g: Double(pixel[1]) / 255, b: Double(pixel[2]) / 255
+        )
+    }
+
     private static func centreColour(of element: XCUIElement, in app: XCUIApplication) -> Sample? {
         guard element.exists else { return nil }
         let frame = element.frame
