@@ -200,7 +200,18 @@ final class JourneyUITests: XCTestCase {
 
     private func publish(_ app: XCUIApplication) throws {
         let uploadsBefore = try JourneyAdmin.standInUploads().count
-        app.tabBars.buttons["Post"].tap()
+        // The pet page is a pushed screen, and pushed screens have no tab bar
+        // (as on the web); back to the profile first.
+        // One level deep, so one Back — and then wait for the bar rather than
+        // looking again mid-transition, when the old navigation bar is still
+        // in the tree and a second Back finds nothing to tap.
+        let postTab = app.tabBars.buttons["Post"]
+        if !(postTab.exists && postTab.isHittable) {
+            let back = app.navigationBars.buttons["BackButton"].firstMatch
+            if back.waitForExistence(timeout: 5) { back.tap() }
+        }
+        XCTAssertTrue(waitUntilHittable(postTab, in: app, timeout: 15), "no tab bar after leaving the pet page")
+        postTab.tap()
         let add = app.buttons["compose.addMedia"]
         XCTAssertTrue(waitUntilHittable(add, in: app, timeout: 20), "the composer did not open")
         add.tap()

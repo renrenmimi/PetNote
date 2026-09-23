@@ -512,9 +512,12 @@ struct SignedInView: View {
 
     // MARK: - Onboarding
 
+    /// Only over the feed itself, as on the web: `OnboardingFlow` is rendered
+    /// by `Feed.tsx`, so a person restored to a post, or on another tab, is not
+    /// interrupted there — it is offered when they are back on the feed.
     private var onboardingBinding: Binding<Bool> {
         Binding(
-            get: { needsOnboarding && !onboardingDismissed },
+            get: { needsOnboarding && !onboardingDismissed && selectedTab == .home && path.isEmpty },
             set: { if !$0 { onboardingDismissed = true } }
         )
     }

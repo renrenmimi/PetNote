@@ -93,6 +93,24 @@ extension XCTestCase {
     ///
     /// At the default type size nothing is off screen and no swipe happens, so
     /// the tests that open the same post twice still get the same post.
+    /// Closes onboarding if it is offered — the session-only dismissal the web
+    /// client has. A fresh account, or one whose profile the app had to create,
+    /// has not been through it, and it covers the feed until closed.
+    ///
+    /// Waits for Close to be *hittable*, not only present. Right after a
+    /// sign-in, while the screen is still settling, XCUITest computes no hit
+    /// point for anything in the app ("{-1, -1}"): a tap sent then is dropped
+    /// without an error, onboarding stays up, and every tap after it lands on
+    /// nothing. Three journeys failed that way before this waited.
+    func dismissOnboardingIfShown(_ app: XCUIApplication, timeout: TimeInterval = 15) {
+        let close = app.buttons["onboarding.close"]
+        guard close.waitForExistence(timeout: timeout) else { return }
+        XCTAssertTrue(waitUntilHittable(close, in: app, timeout: 20), "onboarding's Close never became tappable")
+        close.tap()
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: close)
+        XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 10), .completed, "onboarding did not close")
+    }
+
     /// Moves a list up by about a quarter of the screen, slowly enough that it
     /// stops where it is put rather than flinging on past the row.
     func nudgeListUp(_ app: XCUIApplication) {
@@ -119,7 +137,14 @@ extension XCTestCase {
                 app.swipeUp()
             }
         }
-        XCTAssertTrue(reachable, "a post's comments button could not be reached by scrolling")
+        XCTAssertTrue(
+            reachable,
+            """
+            a post's comments button could not be reached by scrolling; \
+            last at \(comments.frame) in \(app.windows.firstMatch.frame)
+            \(app.debugDescription)
+            """
+        )
 
         comments.tap()
         XCTAssertTrue(

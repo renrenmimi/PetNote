@@ -209,7 +209,12 @@ final class AuthUITests: XCTestCase {
         // route was pushed and something else emptied the stack afterwards",
         // and those have different owners and opposite fixes.
         let app = launchOnSignIn(extraArguments: ["-petnote-session-probe"])
-        signIn(app, email: email)
+        signIn(app, email: email, expectFeed: false)
+        // A fresh account: its profile is created on sign-in and it is offered
+        // onboarding over the feed, which hides the feed from VoiceOver — and
+        // so from this test — until it is closed.
+        dismissOnboardingIfShown(app)
+        XCTAssertTrue(reachedFeed(app), "did not reach the feed")
         openFirstPost(app)
         let postText = app.staticTexts["post.text"].firstMatch.label
         XCTAssertFalse(postText.isEmpty, "could not identify which post is open")

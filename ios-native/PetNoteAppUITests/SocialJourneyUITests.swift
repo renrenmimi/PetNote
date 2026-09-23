@@ -22,6 +22,7 @@ final class SocialJourneyUITests: XCTestCase {
     private var uidA: String?
     private var uidB: String?
     private var petID: String?
+    private var inviteCode: String?
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -34,8 +35,11 @@ final class SocialJourneyUITests: XCTestCase {
                 JourneyAdmin.deleteDocument(path: "pets/\(petID)/followers/\(uid)")
                 JourneyAdmin.deleteDocument(path: "users/\(uid)/followingPets/\(petID)")
             }
-            for name in (try? JourneyAdmin.documentNames(in: "invitations", field: "petId", equals: petID)) ?? [] {
-                EmulatorAdmin.deleteComment(documentName: name)
+            // Where createInvitationCallable writes them: under the pet, plus a
+            // lookup by code.
+            if let inviteCode {
+                JourneyAdmin.deleteDocument(path: "pets/\(petID)/invitations/\(inviteCode)")
+                JourneyAdmin.deleteDocument(path: "invitationCodes/\(inviteCode)")
             }
             JourneyAdmin.deleteDocument(path: "pets/\(petID)")
         }
@@ -72,8 +76,11 @@ final class SocialJourneyUITests: XCTestCase {
             .replacingOccurrences(of: "Invitation code", with: "")
             .replacingOccurrences(of: " ", with: "")
         XCTAssertFalse(code.isEmpty, "the invitation code was empty")
-        let invitations = try JourneyAdmin.documentNames(in: "invitations", field: "petId", equals: petID)
-        XCTAssertEqual(invitations.count, 1, "expected one invitation on the server")
+        inviteCode = code
+        XCTAssertNotNil(try JourneyAdmin.fields(path: "pets/\(petID)/invitations/\(code)"),
+                        "the code on screen is not an invitation on the server")
+        XCTAssertNotNil(try JourneyAdmin.fields(path: "invitationCodes/\(code)"),
+                        "the code has no lookup on the server")
 
         popToRoot(app)
         signOutFromAccountMenu(app)
@@ -95,8 +102,14 @@ final class SocialJourneyUITests: XCTestCase {
                       "the code was not accepted\n\(app.debugDescription)")
         relationship.tap()
         app.buttons["join.submit"].tap()
+        // Joining says so, and offers the pet's page.
+        XCTAssertTrue(waitForExistence(of: app.staticTexts["join.done"], in: app, timeout: 40),
+                      "joining was not confirmed\n\(app.debugDescription)")
+        let open = app.buttons["join.openPet"]
+        XCTAssertTrue(waitUntilHittable(open, in: app, timeout: 10), "no way to the pet after joining")
+        open.tap()
 
-        // Joining lands on the pet's page, now as an owner.
+        // The pet's page, now as an owner.
         let title = app.staticTexts["pet.name"]
         XCTAssertTrue(waitForExistence(of: title, in: app, timeout: 40),
                       "joining did not open the pet\n\(app.debugDescription)")
@@ -155,15 +168,14 @@ final class SocialJourneyUITests: XCTestCase {
     private func closeOnboardingIfShown(_ app: XCUIApplication) {
         // A fresh account has not been through onboarding, so it is offered;
         // closing it is the session-only dismissal the web client has.
-        let close = app.buttons["onboarding.close"]
-        if close.waitForExistence(timeout: 15) { close.tap() }
+        dismissOnboardingIfShown(app)
         XCTAssertTrue(reachedFeed(app), "did not reach the feed")
     }
 
     private func addPet(_ app: XCUIApplication) throws -> String {
         app.tabBars.buttons["Profile"].tap()
         let add = app.buttons["profile.addPet"]
-        XCTAssertTrue(waitUntilHittable(add, in: app, timeout: 30), "no Add a pet")
+        XCTAssertTrue(waitUntilHittable(add, in: app, timeout: 30), "no Add a pet\n\(app.debugDescription)")
         add.tap()
         let name = app.textFields["petEditor.name"]
         XCTAssertTrue(waitUntilHittable(name, in: app, timeout: 20))
@@ -207,12 +219,23 @@ final class SocialJourneyUITests: XCTestCase {
                       "the search result did not open the pet")
     }
 
+    /// Back to the root of the stack, one level at a time.
+    ///
+    /// Each Back waits for the transition to finish before looking again:
+    /// mid-transition the old navigation bar is still in the tree, and asking
+    /// it for a Back button found one that was gone by the time of the tap.
+    /// The tab bar being tappable is how the root is recognised — pushed
+    /// screens have none.
     private func popToRoot(_ app: XCUIApplication) {
+        let home = app.tabBars.buttons["Home"]
         for _ in 0..<4 {
-            let back = app.navigationBars.buttons["BackButton"]
-            guard back.exists, back.isHittable else { break }
+            if home.exists && home.isHittable { break }
+            let back = app.navigationBars.buttons["BackButton"].firstMatch
+            guard waitUntilHittable(back, in: app, timeout: 5) else { break }
             back.tap()
+            waitForQuietUI(app, quietFor: 1, timeout: 10)
         }
-        app.tabBars.buttons["Home"].tap()
+        XCTAssertTrue(waitUntilHittable(home, in: app, timeout: 15), "never got back to a screen with the tab bar")
+        home.tap()
     }
 }
