@@ -111,9 +111,9 @@ struct FamilyView: View {
 
     private func confirmLabel(_ action: FamilyModel.Action) -> String {
         switch action {
-        case .remove: return "Remove"
-        case .transfer: return "Make primary"
-        case .leave: return "Leave"
+        case .remove: return String(localized: "Remove", comment: "Confirms taking an owner off the pet")
+        case .transfer: return String(localized: "Make primary")
+        case .leave: return String(localized: "Leave", comment: "Confirms leaving the pet's family")
         }
     }
 
@@ -194,7 +194,7 @@ struct FamilyView: View {
                 HStack(spacing: Spacing.m) {
                     SocialAvatar(url: member.userAvatarURL, name: FamilyModel.name(member))
                     VStack(alignment: .leading, spacing: Spacing.xs) {
-                        Text(FamilyModel.name(member) + (model.isViewer(member) ? " (you)" : ""))
+                        Text(model.isViewer(member) ? String(localized: "\(FamilyModel.name(member)) (you)") : FamilyModel.name(member))
                             .font(Typography.body.weight(.semibold))
                             .foregroundStyle(Palette.primaryText)
                             .lineLimit(2)
@@ -239,7 +239,7 @@ struct FamilyView: View {
     /// is a different responsibility, not a higher rank.
     private func roleLine(_ member: PetFamilyMember) -> String {
         let relationship = PetDisplay.label(for: member.relationship, custom: member.customRelationship)
-        return member.role == .primary ? "Primary owner · \(relationship)" : relationship
+        return member.role == .primary ? String(localized: "Primary owner · \(relationship)") : relationship
     }
 
     @ViewBuilder
@@ -359,7 +359,7 @@ struct InviteSection: View {
                 // Read one character at a time, so "A B C D" is not read as a
                 // word somebody then has to spell back.
                 .accessibilityLabel(
-                    "Invitation code " + invitation.code.map(String.init).joined(separator: " ")
+                    String(localized: "Invitation code \(invitation.code.map(String.init).joined(separator: " "))")
                 )
                 .accessibilityIdentifier("invite.code")
             TimelineView(.periodic(from: .now, by: 60)) { context in

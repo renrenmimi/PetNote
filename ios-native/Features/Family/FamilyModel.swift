@@ -77,7 +77,7 @@ final class FamilyModel {
     }
 
     var permissions: PetOwnership { ownership ?? .none }
-    var petName: String { pet?.name ?? "this pet" }
+    var petName: String { pet?.name ?? String(localized: "this pet") }
     /// The web modal's `members.length <= 1`.
     var isOnlyOwner: Bool { permissions.memberCount <= 1 }
     /// Leaving is offered to any owner who is not the last one.
@@ -112,12 +112,12 @@ final class FamilyModel {
                 state = .loaded
             } catch {
                 ownership = nil
-                state = .failed("Could not load \(pet.name)'s owners.")
+                state = .failed(String(localized: "Could not load \(pet.name)'s owners."))
             }
         } catch {
             log.error("family screen pet read failed: \(String(describing: error), privacy: .public)")
             ownership = nil
-            state = .failed("Could not load this pet.")
+            state = .failed(String(localized: "Could not load this pet."))
         }
     }
 
@@ -171,13 +171,13 @@ final class FamilyModel {
                 let outcome = try await family.removeMember(petID: petID, userID: member.id)
                 pending = nil
                 notice = .success(outcome == .wasNotAMember
-                    ? "\(Self.name(member)) was already no longer an owner."
-                    : "\(Self.name(member)) is no longer an owner.")
+                    ? String(localized: "\(Self.name(member)) was already no longer an owner.")
+                    : String(localized: "\(Self.name(member)) is no longer an owner."))
                 await load()
             case .transfer(let member):
                 _ = try await family.transferPrimary(petID: petID, to: member.id)
                 pending = nil
-                notice = .success("\(Self.name(member)) is now \(petName)'s primary owner.")
+                notice = .success(String(localized: "\(Self.name(member)) is now \(petName)'s primary owner."))
                 await load()
             case .leave:
                 _ = try await family.removeMember(petID: petID, userID: viewerID)
@@ -205,11 +205,11 @@ final class FamilyModel {
                 if members.contains(where: { $0.id == member.id }) {
                     notice = .failure(Self.unknownOutcome)
                 } else {
-                    notice = .success("\(Self.name(member)) is no longer an owner.")
+                    notice = .success(String(localized: "\(Self.name(member)) is no longer an owner."))
                 }
             case .transfer(let member):
                 if members.first(where: { $0.id == member.id })?.role == .primary {
-                    notice = .success("\(Self.name(member)) is now \(petName)'s primary owner.")
+                    notice = .success(String(localized: "\(Self.name(member)) is now \(petName)'s primary owner."))
                 } else {
                     notice = .failure(Self.unknownOutcome)
                 }
@@ -235,17 +235,17 @@ final class FamilyModel {
     // MARK: - Words
 
     static let unknownOutcome =
-        "We could not tell whether that went through. The list below is what is true now."
+        String(localized: "We could not tell whether that went through. The list below is what is true now.")
 
     static func name(_ member: PetFamilyMember) -> String {
-        member.userName.isEmpty ? "PetNote user" : member.userName
+        member.userName.isEmpty ? String(localized: "PetNote user") : member.userName
     }
 
     func title(for action: Action) -> String {
         switch action {
-        case .remove(let member): return "Remove \(Self.name(member))?"
-        case .transfer(let member): return "Make \(Self.name(member)) primary owner?"
-        case .leave: return "Leave \(petName)'s family?"
+        case .remove(let member): return String(localized: "Remove \(Self.name(member))?")
+        case .transfer(let member): return String(localized: "Make \(Self.name(member)) primary owner?")
+        case .leave: return String(localized: "Leave \(petName)'s family?")
         }
     }
 
@@ -256,49 +256,55 @@ final class FamilyModel {
     func consequence(of action: Action) -> String {
         switch action {
         case .remove(let member):
-            return """
+            return String(localized: """
                 \(Self.name(member)) will lose access to \(petName). Anything they already \
                 posted stays. They can only come back through a new invitation.
-                """
+                """)
         case .transfer(let member):
-            return """
+            return String(localized: """
                 \(Self.name(member)) becomes \(petName)'s primary owner. You stay an owner and \
                 can still edit and post — but they, not you, will be the one who can remove \
                 other owners.
-                """
+                """)
         case .leave:
-            let handover = permissions.isPrimary
-                ? " The primary owner role passes to whoever has been an owner the longest."
-                : ""
-            return """
+            // Two whole sentences rather than one with a clause appended, so
+            // each can be translated as it reads.
+            if permissions.isPrimary {
+                return String(localized: """
+                    You will lose access to \(petName). Your posts about \(petName) stay, and you \
+                    can only come back through a new invitation. The primary owner role passes \
+                    to whoever has been an owner the longest.
+                    """)
+            }
+            return String(localized: """
                 You will lose access to \(petName). Your posts about \(petName) stay, and you \
-                can only come back through a new invitation.\(handover)
-                """
+                can only come back through a new invitation.
+                """)
         }
     }
 
     static func wording(for error: FamilyError, petName: String) -> String {
         switch error {
-        case .notSignedIn: return "Sign in again to do that."
-        case .banned: return "This account cannot make changes."
-        case .accountDeleted: return "This account has been deleted."
-        case .petNotFound: return "\(petName) no longer exists."
-        case .notAnOwner: return "You are no longer one of \(petName)'s owners."
+        case .notSignedIn: return String(localized: "Sign in again to do that.")
+        case .banned: return String(localized: "This account cannot make changes.")
+        case .accountDeleted: return String(localized: "This account has been deleted.")
+        case .petNotFound: return String(localized: "\(petName) no longer exists.")
+        case .notAnOwner: return String(localized: "You are no longer one of \(petName)'s owners.")
         case .notPrimary:
-            return "Only the primary owner can do that. The roles may have changed — the list has been refreshed."
+            return String(localized: "Only the primary owner can do that. The roles may have changed — the list has been refreshed.")
         case .targetIsPrimary:
-            return "They hold the primary owner role. It has to be handed to someone else before they can be removed."
+            return String(localized: "They hold the primary owner role. It has to be handed to someone else before they can be removed.")
         case .lastOwner:
-            return "You are \(petName)'s only owner. Invite someone else first, or delete \(petName) from its page."
+            return String(localized: "You are \(petName)'s only owner. Invite someone else first, or delete \(petName) from its page.")
         case .targetNotInFamily:
-            return "That person is no longer one of \(petName)'s owners."
-        case .rateLimited: return "Too many requests just now. Wait a moment and try again."
-        case .offline: return "No connection. Nothing was changed. Try again."
-        case .callablesUnavailable: return "This build cannot reach PetNote's server."
+            return String(localized: "That person is no longer one of \(petName)'s owners.")
+        case .rateLimited: return String(localized: "Too many requests just now. Wait a moment and try again.")
+        case .offline: return String(localized: "No connection. Nothing was changed. Try again.")
+        case .callablesUnavailable: return String(localized: "This build cannot reach PetNote's server.")
         case .outcomeUnknown: return unknownOutcome
         case .invitationInvalid, .invitationRevoked, .inviterLeft, .alreadyMember,
              .malformedCode, .invitationNotFound, .couldNotGenerate, .rejected, .transport:
-            return "That did not work. Try again."
+            return String(localized: "That did not work. Try again.")
         }
     }
 }

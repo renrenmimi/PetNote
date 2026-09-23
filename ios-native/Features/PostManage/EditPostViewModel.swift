@@ -82,7 +82,7 @@ final class EditPostViewModel {
             // read failed — the same defect the web client fixed on three
             // screens at once.
             log.error("could not load post for editing: \(error.localizedDescription, privacy: .public)")
-            state = .failed("Could not load that post.")
+            state = .failed(String(localized: "Could not load that post."))
         }
     }
 
@@ -129,7 +129,7 @@ final class EditPostViewModel {
             // there is one in the composer.
             failureMessage = ComposeViewModel.describe(error)
         } catch {
-            failureMessage = "Could not save those changes."
+            failureMessage = String(localized: "Could not save those changes.")
         }
     }
 }

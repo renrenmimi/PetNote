@@ -48,7 +48,7 @@ final class PetFollowersModel {
         } catch {
             // Rows from an earlier load are not discarded: a refresh that
             // fails should not make the list look empty.
-            state = .failed(Self.wording(error, fallback: "Could not load this pet's followers."))
+            state = .failed(Self.wording(error, fallback: String(localized: "Could not load this pet's followers.")))
         }
     }
 
@@ -66,7 +66,7 @@ final class PetFollowersModel {
             hasMore = page.hasMore
             pageFailure = nil
         } catch {
-            pageFailure = Self.wording(error, fallback: "Could not load more followers.")
+            pageFailure = Self.wording(error, fallback: String(localized: "Could not load more followers."))
         }
     }
 
@@ -78,8 +78,8 @@ final class PetFollowersModel {
 
     static func wording(_ error: Error, fallback: String) -> String {
         switch error as? SocialError {
-        case .offline: return "No connection. Check your network and try again."
-        case .denied: return "This list is not visible to you."
+        case .offline: return String(localized: "No connection. Check your network and try again.")
+        case .denied: return String(localized: "This list is not visible to you.")
         default: return fallback
         }
     }
@@ -110,7 +110,7 @@ final class FollowingPetsModel {
             pets = try await repository.followedPets(viewerID: viewerID, limit: Self.limit)
             state = .loaded
         } catch {
-            state = .failed(PetFollowersModel.wording(error, fallback: "Could not load the pets you follow."))
+            state = .failed(PetFollowersModel.wording(error, fallback: String(localized: "Could not load the pets you follow.")))
         }
     }
 }

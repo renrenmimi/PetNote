@@ -43,7 +43,7 @@ struct EditPostView: View {
         }
     }
 
-    private func message(_ words: String) -> some View {
+    private func message(_ words: LocalizedStringKey) -> some View {
         Text(words)
             .font(Typography.body)
             .foregroundStyle(Palette.secondaryText)

@@ -412,7 +412,7 @@ actor FirestoreCommentRepository: CommentRepository {
             // The server validates length (500 characters) and shape. These are
             // refusals of the content, not transport problems, and offering a
             // retry would be offering something that cannot work.
-            return .rejected("That comment was not accepted. Check the length and try different wording.")
+            return .rejected(String(localized: "That comment was not accepted. Check the length and try different wording."))
         case .deadlineExceeded, .unavailable, .cancelled:
             return .outcomeUnknown
         default:

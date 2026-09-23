@@ -136,7 +136,7 @@ enum SocialDecoder {
         guard !id.isEmpty else { return nil }
         return FollowedPet(
             id: id,
-            petName: nonEmpty(data["petName"]) ?? "Pet",
+            petName: nonEmpty(data["petName"]) ?? String(localized: "Pet", comment: "Stand-in name for a pet whose name is missing"),
             petAvatarURL: PetDecoder.url(data["petAvatar"]),
             followedAt: (data["followedAt"] as? PostDate)?.postDate
         )
@@ -146,7 +146,7 @@ enum SocialDecoder {
         guard !id.isEmpty else { return nil }
         return PetFollower(
             id: id,
-            userName: nonEmpty(data["userName"]) ?? "PetNote User",
+            userName: nonEmpty(data["userName"]) ?? String(localized: "PetNote User"),
             userAvatarURL: PetDecoder.url(data["userAvatar"]),
             followedAt: (data["followedAt"] as? PostDate)?.postDate
         )

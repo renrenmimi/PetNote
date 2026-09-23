@@ -161,21 +161,21 @@ enum ProfileError: Error, Sendable, Equatable {
     var message: String {
         switch self {
         case .notSignedIn:
-            "Sign in to change your profile."
+            String(localized: "Sign in to change your profile.")
         case .displayNameTaken:
-            "That name is already taken."
+            String(localized: "That name is already taken.")
         case .rejected(let reason):
             reason
         case .banned:
-            "This account cannot change its profile."
+            String(localized: "This account cannot change its profile.")
         case .rateLimited:
-            "Too many changes just now. Wait a moment and try again."
+            String(localized: "Too many changes just now. Wait a moment and try again.")
         case .offline:
-            "No connection. Check your network and try again."
+            String(localized: "No connection. Check your network and try again.")
         case .outcomeUnknown:
-            "We could not confirm whether that saved. Reopen this screen to check."
+            String(localized: "We could not confirm whether that saved. Reopen this screen to check.")
         case .transport:
-            "Something went wrong saving your profile. Try again."
+            String(localized: "Something went wrong saving your profile. Try again.")
         }
     }
 
@@ -234,8 +234,8 @@ enum DisplayNameRule {
 
         var message: String {
             switch self {
-            case .tooShort: "Name must be at least 2 characters."
-            case .tooLong: "Name must be 30 characters or fewer."
+            case .tooShort: String(localized: "Name must be at least 2 characters.")
+            case .tooLong: String(localized: "Name must be 30 characters or fewer.")
             }
         }
     }
@@ -430,7 +430,7 @@ actor FirestoreUserRepository: UserRepository {
         guard displayName != nil || avatarURL != nil || bio != nil else {
             // The server answers `invalid-argument` for this. Saying so here
             // keeps a no-op save from looking like a server fault.
-            throw ProfileError.rejected("There is nothing to save.")
+            throw ProfileError.rejected(String(localized: "There is nothing to save."))
         }
         try requireReachableCallables()
 
@@ -491,7 +491,7 @@ actor FirestoreUserRepository: UserRepository {
     /// one moment this is called is the moment right after signing up.
     func completeOnboarding(uid: String) async throws {
         guard let validID = DeepLink.validDocumentID(uid) else {
-            throw ProfileError.rejected("That account id is not usable.")
+            throw ProfileError.rejected(String(localized: "That account id is not usable."))
         }
         do {
             try await db.collection("users").document(validID)
@@ -586,7 +586,7 @@ actor FirestoreUserRepository: UserRepository {
             if nsError.domain == FirestoreErrorDomain {
                 switch nsError.code {
                 case FirestoreErrorCode.permissionDenied.rawValue:
-                    return .rejected("You are not allowed to change that.")
+                    return .rejected(String(localized: "You are not allowed to change that."))
                 case FirestoreErrorCode.unavailable.rawValue:
                     return .offline
                 default:

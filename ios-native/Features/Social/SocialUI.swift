@@ -111,8 +111,8 @@ struct SocialButtonStyle: ButtonStyle {
 
 /// A card that says what a section is showing and why.
 struct SocialNotice: View {
-    let title: String
-    var detail: String?
+    let title: LocalizedStringKey
+    var detail: LocalizedStringKey?
     let identifier: String
 
     var body: some View {
@@ -215,7 +215,7 @@ struct PetFollowButton: View {
         }
     }
 
-    private func label(_ title: String) -> some View {
+    private func label(_ title: LocalizedStringKey) -> some View {
         HStack(spacing: Spacing.xs) {
             if model.isBusy {
                 ProgressView().tint(Palette.secondaryText)

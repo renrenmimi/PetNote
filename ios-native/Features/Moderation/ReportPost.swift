@@ -81,6 +81,21 @@ final class ReportModel {
         "Spam", "Inappropriate content", "Harassment", "Animal abuse 🐾", "Misinformation", "Other",
     ]
     static let other = "Other"
+
+    /// What a reason reads as on screen. The reason itself, in English, is
+    /// what is sent, so only the words drawn are translated.
+    static func label(for reason: String) -> String {
+        switch reason {
+        case "Spam": String(localized: "Spam", comment: "Report reason")
+        case "Inappropriate content": String(localized: "Inappropriate content", comment: "Report reason")
+        case "Harassment": String(localized: "Harassment", comment: "Report reason")
+        case "Animal abuse 🐾": String(localized: "Animal abuse 🐾", comment: "Report reason")
+        case "Misinformation": String(localized: "Misinformation", comment: "Report reason")
+        case "Other": String(localized: "Other", comment: "Report reason")
+        default: reason
+        }
+    }
+
     /// The server's `reportReason` limit, in its units: for "Other" the text
     /// typed *is* the reason, and JavaScript counts UTF-16.
     static let detailLimit = 500
@@ -133,7 +148,7 @@ final class ReportModel {
         } catch let error as ReportError {
             state = .failed(Self.message(for: error), canRetry: Self.canRetry(error))
         } catch {
-            state = .failed("Couldn't send the report.", canRetry: true)
+            state = .failed(String(localized: "Couldn't send the report."), canRetry: true)
         }
     }
 
@@ -146,16 +161,16 @@ final class ReportModel {
 
     static func message(for error: ReportError) -> String {
         switch error {
-        case .alreadyReported: "You've already reported this post."
-        case .banned: "This account can't send reports."
-        case .notSignedIn: "Sign in again to send a report."
-        case .postGone: "That post no longer exists."
-        case .rateLimited: "Too many reports in a short time. Try again in a little while."
-        case .offline: "You're offline, so the report wasn't sent."
+        case .alreadyReported: String(localized: "You've already reported this post.")
+        case .banned: String(localized: "This account can't send reports.")
+        case .notSignedIn: String(localized: "Sign in again to send a report.")
+        case .postGone: String(localized: "That post no longer exists.")
+        case .rateLimited: String(localized: "Too many reports in a short time. Try again in a little while.")
+        case .offline: String(localized: "You're offline, so the report wasn't sent.")
         case .outcomeUnknown:
-            "We couldn't confirm the report arrived. Sending it again won't file it twice."
-        case .rejected: "The report wasn't accepted."
-        case .unavailable: "Reporting isn't available in this build."
+            String(localized: "We couldn't confirm the report arrived. Sending it again won't file it twice.")
+        case .rejected: String(localized: "The report wasn't accepted.")
+        case .unavailable: String(localized: "Reporting isn't available in this build.")
         }
     }
 
@@ -198,7 +213,7 @@ struct ReportPostSheet: View {
                 ForEach(Array(ReportModel.reasons.enumerated()), id: \.offset) { index, reason in
                     Button { model.choose(reason) } label: {
                         HStack {
-                            Text(reason)
+                            Text(ReportModel.label(for: reason))
                                 .font(Typography.body)
                                 .foregroundStyle(Palette.primaryText)
                             Spacer(minLength: Spacing.s)

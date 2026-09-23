@@ -24,7 +24,7 @@ struct PetEditorView: View {
                 ProgressView().accessibilityIdentifier("petEditor.loading")
             case .missing:
                 message(
-                    "This pet no longer exists.",
+                    String(localized: "This pet no longer exists."),
                     detail: "It may have been deleted by one of its owners.",
                     identifier: "petEditor.missing"
                 )
@@ -140,7 +140,7 @@ struct PetEditorView: View {
         photoProblem = nil
         do {
             guard let data = try await item.loadTransferable(type: Data.self) else {
-                photoProblem = "That photo could not be read. Try another one."
+                photoProblem = String(localized: "That photo could not be read. Try another one.")
                 return
             }
             model.choosePhoto(data, filename: "pet-avatar.jpg")
@@ -148,7 +148,7 @@ struct PetEditorView: View {
                 photoPreview = Image(uiImage: uiImage)
             }
         } catch {
-            photoProblem = "That photo could not be read. Try another one."
+            photoProblem = String(localized: "That photo could not be read. Try another one.")
         }
     }
 
@@ -287,7 +287,7 @@ struct PetEditorView: View {
         }
     }
 
-    private func message(_ title: String, detail: String, identifier: String) -> some View {
+    private func message(_ title: String, detail: LocalizedStringKey, identifier: String) -> some View {
         Section {
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text(title)

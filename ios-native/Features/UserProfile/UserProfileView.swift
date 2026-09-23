@@ -128,7 +128,7 @@ struct UserProfileView: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.card))
     }
 
-    private func stat(value: String, label: String) -> some View {
+    private func stat(value: String, label: LocalizedStringKey) -> some View {
         VStack(spacing: Spacing.xs) {
             Text(value)
                 .font(Typography.sectionTitle)

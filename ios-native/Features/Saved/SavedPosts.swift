@@ -82,7 +82,7 @@ final class SavedPostsModel {
             if hadList {
                 refreshFailed = true
             } else {
-                state = .failed("Couldn't load your saved posts.")
+                state = .failed(String(localized: "Couldn't load your saved posts."))
             }
         }
     }

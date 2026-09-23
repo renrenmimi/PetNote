@@ -196,7 +196,7 @@ actor FirestorePetRepository: PetRepository {
         // spending a round trip and a rate-limit slot to be told that is
         // waste.
         guard payload.count > 1 else {
-            throw PetError.rejected("Nothing was changed.")
+            throw PetError.rejected(String(localized: "Nothing was changed."))
         }
         _ = try await call(Callables.updatePet, payload, as: .update)
     }
@@ -387,7 +387,7 @@ actor FirestorePetRepository: PetRepository {
     /// One wording for every content refusal, because the server's own message
     /// is not written for a person and is not ours to show.
     private static let refusalWording =
-        "That was not accepted. Check the name, breed and bio and try again."
+        String(localized: "That was not accepted. Check the name, breed and bio and try again.")
 
     // MARK: - Birthday
 

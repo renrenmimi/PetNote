@@ -46,7 +46,7 @@ final class BlockedUsersModel {
             state = .loaded(rows)
         } catch {
             log.error("blocked users read failed: \(String(describing: error), privacy: .public)")
-            state = .failed("Couldn't load the people you've blocked.")
+            state = .failed(String(localized: "Couldn't load the people you've blocked."))
         }
     }
 
@@ -62,7 +62,7 @@ final class BlockedUsersModel {
             state = .loaded(rows.filter { $0.id != id })
             return true
         } catch {
-            failures[id] = "Couldn't unblock. Try again."
+            failures[id] = String(localized: "Couldn't unblock. Try again.")
             return false
         }
     }
@@ -118,7 +118,7 @@ struct BlockedUsersView: View {
     }
 
     private func rowView(_ row: BlockedUsersModel.Row) -> some View {
-        let name = row.profile?.displayName ?? "PetNote user"
+        let name = row.profile?.displayName ?? String(localized: "PetNote user")
         return VStack(alignment: .leading, spacing: Spacing.xs) {
             HStack(spacing: Spacing.m) {
                 SocialAvatar(url: row.profile?.avatarURL, name: name, size: Layout.minTouchTarget)

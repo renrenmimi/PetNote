@@ -172,11 +172,11 @@ enum SearchLogic {
     static let popularTagThreshold = 5
 
     static func tagHeading(_ tags: [Hashtag]) -> String {
-        (tags.first?.postCount ?? 0) >= popularTagThreshold ? "Popular Tags" : "Tags in use"
+        (tags.first?.postCount ?? 0) >= popularTagThreshold ? String(localized: "Popular Tags") : String(localized: "Tags in use")
     }
 
     static func postCountLabel(_ count: Int) -> String {
-        count == 1 ? "1 post" : "\(count) posts"
+        count == 1 ? String(localized: "1 post") : String(localized: "\(count) posts")
     }
 
     /// Posts by people the viewer blocked are not shown, as on the web page.

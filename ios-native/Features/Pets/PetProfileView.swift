@@ -25,7 +25,7 @@ struct PetProfileView: View {
         case posts
         case checkins
         var id: String { rawValue }
-        var title: String { self == .posts ? "Posts" : "Check-ins" }
+        var title: String { self == .posts ? String(localized: "Posts") : String(localized: "Check-ins") }
     }
     @State private var tab: Tab = .posts
 
@@ -71,7 +71,7 @@ struct PetProfileView: View {
                 }
             }
         }
-        .alert("Delete \(loadedPet?.name ?? "this pet")?", isPresented: deleteConfirmation) {
+        .alert("Delete \(loadedPet?.name ?? String(localized: "this pet"))?", isPresented: deleteConfirmation) {
             Button("Cancel", role: .cancel) { model.cancelDelete() }
             Button("Delete", role: .destructive) {
                 Task { await model.confirmDelete() }
@@ -217,7 +217,7 @@ struct PetProfileView: View {
                     .accessibilityIdentifier("pet.ownerCount")
                 ForEach(model.family) { member in
                     HStack(spacing: Spacing.s) {
-                        Text(member.userName.isEmpty ? "PetNote user" : member.userName)
+                        Text(member.userName.isEmpty ? String(localized: "PetNote user") : member.userName)
                             .font(Typography.body)
                             .foregroundStyle(Palette.primaryText)
                         Text(PetDisplay.label(for: member.relationship, custom: member.customRelationship))
@@ -369,7 +369,7 @@ struct PetProfileView: View {
             .accessibilityIdentifier("pet.loading")
     }
 
-    private func notice(title: String, detail: String, identifier: String) -> some View {
+    private func notice(title: LocalizedStringKey, detail: LocalizedStringKey, identifier: String) -> some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             Text(title)
                 .font(Typography.sectionTitle)

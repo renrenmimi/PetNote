@@ -30,7 +30,7 @@ struct MediaView: View {
     /// What activating it does, in the words VoiceOver will read. The same
     /// gesture means different things: in the feed a tap opens the post, on
     /// the detail screen it opens the photo.
-    var activationHint: String = "Opens the post"
+    var activationHint: LocalizedStringKey = "Opens the post"
 
     /// Used when the URL carries no `ar_` hint. 4:5 because pet photos are
     /// mostly portrait, and because a guess that is stable beats a guess that
@@ -207,7 +207,7 @@ struct MediaFrame: Equatable {
 /// in the feed a tap opens the post, on the detail screen it opens the photo.
 private struct ActivateMedia: ViewModifier {
     let url: URL
-    let hint: String
+    let hint: LocalizedStringKey
     let open: ((URL) -> Void)?
 
     func body(content: Content) -> some View {

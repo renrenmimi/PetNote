@@ -93,7 +93,7 @@ actor FirestoreFamilyRepository: FamilyRepository {
             log.error("redeemInvitationCallable returned an unexpected shape")
             throw FamilyError.outcomeUnknown
         }
-        return JoinedPet(petID: petID, petName: SocialDecoder.nonEmpty(data["petName"]) ?? "Pet")
+        return JoinedPet(petID: petID, petName: SocialDecoder.nonEmpty(data["petName"]) ?? String(localized: "Pet", comment: "Stand-in name for a pet whose name is missing"))
     }
 
     // MARK: - Membership changes
@@ -144,7 +144,7 @@ actor FirestoreFamilyRepository: FamilyRepository {
         return Invitation(
             code: code,
             createdBy: (raw["createdBy"] as? String) ?? "",
-            createdByName: SocialDecoder.nonEmpty(raw["createdByName"]) ?? "PetNote User",
+            createdByName: SocialDecoder.nonEmpty(raw["createdByName"]) ?? String(localized: "PetNote User"),
             expiresAt: Date(timeIntervalSince1970: millis / 1000),
             petID: SocialDecoder.nonEmpty(raw["petId"]) ?? petID
         )
@@ -153,7 +153,7 @@ actor FirestoreFamilyRepository: FamilyRepository {
     static func check(from data: [String: Any]) -> InvitationCheck {
         if (data["valid"] as? Bool) == true,
            let petID = SocialDecoder.nonEmpty(data["petId"]) {
-            return .valid(petID: petID, petName: SocialDecoder.nonEmpty(data["petName"]) ?? "Pet")
+            return .valid(petID: petID, petName: SocialDecoder.nonEmpty(data["petName"]) ?? String(localized: "Pet", comment: "Stand-in name for a pet whose name is missing"))
         }
         let error = ((data["error"] as? String) ?? "").lowercased()
         return error.contains("pet not found") ? .petGone : .invalid

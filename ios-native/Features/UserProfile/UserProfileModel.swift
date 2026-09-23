@@ -55,7 +55,7 @@ final class UserProfileModel {
 
     /// "PetNote User" in place of a missing name, as on the web page.
     var displayName: String {
-        guard let profile, !profile.displayName.isEmpty else { return "PetNote User" }
+        guard let profile, !profile.displayName.isEmpty else { return String(localized: "PetNote User") }
         return profile.displayName
     }
 
@@ -65,8 +65,8 @@ final class UserProfileModel {
     }
 
     var joinedLine: String {
-        guard let createdAt = profile?.createdAt else { return "Joined: unknown" }
-        return "Joined \(createdAt.formatted(date: .abbreviated, time: .omitted))"
+        guard let createdAt = profile?.createdAt else { return String(localized: "Joined: unknown") }
+        return String(localized: "Joined \(createdAt.formatted(date: .abbreviated, time: .omitted))")
     }
 
     /// The pets count is only a number once the pets have been read.
@@ -122,7 +122,7 @@ final class UserProfileModel {
                 viewerOwnsAll: isSelf
             )
         } catch {
-            petsState = .failed("Could not load their pets.")
+            petsState = .failed(String(localized: "Could not load their pets."))
         }
     }
 
@@ -138,14 +138,14 @@ final class UserProfileModel {
             state = .loading
             await load()
         } catch {
-            unblockMessage = "Could not unblock this person. Try again."
+            unblockMessage = String(localized: "Could not unblock this person. Try again.")
         }
     }
 
     static func wording(for error: Error) -> String {
         switch error as? SocialError {
-        case .offline: return "No connection. Check your network and try again."
-        default: return "Could not load this profile."
+        case .offline: return String(localized: "No connection. Check your network and try again.")
+        default: return String(localized: "Could not load this profile.")
         }
     }
 }

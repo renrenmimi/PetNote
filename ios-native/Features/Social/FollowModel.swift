@@ -157,11 +157,11 @@ final class FollowModel {
                 } else {
                     status = isFollowing ? .following : .notFollowing
                     message = wantedFollowing
-                        ? "Could not follow \(petName). Try again."
-                        : "Could not unfollow \(petName). Try again."
+                        ? String(localized: "Could not follow \(petName). Try again.")
+                        : String(localized: "Could not unfollow \(petName). Try again.")
                 }
             } catch {
-                message = "We could not tell whether that went through. Reload to check."
+                message = String(localized: "We could not tell whether that went through. Reload to check.")
             }
         default:
             message = Self.wording(for: error)
@@ -172,17 +172,17 @@ final class FollowModel {
     /// driving a screen.
     static func wording(for error: SocialError) -> String {
         switch error {
-        case .notSignedIn: return "Sign in again to do that."
-        case .banned: return "This account cannot follow pets."
-        case .accountDeleted: return "This account has been deleted."
-        case .petNotFound: return "This pet no longer exists."
-        case .ownPet: return "You are one of this pet's owners, so you cannot follow it."
-        case .rateLimited: return "Too many requests just now. Wait a moment and try again."
-        case .denied: return "That was not allowed."
-        case .offline: return "No connection. Check your network and try again."
-        case .callablesUnavailable: return "This build cannot reach PetNote's server."
-        case .outcomeUnknown: return "We could not tell whether that went through. Reload to check."
-        case .transport: return "Something went wrong reaching PetNote. Try again."
+        case .notSignedIn: return String(localized: "Sign in again to do that.")
+        case .banned: return String(localized: "This account cannot follow pets.")
+        case .accountDeleted: return String(localized: "This account has been deleted.")
+        case .petNotFound: return String(localized: "This pet no longer exists.")
+        case .ownPet: return String(localized: "You are one of this pet's owners, so you cannot follow it.")
+        case .rateLimited: return String(localized: "Too many requests just now. Wait a moment and try again.")
+        case .denied: return String(localized: "That was not allowed.")
+        case .offline: return String(localized: "No connection. Check your network and try again.")
+        case .callablesUnavailable: return String(localized: "This build cannot reach PetNote's server.")
+        case .outcomeUnknown: return String(localized: "We could not tell whether that went through. Reload to check.")
+        case .transport: return String(localized: "Something went wrong reaching PetNote. Try again.")
         }
     }
 

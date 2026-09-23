@@ -17,10 +17,10 @@ enum FeedbackKind: String, CaseIterable, Sendable {
     /// The web page's labels and marks, in its order.
     var label: String {
         switch self {
-        case .bug: "Bug Report"
-        case .feature: "Feature Request"
-        case .complaint: "Complaint"
-        case .other: "Other"
+        case .bug: String(localized: "Bug Report")
+        case .feature: String(localized: "Feature Request")
+        case .complaint: String(localized: "Complaint")
+        case .other: String(localized: "Other", comment: "Feedback type")
         }
     }
 
@@ -127,7 +127,7 @@ final class ContactUsModel {
         } catch let error as FeedbackError {
             state = .failed(Self.message(for: error))
         } catch {
-            state = .failed("Your message wasn't sent.")
+            state = .failed(String(localized: "Your message wasn't sent."))
         }
     }
 
@@ -138,16 +138,16 @@ final class ContactUsModel {
 
     static func message(for error: FeedbackError) -> String {
         switch error {
-        case .banned: "This account can't send feedback."
-        case .notSignedIn: "Sign in again to send feedback."
-        case .rateLimited: "You've sent several messages recently. Try again in a little while."
-        case .offline: "You're offline, so your message wasn't sent."
+        case .banned: String(localized: "This account can't send feedback.")
+        case .notSignedIn: String(localized: "Sign in again to send feedback.")
+        case .rateLimited: String(localized: "You've sent several messages recently. Try again in a little while.")
+        case .offline: String(localized: "You're offline, so your message wasn't sent.")
         // Feedback has no fixed id: a second send of one that did arrive
         // arrives twice. The person is told, and decides.
         case .outcomeUnknown:
-            "We couldn't confirm your message arrived. If you send it again, we may get it twice."
-        case .rejected: "Your message wasn't accepted."
-        case .unavailable: "Feedback isn't available in this build."
+            String(localized: "We couldn't confirm your message arrived. If you send it again, we may get it twice.")
+        case .rejected: String(localized: "Your message wasn't accepted.")
+        case .unavailable: String(localized: "Feedback isn't available in this build.")
         }
     }
 }

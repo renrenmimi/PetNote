@@ -245,9 +245,11 @@ struct ComposeView: View {
     private var draftBannerText: String {
         let count = model.restorableDraft?.uploadedAssets.count ?? 0
         if count > 0 {
-            return "Unsaved draft, with \(count) file\(count == 1 ? "" : "s") already uploaded"
+            return count == 1
+                ? String(localized: "Unsaved draft, with 1 file already uploaded")
+                : String(localized: "Unsaved draft, with \(count) files already uploaded")
         }
-        return "You have an unsaved draft (text, tags and pet — photos need picking again)"
+        return String(localized: "You have an unsaved draft (text, tags and pet — photos need picking again)")
     }
 
     private func banner(_ text: String, tone: Color) -> some View {

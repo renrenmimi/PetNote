@@ -60,7 +60,7 @@ final class InviteModel {
         } catch let error as FamilyError where error == .notAnOwner {
             state = .notPermitted
         } catch {
-            state = .failed("Could not load the invitation code.")
+            state = .failed(String(localized: "Could not load the invitation code."))
         }
     }
 
@@ -72,7 +72,7 @@ final class InviteModel {
         defer { isGenerating = false }
         do {
             state = .active(try await repository.createInvitation(petID: petID))
-            confirmation = "Invitation code ready."
+            confirmation = String(localized: "Invitation code ready.")
         } catch {
             let error = (error as? FamilyError) ?? .outcomeUnknown
             switch error {
@@ -81,10 +81,10 @@ final class InviteModel {
             case .outcomeUnknown:
                 await load()
                 if liveInvitation == nil {
-                    message = "We could not tell whether a code was made. Try again."
+                    message = String(localized: "We could not tell whether a code was made. Try again.")
                 }
             case .couldNotGenerate:
-                message = "Could not make a code just now. Try again."
+                message = String(localized: "Could not make a code just now. Try again.")
             default:
                 message = Self.wording(for: error)
             }
@@ -102,7 +102,7 @@ final class InviteModel {
             // Already used, revoked or expired is also "this code no longer
             // works", which is what was asked for.
             state = .none
-            confirmation = "Invitation code revoked."
+            confirmation = String(localized: "Invitation code revoked.")
         } catch {
             let error = (error as? FamilyError) ?? .outcomeUnknown
             switch error {
@@ -111,9 +111,9 @@ final class InviteModel {
             case .invitationNotFound, .outcomeUnknown:
                 await load()
                 if case .active(let current) = state, current.code == invitation.code {
-                    message = "We could not tell whether the code was revoked. Try again."
+                    message = String(localized: "We could not tell whether the code was revoked. Try again.")
                 } else {
-                    confirmation = "That code no longer works."
+                    confirmation = String(localized: "That code no longer works.")
                 }
             default:
                 message = Self.wording(for: error)
@@ -122,25 +122,25 @@ final class InviteModel {
     }
 
     static func shareMessage(for invitation: Invitation, petName: String) -> String {
-        "Join \(petName)'s family on PetNote with this invitation code: \(invitation.formattedCode)"
+        String(localized: "Join \(petName)'s family on PetNote with this invitation code: \(invitation.formattedCode)")
     }
 
     /// "Expires in 47h 59m", the web modal's wording.
     static func expiresLabel(_ expiresAt: Date, now: Date) -> String {
         let minutes = max(0, Int(expiresAt.timeIntervalSince(now) / 60))
-        return "Expires in \(minutes / 60)h \(minutes % 60)m"
+        return String(localized: "Expires in \(minutes / 60)h \(minutes % 60)m")
     }
 
     static func wording(for error: FamilyError) -> String {
         switch error {
-        case .banned: return "This account cannot create invitations."
-        case .accountDeleted: return "This account has been deleted."
-        case .notSignedIn: return "Sign in again to do that."
-        case .petNotFound: return "This pet no longer exists."
-        case .rateLimited: return "Too many requests just now. Wait a moment and try again."
-        case .offline: return "No connection. Check your network and try again."
-        case .callablesUnavailable: return "This build cannot reach PetNote's server."
-        default: return "That did not work. Try again."
+        case .banned: return String(localized: "This account cannot create invitations.")
+        case .accountDeleted: return String(localized: "This account has been deleted.")
+        case .notSignedIn: return String(localized: "Sign in again to do that.")
+        case .petNotFound: return String(localized: "This pet no longer exists.")
+        case .rateLimited: return String(localized: "Too many requests just now. Wait a moment and try again.")
+        case .offline: return String(localized: "No connection. Check your network and try again.")
+        case .callablesUnavailable: return String(localized: "This build cannot reach PetNote's server.")
+        default: return String(localized: "That did not work. Try again.")
         }
     }
 }

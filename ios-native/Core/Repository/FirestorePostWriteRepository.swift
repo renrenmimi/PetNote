@@ -204,7 +204,7 @@ actor FirestorePostWriteRepository: PostWriteRepository {
             // Caught here rather than at the server, where it arrives as a
             // generic invalid-argument that reads like the post's content was
             // the problem.
-            throw PostWriteError.rejected("This draft could not be identified. Start a new post.")
+            throw PostWriteError.rejected(String(localized: "This draft could not be identified. Start a new post."))
         }
         let payload: [String: Any] = [
             "text": request.text,
@@ -352,9 +352,9 @@ actor FirestorePostWriteRepository: PostWriteRepository {
         case .resourceExhausted:
             return .rateLimited
         case .invalidArgument, .outOfRange:
-            return .rejected("That post was not accepted. Check the length and try different wording.")
+            return .rejected(String(localized: "That post was not accepted. Check the length and try different wording."))
         case .failedPrecondition:
-            return .rejected("That post was not accepted.")
+            return .rejected(String(localized: "That post was not accepted."))
         case .deadlineExceeded, .unavailable, .cancelled, .aborted, .`internal`:
             return .outcomeUnknown
         default:

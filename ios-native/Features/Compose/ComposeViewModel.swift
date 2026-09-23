@@ -223,7 +223,7 @@ final class ComposeViewModel {
     func add(_ incoming: [PickedItem]) {
         guard !incoming.isEmpty else { return }
         if incoming.count > remainingSlots {
-            notice = "Maximum \(Self.maxFiles) files allowed"
+            notice = String(localized: "Maximum \(Self.maxFiles) files allowed")
         }
         var accepted: [PickedItem] = []
         var known = Set(items.map(\.sourceID))
@@ -235,7 +235,7 @@ final class ComposeViewModel {
             known.insert(candidate.sourceID)
             accepted.append(candidate)
         }
-        if duplicates > 0 { notice = "Duplicate file skipped" }
+        if duplicates > 0 { notice = String(localized: "Duplicate file skipped") }
         guard !accepted.isEmpty else { return }
         items += accepted
         selectionChanged()
@@ -255,15 +255,15 @@ final class ComposeViewModel {
             // well under this, so the message is about the original the person
             // recognises rather than about a re-encode they never saw.
             guard item.data.count <= UploadPreparation.Options.default.maxInputBytes else {
-                return "That photo is too large to process."
+                return String(localized: "That photo is too large to process.")
             }
             return nil
         case .video:
             if item.data.count > maxVideoBytes {
-                return "File too large. Images: max 10MB, Videos: max 80MB"
+                return String(localized: "File too large. Images: max 10MB, Videos: max 80MB")
             }
             if let duration = item.duration, duration > maxVideoSeconds {
-                return "Video must be under 60 seconds"
+                return String(localized: "Video must be under 60 seconds")
             }
             return nil
         }
@@ -296,7 +296,7 @@ final class ComposeViewModel {
         pendingStatusLookup = Task { [writes] in
             guard let status = try? await writes.publishStatus(operationID: staleOperationID),
                   case .published = status, !Task.isCancelled else { return }
-            self.notice = "Your earlier post did go through — those photos are still in use."
+            self.notice = String(localized: "Your earlier post did go through — those photos are still in use.")
         }
     }
 
@@ -348,13 +348,13 @@ final class ComposeViewModel {
     /// refuses them.
     private static func refusal(forTag tag: String) -> String? {
         if tag.utf16.count > maxTagLength {
-            return "Tags must be \(maxTagLength) characters or fewer."
+            return String(localized: "Tags must be \(maxTagLength) characters or fewer.")
         }
         // `/^__.*__$/` is Firestore's reserved id shape; the server rejects
         // it with the same sentence as the forbidden characters.
         let reserved = tag.count >= 4 && tag.hasPrefix("__") && tag.hasSuffix("__")
         if reserved || tag.contains(where: forbiddenTagCharacters.contains) {
-            return "Tags cannot contain . * ~ / [ ] characters."
+            return String(localized: "Tags cannot contain . * ~ / [ ] characters.")
         }
         return nil
     }
@@ -444,7 +444,7 @@ final class ComposeViewModel {
             uploadedAssets = []
             items = []
             phase = .published(postID: outcome.postID, deduplicated: outcome.deduplicated)
-            notice = outcome.deduplicated ? "That post was already published." : "Posted."
+            notice = outcome.deduplicated ? String(localized: "That post was already published.") : String(localized: "Posted.")
             // The feed's loaded pages cannot contain what was just made, so
             // whoever owns the list is told to go and get it. Without this the
             // person lands on a feed missing their own post and pull-to-refresh
@@ -504,65 +504,65 @@ final class ComposeViewModel {
         case let preparation as UploadPreparation.PreparationError:
             detail = describe(preparation)
         default:
-            detail = "Something went wrong."
+            detail = String(localized: "Something went wrong.")
         }
         guard handedOff else { return detail }
         // Past the handoff the outcome is unknown, and the operation id is what
         // makes saying this honest rather than hopeful.
-        return "\(detail) Press Share again — it won't post twice."
+        return String(localized: "\(detail) Press Share again — it won't post twice.")
     }
 
     static func describe(_ error: UploadError) -> String {
         switch error {
-        case .notSignedIn: "Please sign in again."
-        case .banned: "Your account has been suspended."
-        case .rateLimited: "Too many uploads just now. Wait a moment."
-        case .signatureUnavailable: "Uploads are unavailable in this build."
+        case .notSignedIn: String(localized: "Please sign in again.")
+        case .banned: String(localized: "Your account has been suspended.")
+        case .rateLimited: String(localized: "Too many uploads just now. Wait a moment.")
+        case .signatureUnavailable: String(localized: "Uploads are unavailable in this build.")
         case .tooLarge(let limit, _):
-            "That file is over the \(limit / (1024 * 1024))MB limit."
-        case .timedOut: "The upload timed out. Check your connection."
-        case .offline: "You appear to be offline."
-        case .rejected: "That file was not accepted."
-        case .malformedResponse: "The upload finished but could not be confirmed."
-        case .transport: "The upload could not be completed."
+            String(localized: "That file is over the \(limit / (1024 * 1024))MB limit.")
+        case .timedOut: String(localized: "The upload timed out. Check your connection.")
+        case .offline: String(localized: "You appear to be offline.")
+        case .rejected: String(localized: "That file was not accepted.")
+        case .malformedResponse: String(localized: "The upload finished but could not be confirmed.")
+        case .transport: String(localized: "The upload could not be completed.")
         }
     }
 
     static func describe(_ error: PostWriteError) -> String {
         switch error {
-        case .notSignedIn: "Please sign in again."
-        case .emailNotVerified: "Verify your email before posting."
-        case .banned: "Your account has been suspended."
-        case .petNotAccessible: "You do not have access to that pet."
-        case .postNotFound: "That post no longer exists."
-        case .notTheAuthor: "You can only change your own posts."
-        case .rateLimited: "Too many posts just now. Wait a moment."
+        case .notSignedIn: String(localized: "Please sign in again.")
+        case .emailNotVerified: String(localized: "Verify your email before posting.")
+        case .banned: String(localized: "Your account has been suspended.")
+        case .petNotAccessible: String(localized: "You do not have access to that pet.")
+        case .postNotFound: String(localized: "That post no longer exists.")
+        case .notTheAuthor: String(localized: "You can only change your own posts.")
+        case .rateLimited: String(localized: "Too many posts just now. Wait a moment.")
         case .rejected(let words): words
-        case .outcomeUnknown: "We could not tell whether that went through."
+        case .outcomeUnknown: String(localized: "We could not tell whether that went through.")
         case .transport(CallableTransport.unavailable):
-            "This build cannot reach the server."
-        case .transport: "The request could not be completed."
+            String(localized: "This build cannot reach the server.")
+        case .transport: String(localized: "The request could not be completed.")
         }
     }
 
     static func describe(_ error: UploadPreparation.PreparationError) -> String {
         switch error {
         case .tooLargeToProcess(_, let limit):
-            "That photo is over the \(limit / (1024 * 1024))MB limit."
-        case .undecodable: "That photo could not be read."
-        case .unencodable: "That photo could not be prepared for upload."
+            String(localized: "That photo is over the \(limit / (1024 * 1024))MB limit.")
+        case .undecodable: String(localized: "That photo could not be read.")
+        case .unencodable: String(localized: "That photo could not be prepared for upload.")
         }
     }
 
     /// What the Share button says while working.
     var phaseLabel: String {
         switch phase {
-        case .preparing(let index, let total): "Preparing \(index)/\(total)…"
-        case .uploading(let index, let total): "Uploading \(index)/\(total)…"
-        case .publishing: "Publishing…"
-        case .failed: "Retry"
-        case .published: "Posted"
-        case .idle: "Share"
+        case .preparing(let index, let total): String(localized: "Preparing \(index)/\(total)…")
+        case .uploading(let index, let total): String(localized: "Uploading \(index)/\(total)…")
+        case .publishing: String(localized: "Publishing…")
+        case .failed: String(localized: "Retry", comment: "Share button label after publishing failed")
+        case .published: String(localized: "Posted", comment: "Share button label once the post is published")
+        case .idle: String(localized: "Share", comment: "Button that publishes the new post")
         }
     }
 

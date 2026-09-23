@@ -81,7 +81,7 @@ struct SearchView: View {
                 .accessibilityIdentifier("search.searching")
         case .failed:
             SocialRetryNotice(
-                message: "Search could not run. Check your connection and try again.",
+                message: String(localized: "Search could not run. Check your connection and try again."),
                 identifier: "search.failed"
             ) { await search.searchNow() }
         case .loaded where !search.hasAnyResult:
@@ -102,16 +102,16 @@ struct SearchView: View {
     private var peopleSection: some View {
         if !search.visiblePeople.isEmpty {
             section(
-                "People",
-                expand: search.canExpandPeople ? (search.showAllPeople ? "Show less" : "See all people") : nil,
+                String(localized: "People"),
+                expand: search.canExpandPeople ? (search.showAllPeople ? String(localized: "Show less") : String(localized: "See all people")) : nil,
                 onExpand: { search.showAllPeople.toggle() }
             ) {
                 ForEach(search.visiblePeople) { person in
                     PersonRow(
-                        name: person.displayName.isEmpty ? "PetNote User" : person.displayName,
+                        name: person.displayName.isEmpty ? String(localized: "PetNote User") : person.displayName,
                         avatarURL: person.avatarURL,
                         detail: personDetail(person),
-                        trailing: person.id == search.viewerID ? "You" : nil
+                        trailing: person.id == search.viewerID ? String(localized: "You", comment: "Marks the signed-in person's own row in search results") : nil
                     ) { onOpenUser(person.id) }
                 }
             }
@@ -119,17 +119,17 @@ struct SearchView: View {
     }
 
     private func personDetail(_ person: PublicProfile) -> String {
-        let bio = person.bio.isEmpty ? "Pet lover" : person.bio
+        let bio = person.bio.isEmpty ? String(localized: "Pet lover") : person.bio
         guard let count = search.petCounts[person.id] else { return bio }
-        return "\(bio) · \(count == 1 ? "1 pet" : "\(count) pets")"
+        return "\(bio) · \(count == 1 ? String(localized: "1 pet") : String(localized: "\(count) pets"))"
     }
 
     @ViewBuilder
     private var petsSection: some View {
         if !search.visiblePets.isEmpty {
             section(
-                "Pets",
-                expand: search.canExpandPets ? (search.showAllPets ? "Show less" : "See all pets") : nil,
+                String(localized: "Pets"),
+                expand: search.canExpandPets ? (search.showAllPets ? String(localized: "Show less") : String(localized: "See all pets")) : nil,
                 onExpand: { search.showAllPets.toggle() }
             ) {
                 ForEach(search.visiblePets) { pet in
@@ -146,7 +146,7 @@ struct SearchView: View {
     @ViewBuilder
     private var tagsSection: some View {
         if !search.visibleTags.isEmpty {
-            section("Tags") {
+            section(String(localized: "Tags")) {
                 ForEach(search.visibleTags) { tag in
                     Button { Task { await search.select(tag: tag.name) } } label: {
                         HStack {
@@ -174,7 +174,7 @@ struct SearchView: View {
     @ViewBuilder
     private var postsSection: some View {
         if !search.visiblePosts.isEmpty {
-            section("Posts") {
+            section(String(localized: "Posts")) {
                 ForEach(search.visiblePosts) { post in
                     PostSearchRow(post: post) { onOpenPost(post.id) }
                 }
@@ -195,7 +195,7 @@ struct SearchView: View {
     @ViewBuilder
     private var tagsModule: some View {
         if explore.failed.contains(.tags), explore.tags.isEmpty {
-            SocialRetryNotice(message: "Could not load tags.", identifier: "explore.tagsFailed") {
+            SocialRetryNotice(message: String(localized: "Could not load tags."), identifier: "explore.tagsFailed") {
                 await explore.retry(.tags)
             }
         } else if !explore.tags.isEmpty {
@@ -223,17 +223,17 @@ struct SearchView: View {
     private var trendingModule: some View {
         let posts = explore.visibleTrendingPosts
         if explore.failed.contains(.trendingPosts), posts.isEmpty {
-            SocialRetryNotice(message: "Could not load trending posts.", identifier: "explore.trendingFailed") {
+            SocialRetryNotice(message: String(localized: "Could not load trending posts."), identifier: "explore.trendingFailed") {
                 await explore.retry(.trendingPosts)
             }
         } else if explore.loading.contains(.trendingPosts), posts.isEmpty {
             VStack(alignment: .leading, spacing: Spacing.s) {
-                sectionTitle("Trending Posts")
+                sectionTitle(String(localized: "Trending Posts"))
                 ProgressView().frame(maxWidth: .infinity, minHeight: Layout.minTouchTarget)
             }
         } else if !posts.isEmpty {
             VStack(alignment: .leading, spacing: Spacing.s) {
-                sectionTitle("Trending Posts")
+                sectionTitle(String(localized: "Trending Posts"))
                 LazyVGrid(
                     columns: Array(repeating: GridItem(.flexible(), spacing: Spacing.xs), count: 3),
                     spacing: Spacing.xs
@@ -256,12 +256,12 @@ struct SearchView: View {
     @ViewBuilder
     private var discoverModule: some View {
         if explore.failed.contains(.discoverPets), explore.discoverPets.isEmpty {
-            SocialRetryNotice(message: "Could not load pet suggestions.", identifier: "explore.discoverFailed") {
+            SocialRetryNotice(message: String(localized: "Could not load pet suggestions."), identifier: "explore.discoverFailed") {
                 await explore.retry(.discoverPets)
             }
         } else if !explore.discoverPets.isEmpty {
             VStack(alignment: .leading, spacing: Spacing.s) {
-                sectionTitle("Discover pets")
+                sectionTitle(String(localized: "Discover pets"))
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: Spacing.m) {
                         ForEach(explore.discoverPets) { pet in
@@ -285,12 +285,12 @@ struct SearchView: View {
     @ViewBuilder
     private var popularModule: some View {
         if explore.failed.contains(.popularPets), explore.popularPets.isEmpty {
-            SocialRetryNotice(message: "Could not load active pets.", identifier: "explore.popularFailed") {
+            SocialRetryNotice(message: String(localized: "Could not load active pets."), identifier: "explore.popularFailed") {
                 await explore.retry(.popularPets)
             }
         } else if explore.showsAlsoActive {
             VStack(alignment: .leading, spacing: Spacing.s) {
-                sectionTitle("Most posts")
+                sectionTitle(String(localized: "Most posts"))
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: Spacing.m) {
                         ForEach(explore.alsoActivePets) { ranked in
@@ -412,7 +412,7 @@ struct PostSearchRow: View {
     }
 
     private var byline: String {
-        let author = post.authorName.isEmpty ? "PetNote User" : post.authorName
+        let author = post.authorName.isEmpty ? String(localized: "PetNote User") : post.authorName
         if let pet = post.petName, !pet.isEmpty { return "\(pet) · \(author)" }
         return author
     }
@@ -468,12 +468,12 @@ struct PostThumbnail: View {
     static func label(for post: Post) -> String {
         var parts: [String] = []
         if let media = post.media.first {
-            parts.append(media.kind == .video ? "Video" : (post.media.count > 1 ? "\(post.media.count) photos" : "Photo"))
+            parts.append(media.kind == .video ? String(localized: "Video") : (post.media.count > 1 ? String(localized: "\(post.media.count) photos") : String(localized: "Photo")))
         } else {
-            parts.append("Post")
+            parts.append(String(localized: "Post", comment: "Noun: a post with no picture, read by VoiceOver"))
         }
-        let author = post.authorName.isEmpty ? "PetNote User" : post.authorName
-        parts.append("by \(post.petName ?? author)")
+        let author = post.authorName.isEmpty ? String(localized: "PetNote User") : post.authorName
+        parts.append(String(localized: "by \(post.petName ?? author)"))
         if !post.text.isEmpty { parts.append(post.text) }
         return parts.joined(separator: ", ")
     }

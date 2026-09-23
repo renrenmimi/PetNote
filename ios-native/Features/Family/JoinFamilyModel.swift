@@ -81,20 +81,20 @@ final class JoinFamilyModel {
                 step = .choosing(petID: petID, petName: petName)
             case .invalid:
                 step = .entering
-                message = "That code is not valid, or it has expired. Ask one of the pet's owners for a new one."
+                message = String(localized: "That code is not valid, or it has expired. Ask one of the pet's owners for a new one.")
             case .petGone:
                 step = .entering
-                message = "The pet this code was for no longer exists."
+                message = String(localized: "The pet this code was for no longer exists.")
             }
         } catch {
             step = .entering
             let error = (error as? FamilyError) ?? .outcomeUnknown
             switch error {
             case .malformedCode:
-                message = "An invitation code is \(InvitationCode.length) letters and numbers."
+                message = String(localized: "An invitation code is \(InvitationCode.length) letters and numbers.")
             case .outcomeUnknown, .transport:
                 // A read: nothing happened, and trying again is safe.
-                message = "Could not check the code. Try again."
+                message = String(localized: "Could not check the code. Try again.")
             default:
                 message = Self.wording(for: error)
             }
@@ -129,7 +129,7 @@ final class JoinFamilyModel {
 
         case .outcomeUnknown:
             outcomeWasUnknown = true
-            await settleByReading(pet, otherwise: "We could not tell whether you joined. Try again.")
+            await settleByReading(pet, otherwise: String(localized: "We could not tell whether you joined. Try again."))
 
         case .invitationInvalid where outcomeWasUnknown, .invitationRevoked where outcomeWasUnknown:
             // The code may be "used" because the earlier attempt used it.
@@ -159,31 +159,31 @@ final class JoinFamilyModel {
             message = failure
         } catch {
             step = .choosing(petID: pet.petID, petName: pet.petName)
-            message = "We could not tell whether you joined. Check your pets, or try again."
+            message = String(localized: "We could not tell whether you joined. Check your pets, or try again.")
         }
     }
 
     static func wording(for error: FamilyError) -> String {
         switch error {
         case .invitationInvalid:
-            return "That code no longer works. It may have been used already, or it expired."
+            return String(localized: "That code no longer works. It may have been used already, or it expired.")
         case .invitationRevoked:
-            return "This invitation was revoked. Ask one of the pet's owners for a new one."
+            return String(localized: "This invitation was revoked. Ask one of the pet's owners for a new one.")
         case .inviterLeft:
-            return """
+            return String(localized: """
                 The person who sent this code is no longer one of the pet's owners, so it no \
                 longer works. Ask a current owner for a new one.
-                """
-        case .petNotFound: return "The pet this code was for no longer exists."
-        case .malformedCode: return "An invitation code is \(InvitationCode.length) letters and numbers."
-        case .rejected: return "That relationship was not accepted. Choose another, or shorten it."
-        case .banned: return "This account cannot join a pet's family."
-        case .accountDeleted: return "This account has been deleted."
-        case .notSignedIn: return "Sign in again to do that."
-        case .rateLimited: return "Too many requests just now. Wait a moment and try again."
-        case .offline: return "No connection. Nothing was changed. Try again."
-        case .callablesUnavailable: return "This build cannot reach PetNote's server."
-        default: return "That did not work. Try again."
+                """)
+        case .petNotFound: return String(localized: "The pet this code was for no longer exists.")
+        case .malformedCode: return String(localized: "An invitation code is \(InvitationCode.length) letters and numbers.")
+        case .rejected: return String(localized: "That relationship was not accepted. Choose another, or shorten it.")
+        case .banned: return String(localized: "This account cannot join a pet's family.")
+        case .accountDeleted: return String(localized: "This account has been deleted.")
+        case .notSignedIn: return String(localized: "Sign in again to do that.")
+        case .rateLimited: return String(localized: "Too many requests just now. Wait a moment and try again.")
+        case .offline: return String(localized: "No connection. Nothing was changed. Try again.")
+        case .callablesUnavailable: return String(localized: "This build cannot reach PetNote's server.")
+        default: return String(localized: "That did not work. Try again.")
         }
     }
 }
