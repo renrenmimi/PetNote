@@ -1832,7 +1832,8 @@ enum MediaServer {
     /// green, because `.enabled(if:)` disables quietly and a disabled test
     /// looks exactly like a test that has nothing to say.
     ///
-    /// So CI sets `PETNOTE_REQUIRE_MEDIA_SERVER=1`, and
+    /// So CI sets `PETNOTE_REQUIRE_MEDIA_SERVER=1` (as
+    /// `TEST_RUNNER_PETNOTE_REQUIRE_MEDIA_SERVER`, or it never arrives), and
     /// `theMediaServerIsUpWhereItIsRequired` turns the silence into a failure.
     /// The workflow separately greps the log for the three test names, because
     /// one guard that has to be remembered is not the same as two that
@@ -1845,11 +1846,15 @@ enum MediaServer {
     /// red because nobody started a server is the fastest way to teach everyone
     /// to ignore it.
     ///
-    /// **Asked more than once.** One three-second probe, made while every
-    /// suite in the run was being collected at once, failed on CI (run
-    /// 35836744692) against a server the workflow had seen answer six minutes
-    /// earlier. A failed probe fails nothing — it quietly disables the
-    /// stream-break tests — and only the workflow's second guard noticed.
+    /// **Asked more than once, and for longer where it is required.** One
+    /// three-second probe failed on CI (run 35836744692) against a server the
+    /// workflow had seen answer; four failed on another (35850459362), and the
+    /// server's own log shows why: all four requests reached it together,
+    /// sixteen seconds after the first was sent, when each had already timed
+    /// out. The simulator's loopback was not up yet. A failed probe fails
+    /// nothing — it quietly disables the stream-break tests — so where the
+    /// server is required the probe keeps asking for about a minute. Where it
+    /// is not, two tries: a Mac with no server running should skip quickly.
     nonisolated static let isAnswering: Bool = {
         func probe() -> Bool {
             var request = URLRequest(url: URL(string: host + "/a2-long.mp4")!)
@@ -1866,10 +1871,11 @@ enum MediaServer {
             return ok
         }
         var ok = false
-        for attempt in 1...4 {
+        let attempts = isRequired ? 12 : 2
+        for attempt in 1...attempts {
             ok = probe()
             if ok { break }
-            if attempt < 4 { Thread.sleep(forTimeInterval: 2) }
+            if attempt < attempts { Thread.sleep(forTimeInterval: 2) }
         }
         if !ok {
             print("""
