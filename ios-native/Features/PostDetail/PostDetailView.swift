@@ -9,6 +9,8 @@ extension URL: @retroactive Identifiable {
 struct PostDetailView: View {
     @State private var model: PostDetailViewModel
     @State private var fullImageURL: URL?
+    /// The comment whose delete is waiting on the confirmation.
+    @State private var commentToDelete: Comment?
     @Environment(SessionStore.self) private var session
 
     /// What the comment count scrolls to. A constant rather than a literal at
@@ -61,7 +63,65 @@ struct PostDetailView: View {
         .fullScreenCover(item: $fullImageURL) { url in
             FullImageView(url: url)
         }
-        .overlay(alignment: .bottom) { likeFailureBanner }
+        .confirmationDialog(
+            "Delete this comment?",
+            isPresented: Binding(
+                get: { commentToDelete != nil },
+                set: { if !$0 { commentToDelete = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: commentToDelete
+        ) { comment in
+            Button("Delete", role: .destructive) {
+                Task { await model.deleteComment(id: comment.id) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { comment in
+            // The web client's distinction: deleting someone else's comment
+            // is allowed to the post's owner, and it says that is why.
+            if model.isDeletingAsPostAuthor(comment, viewerID: viewerID) {
+                Text("You are the post owner. This cannot be undone.")
+            } else {
+                Text("This cannot be undone.")
+            }
+        }
+        .overlay(alignment: .bottom) {
+            VStack(spacing: 0) {
+                commentDeleteFailureBanner
+                likeFailureBanner
+            }
+        }
+    }
+
+    private var viewerID: String? {
+        if case .signedIn(let user) = session.state { user.uid } else { nil }
+    }
+
+    /// A delete the server did not confirm. The comment is still in the list,
+    /// because it is still on the server — or may be.
+    @ViewBuilder
+    private var commentDeleteFailureBanner: some View {
+        if let message = model.deleteFailure {
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
+                Image(systemName: "exclamationmark.circle.fill").accessibilityHidden(true)
+                Text(message)
+                    .font(Typography.caption)
+                    .accessibilityIdentifier("detail.commentDeleteError")
+                Spacer(minLength: Spacing.s)
+                Button {
+                    model.dismissDeleteFailure()
+                } label: {
+                    Text("Dismiss")
+                        .font(Typography.caption)
+                        .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget)
+                        .contentShape(.rect)
+                }
+                .accessibilityIdentifier("detail.commentDeleteErrorDismiss")
+            }
+            .foregroundStyle(Palette.danger)
+            .padding(.horizontal, Layout.pageInset)
+            .background(Palette.secondaryBackground)
+        }
     }
 
     /// A like that could not be applied, or could not be confirmed.
@@ -232,8 +292,13 @@ struct PostDetailView: View {
                 commentsFailure(message)
             }
             ForEach(model.comments) { comment in
-                CommentRow(comment: comment)
-                    .task { await model.loadMoreCommentsIfNeeded(currentItem: comment) }
+                CommentRow(
+                    comment: comment,
+                    canDelete: model.canDelete(comment, viewerID: viewerID),
+                    isDeleting: model.deletingCommentIDs.contains(comment.id),
+                    onDelete: { commentToDelete = comment }
+                )
+                .task { await model.loadMoreCommentsIfNeeded(currentItem: comment) }
             }
             // …and a page that failed to arrive stays at the bottom, where the
             // reader was heading when it did not turn up.
@@ -399,8 +464,19 @@ struct PostDetailView: View {
 
 private struct CommentRow: View {
     let comment: Comment
+    var canDelete = false
+    var isDeleting = false
+    var onDelete: () -> Void = {}
 
     var body: some View {
+        HStack(alignment: .top, spacing: Spacing.s) {
+            content
+            if canDelete { deleteButton }
+        }
+        .padding(.horizontal, Layout.pageInset)
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             HStack(spacing: Spacing.s) {
                 Text(comment.authorName)
@@ -420,7 +496,6 @@ private struct CommentRow: View {
                 .foregroundStyle(Palette.primaryText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Layout.pageInset)
         .accessibilityElement(children: .combine)
         // One element per comment, and it is addressable. Without this a test
         // counting "how many comments contain this text" also counts the inner
@@ -431,5 +506,27 @@ private struct CommentRow: View {
         // PaletteContrastTests.pendingCommentRowStaysReadable — to say
         // something the explicit "Sending…" label already says at full
         // strength, and says to VoiceOver as well.
+    }
+
+    /// Beside the text rather than inside the row's element, so the row still
+    /// reads as the comment alone and the button is its own control.
+    private var deleteButton: some View {
+        Button(action: onDelete) {
+            Group {
+                if isDeleting {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "trash")
+                }
+            }
+            .font(Typography.caption)
+            .foregroundStyle(Palette.secondaryText)
+            .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .disabled(isDeleting)
+        .accessibilityLabel(isDeleting ? "Deleting comment" : "Delete comment")
+        .accessibilityIdentifier("comment.delete.\(comment.id)")
     }
 }

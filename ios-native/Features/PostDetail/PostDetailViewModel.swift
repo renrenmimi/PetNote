@@ -47,6 +47,11 @@ final class PostDetailViewModel {
     private(set) var serverLikeCount = 0
     /// A like that could not be applied. Shown inline and cleared by the view.
     var likeFailureMessage: String?
+    /// Comments with a delete on its way: the row says so, and a second tap
+    /// does not send a second request.
+    private(set) var deletingCommentIDs: Set<String> = []
+    /// Why the last delete did not happen. Cleared when the next one starts.
+    private(set) var deleteFailure: String?
 
     /// The three facts that were previously squeezed into one counter, and
     /// each of which failed differently for it. Same structure as the feed's,
@@ -873,6 +878,69 @@ final class PostDetailViewModel {
     }
 
     func dismissFailure() { sendFailure = nil }
+
+    // MARK: - Deleting a comment
+
+    /// Who is offered the delete: the comment's author and the post's author —
+    /// the web client's rule (`CommentSection.tsx`) and the server's, less the
+    /// admin case this client has no notion of. A comment still being sent
+    /// has no id the server knows.
+    func canDelete(_ comment: Comment, viewerID: String?) -> Bool {
+        guard let viewerID, !comment.isPending, case .loaded(let post) = state else { return false }
+        return viewerID == comment.authorID || viewerID == post.authorID
+    }
+
+    /// Whether the person deleting it is the post's author and not the
+    /// comment's — the web says so in its confirmation.
+    func isDeletingAsPostAuthor(_ comment: Comment, viewerID: String?) -> Bool {
+        guard let viewerID, case .loaded(let post) = state else { return false }
+        return viewerID == post.authorID && viewerID != comment.authorID
+    }
+
+    /// Removes the comment once the server has said it is gone, not before —
+    /// as the web does, so a refused delete never leaves the list and the
+    /// count disagreeing with the server.
+    ///
+    /// The count comes down through the same offset a written comment goes
+    /// up by, so the feed hears about it too and a stale read of the post
+    /// cannot put the number back.
+    func deleteComment(id: String) async {
+        guard !deletingCommentIDs.contains(id),
+              comments.contains(where: { $0.id == id && !$0.isPending }) else { return }
+        deletingCommentIDs.insert(id)
+        deleteFailure = nil
+        defer { deletingCommentIDs.remove(id) }
+        do {
+            try await commentRepository.delete(postID: postID, commentID: id)
+            comments.removeAll { $0.id == id }
+            recordConfirmedComment(delta: -1)
+        } catch {
+            deleteFailure = Self.deleteMessage(for: error)
+        }
+    }
+
+    func dismissDeleteFailure() { deleteFailure = nil }
+
+    private static func deleteMessage(for error: Error) -> String {
+        switch error as? CommentDeleteError {
+        case .offline:
+            return "You're offline, so the comment wasn't deleted."
+        case .outcomeUnknown:
+            return "Couldn't confirm the comment was deleted. Trying again is safe."
+        case .notAllowed:
+            return "You can't delete this comment."
+        case .banned:
+            return "Your account has been suspended."
+        case .notSignedIn:
+            return "Sign in again to delete this comment."
+        case .rateLimited:
+            return "Too many changes at once. Wait a moment and try again."
+        case .unavailable:
+            return "This build cannot reach the server."
+        case .transport, nil:
+            return "Could not delete the comment."
+        }
+    }
 
     /// Waits for the work this model started on its own — the like write and
     /// the look-again after an unknown outcome. Test-facing, and the reason no

@@ -89,6 +89,30 @@ struct PostDetailViewModelTests {
             return createdID
         }
 
+        var deleteError: Error?
+        var deleteCalls: [String] = []
+        private var deleteGate: AsyncStream<Void>?
+        private var deleteOpener: AsyncStream<Void>.Continuation?
+
+        /// Holds every delete until `releaseDelete()`.
+        func holdDelete() {
+            let (stream, continuation) = AsyncStream<Void>.makeStream()
+            deleteGate = stream
+            deleteOpener = continuation
+        }
+
+        func releaseDelete() {
+            deleteOpener?.finish()
+            deleteGate = nil
+            deleteOpener = nil
+        }
+
+        func delete(postID: String, commentID: String) async throws {
+            deleteCalls.append(commentID)
+            if let deleteGate { for await _ in deleteGate { break } }
+            if let deleteError { throw deleteError }
+        }
+
         /// Makes the *next* read return `pages` as if the write had landed.
         ///
         /// This is the shape of the case that matters: the callable's response
