@@ -895,7 +895,8 @@ struct PostDetailViewModelTests {
 
         model.toggleLike()
         await spin(6)
-        #expect(deadline.durations.count == 1, "the request went out with no deadline: \(deadline.durations)")
+        #expect(await deadline.waitUntilArmed(), "the request went out with no deadline: \(deadline.durations)")
+        #expect(deadline.durations.count == 1, "more than one deadline for one request: \(deadline.durations)")
         #expect(model.isLiked, "optimistic while it is in flight")
         await deadline.passOnceArmed()
         await spin(60)

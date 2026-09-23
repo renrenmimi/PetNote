@@ -47,18 +47,28 @@ final class ManualDeadline: @unchecked Sendable {
     /// and on a slow runner the timer beside it had not parked yet.
     var armed: Int { lock.withLock { waiting.count } }
 
+    /// Whether `count` deadlines park within a bounded wait. "The request
+    /// went out" is not "its deadline started": the model starts the two
+    /// together, and a test that counts deadlines the moment the request
+    /// arrives can count 0 on a slow runner (run 35929225283, `durations.count
+    /// → 0`). Wait for them, then count.
+    func waitUntilArmed(_ count: Int = 1) async -> Bool {
+        for _ in 0..<20_000 {
+            if armed >= count { return true }
+            await Task.yield()
+        }
+        return false
+    }
+
     /// Waits until `count` deadlines are parked, then passes them. What the
     /// tests about giving up should call, rather than `pass()` on a guess.
     func passOnceArmed(_ count: Int = 1, sourceLocation: SourceLocation = #_sourceLocation) async {
-        for _ in 0..<20_000 {
-            if armed >= count {
-                pass()
-                return
-            }
-            await Task.yield()
+        guard await waitUntilArmed(count) else {
+            Issue.record("no deadline parked to pass (armed \(armed), started \(durations.count))",
+                         sourceLocation: sourceLocation)
+            return
         }
-        Issue.record("no deadline parked to pass (armed \(armed), started \(durations.count))",
-                     sourceLocation: sourceLocation)
+        pass()
     }
 
     /// Passes every deadline running now. Ones started later wait for the
