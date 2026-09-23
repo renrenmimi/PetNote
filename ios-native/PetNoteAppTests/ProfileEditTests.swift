@@ -258,6 +258,13 @@ struct ProfileEditTests {
         #expect(model.outcome == .failed(ProfileError.displayNameTaken.message))
     }
 
+    /// A second tap while the first save is still with the server writes
+    /// nothing. Arranged rather than hoped for: this used to start two saves
+    /// with `async let` against a fake that answers at once, and on a slow CI
+    /// runner the first had finished before the second began — two writes,
+    /// and correctly so, since they did not overlap (run 35933245850,
+    /// `updateCalls.count → 2`). The overlap the test is about was not being
+    /// made. Now the first save is held at the server until the second tap.
     @Test func twoTapsInTheSameTurnSaveOnce() async {
         let users = loadedRepository()
         let model = makeModel(users: users)
@@ -265,11 +272,54 @@ struct ProfileEditTests {
         model.displayName = "SparklyKoala19"
         await model.name.awaitPending()
 
-        async let first: Void = model.save()
-        async let second: Void = model.save()
-        _ = await (first, second)
+        let gate = HeldWrite()
+        users.whileUpdating = { await gate.hold() }
+        let first = Task { await model.save() }
+        #expect(await gate.arrives(), "the first save never reached the server")
+        #expect(model.isSaving)
+
+        await model.save()
+        gate.release()
+        await first.value
 
         #expect(users.updateCalls.count == 1, "the profile was written twice")
+    }
+
+    /// Holds the fake's write until released, and says when one has arrived.
+    private final class HeldWrite: @unchecked Sendable {
+        private let lock = NSLock()
+        private var arrived = false
+        private var released = false
+        private var waiting: CheckedContinuation<Void, Never>?
+
+        func hold() async {
+            await withCheckedContinuation { continuation in
+                let resumeNow = lock.withLock { () -> Bool in
+                    arrived = true
+                    if released { return true }
+                    waiting = continuation
+                    return false
+                }
+                if resumeNow { continuation.resume() }
+            }
+        }
+
+        func arrives() async -> Bool {
+            for _ in 0..<20_000 {
+                if lock.withLock({ arrived }) { return true }
+                await Task.yield()
+            }
+            return false
+        }
+
+        func release() {
+            let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+                released = true
+                defer { waiting = nil }
+                return waiting
+            }
+            continuation?.resume()
+        }
     }
 
     // MARK: The picture
