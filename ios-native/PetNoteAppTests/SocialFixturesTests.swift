@@ -57,6 +57,11 @@ func socialEventually(
 }
 
 final class FakeSocialRepository: SocialRepository, @unchecked Sendable {
+    /// Every record below is taken under this lock. The models that use
+    /// these fakes read with `async let`, so the calls arrive on several
+    /// threads at once; an unlocked append crashed a CI run (SIGSEGV in
+    /// `posts(since:limit:)`, run 35905119437, 2026-09-23).
+    private let lock = NSLock()
     var followError: Error?
     var unfollowError: Error?
     /// When set, `follow` waits on it before answering.
@@ -94,26 +99,26 @@ final class FakeSocialRepository: SocialRepository, @unchecked Sendable {
     private var issued: [PageCursor] = []
 
     func follow(petID: String) async throws {
-        followCalls.append(petID)
+        lock.withLock { followCalls.append(petID) }
         if let followGate { await followGate.wait() }
         if let followError { throw followError }
         following.insert(petID)
     }
 
     func unfollow(petID: String) async throws {
-        unfollowCalls.append(petID)
+        lock.withLock { unfollowCalls.append(petID) }
         if let unfollowError { throw unfollowError }
         following.remove(petID)
     }
 
     func isFollowing(petID: String, viewerID: String) async throws -> Bool {
-        isFollowingReads += 1
+        lock.withLock { isFollowingReads += 1 }
         if let isFollowingError { throw isFollowingError }
         return following.contains(petID)
     }
 
     func followedPetIDs(among petIDs: [String], viewerID: String) async throws -> Set<String> {
-        batchReads.append(petIDs)
+        lock.withLock { batchReads.append(petIDs) }
         if let followedBatchError { throw followedBatchError }
         return following.intersection(petIDs)
     }
@@ -124,7 +129,7 @@ final class FakeSocialRepository: SocialRepository, @unchecked Sendable {
     }
 
     func followers(petID: String, after cursor: PageCursor?, limit: Int) async throws -> Page<PetFollower> {
-        followerCursors.append(cursor)
+        lock.withLock { followerCursors.append(cursor) }
         if cursor == nil { issued.removeAll() }
         let index: Int
         if let cursor, let position = issued.firstIndex(of: cursor) {
@@ -139,7 +144,7 @@ final class FakeSocialRepository: SocialRepository, @unchecked Sendable {
         var next: PageCursor?
         if index + 1 < followerPages.count {
             let token = PageCursor()
-            issued.append(token)
+            lock.withLock { issued.append(token) }
             next = token
         }
         return Page(items: followerPages[index], next: next)
@@ -151,25 +156,25 @@ final class FakeSocialRepository: SocialRepository, @unchecked Sendable {
     }
 
     func pets(ofUser userID: String) async throws -> [ProfilePet] {
-        petReads += 1
+        lock.withLock { petReads += 1 }
         if let petsError { throw petsError }
         return petsByUser[userID] ?? []
     }
 
     func memberPetIDs(userID: String) async throws -> Set<String> {
-        memberIDReads += 1
+        lock.withLock { memberIDReads += 1 }
         if let memberIDsError { throw memberIDsError }
         return familyMemberships
     }
 
     func profile(userID: String) async throws -> PublicProfile? {
-        profileReads += 1
+        lock.withLock { profileReads += 1 }
         if let profileError { throw profileError }
         return profiles[userID]
     }
 
     func blockedUserIDs(viewerID: String) async throws -> Set<String> {
-        blockedReads += 1
+        lock.withLock { blockedReads += 1 }
         if let blockedError { throw blockedError }
         return blocked
     }
@@ -178,13 +183,13 @@ final class FakeSocialRepository: SocialRepository, @unchecked Sendable {
     private(set) var blockedNow: [String] = []
 
     func block(userID: String, viewerID: String) async throws {
-        blockedNow.append(userID)
+        lock.withLock { blockedNow.append(userID) }
         if let blockError { throw blockError }
         blocked.insert(userID)
     }
 
     func unblock(userID: String, viewerID: String) async throws {
-        unblocked.append(userID)
+        lock.withLock { unblocked.append(userID) }
         if let unblockError { throw unblockError }
         blocked.remove(userID)
     }
@@ -302,6 +307,11 @@ final class FakeFamilyRepository: FamilyRepository, @unchecked Sendable {
 }
 
 final class FakeSearchRepository: SearchRepository, @unchecked Sendable {
+    /// Every record below is taken under this lock. The models that use
+    /// these fakes read with `async let`, so the calls arrive on several
+    /// threads at once; an unlocked append crashed a CI run (SIGSEGV in
+    /// `posts(since:limit:)`, run 35905119437, 2026-09-23).
+    private let lock = NSLock()
     var peopleResult: [PublicProfile] = []
     var petResult: [Pet] = []
     var tagResult: [Hashtag] = []
@@ -334,9 +344,11 @@ final class FakeSearchRepository: SearchRepository, @unchecked Sendable {
     private(set) var latestReads = 0
 
     func people(prefix: String, limit: Int) async throws -> [PublicProfile] {
-        peopleQueries.append(prefix)
-        let gate = peopleGate
-        peopleGate = nil
+        lock.withLock { peopleQueries.append(prefix) }
+        let gate = lock.withLock { () -> SocialGate? in
+            defer { peopleGate = nil }
+            return peopleGate
+        }
         if let gate { await gate.wait() }
         if let searchError { throw searchError }
         return peopleResult
@@ -353,13 +365,13 @@ final class FakeSearchRepository: SearchRepository, @unchecked Sendable {
     }
 
     func posts(taggedWith tag: String, limit: Int) async throws -> [Post] {
-        postQueries.append((tag, limit))
+        lock.withLock { postQueries.append((tag, limit)) }
         if let searchError { throw searchError }
         return postResult
     }
 
     func petCounts(forUsers userIDs: [String]) async throws -> [String: Int] {
-        countQueries.append(userIDs)
+        lock.withLock { countQueries.append(userIDs) }
         if let countsError { throw countsError }
         return counts
     }
@@ -371,7 +383,7 @@ final class FakeSearchRepository: SearchRepository, @unchecked Sendable {
     }
 
     func posts(since date: Date, limit: Int) async throws -> [Post] {
-        sinceQueries.append((date, limit))
+        lock.withLock { sinceQueries.append((date, limit)) }
         if let recentError { throw recentError }
         return recentPosts
     }
@@ -387,7 +399,7 @@ final class FakeSearchRepository: SearchRepository, @unchecked Sendable {
     }
 
     func latestPosts(limit: Int) async throws -> [Post] {
-        latestReads += 1
+        lock.withLock { latestReads += 1 }
         return latest
     }
 
