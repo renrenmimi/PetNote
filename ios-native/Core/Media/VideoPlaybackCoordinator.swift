@@ -81,6 +81,68 @@ enum VideoStallPolicy {
     /// 1.5s is under half the refund threshold, so even two recoveries landing
     /// at the far edge cannot add up to a refund.
     static let recoverySeekToleranceBefore: TimeInterval = 1.5
+
+    // MARK: - What counts as playing
+
+    /// How far the clock may run past the bytes that arrived before the
+    /// picture cannot be real.
+    ///
+    /// **Measured on CI, not assumed.** On the iOS 26.2 simulator (run
+    /// 35801729274, e203196) a rebuilt item's clock reached 7.00s with
+    /// `loadedTimeRanges` ending at 5.73s, and decoded 14 frames in 3.6s where
+    /// the clip has fifteen a second. On iOS 27 the same item stops at the
+    /// edge of its bytes. A clock ahead of its data is moving without showing
+    /// anything new, which is a stall to the person watching, whatever the
+    /// player's status says. A quarter second is well past the few frames of
+    /// read-ahead a loaded range can lag by.
+    static let aheadOfLoadedTolerance: Double = 0.25
+
+    /// How much of a clip's end may be missing from what was loaded when
+    /// AVFoundation says it played to the end, and still be a real end.
+    static let endCoverageTolerance: Double = 0.5
+
+    /// The clock is running over bytes that never arrived.
+    ///
+    /// Unknown loaded ranges (zero) decide nothing: a stream that reports none
+    /// is judged the way it always was.
+    static func isAheadOfLoaded(clock: Double, loadedTo: Double) -> Bool {
+        loadedTo > 0 && clock > loadedTo + aheadOfLoadedTolerance
+    }
+
+    /// The part of a clock movement that counts as playback towards
+    /// `healthyProgressToRefundBudget`: forwards, and only as far as the bytes
+    /// that arrived.
+    ///
+    /// Backwards is a loop or a seek, and replaying is not recovering. Beyond
+    /// the loaded edge is the clock running on empty. Both still end a stall —
+    /// movement is movement — but neither buys the stream more automatic
+    /// rebuilds, which is what kept CI's recovery test from ever reaching the
+    /// manual offer.
+    static func refundableProgress(from previous: Double, to clock: Double, loadedTo: Double) -> Double {
+        guard clock - previous > progressEpsilon, loadedTo > 0 else { return 0 }
+        return max(0, min(clock, loadedTo) - previous)
+    }
+
+    /// Whether "played to the end" really was the end.
+    ///
+    /// A clip whose loaded ranges stop short of its duration did not finish;
+    /// it ran out of data. Looping it replays the part that did arrive — real
+    /// frames, which refunded the recovery budget on every lap — and a person
+    /// sees the opening seconds forever with nothing saying the rest is gone.
+    /// An unknown duration trusts the notification, as before.
+    static func endIsReal(loadedTo: Double, duration: Double) -> Bool {
+        guard duration.isFinite, duration > 0 else { return true }
+        return loadedTo >= duration - endCoverageTolerance
+    }
+
+    /// The far edge of what an item has loaded, in seconds. Zero when unknown.
+    static func loadedEnd(of item: AVPlayerItem?) -> Double {
+        item?.loadedTimeRanges
+            .map { $0.timeRangeValue }
+            .map { ($0.start + $0.duration).seconds }
+            .filter { $0.isFinite }
+            .max() ?? 0
+    }
 }
 
 /// What a video row is doing, said once so that every caller agrees.
@@ -735,6 +797,20 @@ final class VideoPlaybackCoordinator {
     /// overridden by a clip happening to run out at that moment.
     private func restartFromTheBeginning(id: String) {
         guard let entry = entries.first(where: { $0.id == id }) else { return }
+        // An end the bytes never reached is the stream stopping, not the clip
+        // finishing: no loop, no seek to zero. The clock stays where it is,
+        // ahead of its data, which the sampler reads as the stall it is.
+        if let item = entry.player.currentItem, item.duration.isNumeric {
+            let loaded = VideoStallPolicy.loadedEnd(of: item)
+            let duration = item.duration.seconds
+            if !VideoStallPolicy.endIsReal(loadedTo: loaded, duration: duration) {
+                confirmStallNow(
+                    id: id,
+                    reason: "reached the end with \(String(format: "%.2f", loaded))s of \(String(format: "%.2f", duration))s loaded"
+                )
+                return
+            }
+        }
         // Recorded before the seek, and cleared below only if this row really
         // starts again. A clock parked at the duration is the commonest way a
         // perfectly healthy video looks broken from the outside, and the stall
@@ -901,11 +977,15 @@ final class VideoPlaybackCoordinator {
         let now = entry.player.currentTime().seconds
         guard now.isFinite else { return }
 
+        let buffered = VideoStallPolicy.loadedEnd(of: entry.player.currentItem)
+
         // The clip simply being over is the third cause of a frozen clock, and
-        // the one that must never be called a stall.
+        // the one that must never be called a stall — when it is over because
+        // its bytes ran out, not because they stopped arriving.
         if let item = entry.player.currentItem, item.duration.isNumeric {
             let duration = item.duration.seconds
-            if duration > 0, now >= duration - VideoStallPolicy.progressEpsilon {
+            if duration > 0, now >= duration - VideoStallPolicy.progressEpsilon,
+               VideoStallPolicy.endIsReal(loadedTo: buffered, duration: duration) {
                 clearStall(id: id)
                 return
             }
@@ -919,11 +999,6 @@ final class VideoPlaybackCoordinator {
         // buffered edge is the difference between "nothing is happening" and
         // "something is happening that has not reached the screen yet", and
         // only the first of those is a stall.
-        let buffered = entry.player.currentItem?.loadedTimeRanges
-            .map { $0.timeRangeValue }
-            .map { ($0.start + $0.duration).seconds }
-            .filter { $0.isFinite }
-            .max() ?? 0
         let previousBuffered = lastBufferedEnd[id]
 
         defer {
@@ -934,9 +1009,23 @@ final class VideoPlaybackCoordinator {
         // built with `lastTime == now` would call its own first sample a stall.
         guard let previous = lastClock[id] else { return }
 
+        // A clock ahead of its bytes shows nothing new, whatever it says.
+        // Data still arriving is the one excuse, as it is for a still clock.
+        if VideoStallPolicy.isAheadOfLoaded(clock: now, loadedTo: buffered) {
+            if let previousBuffered, buffered > previousBuffered + VideoStallPolicy.progressEpsilon {
+                clearStall(id: id)
+            } else {
+                noteStallSample(id: id)
+            }
+            return
+        }
+
         let moved = abs(now - previous)
         if moved > VideoStallPolicy.progressEpsilon {
-            noteProgress(id: id, seconds: moved)
+            noteProgress(
+                id: id,
+                refundable: VideoStallPolicy.refundableProgress(from: previous, to: now, loadedTo: buffered)
+            )
             return
         }
         if let previousBuffered, buffered > previousBuffered + VideoStallPolicy.progressEpsilon {
@@ -949,8 +1038,9 @@ final class VideoPlaybackCoordinator {
     }
 
     /// The clock moved — forwards, or backwards because the clip looped or
-    /// someone sought. Movement of any kind ends a stall.
-    private func noteProgress(id: String, seconds: Double) {
+    /// someone sought. Movement of any kind ends a stall; only `refundable`
+    /// seconds — forwards, over bytes that arrived — count towards the refund.
+    private func noteProgress(id: String, refundable seconds: Double) {
         if stalls[id] != nil {
             log.info("video: \(id, privacy: .public) recovered, clock moving again")
             clearStall(id: id)
@@ -1053,7 +1143,14 @@ final class VideoPlaybackCoordinator {
         guard let index = entries.firstIndex(where: { $0.id == id }),
               let url = sources[id] else { return }
         var entry = entries[index]
-        let position = entry.player.currentTime()
+        // From where the picture really stopped. A clock that ran on past its
+        // bytes — or to the end of a clip that never arrived — would resume
+        // the new item somewhere with nothing to show.
+        var position = entry.player.currentTime()
+        let loaded = VideoStallPolicy.loadedEnd(of: entry.player.currentItem)
+        if position.isNumeric, loaded > 0, position.seconds > loaded {
+            position = CMTime(seconds: loaded, preferredTimescale: 600)
+        }
         detachItemObservations(from: &entry)
         entry.player.replaceCurrentItem(with: AVPlayerItem(url: url))
         entry.player.isMuted = isMuted
