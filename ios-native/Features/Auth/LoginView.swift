@@ -150,6 +150,15 @@ struct LoginView: View {
     /// them. Only shown for an expiry: someone who tapped "sign out" knows.
     @ViewBuilder
     private var sessionEndedNotice: some View {
+        if session.endedReason == .accountDeleted {
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
+                Image(systemName: "checkmark.circle").accessibilityHidden(true)
+                Text("Your account has been deleted.")
+                    .accessibilityIdentifier("login.accountDeleted")
+            }
+            .font(Typography.caption)
+            .foregroundStyle(Palette.secondaryText)
+        }
         if session.endedReason == .expired {
             HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
                 Image(systemName: "clock.arrow.circlepath").accessibilityHidden(true)

@@ -72,7 +72,7 @@ struct DeepLinkTests {
             case .feed, .postDetail, .pet, .user, .search, .petFollowers, .followingPets, .savedPosts: return true
             // Management, not a place to look: the one case a link must never
             // produce, and the reason this switch has no `default`.
-            case .family, .joinFamily, .blockedUsers, .contactUs: return false
+            case .family, .joinFamily, .blockedUsers, .contactUs, .settings: return false
             }
         }
         for path in ["/pet/abc/edit", "/create", "/post/abc/edit", "/profile/edit", "/compose"] {

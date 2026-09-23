@@ -38,6 +38,8 @@ enum Route: Hashable, Sendable {
     case blockedUsers
     /// Sending feedback — the web client's Contact Us.
     case contactUs
+    /// The web client's Settings. Management, and never a link target.
+    case settings
 }
 
 /// Turns an incoming link into a `Route`.

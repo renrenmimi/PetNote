@@ -28,6 +28,8 @@ final class SessionStore {
     enum EndReason: Equatable {
         case signedOut
         case expired
+        /// The person deleted their account; the sign-in screen says so.
+        case accountDeleted
     }
 
     /// Where the person was when a session ended, and whose session it was.
@@ -68,6 +70,8 @@ final class SessionStore {
     /// already be false by the time the listener asks, and every deliberate
     /// sign-out would be reported as an expiry.
     private var signOutWasDeliberate = false
+    /// What a deliberate sign-out is reported as.
+    private var deliberateReason: EndReason = .signedOut
 
     func start() {
         guard listener == nil else { return }
@@ -100,7 +104,8 @@ final class SessionStore {
                 // That arrives here as a plain sign-out and is indistinguishable
                 // from a deliberate one unless we say which we asked for.
                 if signOutWasDeliberate {
-                    endedReason = .signedOut
+                    endedReason = deliberateReason
+                    deliberateReason = .signedOut
                     pendingResume = nil
                 } else {
                     endedReason = .expired
@@ -162,6 +167,31 @@ final class SessionStore {
             let mapped = AuthError(error)
             log.error("google sign-in failed at Firebase: \(String(describing: mapped), privacy: .public)")
             throw mapped
+        }
+    }
+
+    /// The server has deleted the account. Ends the session as deliberate —
+    /// no "your session ended" and no place to go back to — and says why.
+    ///
+    /// If the SDK noticed first (the Auth user is gone, so a token refresh
+    /// fails) the session has already ended as an expiry; that is corrected
+    /// here rather than left telling the person to sign back in.
+    func accountDeleted() {
+        pendingResume = nil
+        guard case .signedIn = state else {
+            endedReason = .accountDeleted
+            return
+        }
+        deliberateReason = .accountDeleted
+        do {
+            try signOut()
+        } catch {
+            // Firebase could not sign out locally; the server has already
+            // deleted the account, so the screen must not stay signed in.
+            deliberateReason = .signedOut
+            resetScope()
+            state = .signedOut
+            endedReason = .accountDeleted
         }
     }
 

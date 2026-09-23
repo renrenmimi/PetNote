@@ -8,6 +8,7 @@ import SwiftUI
 /// list, because a person holding an invitation code is looking for "my pets",
 /// not for "add a pet".
 struct ProfileLinks: View {
+    let onSettings: () -> Void
     let onJoinFamily: () -> Void
     let onFollowing: () -> Void
     let onSaved: () -> Void
@@ -16,6 +17,15 @@ struct ProfileLinks: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // First, where the web client's gear is: at the top of the profile.
+            row(
+                title: "Settings",
+                detail: nil,
+                systemImage: "gearshape",
+                action: onSettings
+            )
+            .accessibilityIdentifier("profile.settings")
+            Divider().overlay(Palette.separator)
             row(
                 title: "Join a pet's family",
                 detail: "Use an invitation code from one of its owners",
@@ -63,7 +73,7 @@ struct ProfileLinks: View {
     }
 
     private func row(
-        title: String, detail: String?, systemImage: String,
+        title: LocalizedStringKey, detail: LocalizedStringKey?, systemImage: String,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {

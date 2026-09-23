@@ -316,6 +316,7 @@ struct SignedInView: View {
                             onAddPet: { editor = .createPet }
                         )
                         ProfileLinks(
+                            onSettings: { profilePath.append(.settings) },
                             onJoinFamily: { profilePath.append(.joinFamily) },
                             onFollowing: { profilePath.append(.followingPets) },
                             onSaved: { profilePath.append(.savedPosts) },
@@ -353,7 +354,7 @@ struct SignedInView: View {
         switch route {
         case .feed, .search: return true
         case .postDetail, .pet, .user, .petFollowers, .followingPets, .savedPosts, .family, .joinFamily,
-             .blockedUsers, .contactUs: return false
+             .blockedUsers, .contactUs, .settings: return false
         }
     }
 
@@ -481,6 +482,15 @@ struct SignedInView: View {
             )
         case .contactUs:
             ContactUsView(sender: repositories.feedback)
+        case .settings:
+            SettingsView(
+                uid: user.uid,
+                email: user.email,
+                store: repositories.preferences,
+                security: repositories.security,
+                onBlocked: { stack.wrappedValue.append(.blockedUsers) },
+                onContact: { stack.wrappedValue.append(.contactUs) }
+            )
         case .savedPosts:
             SavedPostsView(
                 uid: user.uid,
@@ -652,6 +662,8 @@ struct Repositories {
     let feedback: any FeedbackSending
     let saved: any SavedPostsReading
     let suspension: any SuspensionReading
+    let preferences: any PreferencesStoring
+    let security: any AccountSecurity
 
     static var live: Repositories {
         Repositories(
@@ -672,7 +684,9 @@ struct Repositories {
             reports: FirestoreContentReporter(),
             feedback: FirestoreFeedbackSender(),
             saved: FirestoreSavedPostsSource(),
-            suspension: FirestoreSuspensionSource()
+            suspension: FirestoreSuspensionSource(),
+            preferences: FirestorePreferencesStore(),
+            security: LiveAccountSecurity()
         )
     }
 }
