@@ -153,11 +153,21 @@ jobs:
           # failed` — and the job reported success. Every "ios-native CI is
           # green" before this commit means "it compiled and enough tests ran".
           TEST_STATUS=0
+          # **One test at a time.** In parallel, every suite starts at once on
+          # this runner's three cores with no GPU, and for the first forty
+          # seconds or so nothing gets the main thread: the fastest decoder
+          # suite reports 40s here and 0.03s on a Mac. Every test that waits
+          # on a clock then fails for a reason that is not its own — a render
+          # that polled once in 27s (run 35836743626), a like deadline that
+          # passed mid-test, a 0.5s settle, a media-server probe that timed
+          # out and disabled the stream-break tests. Serial on a Mac is 153s
+          # against 131s in parallel, and the same 745 tests pass.
           xcodebuild test \
             -project PetNoteApp.xcodeproj \
             -scheme PetNote-Emulator \
             -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
             -only-testing:PetNoteAppTests \
+            -parallel-testing-enabled NO \
             -derivedDataPath build/dd \
             -clonedSourcePackagesDirPath build/spm \
             > test.log 2>&1 || TEST_STATUS=$?
@@ -205,7 +215,12 @@ jobs:
                        CommentCountSyncTests LikeConvergenceRegressionTests \
                        SessionLifecycleTests DeepLinkTests \
                        ReleaseHygieneTests ClaimGuardTests; do
-            grep -qE "Suite $suite (passed|failed)" test.log || MISSING="$MISSING $suite"
+            # Any line naming the suite. The app's own log lines land in the
+            # middle of the runner's, and "✔ Suite ImageLoaderBehaviourTests
+            # pa2026-09-23 10:28:10…" once made a suite that ran count as one
+            # that did not (run 35846524818). A suite that never started
+            # leaves no line with its name at all.
+            grep -qE "Suite $suite( |$)" test.log || MISSING="$MISSING $suite"
           done
           if [ -n "$MISSING" ]; then
             echo "::error::These suites did not run at all:$MISSING"
