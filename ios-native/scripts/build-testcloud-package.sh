@@ -564,7 +564,7 @@ fi
 symbols_of() {  # symbols_of <app> -> demangled symbol names of the app's own code
   for f in "$1/PetNote" "$1/PetNote.debug.dylib"; do
     [ -f "$f" ] && nm -a "$f" 2>/dev/null | awk '{print $NF}'
-  done | xcrun swift-demangle --simplified 2>/dev/null
+  done | xcrun swift-demangle 2>/dev/null
 }
 FAULT_TYPES="$(bash "$ROOT/scripts/fault-switches.sh" --types 2>/dev/null)"
 ntypes="$(printf '%s\n' "$FAULT_TYPES" | grep -c . )"

@@ -44,7 +44,10 @@ struct PostShareCard: Transferable {
         DataRepresentation(exportedContentType: .png) { card in
             try await card.pngData()
         }
-        .suggestedFileName("petnote-share.png")
+        // Not the web's "petnote-share.png": a lowercase `petnote-` string in
+        // the Release binary is what the package audit reads as a test
+        // switch, and the audit's rule is simpler kept true than excused.
+        .suggestedFileName("PetNote.png")
     }
 
     /// The web's canvas size, in points.
