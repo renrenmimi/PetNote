@@ -3,8 +3,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import {
   CLOUDINARY_API_KEY,
   CLOUDINARY_API_SECRET,
-  CLOUDINARY_CLOUD_NAME,
-  CLOUDINARY_FOLDER,
+  cloudinaryAccount,
 } from "./platform";
 import { assertCallerAccountActive, getNotificationActor } from "./notifications";
 import { assertRateLimit, RATE_LIMITS, requestData } from "./shared";
@@ -58,8 +57,8 @@ const CLOUDINARY_MAX_VIDEO_BYTES = 80 * 1024 * 1024; // 80 MB
 // User-isolated upload folder. Every uploaded asset lands under
 // petnote/users/{uid}/... so the delete callable can verify ownership by
 // public_id prefix without trusting any client-supplied owner field.
-function userFolder(callerUid: string): string {
-  return `${CLOUDINARY_FOLDER}/users/${callerUid}`;
+function userFolder(callerUid: string, folder: string): string {
+  return `${folder}/users/${callerUid}`;
 }
 
 export const getCloudinaryUploadSignature = onCall(
@@ -90,11 +89,14 @@ export const getCloudinaryUploadSignature = onCall(
       throw new HttpsError("invalid-argument", "resourceType must be 'image' or 'video'.");
     }
 
-    const cloudName = CLOUDINARY_CLOUD_NAME;
+    // The account first: a project without one refuses here, before any
+    // secret is read or anything is signed.
+    const account = cloudinaryAccount();
+    const cloudName = account.cloudName;
     const apiKey = CLOUDINARY_API_KEY.value();
     const apiSecret = CLOUDINARY_API_SECRET.value();
 
-    // cloudName is a constant now, so only the two real secrets can be missing.
+    // The account is settled above, so only the two real secrets can be missing.
     if (!apiKey || !apiSecret) {
       throw new HttpsError("failed-precondition", "Cloudinary secrets are not configured.");
     }
@@ -103,7 +105,7 @@ export const getCloudinaryUploadSignature = onCall(
     const maxFileSize =
       resourceType === "video" ? CLOUDINARY_MAX_VIDEO_BYTES : CLOUDINARY_MAX_IMAGE_BYTES;
     const timestamp = Math.floor(Date.now() / 1000);
-    const folder = userFolder(callerUid);
+    const folder = userFolder(callerUid, account.folder);
     const signature = signCloudinaryParams(
       // Only parameters Cloudinary actually verifies. Adding one it ignores
       // makes the signature unmatchable — see the note above.
@@ -167,7 +169,10 @@ export const deleteCloudinaryAssetsCallable = onCall(
       );
     }
 
-    const ownedPrefix = `${userFolder(callerUid)}/`;
+    // The same account the upload was signed for, so the ownership prefix and
+    // the destroy URL below agree with the folder the asset went into.
+    const account = cloudinaryAccount();
+    const ownedPrefix = `${userFolder(callerUid, account.folder)}/`;
     const validated: Array<{ publicId: string; resourceType: "image" | "video" }> = [];
     for (const raw of assets) {
       if (!raw || typeof raw !== "object") {
@@ -192,10 +197,10 @@ export const deleteCloudinaryAssetsCallable = onCall(
       validated.push({ publicId, resourceType });
     }
 
-    const cloudName = CLOUDINARY_CLOUD_NAME;
+    const cloudName = account.cloudName;
     const apiKey = CLOUDINARY_API_KEY.value();
     const apiSecret = CLOUDINARY_API_SECRET.value();
-    // cloudName is a constant now, so only the two real secrets can be missing.
+    // The account is settled above, so only the two real secrets can be missing.
     if (!apiKey || !apiSecret) {
       throw new HttpsError("failed-precondition", "Cloudinary secrets are not configured.");
     }

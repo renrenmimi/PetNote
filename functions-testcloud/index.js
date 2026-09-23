@@ -89,6 +89,15 @@ const EXPORTS = {
   transferPetPrimaryCallable: family.transferPetPrimaryCallable,
 };
 
+// The test project never resolves to production's Cloudinary account. With
+// no account of its own every media path refuses (platform.ts); this makes a
+// table edit that pointed it at production fail the deploy instead.
+const platform = require("./lib/platform");
+const testAccount = platform.cloudinaryAccountFor("petnote-devtest");
+if (testAccount && testAccount.cloudName === platform.PRODUCTION_CLOUDINARY.cloudName) {
+  throw new Error("testcloud entry: petnote-devtest resolves to production's Cloudinary account");
+}
+
 // Exactly the authorized set: a name added here by accident is a deployment
 // nobody approved.
 const EXPECTED_COUNT = 34;
