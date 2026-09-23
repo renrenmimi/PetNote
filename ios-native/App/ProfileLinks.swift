@@ -10,6 +10,8 @@ import SwiftUI
 struct ProfileLinks: View {
     let onJoinFamily: () -> Void
     let onFollowing: () -> Void
+    let onBlocked: () -> Void
+    let onContact: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,6 +32,22 @@ struct ProfileLinks: View {
                 action: onFollowing
             )
             .accessibilityIdentifier("profile.following")
+            Divider().overlay(Palette.separator)
+            row(
+                title: "Blocked people",
+                detail: nil,
+                systemImage: "hand.raised",
+                action: onBlocked
+            )
+            .accessibilityIdentifier("profile.blocked")
+            Divider().overlay(Palette.separator)
+            row(
+                title: "Contact us",
+                detail: nil,
+                systemImage: "envelope",
+                action: onContact
+            )
+            .accessibilityIdentifier("profile.contact")
         }
         .background(Palette.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: Radius.card))

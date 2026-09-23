@@ -30,6 +30,11 @@ enum Route: Hashable, Sendable {
     /// Joining a pet's family with an invitation code. An action, not a place,
     /// so it is not a link target either.
     case joinFamily
+    /// The people the signed-in person has blocked, to unblock them — the web
+    /// client's Settings → Blocked Users.
+    case blockedUsers
+    /// Sending feedback — the web client's Contact Us.
+    case contactUs
 }
 
 /// Turns an incoming link into a `Route`.

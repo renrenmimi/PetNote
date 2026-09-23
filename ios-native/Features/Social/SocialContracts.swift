@@ -123,6 +123,9 @@ protocol SocialRepository: Sendable {
 
     /// `users/{viewer}/blockedUsers`, owner-only by rule.
     func blockedUserIDs(viewerID: String) async throws -> Set<String>
+    /// `users/{viewer}/blockedUsers/{user}` with only `blockedAt`, a server
+    /// timestamp — the one shape the rules accept.
+    func block(userID: String, viewerID: String) async throws
     func unblock(userID: String, viewerID: String) async throws
 }
 

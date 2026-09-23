@@ -167,8 +167,13 @@ struct EditPostView: View {
 struct PostActionsMenu: View {
     @Bindable var model: PostActionsViewModel
     var onEdit: (String) -> Void
+    /// Somebody else's post only, as on the web. Nil hides it.
+    var onReport: (() -> Void)?
+    /// Blocking the post's author. Somebody else's post only; nil hides it.
+    var onBlock: (() -> Void)?
 
     @State private var isConfirmingDelete = false
+    @State private var isConfirmingBlock = false
 
     var body: some View {
         Menu {
@@ -201,6 +206,19 @@ struct PostActionsMenu: View {
                     Label("Delete", systemImage: "trash")
                 }
                 .accessibilityIdentifier("post.actions.delete")
+            } else {
+                if let onReport {
+                    Button(role: .destructive, action: onReport) {
+                        Label("Report", systemImage: "flag")
+                    }
+                    .accessibilityIdentifier("post.actions.report")
+                }
+                if onBlock != nil {
+                    Button(role: .destructive) { isConfirmingBlock = true } label: {
+                        Label("Block \(model.post.authorName)", systemImage: "hand.raised")
+                    }
+                    .accessibilityIdentifier("post.actions.block")
+                }
             }
         } label: {
             Image(systemName: "ellipsis")
@@ -224,6 +242,22 @@ struct PostActionsMenu: View {
             // Says what is lost, because the cascade takes the comments and
             // likes with it and nothing brings them back.
             Text("The post, its comments and its likes are removed. This cannot be undone.")
+        }
+        .confirmationDialog(
+            "Block @\(model.post.authorName)?",
+            isPresented: $isConfirmingBlock,
+            titleVisibility: .visible
+        ) {
+            Button("Block", role: .destructive) { onBlock?() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            // The web client's words, which say what a block does and does not
+            // do: posts are public, so no block can hide them from anyone.
+            Text("""
+                They won't be able to comment on your posts or join your meetups, \
+                and you won't see their posts. Your posts stay public, so they can \
+                still be viewed by anyone.
+                """)
         }
         // The model says "that did not go through" rather than pretending a
         // delete or pin happened. Until this alert, nothing on screen read it,

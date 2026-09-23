@@ -64,6 +64,7 @@ struct PreviewSocialRepository: SocialRepository {
     func memberPetIDs(userID: String) async throws -> Set<String> { [] }
     func profile(userID: String) async throws -> PublicProfile? { PreviewSocialData.profile }
     func blockedUserIDs(viewerID: String) async throws -> Set<String> { [] }
+    func block(userID: String, viewerID: String) async throws {}
     func unblock(userID: String, viewerID: String) async throws {}
 }
 

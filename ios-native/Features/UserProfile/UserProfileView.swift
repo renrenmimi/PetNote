@@ -5,6 +5,8 @@ struct UserProfileView: View {
     @State private var model: UserProfileModel
     private let onOpenPet: (String) -> Void
     private let onOpenFollowing: () -> Void
+    /// The feed filters blocked authors; it has to be told.
+    private let onUnblocked: () -> Void
 
     /// - Parameter onOpenFollowing: the viewer's own "Following" list. Only
     ///   offered on their own profile — `followingPets` is owner-only by rule,
@@ -12,11 +14,13 @@ struct UserProfileView: View {
     init(
         model: UserProfileModel,
         onOpenPet: @escaping (String) -> Void,
-        onOpenFollowing: @escaping () -> Void
+        onOpenFollowing: @escaping () -> Void,
+        onUnblocked: @escaping () -> Void = {}
     ) {
         _model = State(initialValue: model)
         self.onOpenPet = onOpenPet
         self.onOpenFollowing = onOpenFollowing
+        self.onUnblocked = onUnblocked
     }
 
     var body: some View {
@@ -218,7 +222,12 @@ struct UserProfileView: View {
             Text("Unblock to view their profile and pets again.")
                 .font(Typography.body)
                 .foregroundStyle(Palette.secondaryText)
-            Button { Task { await model.unblock() } } label: {
+            Button {
+                Task {
+                    await model.unblock()
+                    if model.state != .blocked { onUnblocked() }
+                }
+            } label: {
                 HStack(spacing: Spacing.s) {
                     if model.isUnblocking { ProgressView() }
                     Text(model.isUnblocking ? "Unblocking…" : "Unblock")

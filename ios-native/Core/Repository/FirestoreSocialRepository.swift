@@ -218,6 +218,19 @@ actor FirestoreSocialRepository: SocialRepository {
         return Set(snapshot.documents.map(\.documentID))
     }
 
+    /// The web client's `blockUser`: a direct write of `blockedAt` and nothing
+    /// else, merged so blocking twice is not an error.
+    func block(userID: String, viewerID: String) async throws {
+        guard let user = DeepLink.validDocumentID(userID),
+              let viewer = DeepLink.validDocumentID(viewerID),
+              user != viewer else { throw SocialError.denied }
+        try await read {
+            try await db.collection("users").document(viewer)
+                .collection("blockedUsers").document(user)
+                .setData(["blockedAt": FieldValue.serverTimestamp()], merge: true)
+        }
+    }
+
     /// The web page's `unblockUser`: a direct delete, which the rules allow the
     /// owner when not banned and not mid-deletion.
     func unblock(userID: String, viewerID: String) async throws {

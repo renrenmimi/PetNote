@@ -45,9 +45,10 @@ UI 测试里的上传一律走**本地替身**（`ios-native/scripts/upload-stan
 | 设置页（通知偏好、深色、语言、位置、改密码） | ① | 旧版 `Settings.tsx` | 第 5 批 |
 | 中文界面 | ① | 旧版支持 en / zh（默认 en）；**Swift 全部是英文硬编码** | 横跨所有页面，未排批次 |
 | 注销账号 | ① | `Callables.deleteUserAccount` 已登记，无调用 | 第 5 批；共享宠物的处理照服务端规则 |
-| 屏蔽用户 / 屏蔽列表 | ① | 旧版 `BlockedUsers.tsx` | 第 5 批 |
-| 举报 | ① | 旧版 `ReportModal.tsx` | 第 5 批 |
-| 联系我们、隐私政策、服务条款 | ① | 旧版 `ContactUs` / `PrivacyPolicy` / `TermsOfService` | 第 5 批 |
+| 屏蔽用户 / 屏蔽列表 | ② | `BlockingTests`：只写 `blockedAt`；只取消关注「成员只有对方一人」的宠物；Feed 在模型下面加一层过滤，被过滤空的一页会接着取下一页；取消屏蔽后 Feed 重读。入口：帖子菜单「Block」（旧版只有这一处）、「我的 → Blocked people」 | UI 未验；关注超过 500 只宠物时只检查前 500 只 |
+| 举报 | ③ | `ReportUITests`：他人帖子菜单 → Report → 选原因 → Send，服务端 `reports/{uid}_post_{postId}` 的原因、类型、举报人都对；`ReportPostTests` 覆盖「Other」的发送规则、重复举报、结果未知可安全重发 | 旧版只在帖子上提供，评论和用户不提供，这里也一样 |
+| 联系我们 | ② | `ContactUsTests`；入口「我的 → Contact us」 | UI 未验；结果未知时会提示「再发一次可能收到两份」，不自动重发 |
+| 隐私政策、服务条款 | ① | 旧版 `PrivacyPolicy` / `TermsOfService` | 第 5 批 |
 | 账号被封提示 | ① | 旧版 `SuspendedBanner.tsx` | 第 5 批 |
 
 ### 宠物

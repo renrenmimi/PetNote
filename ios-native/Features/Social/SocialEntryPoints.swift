@@ -42,12 +42,14 @@ extension UserProfileView {
         viewerID: String?,
         social: any SocialRepository,
         onOpenPet: @escaping (String) -> Void,
-        onOpenFollowing: @escaping () -> Void
+        onOpenFollowing: @escaping () -> Void,
+        onUnblocked: @escaping () -> Void = {}
     ) {
         self.init(
             model: UserProfileModel(userID: userID, viewerID: viewerID, social: social),
             onOpenPet: onOpenPet,
-            onOpenFollowing: onOpenFollowing
+            onOpenFollowing: onOpenFollowing,
+            onUnblocked: onUnblocked
         )
     }
 }

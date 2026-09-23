@@ -54,15 +54,32 @@ struct SignedInView: View {
     @State private var onboardingDismissed = false
     @State private var needsOnboarding = false
     private let repositories: Repositories
+    /// The feed the model reads, less blocked authors. In `@State` with the
+    /// model, from the same initialisation: this initialiser runs on every
+    /// redraw of the parent, and a filter made fresh each time would not be
+    /// the one the model holds — invalidating it would change nothing.
+    @State private var filteringFeed: BlockFilteringFeed
 
     init(user: UserSession, repositories: Repositories = .live) {
         self.user = user
         self.repositories = repositories
+        let filtering = BlockFilteringFeed(
+            base: repositories.feed, social: repositories.social, viewerID: user.uid
+        )
+        _filteringFeed = State(initialValue: filtering)
         _feedModel = State(
             initialValue: FeedViewModel(
-                feed: repositories.feed, likes: repositories.likes, accountID: user.uid
+                feed: filtering, likes: repositories.likes, accountID: user.uid
             )
         )
+    }
+
+    /// After a block or an unblock: the next read filters by the new list.
+    private func refilterFeed() {
+        Task {
+            await filteringFeed.invalidate()
+            await feedModel.reload()
+        }
     }
 
     var body: some View {
@@ -109,7 +126,9 @@ struct SignedInView: View {
 
             // Ordered deliberately: the feed first, because it owns the like
             // state whose stale offset is the one that shows the wrong number
-            // to the wrong person.
+            // to the wrong person — and its filter before it, so the first
+            // read for the new account uses the new account's blocks.
+            await filteringFeed.switchAccount(to: user.uid)
             feedModel.prepare(for: user.uid)
             path = []
             profilePath = []
@@ -284,7 +303,9 @@ struct SignedInView: View {
                         )
                         ProfileLinks(
                             onJoinFamily: { profilePath.append(.joinFamily) },
-                            onFollowing: { profilePath.append(.followingPets) }
+                            onFollowing: { profilePath.append(.followingPets) },
+                            onBlocked: { profilePath.append(.blockedUsers) },
+                            onContact: { profilePath.append(.contactUs) }
                         )
                     }
                 )
@@ -314,7 +335,8 @@ struct SignedInView: View {
     static func showsTabBar(on route: Route) -> Bool {
         switch route {
         case .feed, .search: return true
-        case .postDetail, .pet, .user, .petFollowers, .followingPets, .family, .joinFamily: return false
+        case .postDetail, .pet, .user, .petFollowers, .followingPets, .family, .joinFamily,
+             .blockedUsers, .contactUs: return false
         }
     }
 
@@ -356,6 +378,12 @@ struct SignedInView: View {
                             if stack.wrappedValue.last == .postDetail(postID: id) {
                                 stack.wrappedValue.removeLast()
                             }
+                        },
+                        onBlocked: { _ in
+                            refilterFeed()
+                            if stack.wrappedValue.last == .postDetail(postID: postID) {
+                                stack.wrappedValue.removeLast()
+                            }
                         }
                     )
                 }
@@ -393,7 +421,8 @@ struct SignedInView: View {
                 viewerID: user.uid,
                 social: repositories.social,
                 onOpenPet: { stack.wrappedValue.append(.pet(petID: $0)) },
-                onOpenFollowing: { stack.wrappedValue.append(.followingPets) }
+                onOpenFollowing: { stack.wrappedValue.append(.followingPets) },
+                onUnblocked: refilterFeed
             )
         case .search(let tag):
             SearchView(
@@ -432,6 +461,14 @@ struct SignedInView: View {
                     petsChanged += 1
                     stack.wrappedValue.removeAll { $0 == .family(petID: petID) || $0 == .pet(petID: petID) }
                 }
+            )
+        case .contactUs:
+            ContactUsView(sender: repositories.feedback)
+        case .blockedUsers:
+            BlockedUsersView(
+                viewerID: user.uid,
+                social: repositories.social,
+                onChanged: refilterFeed
             )
         case .joinFamily:
             JoinFamilyView(
@@ -579,6 +616,8 @@ struct Repositories {
     let social: any SocialRepository
     let family: any FamilyRepository
     let search: any SearchRepository
+    let reports: any ContentReporting
+    let feedback: any FeedbackSending
 
     static var live: Repositories {
         Repositories(
@@ -595,7 +634,9 @@ struct Repositories {
             auth: LiveAccountAuth(),
             social: FirestoreSocialRepository(),
             family: FirestoreFamilyRepository(),
-            search: FirestoreSearchRepository()
+            search: FirestoreSearchRepository(),
+            reports: FirestoreContentReporter(),
+            feedback: FirestoreFeedbackSender()
         )
     }
 }

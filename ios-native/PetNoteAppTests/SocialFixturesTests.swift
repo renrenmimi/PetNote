@@ -174,6 +174,15 @@ final class FakeSocialRepository: SocialRepository, @unchecked Sendable {
         return blocked
     }
 
+    var blockError: Error?
+    private(set) var blockedNow: [String] = []
+
+    func block(userID: String, viewerID: String) async throws {
+        blockedNow.append(userID)
+        if let blockError { throw blockError }
+        blocked.insert(userID)
+    }
+
     func unblock(userID: String, viewerID: String) async throws {
         unblocked.append(userID)
         if let unblockError { throw unblockError }
@@ -186,6 +195,8 @@ final class FakeFamilyPets: PetRepository, @unchecked Sendable {
     var pet: Pet?
     var petError: Error?
     var family: [PetFamilyMember] = []
+    /// Per pet, for tests that look at more than one; falls back to `family`.
+    var familiesByPet: [String: [PetFamilyMember]] = [:]
     var familyError: Error?
     private(set) var familyReads = 0
 
@@ -197,7 +208,7 @@ final class FakeFamilyPets: PetRepository, @unchecked Sendable {
     func family(petID: String) async throws -> [PetFamilyMember] {
         familyReads += 1
         if let familyError { throw familyError }
-        return family
+        return familiesByPet[petID] ?? family
     }
 
     func posts(petID: String, after cursor: PageCursor?, limit: Int) async throws -> Page<Post> { .empty }

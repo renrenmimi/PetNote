@@ -16,13 +16,23 @@ struct PostDetailActions: View {
     let repositories: Repositories
     let onEdit: (String) -> Void
     let onDeleted: @MainActor (String) -> Void
+    /// The author was blocked. The shell refilters the feed and leaves this
+    /// screen, which is now showing somebody the person asked not to see.
+    let onBlocked: @MainActor (String) -> Void
 
     @State private var actions: PostActionsViewModel?
+    @State private var isReporting = false
+    @State private var blockFailure: String?
 
     var body: some View {
         Group {
             if let actions {
-                PostActionsMenu(model: actions, onEdit: onEdit)
+                PostActionsMenu(
+                    model: actions,
+                    onEdit: onEdit,
+                    onReport: { isReporting = true },
+                    onBlock: { Task { await block(actions.post.authorID) } }
+                )
             } else {
                 // Nothing to act on yet. Not a disabled button: a control that
                 // is on screen and does nothing is a dead button, and this one
@@ -32,6 +42,32 @@ struct PostDetailActions: View {
             }
         }
         .task(id: postID) { await load() }
+        .sheet(isPresented: $isReporting) {
+            ReportPostSheet(postID: postID, reporter: repositories.reports) {
+                isReporting = false
+            }
+        }
+        .alert(
+            "Couldn't block",
+            isPresented: Binding(get: { blockFailure != nil }, set: { if !$0 { blockFailure = nil } })
+        ) {
+            Button("OK", role: .cancel) { blockFailure = nil }
+        } message: {
+            Text(blockFailure ?? "")
+        }
+    }
+
+    private func block(_ authorID: String) async {
+        do {
+            try await Blocking.block(
+                authorID, viewerID: user.uid, social: repositories.social, pets: repositories.pets
+            )
+            onBlocked(authorID)
+        } catch {
+            // Said, not swallowed: a block that did not happen must not look
+            // like one that did.
+            blockFailure = "The block didn't go through. Try again."
+        }
     }
 
     private func load() async {
