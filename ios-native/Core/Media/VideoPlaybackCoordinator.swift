@@ -313,6 +313,17 @@ final class VideoPlaybackCoordinator {
     private(set) var viewerPaused: Set<String> = []
     /// Videos whose clip ran out and were not restarted.
     private(set) var reachedEnd: Set<String> = []
+    /// Videos whose player stopped at an end its bytes never reached.
+    ///
+    /// AVFoundation parks such a player as `.paused`, and the sampler reads
+    /// `.paused` as "nobody asked for playback" and clears the stall. CI run
+    /// 35836743915 (iOS 26.2): after the third automatic rebuild the clock ran
+    /// from 6.48s to the clip's 16.00s over bytes that ended at 5.53s, the
+    /// player paused there, the stall was cleared before the ten seconds that
+    /// earn the manual offer — and the row sat on a frozen frame calling
+    /// itself `playing`, with nothing said and nothing offered, for as long
+    /// as anyone watched. Cleared by a new item, a real end, or the row going.
+    private(set) var strandedAtFalseEnd: Set<String> = []
 
     /// The one video currently showing buffering feedback, or nil.
     ///
@@ -482,6 +493,7 @@ final class VideoPlaybackCoordinator {
         isSuspended = false
         viewerPaused.removeAll()
         reachedEnd.removeAll()
+        strandedAtFalseEnd.removeAll()
         clearAllStalls()
         lastClock.removeAll()
         lastBufferedEnd.removeAll()
@@ -804,6 +816,7 @@ final class VideoPlaybackCoordinator {
             let loaded = VideoStallPolicy.loadedEnd(of: item)
             let duration = item.duration.seconds
             if !VideoStallPolicy.endIsReal(loadedTo: loaded, duration: duration) {
+                strandedAtFalseEnd.insert(id)
                 confirmStallNow(
                     id: id,
                     reason: "reached the end with \(String(format: "%.2f", loaded))s of \(String(format: "%.2f", duration))s loaded"
@@ -811,6 +824,7 @@ final class VideoPlaybackCoordinator {
                 return
             }
         }
+        strandedAtFalseEnd.remove(id)
         // Recorded before the seek, and cleared below only if this row really
         // starts again. A clock parked at the duration is the commonest way a
         // perfectly healthy video looks broken from the outside, and the stall
@@ -966,6 +980,14 @@ final class VideoPlaybackCoordinator {
         // must not be able to produce a single pixel of error.
         guard !isInterrupted, !isSuspended, !viewerPaused.contains(id) else {
             clearStall(id: id)
+            return
+        }
+        // A player that stopped at an end its bytes never reached is paused
+        // by AVFoundation, not by anyone: the person still expects a picture,
+        // so it goes on counting as stalled until a rebuild or the offer.
+        // There is no clock to reason about — it is parked at the duration.
+        if strandedAtFalseEnd.contains(id) {
+            noteStallSample(id: id)
             return
         }
         // `.paused` means nobody asked for playback. A stall is only a stall
@@ -1152,6 +1174,7 @@ final class VideoPlaybackCoordinator {
             position = CMTime(seconds: loaded, preferredTimescale: 600)
         }
         detachItemObservations(from: &entry)
+        strandedAtFalseEnd.remove(id)
         entry.player.replaceCurrentItem(with: AVPlayerItem(url: url))
         entry.player.isMuted = isMuted
         attachItemObservations(to: &entry)
@@ -1232,6 +1255,7 @@ final class VideoPlaybackCoordinator {
         presentationSizes[id] = nil
         advanced.remove(id)
         reachedEnd.remove(id)
+        strandedAtFalseEnd.remove(id)
         viewerPaused.remove(id)
         clearStall(id: id)
         lastClock[id] = nil

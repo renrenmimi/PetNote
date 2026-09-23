@@ -1844,18 +1844,33 @@ enum MediaServer {
     /// being collected, which is not an async context; and a suite that fails
     /// red because nobody started a server is the fastest way to teach everyone
     /// to ignore it.
+    ///
+    /// **Asked more than once.** One three-second probe, made while every
+    /// suite in the run was being collected at once, failed on CI (run
+    /// 35836744692) against a server the workflow had seen answer six minutes
+    /// earlier. A failed probe fails nothing — it quietly disables the
+    /// stream-break tests — and only the workflow's second guard noticed.
     nonisolated static let isAnswering: Bool = {
-        var request = URLRequest(url: URL(string: host + "/a2-long.mp4")!)
-        request.httpMethod = "HEAD"
-        request.timeoutInterval = 3
-        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        let done = DispatchSemaphore(value: 0)
+        func probe() -> Bool {
+            var request = URLRequest(url: URL(string: host + "/a2-long.mp4")!)
+            request.httpMethod = "HEAD"
+            request.timeoutInterval = 3
+            request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            let done = DispatchSemaphore(value: 0)
+            var ok = false
+            URLSession.shared.dataTask(with: request) { _, response, _ in
+                ok = (response as? HTTPURLResponse)?.statusCode == 200
+                done.signal()
+            }.resume()
+            _ = done.wait(timeout: .now() + 6)
+            return ok
+        }
         var ok = false
-        URLSession.shared.dataTask(with: request) { _, response, _ in
-            ok = (response as? HTTPURLResponse)?.statusCode == 200
-            done.signal()
-        }.resume()
-        _ = done.wait(timeout: .now() + 6)
+        for attempt in 1...4 {
+            ok = probe()
+            if ok { break }
+            if attempt < 4 { Thread.sleep(forTimeInterval: 2) }
+        }
         if !ok {
             print("""
                 SKIPPING the stream-break tests: nothing on \(host), or no \

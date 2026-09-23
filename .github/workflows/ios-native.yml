@@ -236,6 +236,19 @@ jobs:
             exit "$TEST_STATUS"
           fi
 
+      # A crash of the test host is reported by xcodebuild as "Test crashed
+      # with signal segv" against every test that was in flight, and nothing
+      # more: diagnostics collection is off (it hangs for ten minutes after a
+      # failure), so the backtrace exists only as the simulator's crash report
+      # on this machine. Run 35836744989 lost one exactly that way.
+      - name: Collect crash reports
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/crash-reports"
+          find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 2 -name 'PetNote*' \
+            -exec cp {} "$RUNNER_TEMP/crash-reports/" \; 2>/dev/null || true
+          ls -l "$RUNNER_TEMP/crash-reports"
+
       # `always()`, because the run that needs its log is the one that failed.
       # Without this the only evidence of a red job is whatever fitted in the
       # step's own output.
@@ -248,6 +261,7 @@ jobs:
             ios-native/test.log
             ios-native/build/dd/Logs/Test/*.xcresult
             ${{ runner.temp }}/media-server.log
+            ${{ runner.temp }}/crash-reports
           retention-days: 14
           if-no-files-found: warn
 
