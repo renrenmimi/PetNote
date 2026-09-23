@@ -16,6 +16,7 @@ struct SignedInView: View {
     let user: UserSession
 
     @Environment(SessionStore.self) private var session
+    @Environment(\.scenePhase) private var scenePhase
     @State private var path: [Route] = []
     @State private var profilePath: [Route] = []
     @State private var selectedTab: AppTab = .home
@@ -53,6 +54,8 @@ struct SignedInView: View {
     /// because an account without a name is not one other people can find.
     @State private var onboardingDismissed = false
     @State private var needsOnboarding = false
+    /// The web client's `isBanned`, which drives its `SuspendedBanner`.
+    @State private var isSuspended = false
     private let repositories: Repositories
     /// The feed the model reads, less blocked authors. In `@State` with the
     /// model, from the same initialisation: this initialiser runs on every
@@ -118,6 +121,7 @@ struct SignedInView: View {
             // it wiped a moment later. A probe read `resume=restored path=0`.
             guard let previous = boundAccountID else {
                 boundAccountID = user.uid
+                await checkSuspension()
                 await checkOnboarding()
                 return
             }
@@ -137,7 +141,16 @@ struct SignedInView: View {
             onboardingDismissed = false
             petsChanged += 1
             video.releaseAll(reason: "account switched")
+            isSuspended = false
+            await checkSuspension()
             await checkOnboarding()
+        }
+        // The web client listens to the ban document; this app reads rather
+        // than listens anywhere, so it reads again whenever it comes back to
+        // the front — which is when a ban issued while it was away would
+        // otherwise go unmentioned until the next launch.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await checkSuspension() } }
         }
         // Leaving the home tab leaves the feed's videos behind a screen nobody
         // is looking at. Released for the same reason navigating away is
@@ -167,6 +180,7 @@ struct SignedInView: View {
         NavigationStack(path: $path) {
             FeedView(model: feedModel, path: $path)
                 .environment(video)
+                .suspendedBanner(isSuspended)
                 .safeAreaInset(edge: .top, spacing: 0) {
                     if !user.isEmailVerified {
                         EmailVerificationBanner(
@@ -311,6 +325,7 @@ struct SignedInView: View {
                     }
                 )
             )
+            .suspendedBanner(isSuspended)
             .navigationDestination(for: Route.self) { route in
                 destination(route, stack: $profilePath)
             }
@@ -323,6 +338,7 @@ struct SignedInView: View {
     /// profile behaves exactly as the same screen opened from the feed.
     private func destination(_ route: Route, stack: Binding<[Route]>) -> some View {
         destinationContent(route, stack: stack)
+            .suspendedBanner(isSuspended)
             .toolbar(Self.showsTabBar(on: route) ? .visible : .hidden, for: .tabBar)
     }
 
@@ -566,6 +582,15 @@ struct SignedInView: View {
         )
     }
 
+    /// A read that fails decides nothing: the banner keeps whatever the last
+    /// answer was, rather than appearing or vanishing on a network error.
+    private func checkSuspension() async {
+        let account = user.uid
+        guard let suspended = try? await repositories.suspension.isSuspended(uid: account),
+              boundAccountID == account else { return }
+        isSuspended = suspended
+    }
+
     /// The web client's rule, from `Feed.tsx`: signed in, profile loaded, and
     /// `onboardingComplete` not set. A read that fails shows nothing rather
     /// than guessing — offering onboarding to someone who has already done it
@@ -626,6 +651,7 @@ struct Repositories {
     let reports: any ContentReporting
     let feedback: any FeedbackSending
     let saved: any SavedPostsReading
+    let suspension: any SuspensionReading
 
     static var live: Repositories {
         Repositories(
@@ -645,7 +671,8 @@ struct Repositories {
             search: FirestoreSearchRepository(),
             reports: FirestoreContentReporter(),
             feedback: FirestoreFeedbackSender(),
-            saved: FirestoreSavedPostsSource()
+            saved: FirestoreSavedPostsSource(),
+            suspension: FirestoreSuspensionSource()
         )
     }
 }
