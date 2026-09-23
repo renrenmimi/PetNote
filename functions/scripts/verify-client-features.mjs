@@ -119,6 +119,14 @@ async function getDoc(user, path) {
   return r.json.fields ?? {};
 }
 
+/** A client query, as the app runs it: the caller's own token, under the rules. */
+async function runQuery(user, structuredQuery) {
+  const r = await http("POST", `${FS_BASE}:runQuery`, { token: user?.token, body: { structuredQuery } });
+  if (r.status !== 200) return { ok: false, status: r.status, message: r.json?.error?.message ?? r.json?.[0]?.error?.message };
+  const rows = Array.isArray(r.json) ? r.json.filter((row) => row.document) : [];
+  return { ok: true, names: rows.map((row) => row.document.name) };
+}
+
 async function patchDoc(user, path, fields) {
   const mask = Object.keys(fields).map((f) => `updateMask.fieldPaths=${encodeURIComponent(f)}`).join("&");
   return http("PATCH", `${FS_BASE}/${path}?${mask}`, { token: user?.token, body: { fields } });
@@ -195,6 +203,17 @@ async function main() {
     record("pets: creator is primary in the family (+onFamilyCreated)", "allowed",
       str(fam.d?.role) === "primary" && !!str(fam.d?.userName), `role=${str(fam.d?.role)} userName=${str(fam.d?.userName) ? "set" : "missing"}`);
 
+    // The iOS compose pet picker's own query (ComposePetSource.swift:34): a
+    // collection-group read of family by userId. Without the family.userId
+    // override the app could not list pets to post about.
+    const mine = await runQuery(A, {
+      from: [{ collectionId: "family", allDescendants: true }],
+      where: { fieldFilter: { field: { fieldPath: "userId" }, op: "EQUAL", value: { stringValue: A.uid } } },
+    });
+    record("pets: the compose picker's family query finds this pet", "allowed",
+      mine.ok && mine.names.some((n) => n.includes(`/pets/${petId}/family/`)),
+      mine.ok ? `${mine.names.length} memberships` : `HTTP ${mine.status}: ${mine.message}`);
+
     refusedWrite("rules: direct write to a pet", await patchDoc(A, `pets/${petId}`, { name: { stringValue: "hacked" } }));
     refusedWrite("rules: direct write into a family", await patchDoc(A, `pets/${petId}/family/${B.uid}`, { role: { stringValue: "member" } }));
     refused("pets: a non-member cannot edit", await call(B, "updatePetCallable", { petId, bio: "x" }), ["permission-denied"]);
@@ -248,7 +267,16 @@ async function main() {
     const operationId = `${TAG}-op`;
     const text = `TEST CONTENT ${TAG} post`;
     if (U) refused("posting: an unverified account is refused", await call(U, "createPostCallable", { petId, text, operationId: `${TAG}-u` }), ["failed-precondition", "permission-denied"]);
-    const postPet = created.petDeleter ? null : petId;
+    // The family checks hand the first pet to B, so posting uses a second pet
+    // of A's when they ran — otherwise the posting and comment checks would be
+    // silently skipped on exactly the runs where everything else worked.
+    let postPet = petId;
+    if (created.petDeleter) {
+      const second = await call(A, "createPetCallable", { name: `TC2 ${TAG.slice(-9)}`, species: "cat", relationship: "mom" });
+      allowed("pets: a second pet for the posting checks", second);
+      postPet = second.result?.id ?? second.result?.petId ?? null;
+      created.pet2 = postPet;
+    }
     if (postPet) {
       const post = await call(A, "createPostCallable", { petId: postPet, text, operationId });
       allowed("posting: create a text post", post, post.result?.postId ?? post.result?.id ?? "");
@@ -310,6 +338,13 @@ async function main() {
       }
     }
 
+    if (created.pet2) {
+      allowed("pets: the second pet is deleted", await call(A, "deletePetCallable", { petId: created.pet2 }));
+      const secondGone = await poll(async () => ({ done: (await getDoc(A, `pets/${created.pet2}`)) === null }));
+      record("pets: the second pet is gone", "allowed", secondGone.done, secondGone.done ? "404" : "still there");
+      if (secondGone.done) created.pet2 = null;
+    }
+
     // --- Deleting the pet
     const deleter = created.petDeleter ?? A;
     const del = await call(deleter, "deletePetCallable", { petId });
@@ -330,8 +365,8 @@ main()
     results.push({ id: "crash", ok: false });
   })
   .finally(() => {
-    if (created.pet || created.post) {
-      console.log(`LEFT BEHIND: pet=${created.pet ?? "-"} post=${created.post ?? "-"} (text starts "TEST CONTENT ${TAG}")`);
+    if (created.pet || created.pet2 || created.post) {
+      console.log(`LEFT BEHIND: pet=${created.pet ?? "-"} pet2=${created.pet2 ?? "-"} post=${created.post ?? "-"} (text starts "TEST CONTENT ${TAG}")`);
     }
     const failed = results.filter((r) => r.ok === false);
     const blocked = results.filter((r) => r.ok === "blocked");
