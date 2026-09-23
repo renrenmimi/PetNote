@@ -562,7 +562,7 @@ final class ComposeViewModel {
         case .publishing: String(localized: "Publishing…")
         case .failed: String(localized: "Retry", comment: "Share button label after publishing failed")
         case .published: String(localized: "Posted", comment: "Share button label once the post is published")
-        case .idle: String(localized: "Share", comment: "Button that publishes the new post")
+        case .idle: String(localized: "compose.publish", defaultValue: "Share", comment: "Button that publishes the new post")
         }
     }
 

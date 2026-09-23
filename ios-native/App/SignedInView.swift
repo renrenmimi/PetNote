@@ -99,11 +99,11 @@ struct SignedInView: View {
             // selection where it was, which is how a "create" tab behaves in
             // the apps people already know.
             Color.clear
-                .tabItem { Label("Post", systemImage: "plus.square") }
+                .tabItem { Label(String(localized: "tab.create", defaultValue: "Post", comment: "Tab that opens the composer"), systemImage: "plus.square") }
                 .tag(AppTab.create)
                 .accessibilityIdentifier("tab.create")
             profileTab
-                .tabItem { Label("Profile", systemImage: "person.crop.circle") }
+                .tabItem { Label(String(localized: "tab.profile", defaultValue: "Profile", comment: "Tab for your own profile"), systemImage: "person.crop.circle") }
                 .tag(AppTab.profile)
                 .accessibilityIdentifier("tab.profile")
         }

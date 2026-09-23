@@ -155,7 +155,7 @@ struct PetEditorView: View {
     // MARK: - Details
 
     private var detailsSection: some View {
-        Section("About") {
+        Section(String(localized: "petEditor.about", defaultValue: "About", comment: "The pet editor's section for name, species and the rest")) {
             TextField("Name", text: $model.name)
                 .accessibilityIdentifier("petEditor.name")
             Picker("Species", selection: $model.species) {

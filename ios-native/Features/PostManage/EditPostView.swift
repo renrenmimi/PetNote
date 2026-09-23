@@ -181,7 +181,9 @@ struct PostActionsMenu: View {
                 Task { await model.toggleBookmark() }
             } label: {
                 Label(
-                    model.isBookmarked ? "Remove from saved" : "Save",
+                    model.isBookmarked
+                        ? String(localized: "Remove from saved")
+                        : String(localized: "menu.bookmark", defaultValue: "Save", comment: "Bookmark this post"),
                     systemImage: model.isBookmarked ? "bookmark.fill" : "bookmark"
                 )
             }
