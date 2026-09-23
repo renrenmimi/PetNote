@@ -282,6 +282,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             start = int(first) if first else 0
             end = int(last) if last else len(data) - 1
             end = min(end, len(data) - 1)
+            if start >= len(data):
+                self.unsatisfiable(len(data), with_body)
+                return
             chunk = data[start:end + 1]
             self.send_response(206)
             self.send_header("Content-Type", ctype)
@@ -336,6 +339,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             end = min(int(last), total - 1) if last else total - 1
         else:
             start, end = 0, total - 1
+
+        if start >= total:
+            self.unsatisfiable(total, with_body)
+            return
 
         # Anything outside the media data — `ftyp`, `moov`, `free` — is served
         # whole, always. See `mdat_range`.
@@ -398,6 +405,30 @@ class Handler(http.server.BaseHTTPRequestHandler):
         job and the thing worth testing.
         """
         time.sleep(HANG_SECONDS)
+
+    def unsatisfiable(self, total, with_body):
+        """A range that starts at or past the end of the file: 416, not 206.
+
+        This used to fall through and answer `206` with `Content-Range:
+        bytes <start>-<total-1>/<total>` (an end before the start) and an empty
+        body — for the cut stream and the mended one alike. So a client that
+        asked past the end could not tell "the stream is cut" from "the stream
+        is fine and I asked for nothing", and
+        `sharedStateCrossTalksAndSeparateSessionsDoNot` read two empty answers
+        as cross-talk on CI (run 35755470453, where the rendered clip was 75
+        bytes shorter than the range it asked for). A 416 with
+        `Content-Range: bytes */<total>` is what RFC 9110 prescribes, and a
+        test that meets one fails saying so.
+        """
+        body = b"range not satisfiable"
+        self.send_response(416)
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Range", "bytes */%d" % total)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if with_body:
+            self.wfile.write(body)
+        self.note(416, 0)
 
     def ranged(self, start, end, total, body, with_body, declare=None):
         self.send_response(206)
