@@ -897,7 +897,7 @@ struct PostDetailViewModelTests {
         await spin(6)
         #expect(deadline.durations.count == 1, "the request went out with no deadline: \(deadline.durations)")
         #expect(model.isLiked, "optimistic while it is in flight")
-        deadline.pass()
+        await deadline.passOnceArmed()
         await spin(60)
 
         #expect(model.isLiked == false, "the heart is still showing a like nothing confirmed")
