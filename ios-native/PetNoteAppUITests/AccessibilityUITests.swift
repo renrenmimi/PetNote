@@ -163,8 +163,14 @@ final class AccessibilityUITests: XCTestCase {
                     "\(context): \(control.identifier) is not reachable", file: file, line: line
                 )
             } else {
+                // Compared at a thousandth of a point. A frame is reported as
+                // the difference of two window coordinates, and a control that
+                // starts at a fractional y comes out a hair under its height:
+                // the legal links on the sign-in screen at XS measured
+                // 43.99999999999994pt. That is floating point, not a smaller
+                // target; anything a finger could notice is still refused.
                 XCTAssertGreaterThanOrEqual(
-                    control.frame.height, 44,
+                    (control.frame.height * 1000).rounded() / 1000, 44,
                     "\(context): \(control.identifier) is \(control.frame.height)pt tall",
                     file: file, line: line
                 )
