@@ -93,6 +93,7 @@ final class JourneyUITests: XCTestCase {
         try addPet(app)
         try publish(app)            // upload goes to the stand-in, not Cloudinary
         try openAndEdit(app)
+        try pinAndUnpin(app)
         try delete(app)
     }
 
@@ -282,6 +283,37 @@ final class JourneyUITests: XCTestCase {
                       "the detail screen still shows the old text\n\(app.debugDescription)")
     }
 
+    /// Pinned from the post's menu, and the menu then offers the other way.
+    private func pinAndUnpin(_ app: XCUIApplication) throws {
+        let uid = try XCTUnwrap(uid)
+        let postID = try XCTUnwrap(try JourneyAdmin.postDocumentNames(withText: editedCaption).first?
+            .split(separator: "/").last.map(String.init))
+        openPostMenu(app)
+        let pin = app.buttons["post.actions.pin"]
+        XCTAssertTrue(waitUntilHittable(pin, in: app, timeout: 10), "the author is not offered Pin")
+        XCTAssertEqual(pin.label, "Pin to profile")
+        pin.tap()
+        var pinned: String?
+        for _ in 0..<20 {
+            pinned = JourneyAdmin.string(try JourneyAdmin.fields(path: "users/\(uid)")?["pinnedPostId"])
+            if pinned == postID { break }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        XCTAssertEqual(pinned, postID, "the pin was not written")
+
+        openPostMenu(app)
+        let unpin = app.buttons["post.actions.pin"]
+        XCTAssertTrue(waitUntilHittable(unpin, in: app, timeout: 10))
+        XCTAssertEqual(unpin.label, "Unpin from profile", "the menu did not learn the post is pinned")
+        unpin.tap()
+        for _ in 0..<20 {
+            pinned = JourneyAdmin.string(try JourneyAdmin.fields(path: "users/\(uid)")?["pinnedPostId"])
+            if pinned == nil || pinned == "" { break }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        XCTAssertTrue(pinned == nil || pinned == "", "the unpin was not written: \(pinned ?? "")")
+    }
+
     private func delete(_ app: XCUIApplication) throws {
         openPostMenu(app)
         tapMenuItem(app, id: "post.actions.delete", label: "Delete")
@@ -304,102 +336,6 @@ final class JourneyUITests: XCTestCase {
             Thread.sleep(forTimeInterval: 0.5)
         }
         XCTAssertEqual(remaining, 0, "the post still exists on the server")
-    }
-
-    // MARK: - Helpers
-
-    /// Types into a `.newPassword` field the way a person who declines the
-    /// suggestion does.
-    ///
-    /// Focusing such a field makes iOS offer "Use Strong Password?" in a sheet
-    /// over the keyboard — the system's behaviour, and the reason the field is
-    /// `.newPassword`. While it is up, typed characters do not all reach the
-    /// field: a first run of this test typed ten and the field held one. The
-    /// sheet is closed with its own Close button, which is "choose my own",
-    /// and the length is checked afterwards so a lost keystroke fails here
-    /// rather than as "the button stayed disabled".
-    private func typeNewPassword(_ password: String, into field: XCUIElement, in app: XCUIApplication) {
-        XCTAssertTrue(waitUntilHittable(field, in: app))
-        let offer = app.staticTexts["Use Strong Password?"]
-        // Focusing can bring the offer back, so focus and close until the
-        // field has the keyboard with nothing over it.
-        for _ in 0..<3 {
-            if !field.hasKeyboardFocusValue { field.tap() }
-            guard offer.waitForExistence(timeout: 3) else { break }
-            let close = app.buttons["xmark"].exists ? app.buttons["xmark"] : app.buttons["Close"]
-            XCTAssertTrue(close.exists, "the strong-password offer has no Close\n\(app.debugDescription)")
-            close.tap()
-            XCTAssertTrue(waitForDisappearance(of: offer, timeout: 5), "the strong-password offer would not close")
-        }
-        XCTAssertFalse(offer.exists, "the strong-password offer kept coming back")
-        field.typeText(password)
-        XCTAssertEqual((field.value as? String)?.count, password.count,
-                       "the password field did not receive every character")
-    }
-
-    /// Replaces what a field holds, and checks that it did.
-    ///
-    /// The tap goes to the bottom-right corner, not the centre: a tap in the
-    /// middle of a text view put the cursor at the *start* of its text, so the
-    /// deletes removed nothing and the new text was typed in front of the old
-    /// — the server then held "…edited" followed by the original, and the
-    /// test read that as an edit that was never written.
-    private func replaceText(in element: XCUIElement, with text: String) {
-        element.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.9)).tap()
-        let current = (element.value as? String) ?? ""
-        if !current.isEmpty {
-            element.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count))
-        }
-        element.typeText(text)
-        XCTAssertEqual(element.value as? String, text, "the field does not hold what was typed")
-    }
-
-    private func choose(_ app: XCUIApplication, picker identifier: String, option label: String) {
-        let picker = app.buttons[identifier]
-        for _ in 0..<4 where !(picker.exists && picker.isHittable) { app.swipeUp() }
-        XCTAssertTrue(waitUntilHittable(picker, in: app, timeout: 10), "no \(identifier)")
-        picker.tap()
-        let option = app.buttons[label]
-        XCTAssertTrue(waitUntilHittable(option, in: app, timeout: 10), "no \(label) in \(identifier)")
-        option.tap()
-    }
-
-    private func pickFirstPhoto(_ app: XCUIApplication) throws {
-        // PHPicker's cells are labelled "Photo, <date>". It runs out of
-        // process, and its tree is reached through the app's.
-        let photo = app.images.matching(NSPredicate(format: "label BEGINSWITH 'Photo'")).firstMatch
-        XCTAssertTrue(
-            waitForExistence(of: photo, in: app, timeout: 30),
-            "no photo in the picker — add one with `xcrun simctl addmedia`\n\(app.debugDescription)"
-        )
-        photo.tap()
-        // Multi-select pickers need confirming; single-select ones close on tap.
-        let confirm = app.buttons["Add"]
-        if confirm.waitForExistence(timeout: 5) { confirm.tap() }
-    }
-
-    private func openPostMenu(_ app: XCUIApplication) {
-        let menu = app.buttons["post.actions"]
-        XCTAssertTrue(waitUntilHittable(menu, in: app, timeout: 30), "no post menu on the detail screen")
-        menu.tap()
-    }
-
-    private func tapMenuItem(_ app: XCUIApplication, id: String, label: String) {
-        let byID = app.buttons[id]
-        let item = byID.waitForExistence(timeout: 5) ? byID : app.buttons[label]
-        XCTAssertTrue(waitUntilHittable(item, in: app, timeout: 10), "no \(label) in the post menu")
-        item.tap()
-    }
-
-    private func waitForDisappearance(of element: XCUIElement, timeout: TimeInterval) -> Bool {
-        let gone = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: element)
-        return XCTWaiter().wait(for: [gone], timeout: timeout) == .completed
-    }
-
-    private func waitForEnabled(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
-        let enabled = expectation(for: NSPredicate(format: "exists == true AND enabled == true"),
-                                  evaluatedWith: element)
-        return XCTWaiter().wait(for: [enabled], timeout: timeout) == .completed
     }
 }
 
@@ -491,6 +427,15 @@ enum JourneyAdmin {
         return rows.compactMap { (($0 as? [String: Any])?["document"] as? [String: Any])?["name"] as? String }
     }
 
+    /// A test account's profile and name reservation, which deleting the Auth
+    /// account leaves behind.
+    static func removeProfile(uid: String) {
+        if let name = (try? fields(path: "users/\(uid)")).flatMap({ $0 }).flatMap({ string($0["displayName"]) }) {
+            deleteDocument(path: "usernames/\(reservationID(for: name))")
+        }
+        deleteDocument(path: "users/\(uid)")
+    }
+
     static func deleteDocument(path: String) {
         EmulatorAdmin.deleteComment(
             documentName: "projects/\(EmulatorAdmin.projectID)/databases/(default)/documents/\(path)"
@@ -515,8 +460,4 @@ enum JourneyAdmin {
         let first = (media?.first as? [String: Any])?["mapValue"] as? [String: Any]
         return string((first?["fields"] as? [String: Any])?["url"])
     }
-}
-
-private extension XCUIElement {
-    var hasKeyboardFocusValue: Bool { (value(forKey: "hasKeyboardFocus") as? Bool) ?? false }
 }

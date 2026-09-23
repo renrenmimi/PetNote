@@ -6,6 +6,7 @@ struct JoinFamilyView: View {
     @State private var model: JoinFamilyModel
     private let onOpenPet: (String) -> Void
     @FocusState private var codeFocused: Bool
+    @FocusState private var customFocused: Bool
 
     init(model: JoinFamilyModel, onOpenPet: @escaping (String) -> Void) {
         _model = State(initialValue: model)
@@ -65,7 +66,16 @@ struct JoinFamilyView: View {
             .focused($codeFocused)
             .onSubmit { Task { await model.check() } }
             .padding(Spacing.m)
-            .background(Palette.cardBackground, in: .rect(cornerRadius: Radius.control))
+            // The box is the field. Only the line of text inside it took a
+            // tap; the 12pt of grey box around it did nothing — found by a UI
+            // test whose tap near the box's corner left nothing focused to type
+            // into. The tap sits on the background, under the text, so a tap
+            // on the text still places the cursor where it lands.
+            .background {
+                RoundedRectangle(cornerRadius: Radius.control)
+                    .fill(Palette.cardBackground)
+                    .onTapGesture { codeFocused = true }
+            }
             .disabled(model.step == .checking)
             .accessibilityLabel("Invitation code")
             .accessibilityIdentifier("join.code")
@@ -118,8 +128,14 @@ struct JoinFamilyView: View {
                             set: { model.updateCustomRelationship($0) }
                         )
                     )
+                    .focused($customFocused)
                     .padding(Spacing.m)
-                    .background(Palette.cardBackground, in: .rect(cornerRadius: Radius.control))
+                    // The whole box, as with the code above.
+                    .background {
+                        RoundedRectangle(cornerRadius: Radius.control)
+                            .fill(Palette.cardBackground)
+                            .onTapGesture { customFocused = true }
+                    }
                     .accessibilityIdentifier("join.custom")
                     Text("\(model.customRelationship.count)/\(PetValidation.customRelationshipLimit)")
                         .font(Typography.caption)
