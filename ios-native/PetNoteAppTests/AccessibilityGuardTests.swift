@@ -183,4 +183,96 @@ struct AccessibilityGuardTests {
         #expect(Self.buttonsSizedFromOutside(in: violation, named: "v").count == 1)
         #expect(Self.buttonsSizedFromOutside(in: fixed, named: "f").isEmpty)
     }
+
+    // MARK: - An identifier on a stack that hides the ones inside it
+
+    /// An identifier on a plain stack is handed down to every element inside
+    /// it and replaces theirs. It hid "profile.addPet" (the journey test found
+    /// no Add a pet), the pet page's and the social notices' retry buttons,
+    /// the pet editor's "I understand", and "user.unblock". Declaring the
+    /// stack `.accessibilityElement(children: .contain)` first keeps both.
+    ///
+    /// Only stacks that hold an identified element of their own are flagged:
+    /// on a stack of plain text the hand-down is what a test querying
+    /// `staticTexts[id]` relies on.
+    static let containersAllowedToHandDown: Set<String> = [
+        // LikeUITests read it as staticTexts["feed.likeError"]; its dismiss
+        // button keeps its label, which is what VoiceOver reads.
+        "feed.likeError",
+    ]
+
+    static func containersHidingTheirChildren(in text: String, named name: String) -> [String] {
+        let lines = text.components(separatedBy: .newlines)
+        let stack = #"^(VStack|HStack|ZStack|LazyVStack|LazyHStack|Group|Section)\b"#
+        var found: [String] = []
+        for (index, line) in lines.enumerated() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix(".accessibilityIdentifier(") else { continue }
+            if containersAllowedToHandDown.contains(where: { trimmed.contains("\"\($0)\"") }) { continue }
+            // Up through this view's modifiers to the brace that closes it.
+            var cursor = index - 1
+            var contained = false
+            while cursor >= 0, lines[cursor].trimmingCharacters(in: .whitespaces).hasPrefix(".") {
+                if lines[cursor].contains(".accessibilityElement(") { contained = true }
+                cursor -= 1
+            }
+            guard !contained, cursor >= 0,
+                  lines[cursor].trimmingCharacters(in: .whitespaces) == "}" else { continue }
+            // Back to the line that opened it.
+            var depth = 0
+            var opener = cursor
+            while opener >= 0 {
+                depth += lines[opener].filter { $0 == "}" }.count - lines[opener].filter { $0 == "{" }.count
+                if depth <= 0 { break }
+                opener -= 1
+            }
+            guard opener >= 0,
+                  lines[opener].trimmingCharacters(in: .whitespaces)
+                    .range(of: stack, options: .regularExpression) != nil
+            else { continue }
+            let body = lines[(opener + 1)..<cursor]
+            if body.contains(where: { $0.contains(".accessibilityIdentifier(") }) {
+                found.append("\(name) line \(index + 1): \(trimmed)")
+            }
+        }
+        return found
+    }
+
+    @Test func noContainerIdentifierHidesTheOnesInsideIt() throws {
+        let found = try Self.appSources().flatMap {
+            Self.containersHidingTheirChildren(in: $0.text, named: $0.name)
+        }
+        #expect(
+            found.isEmpty,
+            """
+            An identifier on a stack replaces the identifiers of the elements \
+            inside it. Put .accessibilityElement(children: .contain) before it:
+            \(found.joined(separator: "\n"))
+            """
+        )
+    }
+
+    @Test func theContainerGuardCatchesTheShapeItIsFor() {
+        let violation = """
+            VStack {
+                Button("Try again") { retry() }
+                    .accessibilityIdentifier("x.retry")
+            }
+            .padding()
+            .accessibilityIdentifier("x.notice")
+            """
+        let fixed = violation.replacingOccurrences(
+            of: ".padding()\n", with: ".padding()\n.accessibilityElement(children: .contain)\n"
+        )
+        let textOnly = """
+            HStack {
+                Text("Something went wrong")
+            }
+            .accessibilityIdentifier("x.error")
+            """
+        #expect(fixed != violation, "the control case did not apply the fix")
+        #expect(Self.containersHidingTheirChildren(in: violation, named: "v").count == 1)
+        #expect(Self.containersHidingTheirChildren(in: fixed, named: "f").isEmpty)
+        #expect(Self.containersHidingTheirChildren(in: textOnly, named: "t").isEmpty)
+    }
 }

@@ -42,6 +42,7 @@ struct PetEditorView: View {
                     Button("Try again") { Task { await model.loadIfEditing() } }
                         .accessibilityIdentifier("petEditor.retry")
                 }
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("petEditor.loadFailed")
             case .ready:
                 photoSection
@@ -260,6 +261,7 @@ struct PetEditorView: View {
                     Button("I have checked") { model.acknowledgeUncertainOutcome() }
                         .accessibilityIdentifier("petEditor.acknowledgeUncertain")
                 }
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("petEditor.uncertain")
             default:
                 Button(model.mode.isEdit ? "Save" : "Add pet") {

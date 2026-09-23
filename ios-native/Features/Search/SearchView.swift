@@ -214,6 +214,7 @@ struct SearchView: View {
                     }
                 }
             }
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("explore.tags")
         }
     }
@@ -247,6 +248,7 @@ struct SearchView: View {
                     }
                 }
             }
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("explore.trending")
         }
     }
@@ -275,6 +277,7 @@ struct SearchView: View {
                     }
                 }
             }
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("explore.discover")
         }
     }
@@ -296,6 +299,7 @@ struct SearchView: View {
                     }
                 }
             }
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("explore.popular")
         }
     }

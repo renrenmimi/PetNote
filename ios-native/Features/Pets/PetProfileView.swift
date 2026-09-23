@@ -407,6 +407,7 @@ struct PetProfileView: View {
         .padding(Spacing.l)
         .background(Palette.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: Radius.card))
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier(identifier)
     }
 }
