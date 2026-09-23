@@ -132,21 +132,6 @@ struct LikeConvergenceRegressionTests {
         Issue.record("never reached: \(what)", sourceLocation: sourceLocation)
     }
 
-    /// Polls for something the model has to do *on its own initiative*, with an
-    /// upper bound. Used only where the property under test is "it gives up
-    /// eventually"; every other scenario here is gated, not timed.
-    static func happens(
-        within seconds: Double,
-        _ condition: @MainActor () -> Bool
-    ) async -> Bool {
-        let deadline = Date().addingTimeInterval(seconds)
-        while Date() < deadline {
-            if condition() { return true }
-            try? await Task.sleep(for: .milliseconds(10))
-        }
-        return condition()
-    }
-
     static func post(_ id: String = "p", likeCount: Int) -> Post {
         Post(
             id: id, authorID: "u", authorName: "A", authorAvatarURL: nil,
@@ -169,7 +154,7 @@ struct LikeConvergenceRegressionTests {
         let feed = Feed()
         feed.page = [Self.post(likeCount: 5)]
         let likes = Likes()
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
         #expect(model.displayLikeCount(for: model.posts[0]) == 5)
 
@@ -194,7 +179,7 @@ struct LikeConvergenceRegressionTests {
         feed.page = [Self.post(likeCount: 5)]
         let likes = Likes()
         likes.liked = ["p"]
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
         #expect(model.isLiked(Self.post(likeCount: 5)))
 
@@ -218,7 +203,7 @@ struct LikeConvergenceRegressionTests {
         let feed = Feed()
         feed.page = [Self.post(likeCount: 5)]
         let likes = Likes()
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         // Tap, and let it settle: the server now holds the like.
@@ -248,7 +233,7 @@ struct LikeConvergenceRegressionTests {
         let feed = Feed()
         feed.page = [Self.post(likeCount: 5)]
         let likes = Likes()
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         likes.liked = ["p"]
@@ -281,7 +266,7 @@ struct LikeConvergenceRegressionTests {
         feed.page = [Self.post(likeCount: 5)]
         let likes = Likes()
         likes.liked = ["p"]
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         likes.liked = []
@@ -314,7 +299,7 @@ struct LikeConvergenceRegressionTests {
         let feed = Feed()
         feed.page = [Self.post(likeCount: 10)]
         let likes = Likes()
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         likes.liked = ["p"]
@@ -352,7 +337,7 @@ struct LikeConvergenceRegressionTests {
         let feed = Feed()
         feed.page = [Self.post(likeCount: 10)]
         let likes = Likes()
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         likes.liked = ["p"]
@@ -390,7 +375,7 @@ struct LikeConvergenceRegressionTests {
         let feed = Feed()
         feed.page = [Self.post(likeCount: 10)]
         let likes = Likes()
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         // The refresh's like-status read samples the server, then stalls.
@@ -425,7 +410,7 @@ struct LikeConvergenceRegressionTests {
         feed.page = [Self.post(likeCount: 10)]
         let likes = Likes()
         likes.liked = ["p"]
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
         #expect(model.isLiked(Self.post(likeCount: 10)))
 
@@ -458,7 +443,7 @@ struct LikeConvergenceRegressionTests {
         feed.page = [Self.post(likeCount: 10)]
         let likes = Likes()
         likes.liked = ["p"]
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
         #expect(model.isLiked(Self.post(likeCount: 10)))
 
@@ -491,7 +476,7 @@ struct LikeConvergenceRegressionTests {
         let feed = Feed()
         feed.page = [Self.post(likeCount: 10)]
         let likes = Likes()
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         likes.liked = ["p"]
@@ -526,24 +511,26 @@ struct LikeConvergenceRegressionTests {
         let feed = Feed()
         feed.page = [Self.post(likeCount: 10)]
         let likes = Likes()
-        // A deadline short enough to observe. The scenario does not race it:
-        // the request under test is never answered at all, so the deadline is
-        // the only thing that can settle it.
-        let model = FeedViewModel(
-            feed: feed, likes: likes, pageSize: 1, likeDeadline: .milliseconds(20)
-        )
+        // The request under test is never answered, so the deadline is the
+        // only thing that can settle it — and it passes when the test says.
+        let deadline = ManualDeadline()
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: deadline.sleeper)
         await model.loadFirstPageIfNeeded()
 
         likes.neverAnswer = true
         model.toggleLike(model.posts[0])
         await Self.settle(until: { likes.calls.count == 1 }, "the like request went out")
         #expect(model.isLiked(Self.post(likeCount: 10)), "optimistic while it is in flight")
+        #expect(deadline.durations.count == 1, "the request went out with no deadline: \(deadline.durations)")
 
-        let gaveUp = await Self.happens(within: 3) { model.likeFailureMessage != nil }
+        deadline.pass()
+        await Self.settle(
+            until: { model.likeFailureMessage != nil },
+            "the request never settled: this post is wedged for the rest of the session"
+        )
         likes.stopNeverAnswering()
         await model.waitForPendingLikes()
 
-        #expect(gaveUp, "the request never settled: this post is wedged for the rest of the session")
         #expect(
             !model.isLiked(Self.post(likeCount: 10)),
             "an unconfirmed like was left on screen with nothing left to confirm it"
@@ -560,26 +547,28 @@ struct LikeConvergenceRegressionTests {
         let feed = Feed()
         feed.page = [Self.post(likeCount: 10)]
         let likes = Likes()
-        // A deadline short enough to observe. The scenario does not race it:
-        // the request under test is never answered at all, so the deadline is
-        // the only thing that can settle it.
-        let model = FeedViewModel(
-            feed: feed, likes: likes, pageSize: 1, likeDeadline: .milliseconds(20)
-        )
+        // Only the first request's deadline is passed. The second request is
+        // answered, and with a 20ms real deadline it used to race that answer
+        // and, on CI, lose it: the like it confirmed was taken back off the
+        // screen (run 35823259740, `isLiked → false`, count 10).
+        let deadline = ManualDeadline()
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: deadline.sleeper)
         await model.loadFirstPageIfNeeded()
 
         likes.neverAnswer = true
         model.toggleLike(model.posts[0])
-        _ = await Self.happens(within: 3) { model.likeFailureMessage != nil }
+        await Self.settle(until: { likes.calls.count == 1 }, "the like request went out")
+        deadline.pass()
+        await Self.settle(until: { model.likeFailureMessage != nil }, "the first request was not given up on")
         likes.stopNeverAnswering()
         await model.waitForPendingLikes()
 
         likes.liked = ["p"]
         model.toggleLike(model.posts[0])
-        let answered = await Self.happens(within: 3) { likes.calls.count == 2 }
+        await Self.settle(until: { likes.calls.count == 2 }, "the second tap never reached the repository")
         await model.waitForPendingLikes()
 
-        #expect(answered, "the second tap never reached the repository")
+        #expect(deadline.durations.count == 2, "each request starts its own deadline: \(deadline.durations)")
         #expect(model.isLiked(Self.post(likeCount: 10)))
         #expect(model.displayLikeCount(for: model.posts[0]) == 11)
     }
@@ -594,7 +583,7 @@ struct LikeConvergenceRegressionTests {
         let feed = Feed()
         feed.page = [Self.post(likeCount: 10)]
         let likes = Likes()
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         likes.hold()
@@ -622,7 +611,7 @@ struct LikeConvergenceRegressionTests {
         let feed = Feed()
         feed.page = [Self.post(likeCount: 10)]
         let likes = Likes()
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         likes.hold()
@@ -653,7 +642,7 @@ struct LikeConvergenceRegressionTests {
         let feed = Feed()
         feed.page = [Self.post(likeCount: 10)]
         let likes = Likes()
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         likes.hold()
@@ -697,7 +686,7 @@ struct LikeConvergenceRegressionTests {
         let feed = Feed()
         feed.page = [Self.post(likeCount: 10)]
         let likes = Likes()
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         // Account A likes it. The trigger has not run: the count is still 10.
@@ -730,7 +719,7 @@ struct LikeConvergenceRegressionTests {
         feed.page = [Self.post(likeCount: 10)]
         let likes = Likes()
         likes.liked = ["p"]
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         model.prepare(for: "account-A")
         await model.loadFirstPageIfNeeded()
         #expect(model.isLiked(Self.post(likeCount: 10)))

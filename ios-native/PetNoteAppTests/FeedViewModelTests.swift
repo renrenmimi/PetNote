@@ -133,7 +133,7 @@ struct FeedViewModelTests {
     @Test func loadsTheFirstPage() async {
         let feed = FakeFeed()
         feed.pages = [[Self.post("a"), Self.post("b")]]
-        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 2)
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 2, sleeper: ManualDeadline.never)
 
         await model.loadFirstPageIfNeeded()
 
@@ -146,7 +146,7 @@ struct FeedViewModelTests {
     @Test func aDeletedPostLeavesTheFeedAndTheAnchorWithIt() async {
         let feed = FakeFeed()
         feed.pages = [[Self.post("a"), Self.post("b"), Self.post("c")]]
-        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 3)
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 3, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
         model.rememberScrollAnchor("b")
 
@@ -162,7 +162,7 @@ struct FeedViewModelTests {
     @Test func removingAPostTheFeedDoesNotHoldChangesNothing() async {
         let feed = FakeFeed()
         feed.pages = [[Self.post("a"), Self.post("b")]]
-        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 2)
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 2, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
         model.rememberScrollAnchor("a")
 
@@ -176,7 +176,7 @@ struct FeedViewModelTests {
     @Test func doesNotRequestTheSameCursorTwice() async {
         let feed = FakeFeed()
         feed.pages = [[Self.post("a")], [Self.post("b")]]
-        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1, sleeper: ManualDeadline.never)
 
         await model.loadFirstPageIfNeeded()
         // The same row triggers three times, which is what a flung list does:
@@ -200,7 +200,7 @@ struct FeedViewModelTests {
         // The same post arrives on both pages, as it would if something were
         // written while paging.
         feed.pages = [[Self.post("a")], [Self.post("a"), Self.post("b")]]
-        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1, sleeper: ManualDeadline.never)
 
         await model.loadFirstPageIfNeeded()
         await model.loadMoreIfNeeded(currentItem: model.posts.last)
@@ -212,7 +212,7 @@ struct FeedViewModelTests {
     @Test func failureIsNotAnEmptyList() async {
         let feed = FakeFeed()
         feed.error = NSError(domain: "test", code: 1)
-        let model = FeedViewModel(feed: feed, likes: FakeLikes())
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), sleeper: ManualDeadline.never)
 
         await model.loadFirstPageIfNeeded()
 
@@ -226,13 +226,13 @@ struct FeedViewModelTests {
     @Test func offlineIsDistinguishedFromAServerError() async {
         let offlineFeed = FakeFeed()
         offlineFeed.error = NSError(domain: NSURLErrorDomain, code: -1009)
-        let offline = FeedViewModel(feed: offlineFeed, likes: FakeLikes())
+        let offline = FeedViewModel(feed: offlineFeed, likes: FakeLikes(), sleeper: ManualDeadline.never)
         await offline.loadFirstPageIfNeeded()
         #expect(offline.state == .failed(.offline))
 
         let serverFeed = FakeFeed()
         serverFeed.error = NSError(domain: "FIRFirestoreErrorDomain", code: 13)
-        let server = FeedViewModel(feed: serverFeed, likes: FakeLikes())
+        let server = FeedViewModel(feed: serverFeed, likes: FakeLikes(), sleeper: ManualDeadline.never)
         await server.loadFirstPageIfNeeded()
         #expect(server.state == .failed(.server))
     }
@@ -242,7 +242,7 @@ struct FeedViewModelTests {
     @Test func aRefreshDiscardsAPageFromTheOldGeneration() async {
         let feed = FakeFeed()
         feed.pages = [[Self.post("old1")], [Self.post("old2")]]
-        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         // Page 2 is requested, then the list is replaced before it lands.
@@ -264,7 +264,7 @@ struct FeedViewModelTests {
         feed.pages = [[Self.post("a"), Self.post("b"), Self.post("c")]]
         let likes = FakeLikes()
         likes.alreadyLiked = ["b"]
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 3)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 3, sleeper: ManualDeadline.never)
 
         await model.loadFirstPageIfNeeded()
 
@@ -281,7 +281,7 @@ struct FeedViewModelTests {
         feed.pages = [[Self.post("a", likeCount: 4)]]
         let likes = FakeLikes()
         likes.likeResult = .changed
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         model.toggleLike(model.posts[0])
@@ -306,7 +306,7 @@ struct FeedViewModelTests {
         feed.pages = [[Self.post("a", likeCount: 5)]]
         let likes = FakeLikes()
         likes.likeResult = .unchanged
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         model.toggleLike(model.posts[0])
@@ -324,7 +324,7 @@ struct FeedViewModelTests {
         let likes = FakeLikes()
         likes.alreadyLiked = ["a"]
         likes.unlikeResult = .unchanged
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
         #expect(model.isLiked(Self.post("a")))
 
@@ -345,7 +345,7 @@ struct FeedViewModelTests {
         feed.pages = [[Self.post("a", likeCount: 5)]]
         let likes = FakeLikes()
         likes.likeError = NSError(domain: "test", code: 14)
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         model.toggleLike(model.posts[0])   // like   → 6
@@ -364,7 +364,7 @@ struct FeedViewModelTests {
         feed.pages = [[Self.post("a"), Self.post("b")]]
         let likes = FakeLikes()
         likes.alreadyLiked = ["a", "b"]
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 2)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 2, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
         #expect(model.likedPostIDs == ["a", "b"])
 
@@ -381,7 +381,7 @@ struct FeedViewModelTests {
         feed.pages = [[Self.post("a", likeCount: 4), Self.post("b")]]
         let likes = FakeLikes()
         likes.likeResult = .postNotFound
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 2)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 2, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         model.toggleLike(model.posts[0])
@@ -398,7 +398,7 @@ struct FeedViewModelTests {
         feed.pages = [[Self.post("a", likeCount: 4)]]
         let likes = FakeLikes()
         likes.likeError = NSError(domain: "test", code: 14)
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         model.toggleLike(model.posts[0])
@@ -421,7 +421,7 @@ struct FeedViewModelTests {
         feed.pages = [[Self.post("a", likeCount: 5)]]
         let likes = FakeLikes()
         likes.batchError = NSError(domain: "test", code: 14)
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         // Unknown, so the heart renders unset — but the count is untouched.
@@ -447,7 +447,7 @@ struct FeedViewModelTests {
         feed.pages = [[Self.post("a", likeCount: 5)]]
         let likes = FakeLikes()
         likes.likeResult = .changed
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         model.toggleLike(model.posts[0])
@@ -473,7 +473,7 @@ struct FeedViewModelTests {
         let feed = FakeFeed()
         feed.pages = [[Self.post("a", likeCount: 5)]]
         let likes = FakeLikes()
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         // like, unlike, like — three intents, settled in order by the model's
@@ -499,7 +499,7 @@ struct FeedViewModelTests {
         let likes = FakeLikes()
         likes.alreadyLiked = ["a"]
         likes.unlikeError = NSError(domain: NSURLErrorDomain, code: -1009)
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
         #expect(model.isLiked(Self.post("a")))
 
@@ -523,14 +523,14 @@ struct FeedViewModelTests {
         // Account one has liked it.
         let first = FakeLikes()
         first.alreadyLiked = ["a"]
-        let firstModel = FeedViewModel(feed: feed, likes: first, pageSize: 1)
+        let firstModel = FeedViewModel(feed: feed, likes: first, pageSize: 1, sleeper: ManualDeadline.never)
         await firstModel.loadFirstPageIfNeeded()
         #expect(firstModel.isLiked(Self.post("a")))
 
         // Account two has not. A new model is what sign-out produces.
         let second = FakeLikes()
         second.alreadyLiked = []
-        let secondModel = FeedViewModel(feed: feed, likes: second, pageSize: 1)
+        let secondModel = FeedViewModel(feed: feed, likes: second, pageSize: 1, sleeper: ManualDeadline.never)
         await secondModel.loadFirstPageIfNeeded()
 
         #expect(!secondModel.isLiked(Self.post("a")), "the new account sees its own state")
@@ -544,7 +544,7 @@ struct FeedViewModelTests {
         feed.pages = [[Self.post("old")], [Self.post("stale")]]
         let likes = FakeLikes()
         likes.alreadyLiked = ["stale"]
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         let trigger = model.posts.last
@@ -563,7 +563,7 @@ struct FeedViewModelTests {
         let feed = FakeFeed()
         feed.pages = [[Self.post("a", likeCount: 0)]]
         let likes = FakeLikes()
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         for _ in 0..<5 { model.toggleLike(model.posts[0]) }
@@ -600,7 +600,7 @@ struct FeedViewModelTests {
     @Test func aRefreshInFlightStillHoldsTheRowsItIsReplacing() async {
         let feed = FakeFeed()
         feed.pages = [[Self.post("a"), Self.post("b")]]
-        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 2)
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 2, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         let during = Reading()
@@ -622,7 +622,7 @@ struct FeedViewModelTests {
     @Test func aFailedRefreshKeepsTheRowsAndStaysRetryable() async {
         let feed = FakeFeed()
         feed.pages = [[Self.post("a"), Self.post("b")]]
-        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 2)
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 2, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         let during = Reading()
@@ -648,7 +648,7 @@ struct FeedViewModelTests {
     @Test func aFailedFirstLoadWithNothingToKeepIsStillAWholeScreenFailure() async {
         let feed = FakeFeed()
         feed.error = NSError(domain: NSURLErrorDomain, code: -1009)
-        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 2)
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 2, sleeper: ManualDeadline.never)
 
         await model.loadFirstPageIfNeeded()
 
@@ -660,7 +660,7 @@ struct FeedViewModelTests {
     @Test func aFailedNextPageKeepsThePagesAlreadyRead() async {
         let feed = FakeFeed()
         feed.pages = [[Self.post("a")], [Self.post("b")], [Self.post("c")]]
-        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
         await model.loadMoreIfNeeded(currentItem: model.posts.last)
         #expect(model.posts.map(\.id) == ["a", "b"])
@@ -687,7 +687,7 @@ struct FeedViewModelTests {
     @Test func aLateRefreshAnswerDoesNotOverwriteANewerOne() async {
         let feed = FakeFeed()
         feed.pages = [[Self.post("first")]]
-        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         // A samples ["stale"], then B runs inside A's open read and brings
@@ -710,7 +710,7 @@ struct FeedViewModelTests {
     @Test func aLateRefreshFailureDoesNotOverwriteANewerSuccess() async {
         let feed = FakeFeed()
         feed.pages = [[Self.post("first")]]
-        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         feed.error = NSError(domain: "test", code: 13)
@@ -736,7 +736,7 @@ struct FeedViewModelTests {
     @Test func retryingALostPageAddsItOnceAndSkipsNothing() async {
         let feed = FakeFeed()
         feed.pages = [[Self.post("a")], [Self.post("b")], [Self.post("c")]]
-        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         feed.error = NSError(domain: "test", code: 13)
@@ -763,7 +763,7 @@ struct FeedViewModelTests {
     @Test func retryingTwiceDoesNotFetchThePageTwice() async {
         let feed = FakeFeed()
         feed.pages = [[Self.post("a")], [Self.post("b")], [Self.post("c")]]
-        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         feed.error = NSError(domain: "test", code: 13)
@@ -789,7 +789,7 @@ struct FeedViewModelTests {
     @Test func aRefreshClearsALostPageAndItsCursor() async {
         let feed = FakeFeed()
         feed.pages = [[Self.post("a")], [Self.post("b")]]
-        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1)
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 1, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
 
         feed.error = NSError(domain: "test", code: 13)
