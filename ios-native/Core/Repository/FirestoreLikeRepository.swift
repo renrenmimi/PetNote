@@ -34,7 +34,7 @@ actor FirestoreLikeRepository: LikeRepository {
         return uid
     }
 
-    // MARK: - Fault injection (debug builds only)
+    // MARK: - Fault injection (emulator builds only)
 
     /// The one like outcome the server cannot be asked to produce: a request
     /// that goes out, lands, and is never answered.
@@ -52,11 +52,15 @@ actor FirestoreLikeRepository: LikeRepository {
     /// does when the answer never comes, and whether the app wrote anything a
     /// second time while it was waiting.
     ///
-    /// **Debug-only, and gated at compile time rather than at runtime.** In a
-    /// Release build this enum, its raw values, and every use of them do not
-    /// exist; `PetNoteAppTests/ReleaseHygieneTests` is what keeps that true
-    /// for anything added later. Nothing in the app's own UI passes the flag.
-    #if DEBUG
+    /// **Emulator-only, and gated at compile time rather than at runtime.**
+    /// It was `#if DEBUG`, which is also true of Debug-TestCloud — the package
+    /// that goes on the phone — so this switch was in it. The rule in
+    /// `Config/Debug-Emulator.xcconfig` is that anything which makes the app
+    /// misbehave is `PETNOTE_FAULT_INJECTION`; the package audit found this
+    /// one on the wrong side of it. Now `scripts/fault-switches.sh` lists it
+    /// and the audit proves it absent from the device package. Nothing in the
+    /// app's own UI passes the flag.
+    #if PETNOTE_FAULT_INJECTION
     enum Fault: String, CaseIterable {
         case writeThenNeverAnswer = "-petnote-like-lose-response"
     }
@@ -113,7 +117,7 @@ actor FirestoreLikeRepository: LikeRepository {
                 // See this type's documentation for what the alternative cost.
                 "counted": false,
             ])
-            #if DEBUG
+            #if PETNOTE_FAULT_INJECTION
             if Self.injectedFault == .writeThenNeverAnswer {
                 // After the write, deliberately. The document exists and the
                 // trigger will count it; what is being thrown away is only the
