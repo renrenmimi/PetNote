@@ -271,6 +271,37 @@ async function main() {
         const pinned = await getDoc(A, `users/${A.uid}`);
         record("posting: pinnedPostId is set", "allowed", str(pinned?.pinnedPostId) === postId, `pinnedPostId=${str(pinned?.pinnedPostId) ? "set" : "missing"}`);
         allowed("posting: unpin it", await call(A, "setPinnedPostCallable", { postId: null }));
+
+        // --- Comments on it, deleted under the rule the app offers the control
+        // by: the comment's author and the post's author, nobody else.
+        const c1 = await call(B, "createCommentCallable", { postId, text: `TEST CONTENT ${TAG} c1` });
+        allowed("comments: B comments on A's post", c1);
+        const c2 = await call(B, "createCommentCallable", { postId, text: `TEST CONTENT ${TAG} c2` });
+        const c3 = await call(A, "createCommentCallable", { postId, text: `TEST CONTENT ${TAG} c3` });
+        allowed("comments: A comments on their own post", c3);
+        const [c1Id, c2Id, c3Id] = [c1, c2, c3].map((c) => c.result?.id);
+        if (c1Id && c2Id && c3Id) {
+          const three = await poll(async () => {
+            const p = await getDoc(A, `posts/${postId}`);
+            return { done: int(p?.commentCount) === 3, p };
+          });
+          record("comments: commentCount 3 (+onCommentCreated)", "allowed", three.done, `commentCount=${int(three.p?.commentCount)}`);
+          refused("comments: B cannot delete A's comment on A's post", await call(B, "deleteCommentCallable", { postId, commentId: c3Id }), ["permission-denied"]);
+          allowed("comments: the comment's author deletes it", await call(B, "deleteCommentCallable", { postId, commentId: c1Id }));
+          allowed("comments: the post's author deletes someone else's", await call(A, "deleteCommentCallable", { postId, commentId: c2Id }));
+          allowed("comments: A deletes their own", await call(A, "deleteCommentCallable", { postId, commentId: c3Id }));
+          allowed("comments: deleting one already gone still succeeds", await call(B, "deleteCommentCallable", { postId, commentId: c1Id }));
+          const zero = await poll(async () => {
+            const p = await getDoc(A, `posts/${postId}`);
+            return { done: int(p?.commentCount) === 0, p };
+          });
+          record("comments: commentCount back to 0 (+onCommentDeleted)", "allowed", zero.done, `commentCount=${int(zero.p?.commentCount)}`);
+          const left = [];
+          for (const id of [c1Id, c2Id, c3Id]) {
+            if ((await getDoc(A, `posts/${postId}/comments/${id}`)) !== null) left.push(id);
+          }
+          record("comments: all three documents are gone", "allowed", left.length === 0, left.length ? `still there: ${left.join(",")}` : "404 ×3");
+        }
         refused("posting: someone else cannot delete it", await call(B, "deletePostCallable", { postId }), ["permission-denied"]);
         allowed("posting: the author deletes it", await call(A, "deletePostCallable", { postId }));
         const gone = await poll(async () => ({ done: (await getDoc(A, `posts/${postId}`)) === null }));
