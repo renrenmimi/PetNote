@@ -1,5 +1,6 @@
 import FirebaseAuth
 import Foundation
+import GoogleSignIn
 import OSLog
 import Observation
 
@@ -142,6 +143,28 @@ final class SessionStore {
         }
     }
 
+    /// "Continue with Google": Google's page for the tokens, then Firebase.
+    ///
+    /// Here rather than in a model owned by the sign-in screen: the moment
+    /// Firebase signs in, the session listener swaps the whole tree to the
+    /// signed-in one, and a screen-owned model would be torn down mid-call.
+    ///
+    /// - Returns: false when the person backed out of Google's page.
+    func signInWithGoogle(using google: any GoogleTokenProviding) async throws(AuthError) -> Bool {
+        guard let tokens = try await google.tokens() else { return false }
+        let credential = GoogleAuthProvider.credential(
+            withIDToken: tokens.idToken, accessToken: tokens.accessToken
+        )
+        do {
+            _ = try await Auth.auth().signIn(with: credential)
+            return true
+        } catch {
+            let mapped = AuthError(error)
+            log.error("google sign-in failed at Firebase: \(String(describing: mapped), privacy: .public)")
+            throw mapped
+        }
+    }
+
     func signOut() throws {
         signOutWasDeliberate = true
         do {
@@ -150,6 +173,11 @@ final class SessionStore {
             signOutWasDeliberate = false
             throw error
         }
+        // Google keeps its own signed-in user in the Keychain. Firebase has
+        // its own session, so this is not needed to sign out of PetNote — but
+        // left behind, the next "Continue with Google" would go straight
+        // through as the previous person. Safe when Google was never used.
+        GIDSignIn.sharedInstance.signOut()
         resetScope()
     }
 
@@ -226,6 +254,7 @@ final class SessionStore {
         pendingResume = Resume(route: currentRoute, uid: uid)
         endedReason = .expired
         try? Auth.auth().signOut()
+        GIDSignIn.sharedInstance.signOut()
         // Not relying on the listener alone: it is what normally drives this,
         // but if the SDK already had no user the listener will not fire again
         // and the app would stay on a screen it cannot use.

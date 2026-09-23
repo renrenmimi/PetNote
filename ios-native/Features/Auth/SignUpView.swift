@@ -35,6 +35,7 @@ struct SignUpView: View {
                 mismatchWarning
                 submitButton
                 legalNote
+                GoogleSignInButton()
             }
             .padding(.horizontal, Layout.pageInset)
             .padding(.vertical, Spacing.xl)
@@ -193,11 +194,16 @@ struct SignUpView: View {
         .accessibilityLabel(model.isSubmitting ? "Creating account" : "Create account")
     }
 
+    /// The agreement, and the two documents it refers to, one tap away —
+    /// the line used to be plain text with nothing to open.
     private var legalNote: some View {
-        Text("By creating an account you agree to the Terms and the Privacy Policy.")
-            .font(Typography.caption)
-            .foregroundStyle(Palette.tertiaryText)
-            .accessibilityIdentifier("signup.legal")
+        VStack(alignment: .leading, spacing: 0) {
+            Text("By creating an account you agree to the Terms and the Privacy Policy.")
+                .font(Typography.caption)
+                .foregroundStyle(Palette.tertiaryText)
+                .accessibilityIdentifier("signup.legal")
+            LegalLinks()
+        }
     }
 
     /// Return moves to the next empty field rather than submitting a form that

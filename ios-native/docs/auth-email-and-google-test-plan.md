@@ -50,24 +50,51 @@
 
 ---
 
-## Google 登录：需要你在控制台做的两步
+## Google 登录
 
-我这边已确认：测试项目目前**没开** Google 登录；App 的测试配置文件里还缺 Google 登录要用的两项
-（`CLIENT_ID`、`REVERSED_CLIENT_ID`）。打开 Google 登录只能在网页控制台里点，没有命令可以代替。
+### 已经做好的（2026-09-23）
+
+- App 已接入 Google 官方的 GoogleSignIn 10.0.0，并已获批准。
+- 按钮只在同时满足三个条件时出现：测试云这个配置、测试项目给了 iOS 客户端 ID、URL scheme 已登记。缺一个都不显示。GoogleSignIn 在缺配置时会让 App 直接崩溃，所以必须全部先检查。
+- Firebase 那一半已在本地 emulator 上用替身跑通：新账号建资料、退出再登录还是同一账号、中途退出、失败后重试、同邮箱不同登录方式。见 `PetNoteAppUITests/GoogleSignInUITests.swift`。
+
+### 同一个邮箱、不同登录方式：Firebase 会怎么做
+
+App 自己**不会**合并任何账号：不调用 link，也不去查某个邮箱用哪种方式登录。以下是 Firebase 本身的行为：
+
+| 情况 | 结果 | 依据 |
+| --- | --- | --- |
+| 已有**已验证**的密码账号，再用同一个 Gmail 的 Google 登录 | **Firebase 自动把 Google 挂到原账号上**：同一个账号，两种方式都能登录 | emulator 实测（界面测试） |
+| Google 没有替这个邮箱担保（例如非 Gmail 的企业邮箱） | Firebase 拒绝。App 显示旧版原话：「This email is set up with another sign-in method. Use that one, or reset your password.」账号仍只有密码一种 | emulator 实测（界面测试） |
+| 已有**未验证**的密码账号，再用 Google 登录 | Firebase 删掉原来的密码登录，账号改由 Google 登录 | Firebase 文档和 emulator 源码，**未实测** |
+| 已有 Google 账号，再用同一邮箱注册密码账号 | 提示「已有账号」，不会挂在一起 | Firebase 文档和 emulator 源码，**未实测** |
+
+前两种是 Firebase 的规则，App 关不掉。只有在项目设置里允许「一个邮箱多个账号」才会变，这由你决定。
+
+### 你要在控制台做的（只在 `petnote-devtest`）
 
 1. 打开 Firebase 控制台，**先确认左上角选的是 `petnote-devtest`**，然后：
    **Authentication → Sign-in method → Add new provider → Google → Enable**，选一个支持邮箱，保存。
-2. 打开 Google Cloud 控制台（同样是 `petnote-devtest`）→ **OAuth consent screen**（有的界面叫 Google Auth Platform）：
-   - 如果状态是 **Testing**，把你自己的 Google 账号加进测试用户。
-   - 看一眼有没有自动生成一个给 `dev.local.petnote.native` 用的 **iOS** 客户端；没有的话告诉我。
+2. 不需要添加测试用户：只读取姓名、邮箱、头像的应用，在「Testing」状态下也能登录（Google 的说明）。
 
-做完告诉我一声。之后我能自己做的：只读确认 Google 已开启；重新导出测试配置文件并换掉本地那份；
-确认缺的两项已经有了（只看名字，不看内容）。
+也有命令行做法（在 firebase.json 里写 auth 配置再部署），但它会在项目里顺带建一个网页应用；而仓库默认项目是生产，一旦漏写 `--project` 就会改到生产。所以**不用**这个办法。
 
-**还需要你定一件事**：iOS 上的标准做法要给 App 加一个新依赖（Google 官方的 GoogleSignIn）。
-不加也有别的办法，但那不是 Google 给 iOS 的正式做法，我没验证过，不建议。
+做完告诉我一声。之后我能自己做的：
 
-**要注意**：如果某个邮箱已经用邮箱密码注册、但**还没验证**，再用同一个邮箱的 Google 账号登录，Firebase 会把原来的密码登录方式替换掉。
-所以测 Google 登录时，**请用和上面 A、B 不同的邮箱**。
+- 只读确认 Google 已开启；
+- 重新导出测试配置文件，换掉本地那份；
+- 确认新增了 `CLIENT_ID`、`REVERSED_CLIENT_ID` 两项（只看名字，不看内容），把后者填进本地配置，重新打包。
 
-真正点 Google 登录那一步只能在手机上手动做（要打开 Google 的真实页面），模拟器和 CI 都做不了。
+如果导出的配置里还是没有这两项，说明没有自动生成 iOS 客户端，要在 Google Cloud 控制台里建一个（Credentials → Create OAuth client ID → iOS，Bundle ID 填 `dev.local.petnote.native`）。
+
+### 留到真机集中验收、需要你本人的
+
+真的点一次「Continue with Google」，用你自己的 Google 账号走完 Google 的页面。依次确认：
+
+1. 登录后进入引导或 Feed；
+2. 退出后再登录，还是同一个账号；
+3. 在 Google 页面中途点取消，回到登录页，没有报错。
+
+**请用和上面 A、B 不同的邮箱**：未验证的密码账号会被 Google 登录顶替（见上表）。
+
+另外，一个只用 Google 登录的邮箱，如果在网页上点「忘记密码」，Firebase 会发重置邮件。emulator 上，完成重置会把 Google 登录方式去掉、只留密码；生产上是否一样**未验证**，真机验收时顺便看一下。

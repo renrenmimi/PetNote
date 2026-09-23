@@ -10,6 +10,17 @@
 	<string>$(PETNOTE_BACKEND)</string>
 	<key>PetNoteEmulatorHost</key>
 	<string>$(PETNOTE_EMULATOR_HOST)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>google-sign-in</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>$(PETNOTE_GOOGLE_REVERSED_CLIENT_ID)</string>
+			</array>
+		</dict>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

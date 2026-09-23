@@ -21,3 +21,8 @@ ENABLE_TESTABILITY = YES
 // Filled in from Config/Local.xcconfig once the project exists, so the id is
 // not committed before it is real.
 PETNOTE_EXPECTED_PROJECT = $(PETNOTE_TEST_PROJECT_ID)
+
+// From Config/Local.xcconfig, like the project id: the test plist it has to
+// match is not committed either. Copy REVERSED_CLIENT_ID out of
+// Support/GoogleService-Info-Test.plist once Google sign-in is enabled there.
+PETNOTE_GOOGLE_REVERSED_CLIENT_ID = $(PETNOTE_TEST_GOOGLE_REVERSED_CLIENT_ID:default=com.googleusercontent.apps.not-configured)

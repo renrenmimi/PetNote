@@ -25,6 +25,13 @@ enum AuthError: Error, Sendable, Equatable {
     /// Email/password sign-up is switched off in the Firebase console.
     /// Nothing the person can do, and nothing a retry fixes.
     case signUpNotAllowed
+    /// Google sign-in for an address whose account uses another method, where
+    /// Firebase would need the two linked. The web client's answer, word for
+    /// word: use that method, or reset the password. **The app never links the
+    /// two itself** — no `link(with:)` on the pending credential, no sign-in
+    /// method lookup. Firebase's own automatic handling of a trusted Google
+    /// address is Firebase's, not ours.
+    case differentSignInMethod
     case unknown
 
     init(_ error: Error) {
@@ -46,6 +53,8 @@ enum AuthError: Error, Sendable, Equatable {
             self = .emailAlreadyInUse
         case .operationNotAllowed:
             self = .signUpNotAllowed
+        case .accountExistsWithDifferentCredential:
+            self = .differentSignInMethod
         default:
             self = .unknown
         }
@@ -69,6 +78,8 @@ enum AuthError: Error, Sendable, Equatable {
             "That email already has an account. Sign in instead."
         case .signUpNotAllowed:
             "Creating an account with an email address is unavailable right now."
+        case .differentSignInMethod:
+            "This email is set up with another sign-in method. Use that one, or reset your password."
         case .unknown:
             "Something went wrong signing in. Try again."
         }
@@ -79,7 +90,7 @@ enum AuthError: Error, Sendable, Equatable {
         switch self {
         case .networkUnavailable, .tooManyAttempts, .unknown: true
         case .invalidCredentials, .invalidEmailFormat, .accountDisabled, .weakPassword,
-             .emailAlreadyInUse, .signUpNotAllowed: false
+             .emailAlreadyInUse, .signUpNotAllowed, .differentSignInMethod: false
         }
     }
 }

@@ -1,3 +1,4 @@
+import GoogleSignIn
 import SwiftUI
 
 /// Entry point. Deployment target is iOS 18.0 — every API used here has been
@@ -29,6 +30,8 @@ struct PetNoteApp: App {
                 RootView()
                     .environment(session)
                     .task { session.start() }
+                    // Google's page hands the result back through a URL.
+                    .onOpenURL { GIDSignIn.sharedInstance.handle($0) }
             } else {
                 Color.clear.accessibilityIdentifier("app.unitTestHost")
             }

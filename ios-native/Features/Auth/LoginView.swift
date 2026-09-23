@@ -53,7 +53,9 @@ struct LoginView: View {
                     fields
                     submitButton
                     errorMessage
+                    GoogleSignInButton()
                     alternatives
+                    LegalLinks()
                     footer
                 }
                 .padding(.horizontal, Layout.pageInset)
