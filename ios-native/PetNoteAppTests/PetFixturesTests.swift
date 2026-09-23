@@ -11,6 +11,11 @@ import Testing
 /// protocol is `Sendable` and the tests are `@MainActor`, and the fields are
 /// only ever touched from the test's own actor.
 final class FakePetRepository: PetRepository, @unchecked Sendable {
+    /// Every record below is taken under this lock. The models that use
+    /// these fakes read with `async let`, so the calls arrive on several
+    /// threads at once; an unlocked append crashed a CI run (SIGSEGV in
+    /// `posts(since:limit:)`, run 35905119437, 2026-09-23).
+    private let lock = NSLock()
     var pet: Pet?
     var petError: Error?
     var family: [PetFamilyMember] = []
@@ -35,19 +40,19 @@ final class FakePetRepository: PetRepository, @unchecked Sendable {
     private var issued: [PageCursor] = []
 
     func pet(id: String) async throws -> Pet? {
-        petReads += 1
+        lock.withLock { petReads += 1 }
         if let petError { throw petError }
         return pet
     }
 
     func family(petID: String) async throws -> [PetFamilyMember] {
-        familyReads += 1
+        lock.withLock { familyReads += 1 }
         if let familyError { throw familyError }
         return family
     }
 
     func posts(petID: String, after cursor: PageCursor?, limit: Int) async throws -> Page<Post> {
-        postCursors.append(cursor)
+        lock.withLock { postCursors.append(cursor) }
         if let postsError { throw postsError }
         // A first-page read retires every cursor, exactly as
         // `FirestorePetRepository` does with `resumePoints`. Without this the
@@ -65,30 +70,30 @@ final class FakePetRepository: PetRepository, @unchecked Sendable {
         var next: PageCursor?
         if index + 1 < postPages.count {
             let token = PageCursor()
-            issued.append(token)
+            lock.withLock { issued.append(token) }
             next = token
         }
         return Page(items: postPages[index], next: next)
     }
 
     func checkins(petID: String, limit: Int) async throws -> [PetCheckin] {
-        checkinReads += 1
+        lock.withLock { checkinReads += 1 }
         if let checkinsError { throw checkinsError }
         return checkins
     }
 
     func create(_ draft: PetDraft) async throws -> String {
-        created.append(draft)
+        lock.withLock { created.append(draft) }
         return try createResult.get()
     }
 
     func update(petID: String, changes: PetChanges) async throws {
-        updated.append((petID, changes))
+        lock.withLock { updated.append((petID, changes)) }
         if let updateError { throw updateError }
     }
 
     func delete(petID: String) async throws -> PetDeletion {
-        deleted.append(petID)
+        lock.withLock { deleted.append(petID) }
         return try deleteResult.get()
     }
 }
