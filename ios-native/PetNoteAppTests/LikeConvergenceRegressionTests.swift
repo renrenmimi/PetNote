@@ -521,7 +521,8 @@ struct LikeConvergenceRegressionTests {
         model.toggleLike(model.posts[0])
         await Self.settle(until: { likes.calls.count == 1 }, "the like request went out")
         #expect(model.isLiked(Self.post(likeCount: 10)), "optimistic while it is in flight")
-        #expect(deadline.durations.count == 1, "the request went out with no deadline: \(deadline.durations)")
+        #expect(await deadline.waitUntilArmed(), "the request went out with no deadline: \(deadline.durations)")
+        #expect(deadline.durations.count == 1, "more than one deadline for one request: \(deadline.durations)")
 
         await deadline.passOnceArmed()
         await Self.settle(
