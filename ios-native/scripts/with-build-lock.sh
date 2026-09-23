@@ -31,4 +31,41 @@ echo "$$" > "$LOCK/pid"
 echo "$*" > "$LOCK/owner"
 trap 'rm -rf "$LOCK"' EXIT INT TERM
 
-"$@"
+# 可选的无输出看门狗：BUILD_IDLE_LOG=<命令写入的日志>。
+#
+# 2026-09-22 一次变异测试挂住，xcodebuild 一小时没有新输出，一直占着锁，
+# 后面所有人都在排队。日志超过 BUILD_IDLE_SECONDS（默认 600）没有新内容，
+# 就先把诊断写下来——谁在跑、日志最后写到哪——再结束这次运行、释放锁。
+# 只结束自己启动的那个进程（按 PID），不按名字杀任何东西。
+if [ -z "${BUILD_IDLE_LOG:-}" ]; then
+    "$@"
+    exit $?
+fi
+
+IDLE_LIMIT="${BUILD_IDLE_SECONDS:-600}"
+"$@" &
+CHILD=$!
+while kill -0 "$CHILD" 2>/dev/null; do
+    sleep 20
+    [ -f "$BUILD_IDLE_LOG" ] || continue
+    AGE=$(( $(date +%s) - $(stat -f %m "$BUILD_IDLE_LOG") ))
+    if [ "$AGE" -ge "$IDLE_LIMIT" ]; then
+        {
+            echo ""
+            echo "WATCHDOG: ${AGE}s 没有新输出（上限 ${IDLE_LIMIT}s），结束这次运行"
+            echo "WATCHDOG: 命令：$*"
+            echo "WATCHDOG: 进程："
+            ps -o pid,ppid,etime,command -p "$CHILD" 2>/dev/null
+            pgrep -P "$CHILD" | while read -r kid; do ps -o pid,ppid,etime,command -p "$kid" | tail -n +2; done
+            echo "WATCHDOG: 日志最后 15 行："
+            tail -15 "$BUILD_IDLE_LOG"
+        } >> "$BUILD_IDLE_LOG.watchdog"
+        echo "WATCHDOG: ${AGE}s 无输出，已结束；诊断在 $BUILD_IDLE_LOG.watchdog" >&2
+        kill -TERM "$CHILD" 2>/dev/null
+        for _ in 1 2 3 4 5 6; do kill -0 "$CHILD" 2>/dev/null || break; sleep 5; done
+        kill -KILL "$CHILD" 2>/dev/null
+        wait "$CHILD" 2>/dev/null
+        exit 124
+    fi
+done
+wait "$CHILD"
