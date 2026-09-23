@@ -51,6 +51,16 @@ struct DeepLinkTests {
     /// The pet id goes through the same validation as a post id — after
     /// decoding — because it reaches the same kind of Firestore read. A new
     /// route is the easiest place for that check to be forgotten.
+    /// The web's paths for a place and a meetup, with the same id checks.
+    @Test func placeAndMeetupLinksOpenThem() {
+        #expect(DeepLink.route(forPath: "/location/loc1") == .place(placeID: "loc1"))
+        #expect(DeepLink.route(forPath: "/meetups/m1") == .meetup(meetupID: "m1"))
+        #expect(DeepLink.route(forPath: "/meetups") == .feed, "the tab is not one meetup")
+        #expect(DeepLink.route(forPath: "/location/a%2Fb") == .feed)
+        #expect(DeepLink.route(forPath: "/meetups/__reserved__") == .feed)
+        #expect(DeepLink.route(forPath: "/location/a/b") == .feed)
+    }
+
     @Test func aPetLinkGetsThePostLinksValidation() {
         #expect(DeepLink.route(for: URL(string: "petnote://pet/..%2F..%2Fusers")!) == .feed)
         #expect(DeepLink.route(forPath: "/pet/a%2Fb") == .feed)
@@ -70,13 +80,14 @@ struct DeepLinkTests {
         func isAPlaceToLook(_ route: Route) -> Bool {
             switch route {
             case .feed, .postDetail, .pet, .user, .search, .petFollowers, .followingPets, .savedPosts,
-                 .notifications: return true
+                 .notifications, .place, .meetup: return true
             // Management, not a place to look: the one case a link must never
             // produce, and the reason this switch has no `default`.
             case .family, .joinFamily, .blockedUsers, .contactUs, .settings: return false
             }
         }
-        for path in ["/pet/abc/edit", "/create", "/post/abc/edit", "/profile/edit", "/compose"] {
+        for path in ["/pet/abc/edit", "/create", "/post/abc/edit", "/profile/edit", "/compose",
+                     "/meetups/create", "/places/add", "/meetups/abc/edit"] {
             let route = DeepLink.route(forPath: path)
             #expect(isAPlaceToLook(route), "\(path) produced \(route)")
             #expect(route == .feed, "\(path) should not resolve to anything but the feed, got \(route)")

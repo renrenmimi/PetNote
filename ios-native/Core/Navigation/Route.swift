@@ -42,6 +42,10 @@ enum Route: Hashable, Sendable {
     case settings
     /// The signed-in person's in-app notifications.
     case notifications
+    /// A place — the web client's `/location/:locationId`.
+    case place(placeID: String)
+    /// A meetup — the web client's `/meetups/:meetupId`.
+    case meetup(meetupID: String)
 }
 
 /// Turns an incoming link into a `Route`.
@@ -119,6 +123,15 @@ enum DeepLink {
         case "search":
             guard decoded.count == 1 else { return .feed }
             return .search(tag: nil)
+        case "location":
+            guard decoded.count == 2, let id = validDocumentID(decoded[1]) else { return .feed }
+            return .place(placeID: id)
+        case "meetups":
+            // `/meetups` is the tab; only `/meetups/<id>` is one meetup, and
+            // `/meetups/create` is an editor, which no link opens.
+            guard decoded.count == 2, decoded[1] != "create",
+                  let id = validDocumentID(decoded[1]) else { return .feed }
+            return .meetup(meetupID: id)
         case "feed", nil, "":
             return .feed
         default:

@@ -10,6 +10,19 @@
     "%@  %@": {
       "shouldTranslate": false
     },
+    "%@ %@": {
+      "shouldTranslate": false
+    },
+    "%@ (%lld reviews)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@（%lld 条评价）"
+          }
+        }
+      }
+    },
     "%@ (you)": {
       "localizations": {
         "zh-Hans": {
@@ -93,6 +106,16 @@
     "%@ · %@": {
       "shouldTranslate": false
     },
+    "%@ · %lld min": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · %lld 分钟"
+          }
+        }
+      }
+    },
     "%@'s owners": {
       "localizations": {
         "zh-Hans": {
@@ -136,12 +159,32 @@
         }
       }
     },
+    "%lld check-ins": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 次打卡"
+          }
+        }
+      }
+    },
     "%lld followers": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "%lld 位粉丝"
+          }
+        }
+      }
+    },
+    "%lld going": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 人参加"
           }
         }
       }
@@ -162,6 +205,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "已输入 %lld 个字符，上限 %lld 个"
+          }
+        }
+      }
+    },
+    "%lld out of 5": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 分（满分 5 分）"
           }
         }
       }
@@ -225,6 +278,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld/%lld 个文件"
+          }
+        }
+      }
+    },
+    "%lld/%lld pets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld/%lld 只宠物"
           }
         }
       }
@@ -385,6 +448,16 @@
         }
       }
     },
+    "All": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部"
+          }
+        }
+      }
+    },
     "Already uploaded": {
       "localizations": {
         "zh-Hans": {
@@ -502,6 +575,56 @@
           "stringUnit": {
             "state": "translated",
             "value": "阿姨"
+          }
+        }
+      }
+    },
+    "Be the first to organize one!": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来发起第一场吧！"
+          }
+        }
+      }
+    },
+    "Be the first to recommend one!": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来推荐第一个吧！"
+          }
+        }
+      }
+    },
+    "Beach": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "海滩"
+          }
+        }
+      }
+    },
+    "Beach access": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可下海滩"
+          }
+        }
+      }
+    },
+    "Beaches": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "海滩"
           }
         }
       }
@@ -662,12 +785,72 @@
         }
       }
     },
+    "Café": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "咖啡馆"
+          }
+        }
+      }
+    },
+    "Cafés": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "咖啡馆"
+          }
+        }
+      }
+    },
     "Cancel": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "取消"
+          }
+        }
+      }
+    },
+    "Cancel Meetup": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消聚会"
+          }
+        }
+      }
+    },
+    "Cancel this meetup?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消这场聚会？"
+          }
+        }
+      }
+    },
+    "Cancelled": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已取消"
+          }
+        }
+      }
+    },
+    "Cancelling…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在取消…"
           }
         }
       }
@@ -704,6 +887,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "猫"
+          }
+        }
+      }
+    },
+    "Cats": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "猫"
+          }
+        }
+      }
+    },
+    "Cats only.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅限猫。"
           }
         }
       }
@@ -828,6 +1031,16 @@
         }
       }
     },
+    "City hidden": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "城市未公开"
+          }
+        }
+      }
+    },
     "Close": {
       "localizations": {
         "zh-Hans": {
@@ -888,12 +1101,32 @@
         }
       }
     },
+    "Community Park": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "社区公园"
+          }
+        }
+      }
+    },
     "Complaint": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "投诉"
+          }
+        }
+      }
+    },
+    "Completed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已结束"
           }
         }
       }
@@ -1078,6 +1311,16 @@
         }
       }
     },
+    "Could not load meetups.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聚会加载失败。"
+          }
+        }
+      }
+    },
     "Could not load more followers.": {
       "localizations": {
         "zh-Hans": {
@@ -1094,6 +1337,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法加载推荐宠物。"
+          }
+        }
+      }
+    },
+    "Could not load reviews.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "评价加载失败。"
           }
         }
       }
@@ -1154,6 +1407,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法加载对方的宠物。"
+          }
+        }
+      }
+    },
+    "Could not load this meetup.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这场聚会加载失败。"
           }
         }
       }
@@ -1224,6 +1487,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法加载热门帖子。"
+          }
+        }
+      }
+    },
+    "Could not load who is going.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "参加名单加载失败。"
           }
         }
       }
@@ -1308,6 +1581,16 @@
         }
       }
     },
+    "Couldn't cancel this meetup.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法取消这场聚会。"
+          }
+        }
+      }
+    },
     "Couldn't complete that": {
       "localizations": {
         "zh-Hans": {
@@ -1334,6 +1617,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法确认评论是否已删除。可以放心重试。"
+          }
+        }
+      }
+    },
+    "Couldn't join this meetup.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法报名这场聚会。"
+          }
+        }
+      }
+    },
+    "Couldn't leave this meetup.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法退出这场聚会。"
           }
         }
       }
@@ -1608,6 +1911,16 @@
         }
       }
     },
+    "Directions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "路线"
+          }
+        }
+      }
+    },
     "Discard": {
       "localizations": {
         "zh-Hans": {
@@ -1654,6 +1967,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "狗"
+          }
+        }
+      }
+    },
+    "Dog Park": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "狗狗公园"
+          }
+        }
+      }
+    },
+    "Dog Parks": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "狗狗公园"
+          }
+        }
+      }
+    },
+    "Dogs": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "狗"
+          }
+        }
+      }
+    },
+    "Dogs only.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅限狗。"
           }
         }
       }
@@ -1758,6 +2111,16 @@
         }
       }
     },
+    "Everyone who joined will see it as cancelled.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已报名的人都会看到它被取消。"
+          }
+        }
+      }
+    },
     "Expires in %lldh %lldm": {
       "localizations": {
         "zh-Hans": {
@@ -1774,6 +2137,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "删除账号失败。"
+          }
+        }
+      }
+    },
+    "Failed to load location details.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点详情加载失败。"
           }
         }
       }
@@ -1829,6 +2202,16 @@
         }
       }
     },
+    "Features & Amenities": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设施与特色"
+          }
+        }
+      }
+    },
     "Feedback isn't available in this build.": {
       "localizations": {
         "zh-Hans": {
@@ -1845,6 +2228,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "母"
+          }
+        }
+      }
+    },
+    "Fenced": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有围栏"
           }
         }
       }
@@ -1939,6 +2332,16 @@
         }
       }
     },
+    "Food nearby": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "附近有餐饮"
+          }
+        }
+      }
+    },
     "Forgot your password?": {
       "localizations": {
         "zh-Hans": {
@@ -1999,6 +2402,16 @@
         }
       }
     },
+    "Going (%@)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "参加（%@）"
+          }
+        }
+      }
+    },
     "Grandma": {
       "localizations": {
         "zh-Hans": {
@@ -2015,6 +2428,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "爷爷"
+          }
+        }
+      }
+    },
+    "Green Space": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "绿地"
+          }
+        }
+      }
+    },
+    "Green Spaces": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "绿地"
           }
         }
       }
@@ -2036,6 +2469,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "骚扰"
+          }
+        }
+      }
+    },
+    "Hiking Trail": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "徒步步道"
+          }
+        }
+      }
+    },
+    "Hiking Trails": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "徒步步道"
           }
         }
       }
@@ -2191,6 +2644,16 @@
         }
       }
     },
+    "Join": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "报名"
+          }
+        }
+      }
+    },
     "Join %@'s family": {
       "localizations": {
         "zh-Hans": {
@@ -2227,6 +2690,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "加入宠物的家庭"
+          }
+        }
+      }
+    },
+    "Join with which pet?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "带哪只宠物报名？"
           }
         }
       }
@@ -2271,6 +2744,16 @@
         }
       }
     },
+    "Keep it": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留"
+          }
+        }
+      }
+    },
     "Language": {
       "localizations": {
         "zh-Hans": {
@@ -2308,6 +2791,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "要退出 %@ 的家庭吗？"
+          }
+        }
+      }
+    },
+    "Leave this meetup?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出这场聚会？"
+          }
+        }
+      }
+    },
+    "Leaving…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在退出…"
+          }
+        }
+      }
+    },
+    "Lighting": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有照明"
           }
         }
       }
@@ -2422,6 +2935,16 @@
         }
       }
     },
+    "Location": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点"
+          }
+        }
+      }
+    },
     "Make %@ primary owner": {
       "localizations": {
         "zh-Hans": {
@@ -2513,6 +3036,36 @@
         }
       }
     },
+    "Meetup": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聚会"
+          }
+        }
+      }
+    },
+    "Meetups": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聚会"
+          }
+        }
+      }
+    },
+    "Meetups at this place": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在这里举办的聚会"
+          }
+        }
+      }
+    },
     "Message": {
       "localizations": {
         "zh-Hans": {
@@ -2554,6 +3107,16 @@
         }
       }
     },
+    "Most Reviewed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "评价最多"
+          }
+        }
+      }
+    },
     "Most posts": {
       "localizations": {
         "zh-Hans": {
@@ -2564,12 +3127,42 @@
         }
       }
     },
+    "Must have a pet profile.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要有宠物主页。"
+          }
+        }
+      }
+    },
+    "Must have posted at least once.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要至少发过一条帖子。"
+          }
+        }
+      }
+    },
     "Mute video": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "静音"
+          }
+        }
+      }
+    },
+    "My Meetups": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我的聚会"
           }
         }
       }
@@ -2630,6 +3223,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "新密码"
+          }
+        }
+      }
+    },
+    "Newest": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最新"
           }
         }
       }
@@ -2704,6 +3307,36 @@
         }
       }
     },
+    "No meetups of yours yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你还没有聚会"
+          }
+        }
+      }
+    },
+    "No meetups this week": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本周没有聚会"
+          }
+        }
+      }
+    },
+    "No meetups yet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有聚会。"
+          }
+        }
+      }
+    },
     "No notifications": {
       "localizations": {
         "zh-Hans": {
@@ -2720,6 +3353,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "还没有宠物"
+          }
+        }
+      }
+    },
+    "No photos yet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有照片。"
+          }
+        }
+      }
+    },
+    "No places found": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有找到地点"
           }
         }
       }
@@ -2754,12 +3407,52 @@
         }
       }
     },
+    "No reviews yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有评价"
+          }
+        }
+      }
+    },
+    "No reviews yet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有评价。"
+          }
+        }
+      }
+    },
     "No saved posts": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "还没有收藏帖子"
+          }
+        }
+      }
+    },
+    "No upcoming meetups": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有即将举行的聚会"
+          }
+        }
+      }
+    },
+    "Nobody has joined yet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有人报名。"
           }
         }
       }
@@ -2820,6 +3513,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "好"
+          }
+        }
+      }
+    },
+    "Off-leash": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可解绳"
           }
         }
       }
@@ -2957,13 +3660,33 @@
         }
       }
     },
+    "Organized by %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发起人：%@"
+          }
+        }
+      }
+    },
     "Other": {
-      "comment": "Feedback type / Pet species / Report reason",
+      "comment": "Feedback type / Meetups for pets other than dogs and cats / Pet species / Place category / Report reason",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "其他"
+          }
+        }
+      }
+    },
+    "Other pets only.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅限猫狗以外的宠物。"
           }
         }
       }
@@ -2990,6 +3713,26 @@
     },
     "Page title": {
       "shouldTranslate": false
+    },
+    "Parking": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停车场"
+          }
+        }
+      }
+    },
+    "Parks": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公园"
+          }
+        }
+      }
     },
     "Password": {
       "localizations": {
@@ -3058,6 +3801,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "宠物"
+          }
+        }
+      }
+    },
+    "Pet Store": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "宠物店"
+          }
+        }
+      }
+    },
+    "Pet Stores": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "宠物店"
           }
         }
       }
@@ -3202,6 +3965,16 @@
         }
       }
     },
+    "Photos (%lld)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片（%lld）"
+          }
+        }
+      }
+    },
     "Pick a name": {
       "localizations": {
         "zh-Hans": {
@@ -3238,6 +4011,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "已置顶到你的个人主页。"
+          }
+        }
+      }
+    },
+    "Place": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点"
+          }
+        }
+      }
+    },
+    "Places": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点"
           }
         }
       }
@@ -3444,6 +4237,16 @@
         }
       }
     },
+    "Recent Check-ins (%lld)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近打卡（%lld）"
+          }
+        }
+      }
+    },
     "Relationship": {
       "localizations": {
         "zh-Hans": {
@@ -3575,6 +4378,26 @@
         }
       }
     },
+    "Requirements": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "参加要求"
+          }
+        }
+      }
+    },
+    "Requires at least %lld followed pets.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要至少关注 %lld 只宠物。"
+          }
+        }
+      }
+    },
     "Reset password": {
       "localizations": {
         "zh-Hans": {
@@ -3595,6 +4418,16 @@
         }
       }
     },
+    "Restrooms": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "洗手间"
+          }
+        }
+      }
+    },
     "Retry": {
       "comment": "Share button label after publishing failed",
       "localizations": {
@@ -3602,6 +4435,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "重试"
+          }
+        }
+      }
+    },
+    "Reviews (%lld)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "评价（%lld）"
           }
         }
       }
@@ -3726,12 +4569,32 @@
         }
       }
     },
+    "Search places": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索地点"
+          }
+        }
+      }
+    },
     "Searching": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "正在搜索"
+          }
+        }
+      }
+    },
+    "Seating": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "座位"
           }
         }
       }
@@ -3872,6 +4735,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "设置"
+          }
+        }
+      }
+    },
+    "Shade": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有遮阴"
           }
         }
       }
@@ -4126,6 +4999,16 @@
         }
       }
     },
+    "Something went wrong reaching PetNote. Check your connection and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接 PetNote 时出了问题。请检查网络后重试。"
+          }
+        }
+      }
+    },
     "Something went wrong reaching PetNote. Try again.": {
       "localizations": {
         "zh-Hans": {
@@ -4152,6 +5035,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "出错了。"
+          }
+        }
+      }
+    },
+    "Sort by": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "排序"
           }
         }
       }
@@ -4671,6 +5564,16 @@
         }
       }
     },
+    "The address is shared with people who join.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地址只对报名的人公开。"
+          }
+        }
+      }
+    },
     "The bio is over %lld characters.": {
       "localizations": {
         "zh-Hans": {
@@ -4901,6 +5804,16 @@
         }
       }
     },
+    "This Week": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本周"
+          }
+        }
+      }
+    },
     "This account can't send feedback.": {
       "localizations": {
         "zh-Hans": {
@@ -5091,6 +6004,36 @@
         }
       }
     },
+    "This meetup has ended.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这场聚会已结束。"
+          }
+        }
+      }
+    },
+    "This meetup is no longer on PetNote.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这场聚会已不在 PetNote 上。"
+          }
+        }
+      }
+    },
+    "This meetup was cancelled.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这场聚会已取消。"
+          }
+        }
+      }
+    },
     "This pet has other owners, so it cannot be deleted. Ask the other owners to leave first.": {
       "localizations": {
         "zh-Hans": {
@@ -5107,6 +6050,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "这只宠物已不存在。"
+          }
+        }
+      }
+    },
+    "This place is no longer on PetNote.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个地点已不在 PetNote 上。"
           }
         }
       }
@@ -5257,6 +6210,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "刚才上传次数过多，请稍等片刻。"
+          }
+        }
+      }
+    },
+    "Top Rated": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "评分最高"
+          }
+        }
+      }
+    },
+    "Trails": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "步道"
           }
         }
       }
@@ -5451,6 +6424,26 @@
         }
       }
     },
+    "Up to %lld pets.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多 %lld 只宠物。"
+          }
+        }
+      }
+    },
+    "Upcoming": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "即将举行"
+          }
+        }
+      }
+    },
     "Uploading %lld/%lld…": {
       "localizations": {
         "zh-Hans": {
@@ -5541,6 +6534,26 @@
         }
       }
     },
+    "Vet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "宠物医院"
+          }
+        }
+      }
+    },
+    "Vets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "宠物医院"
+          }
+        }
+      }
+    },
     "Video": {
       "localizations": {
         "zh-Hans": {
@@ -5587,6 +6600,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "视频，加载已中断"
+          }
+        }
+      }
+    },
+    "View place": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看地点"
+          }
+        }
+      }
+    },
+    "Waste bags": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拾便袋"
+          }
+        }
+      }
+    },
+    "Water access": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可以玩水"
           }
         }
       }
@@ -5848,6 +6891,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "你为什么要举报这条帖子？"
+          }
+        }
+      }
+    },
+    "Without a pet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不带宠物"
           }
         }
       }
@@ -6173,6 +7226,16 @@
         }
       }
     },
+    "You're going": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你已报名"
+          }
+        }
+      }
+    },
     "You're offline, so nothing was deleted.": {
       "localizations": {
         "zh-Hans": {
@@ -6450,6 +7513,22 @@
           }
         }
       }
+    },
+    "• %@": {
+      "shouldTranslate": false
+    },
+    "✓ Verified": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "✓ 已验证"
+          }
+        }
+      }
+    },
+    "⭐ %@": {
+      "shouldTranslate": false
     },
     "🎂 Birthday today": {
       "localizations": {

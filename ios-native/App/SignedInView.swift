@@ -2,11 +2,9 @@ import SwiftUI
 
 /// Everything behind a session.
 ///
-/// Three tabs, in the web client's order (`BottomNav.tsx`: home, places,
-/// create, meetups, profile) with the two that have not been migrated left out
-/// rather than shown as empty tabs — a tab that says "coming soon" is a dead
-/// button, and an unfinished feature must not become a new entry point. They
-/// go back in where they belong when their screens exist.
+/// Five tabs, in the web client's order (`BottomNav.tsx`: home, places,
+/// create, meetups, profile). Places and meetups came last, and only once
+/// their screens existed: a tab that says "coming soon" is a dead button.
 ///
 /// The home tab's navigation stack is the one that was here before tabs, kept
 /// intact: returning to it restores the same list instance, which is what
@@ -19,6 +17,8 @@ struct SignedInView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var path: [Route] = []
     @State private var profilePath: [Route] = []
+    @State private var placesPath: [Route] = []
+    @State private var meetupsPath: [Route] = []
     @State private var selectedTab: AppTab = .home
     /// Which account the state above currently belongs to, so a first
     /// appearance can be told from a switch. Nil until the first binding.
@@ -95,6 +95,10 @@ struct SignedInView: View {
                 .tabItem { Label("Home", systemImage: "house") }
                 .tag(AppTab.home)
                 .accessibilityIdentifier("tab.home")
+            placesTab
+                .tabItem { Label("Places", systemImage: "mappin.and.ellipse") }
+                .tag(AppTab.places)
+                .accessibilityIdentifier("tab.places")
             // Never shown: selecting it opens the composer and leaves the
             // selection where it was, which is how a "create" tab behaves in
             // the apps people already know.
@@ -102,6 +106,10 @@ struct SignedInView: View {
                 .tabItem { Label(String(localized: "tab.create", defaultValue: "Post", comment: "Tab that opens the composer"), systemImage: "plus.square") }
                 .tag(AppTab.create)
                 .accessibilityIdentifier("tab.create")
+            meetupsTab
+                .tabItem { Label("Meetups", systemImage: "person.3") }
+                .tag(AppTab.meetups)
+                .accessibilityIdentifier("tab.meetups")
             profileTab
                 .tabItem { Label(String(localized: "tab.profile", defaultValue: "Profile", comment: "Tab for your own profile"), systemImage: "person.crop.circle") }
                 .tag(AppTab.profile)
@@ -140,6 +148,8 @@ struct SignedInView: View {
             feedModel.prepare(for: user.uid)
             path = []
             profilePath = []
+            placesPath = []
+            meetupsPath = []
             editor = nil
             selectedTab = .home
             onboardingDismissed = false
@@ -330,6 +340,34 @@ struct SignedInView: View {
         }
     }
 
+    private var placesTab: some View {
+        NavigationStack(path: $placesPath) {
+            PlacesView(
+                model: PlacesModel(source: repositories.places),
+                onOpen: { placesPath.append(.place(placeID: $0)) }
+            )
+            .suspendedBanner(isSuspended)
+            .navigationDestination(for: Route.self) { route in
+                destination(route, stack: $placesPath)
+            }
+        }
+    }
+
+    private var meetupsTab: some View {
+        NavigationStack(path: $meetupsPath) {
+            MeetupsView(
+                model: MeetupsModel(uid: user.uid, source: repositories.meetups),
+                onOpen: { meetupsPath.append(.meetup(meetupID: $0)) }
+            )
+            // Whose "My Meetups" these are: a new account gets a new list.
+            .id(user.uid)
+            .suspendedBanner(isSuspended)
+            .navigationDestination(for: Route.self) { route in
+                destination(route, stack: $meetupsPath)
+            }
+        }
+    }
+
     private var profileTab: some View {
         NavigationStack(path: $profilePath) {
             ProfileView(
@@ -385,7 +423,7 @@ struct SignedInView: View {
         switch route {
         case .feed, .search, .notifications: return true
         case .postDetail, .pet, .user, .petFollowers, .followingPets, .savedPosts, .family, .joinFamily,
-             .blockedUsers, .contactUs, .settings: return false
+             .blockedUsers, .contactUs, .settings, .place, .meetup: return false
         }
     }
 
@@ -513,6 +551,19 @@ struct SignedInView: View {
             )
         case .contactUs:
             ContactUsView(sender: repositories.feedback)
+        case .place(let placeID):
+            PlaceDetailView(
+                model: PlaceDetailModel(placeID: placeID, places: repositories.places, meetups: repositories.meetups),
+                onOpenMeetup: { stack.wrappedValue.append(.meetup(meetupID: $0)) }
+            )
+        case .meetup(let meetupID):
+            MeetupDetailView(
+                model: MeetupDetailModel(
+                    meetupID: meetupID, viewerID: user.uid,
+                    source: repositories.meetups, pets: repositories.petChoices
+                ),
+                onOpenPlace: { stack.wrappedValue.append(.place(placeID: $0)) }
+            )
         case .notifications:
             NotificationsView(
                 model: NotificationsModel(uid: user.uid, source: repositories.notifications),
@@ -665,7 +716,9 @@ struct SignedInView: View {
 
 enum AppTab: Hashable {
     case home
+    case places
     case create
+    case meetups
     case profile
 }
 
@@ -710,6 +763,8 @@ struct Repositories {
     let preferences: any PreferencesStoring
     let security: any AccountSecurity
     let notifications: any NotificationsReading
+    let places: any PlacesReading
+    let meetups: any MeetupsReading
 
     static var live: Repositories {
         Repositories(
@@ -733,7 +788,9 @@ struct Repositories {
             suspension: FirestoreSuspensionSource(),
             preferences: FirestorePreferencesStore(),
             security: LiveAccountSecurity(),
-            notifications: FirestoreNotificationsSource()
+            notifications: FirestoreNotificationsSource(),
+            places: FirestorePlacesSource(),
+            meetups: FirestoreMeetupsSource()
         )
     }
 }
