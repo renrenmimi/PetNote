@@ -729,7 +729,7 @@ struct PostDetailViewModelTests {
         count: Int,
         serverLiked: Bool = false,
         likes: FakeLikes,
-        likeDeadline: Duration = .seconds(12)
+        deadline: ManualDeadline = ManualDeadline()
     ) async -> PostDetailViewModel {
         let feed = FakeFeed()
         feed.post = Post(
@@ -741,7 +741,8 @@ struct PostDetailViewModelTests {
         if serverLiked { likes.likedIDs = ["p1"] }
         let model = PostDetailViewModel(
             postID: "p1", feed: feed, comments: FakeComments(), likes: likes,
-            likeDeadline: likeDeadline
+            // Passed by the test or not at all: see `ManualDeadline`.
+            sleeper: deadline.sleeper
         )
         await model.load()
         return model
@@ -817,12 +818,17 @@ struct PostDetailViewModelTests {
     @Test func aRequestThatIsNeverAnsweredGivesUpAndSaysSo() async {
         let likes = FakeLikes()
         likes.neverAnswers = true
-        // A short deadline so the test does not have to wait out the real one.
-        // The number is injected, not stubbed away: what is asserted is that
-        // *a* deadline exists and that reaching it produces the right state.
-        let model = await loadedWithLikes(count: 5, likes: likes, likeDeadline: .milliseconds(80))
+        // The deadline passes when the test says, not after 80ms of a clock
+        // that CI's runner can stretch past anything. What is asserted is that
+        // the request started one and that reaching it produces the right state.
+        let deadline = ManualDeadline()
+        let model = await loadedWithLikes(count: 5, likes: likes, deadline: deadline)
 
         model.toggleLike()
+        await spin(6)
+        #expect(deadline.durations.count == 1, "the request went out with no deadline: \(deadline.durations)")
+        #expect(model.isLiked, "optimistic while it is in flight")
+        deadline.pass()
         await spin(60)
 
         #expect(model.isLiked == false, "the heart is still showing a like nothing confirmed")
@@ -840,7 +846,8 @@ struct PostDetailViewModelTests {
         let feed = FakeFeed()
         feed.post = Self.post()
         let model = PostDetailViewModel(
-            postID: "p1", feed: feed, comments: FakeComments(), likes: likes
+            postID: "p1", feed: feed, comments: FakeComments(), likes: likes,
+            sleeper: ManualDeadline.never
         )
         feed.post = Post(
             id: "p1", authorID: "uid", authorName: "A", authorAvatarURL: nil,

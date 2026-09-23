@@ -701,15 +701,31 @@ struct FullImageViewTests {
         host.view.frame = window.bounds
 
         var seen = Seen()
-        let deadline = Date().addingTimeInterval(20)
+        let started = Date()
+        let deadline = started.addingTimeInterval(20)
+        var polls = 0
         while Date() < deadline {
             window.layoutIfNeeded()
             try await Task.sleep(for: .milliseconds(100))
             seen = bands(in: photograph(window))
+            polls += 1
             // The middle band is on screen under every reading of the layout,
             // so its arrival is what says the photo has loaded and it is time
             // to judge the ends.
             if seen.hasGreen { break }
+        }
+        // **No green is not a crop.** Every layout keeps the middle band, so
+        // without it the photo never arrived, and reporting that as "lost its
+        // ends" — as CI run 35823319648 did, with all three bands missing —
+        // blames the layout for a load. The poll count says which kind of
+        // slow it was: about 200 is a load that took too long; a handful is
+        // this test not getting the main actor at all.
+        if !seen.hasGreen {
+            window.isHidden = true
+            throw RenderError.photoNeverAppeared(
+                "no band of the photo appeared in \(Int(Date().timeIntervalSince(started)))s "
+                    + "(\(polls) polls) — the load did not finish, which says nothing about cropping — \(seen)"
+            )
         }
         // One more, after a settle, so a half-drawn first frame is not the
         // thing being judged.
@@ -796,4 +812,11 @@ struct FullImageViewTests {
     }
 
     enum StubError: Error { case couldNotMakeAPNG }
+
+    enum RenderError: Error, CustomStringConvertible {
+        case photoNeverAppeared(String)
+        var description: String {
+            switch self { case .photoNeverAppeared(let why): why }
+        }
+    }
 }

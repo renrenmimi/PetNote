@@ -30,7 +30,7 @@ struct CommentCountSyncTests {
     private func loaded(_ posts: [Post]) async -> (FeedViewModel, FeedViewModelTests.FakeFeed) {
         let feed = FeedViewModelTests.FakeFeed()
         feed.pages = [posts]
-        let m = FeedViewModel(feed: feed, likes: FeedViewModelTests.FakeLikes(), pageSize: 20)
+        let m = FeedViewModel(feed: feed, likes: FeedViewModelTests.FakeLikes(), pageSize: 20, sleeper: ManualDeadline.never)
         await m.loadFirstPageIfNeeded()
         return (m, feed)
     }
@@ -163,7 +163,7 @@ struct CommentCountInterleavingTests {
     ) async -> (FeedViewModel, FeedViewModelTests.FakeFeed) {
         let feed = FeedViewModelTests.FakeFeed()
         feed.pages = [posts]
-        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 20)
+        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 20, sleeper: ManualDeadline.never)
         await model.loadFirstPageIfNeeded()
         return (model, feed)
     }
@@ -402,7 +402,7 @@ struct CommentCountInterleavingTests {
     @Test func pagingDoesNotReconcileAPostItDidNotReRead() async {
         let feed = FeedViewModelTests.FakeFeed()
         feed.pages = [[Self.post(id: "p1", comments: 0)], [Self.post(id: "p2", comments: 0)]]
-        let m = FeedViewModel(feed: feed, likes: FeedViewModelTests.FakeLikes(), pageSize: 1)
+        let m = FeedViewModel(feed: feed, likes: FeedViewModelTests.FakeLikes(), pageSize: 1, sleeper: ManualDeadline.never)
         await m.loadFirstPageIfNeeded()
         m.recordCommentChange(postID: "p1", delta: +1)
 
