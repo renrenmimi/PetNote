@@ -27,6 +27,10 @@ jobs:
   build-and-test:
     name: build + unit tests
     runs-on: macos-latest
+    # A run takes about ten minutes. Without a ceiling a hung test holds the
+    # runner for the six-hour default; forty is room for a slow runner and
+    # nothing more.
+    timeout-minutes: 40
     defaults:
       run:
         working-directory: ios-native
