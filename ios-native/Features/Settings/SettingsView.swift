@@ -68,7 +68,11 @@ struct SettingsView: View {
                         security: security,
                         google: GoogleSignInProvider.make()
                     ),
-                    onDeleted: { session.accountDeleted() }
+                    onDeleted: {
+                        let uid = model.uid
+                        Task { await AccountLocalData.forget(uid: uid) }
+                        session.accountDeleted()
+                    }
                 )
             }
         }

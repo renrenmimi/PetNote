@@ -132,6 +132,16 @@ actor ImageLoader {
         log.info("image memory cache cleared")
     }
 
+    /// Memory and disk both — for an account that no longer exists, whose
+    /// pictures have no reason to stay on the phone. Sign-out clears only the
+    /// memory cache: the disk cache holds public images and is what makes the
+    /// next person's feed fast.
+    func clearAllCaches() {
+        cache.removeAllObjects()
+        session.configuration.urlCache?.removeAllCachedResponses()
+        log.info("image memory and disk caches cleared")
+    }
+
     /// Starts listening for memory warnings.
     ///
     /// NSCache evicts under pressure on its own, but §11.3 asks for the image
