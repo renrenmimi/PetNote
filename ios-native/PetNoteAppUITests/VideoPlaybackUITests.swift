@@ -902,8 +902,10 @@ final class VideoPlaybackUITests: XCTestCase {
 
     /// The condition the test below once failed on, made on purpose rather
     /// than waited for: a video still opening, parked with only part of it on
-    /// screen. On CI the row stopped at 78%, and every later run stopped at
-    /// 80% or more, so the path that accepts a lower stop had never run.
+    /// screen. In six local iterations (5acf54d) the row stopped at 78% once,
+    /// under the 80% the photograph then required, and every later run
+    /// stopped at 80% or more, so the path that accepts a lower stop had
+    /// never run.
     ///
     /// The row is dragged — slowly, held, no fling — until 65–79% of it is in
     /// the window, cut at the bottom where it enters. What is recorded, not
