@@ -5,12 +5,23 @@ import OSLog
 
 // The three things the web feed draws around its posts (src/pages/Feed.tsx):
 // the birthday banner (`BirthdayCelebration`), the "⭐ Popular Pets" row
-// (`PetSpotlight`), and the 🎂 on a card whose pet has its birthday today
-// (`batchCheckPetBirthdays` → `PostCard.initialBirthday`).
+// (`PetSpotlight`), and the "🎂 Birthday!" pill on a card whose pet has its
+// birthday today (`batchCheckPetBirthdays` → `PostCard.initialBirthday`).
 //
 // All three are decoration. The web client says so in both components — a
 // failed read shows nothing, or the spotlight's empty line — and nothing here
 // is allowed to turn a failure of theirs into a failure of the feed.
+//
+// Three places this keeps a rule of its own rather than the web's, on
+// purpose:
+//   - blocked authors are left out of the spotlight, through the feed's own
+//     filter — the web spotlight does not filter them, the web feed does, and
+//     the iOS feed already does (`BlockFilteringFeed`);
+//   - the banner's ✕ lasts the session, where the web's lasts until the feed
+//     component is next mounted — the iOS feed is never unmounted while
+//     signed in, so "until you leave the page" has no equivalent;
+//   - the cards' pets are read thirty ids to a request, not ten (see
+//     `FirestorePetBirthdaySource`).
 
 // MARK: - Readers
 
@@ -78,7 +89,9 @@ actor FirestorePetBirthdaySource: PetBirthdayReading {
 /// `BlockFilteringFeed` is that place: it holds the one cached copy of the
 /// list, it is told when a block or an unblock happens (`invalidate`), and it
 /// is told when the account changes (`switchAccount`). Reading the list a
-/// second way here would be a second cache with a second way to go stale.
+/// second way here would be a second cache with a second way to go stale. It
+/// also shares a read that is already out, so the feed's first page and this
+/// row asking at the same moment on a cold start read the list once.
 protocol BlockedAuthorsProviding: Sendable {
     /// Unreadable means empty, as on the web: not knowing who is blocked
     /// filters nothing rather than hiding everything.
@@ -187,17 +200,40 @@ enum FeedExtras {
     /// `getPopularPosts(limitCount, 24)`, then `24 * 7` when that is short.
     static let recentWindow: TimeInterval = 24 * 60 * 60
     static let fallbackWindow: TimeInterval = 7 * 24 * 60 * 60
-    /// The mark a card carries on its pet's birthday. Not words, so not a
-    /// catalog entry; the card gives it a spoken label.
-    static let birthdayMark = "🎂"
+    /// `Array.from({ length: 5 })`: the spotlight's loading placeholders.
+    static let placeholderCount = 5
 
-    /// `value.length > max ? value.slice(0, max) + "…" : value`.
+    /// `value.length > max ? value.slice(0, max) + "…" : value`, exactly.
     ///
-    /// Counted in characters, where the web counts UTF-16 units: an emoji in
-    /// a name is one character to a reader, and cutting it in half draws a
-    /// broken glyph.
+    /// Counted in UTF-16 units, as JavaScript's `length` and `slice` count, so
+    /// the two clients cut a name at the same place. That includes the one
+    /// case where the web's cut is visibly wrong: a cut through the middle of
+    /// an emoji leaves half of it, which the browser draws as a replacement
+    /// mark and so does this — `String(decoding:as:)` turns the lone half into
+    /// U+FFFD rather than dropping it.
     static func truncated(_ value: String, max: Int = FeedExtras.nameLength) -> String {
-        value.count > max ? String(value.prefix(max)) + "…" : value
+        let units = Array(value.utf16)
+        guard units.count > max else { return value }
+        return String(decoding: units.prefix(max), as: UTF16.self) + "…"
+    }
+
+    /// The picture a spotlight tile asks for, before `RemoteImage` adds the
+    /// `spotlight` size to it: the web tile's
+    /// `post.media[0].thumbUrl || post.media[0].url`, so the two clients ask
+    /// the CDN for the same bytes (`CloudinaryURL.Size.spotlight`).
+    ///
+    /// A video's stored `thumbUrl` is under `/video/upload/`, which the size
+    /// step leaves alone on both clients, so it is fetched exactly as stored.
+    /// A video with no `thumbUrl` is the one divergence: the web hands the
+    /// video file itself to an `<img>`, which draws nothing, and this derives
+    /// the frame-0 poster instead.
+    static func spotlightPictureURL(for media: MediaItem?) -> URL? {
+        guard let media else { return nil }
+        if let thumbnail = media.thumbnailURL { return thumbnail }
+        switch media.kind {
+        case .image: return media.url
+        case .video: return CloudinaryURL.videoPoster(media.url, size: .spotlight)
+        }
     }
 
     /// Unseen first, seen after, and the likes order kept inside each group —
@@ -231,22 +267,21 @@ enum FeedExtras {
         )
     }
 
-    /// "Turning N years old today!", when the year is known.
+    /// "Turning N years old today!", when the year is known — the web's
+    /// `today.getFullYear() - date.getFullYear()`, both in the viewer's own
+    /// calendar (BirthdayCelebration.tsx:51).
     ///
-    /// The birth year is read from the legacy timestamp's **UTC** fields, for
-    /// the reason `Pet.isBirthday` reads its month and day that way: the
-    /// server derives the canonical pair from UTC, and a pet born on 1 January
-    /// must not come out a year older west of Greenwich.
+    /// Local, not UTC, because both clients store the birthday at *local*
+    /// midnight of the day that was picked (AddPet.tsx:290-306,
+    /// `FirestorePetRepository.birthdayFields`). Read in UTC, a pet born on 1
+    /// January east of Greenwich — stored at 31 December, 15:00 UTC in Tokyo —
+    /// would come out a year older than it is.
     ///
-    /// One deliberate difference from the web client, which prints whatever
-    /// the subtraction gives: a pet born this year gets no line, rather than
-    /// "Turning 0 years old today!".
+    /// Whatever the subtraction gives is said, as on the web: a pet born this
+    /// year is "Turning 0 years old today!".
     static func ageLine(for pet: Pet, on date: Date, calendar: Calendar) -> String? {
         guard let birthday = pet.birthday else { return nil }
-        var utc = Calendar(identifier: .gregorian)
-        utc.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
-        let years = calendar.component(.year, from: date) - utc.component(.year, from: birthday)
-        guard years >= 1 else { return nil }
+        let years = calendar.component(.year, from: date) - calendar.component(.year, from: birthday)
         return years == 1
             ? String(localized: "Turning 1 year old today!")
             : String(localized: "Turning \(years) years old today!")
@@ -278,6 +313,11 @@ final class FeedExtrasModel {
     private(set) var seenPostIDs: [String] = []
     /// Pets on screen whose birthday is today.
     private(set) var birthdayPetIDs: Set<String> = []
+    /// How many banner reads have come back for this account, answered or
+    /// failed. Nothing on screen depends on it: the feed's DEBUG-only probe
+    /// publishes it, because "the banner is not there" means nothing to a UI
+    /// test until it knows the read that would have put it there has finished.
+    private(set) var bannerReadsSettled = 0
 
     private let pets: any PetChoiceProviding
     private let popular: any PopularPostsReading
@@ -293,17 +333,28 @@ final class FeedExtrasModel {
     /// Bumped by `prepare(for:)`. An answer carrying an older one was asked
     /// for somebody else.
     private var generation = 0
-    /// Per read, so a slow first answer cannot land on top of a newer one.
+    /// Numbered per read. What is on screen is the answer of the newest read
+    /// that *answered* — `shown…` — not of the newest read that was *asked*:
+    /// a newer read that fails decides nothing, so an older one that succeeds
+    /// after it still lands, and an older one that lands after a newer answer
+    /// is dropped. 0 means nothing real is shown yet.
     private var bannerRequest = 0
+    private var shownBannerRequest = 0
     private var spotlightRequest = 0
+    private var shownSpotlightRequest = 0
 
     /// Pets already asked about, and pets being asked about now. The second
     /// is what keeps two overlapping checks — a page arriving while the last
     /// one's read is still out — from reading the same ids twice.
     private var checkedPetIDs: Set<String> = []
     private var pendingPetIDs: Set<String> = []
+    /// The pets of the cards the view last asked about, so a refresh can ask
+    /// again for the same ones: a refresh that brings back the same posts does
+    /// not change their ids, and the view only asks when the ids change.
+    private var lastPetIDs: [String] = []
     /// The day the marks were worked out for. A session that runs past
-    /// midnight asks again instead of showing yesterday's birthdays.
+    /// midnight asks again instead of showing yesterday's birthdays, and does
+    /// not show them while it waits (`hasBirthday`).
     private var markedDay: DateComponents?
 
     init(
@@ -342,9 +393,12 @@ final class FeedExtrasModel {
         return .items(FeedExtras.seenLast(spotlightPosts, seen: Set(seenPostIDs)))
     }
 
+    /// Whether this pet's cards carry the birthday pill — and only for the
+    /// day the marks were worked out for. Past midnight yesterday's are not
+    /// shown, even before the next refresh or page has asked again.
     func hasBirthday(petID: String?) -> Bool {
-        guard let petID else { return false }
-        return birthdayPetIDs.contains(petID)
+        guard let petID, birthdayPetIDs.contains(petID) else { return false }
+        return markedDay == day(of: now())
     }
 
     // MARK: Account
@@ -359,11 +413,15 @@ final class FeedExtrasModel {
         didLoad = false
         banner = nil
         isBannerDismissed = false
+        bannerReadsSettled = 0
+        shownBannerRequest = 0
         spotlightPosts = nil
+        shownSpotlightRequest = 0
         seenPostIDs = []
         birthdayPetIDs = []
         checkedPetIDs = []
         pendingPetIDs = []
+        lastPetIDs = []
         markedDay = nil
     }
 
@@ -377,20 +435,30 @@ final class FeedExtrasModel {
         await reload()
     }
 
-    /// Pull-to-refresh. Both at once — they are unrelated reads, and waiting
-    /// for one before asking for the other only makes the row late.
+    /// Pull-to-refresh. All at once — they are unrelated reads, and waiting
+    /// for one before asking for the next only makes the row late.
     func reload() async {
         didLoad = true
         // `async let` and not a task group, for the reason
-        // `PetProfileViewModel.load()` gives: both reads mutate this object,
+        // `PetProfileViewModel.load()` gives: the reads mutate this object,
         // so they run on the main actor and interleave only at their awaits.
+        //
+        // The third is the same cards' pets again, which only reads anything
+        // when the day has changed: that is the refresh that takes
+        // yesterday's pills off.
+        let onScreen = lastPetIDs
         async let bannerRead: Void = reloadBanner()
         async let spotlightRead: Void = reloadSpotlight()
-        _ = await (bannerRead, spotlightRead)
+        async let marksRead: Void = checkBirthdays(petIDs: onScreen)
+        _ = await (bannerRead, spotlightRead, marksRead)
     }
 
     /// A pet was added, edited or removed. Only once something has been
     /// shown: before that, `loadIfNeeded` is about to ask anyway.
+    ///
+    /// The banner's read is also what brings a pet edit to the cards: it
+    /// returns this person's pets whole, and `settleMarks` takes theirs from
+    /// it — the only pets whose birthday this person can change.
     func petsChanged() async {
         guard didLoad else { return }
         await reloadBanner()
@@ -412,14 +480,17 @@ final class FeedExtrasModel {
         let generation = self.generation
         do {
             let owned = try await pets.pets(ownedBy: account)
-            guard generation == self.generation, request == bannerRequest else { return }
+            guard generation == self.generation else { return }
+            bannerReadsSettled += 1
+            guard request > shownBannerRequest else { return }
+            shownBannerRequest = request
             let today = now()
-            banner = FeedExtras.banner(
-                for: owned.filter { $0.isBirthday(on: today, calendar: calendar) },
-                on: today,
-                calendar: calendar
-            )
+            let celebrating = owned.filter { $0.isBirthday(on: today, calendar: calendar) }
+            banner = FeedExtras.banner(for: celebrating, on: today, calendar: calendar)
+            settleMarks(owned: owned, celebrating: Set(celebrating.map(\.id)), on: today)
         } catch {
+            guard generation == self.generation else { return }
+            bannerReadsSettled += 1
             // Decorative, as the web client says: never an error on screen.
             // And a read that fails decides nothing — a first load that fails
             // leaves no banner, a refresh that fails leaves the one that was
@@ -449,15 +520,18 @@ final class FeedExtrasModel {
                     since: asked.addingTimeInterval(-FeedExtras.fallbackWindow), excluding: blockedIDs
                 )
             }
-            guard generation == self.generation, request == spotlightRequest else { return }
+            guard generation == self.generation, request > shownSpotlightRequest else { return }
+            shownSpotlightRequest = request
             seenPostIDs = seenStore.seen(uid: account)
             spotlightPosts = posts
         } catch {
-            guard generation == self.generation, request == spotlightRequest else { return }
+            guard generation == self.generation else { return }
             log.error("spotlight read failed: \(error.localizedDescription, privacy: .public)")
             // The web client's choice for a load that fails: the empty line,
-            // not a skeleton left pulsing and not an error. A refresh that
-            // fails over tiles already drawn keeps them.
+            // not a skeleton left pulsing and not an error. Never over tiles
+            // that arrived — from an earlier read, or from an older read still
+            // out that answers after this one, which `shownSpotlightRequest`
+            // (still 0 here) lets in.
             if spotlightPosts == nil {
                 seenPostIDs = seenStore.seen(uid: account)
                 spotlightPosts = []
@@ -471,8 +545,8 @@ final class FeedExtrasModel {
     /// Blocked authors come out before the ten are chosen, not after, so a
     /// block costs the row a tile only when there is nothing to replace it
     /// with. The web spotlight does not filter blocked authors at all; the
-    /// web feed does, and a person who blocked somebody does not expect to
-    /// find them featured at the top of it.
+    /// web feed does, and so does this app's, and a person who blocked
+    /// somebody does not expect to find them featured at the top of it.
     private func popularPosts(since cutoff: Date, excluding blockedIDs: Set<String>) async throws -> [Post] {
         let candidates = try await popular.posts(
             since: cutoff, limit: SearchLogic.trendingCandidateCount(for: FeedExtras.spotlightLimit)
@@ -484,7 +558,9 @@ final class FeedExtrasModel {
 
     // MARK: Acting
 
-    /// The ✕. Hidden until this session ends, as on the web.
+    /// The ✕. Hidden until this session ends — see the note at the top of
+    /// this file for why "the session" and not the web's "this visit to the
+    /// feed".
     func dismissBanner() {
         isBannerDismissed = true
     }
@@ -510,11 +586,15 @@ final class FeedExtrasModel {
     /// or a refresh — tries it again. The web client marks it checked and
     /// never asks again; the mark is decoration, but so is the retry's cost.
     func checkBirthdays(for posts: [Post]) async {
-        rollOverIfTheDayChanged()
         var seen: Set<String> = []
-        let unasked = posts.compactMap(\.petID).filter {
-            seen.insert($0).inserted && !checkedPetIDs.contains($0) && !pendingPetIDs.contains($0)
-        }
+        let petIDs = posts.compactMap(\.petID).filter { seen.insert($0).inserted }
+        lastPetIDs = petIDs
+        await checkBirthdays(petIDs: petIDs)
+    }
+
+    private func checkBirthdays(petIDs: [String]) async {
+        rollOverIfTheDayChanged(at: now())
+        let unasked = petIDs.filter { !checkedPetIDs.contains($0) && !pendingPetIDs.contains($0) }
         guard !unasked.isEmpty else { return }
         pendingPetIDs.formUnion(unasked)
         let generation = self.generation
@@ -539,13 +619,32 @@ final class FeedExtrasModel {
         }
     }
 
-    private func rollOverIfTheDayChanged() {
-        let today = calendar.dateComponents([.year, .month, .day], from: now())
-        guard today != markedDay else { return }
-        if markedDay != nil {
-            checkedPetIDs = []
-            birthdayPetIDs = []
+    /// This person's own pets, from the answer the banner just read: marked
+    /// or unmarked by the same rule, and counted as asked about, so a pet
+    /// whose birthday was just edited to or away from today changes its cards
+    /// without a read of its own.
+    private func settleMarks(owned: [Pet], celebrating: Set<String>, on date: Date) {
+        rollOverIfTheDayChanged(at: date)
+        for pet in owned {
+            if celebrating.contains(pet.id) {
+                birthdayPetIDs.insert(pet.id)
+            } else {
+                birthdayPetIDs.remove(pet.id)
+            }
         }
+        checkedPetIDs.formUnion(owned.map(\.id))
+    }
+
+    /// A new day starts with nothing asked and nothing marked.
+    private func rollOverIfTheDayChanged(at date: Date) {
+        let today = day(of: date)
+        guard today != markedDay else { return }
+        checkedPetIDs = []
+        birthdayPetIDs = []
         markedDay = today
+    }
+
+    private func day(of date: Date) -> DateComponents {
+        calendar.dateComponents([.year, .month, .day], from: date)
     }
 }

@@ -94,6 +94,19 @@ struct SignedInView: View {
         )
     }
 
+    /// A pet was created, edited, deleted, joined or left: the pet lists
+    /// re-read, and so does the feed's birthday banner — the pet may be one
+    /// whose birthday is today, or may have been and no longer is, and its
+    /// cards' marks come from the same read.
+    ///
+    /// Not an `onChange` of the counter: the account switch bumps it too, for
+    /// the pet lists, and the feed's extras read the new account's pets on
+    /// their own first load then.
+    private func notePetsChanged() {
+        petsChanged += 1
+        Task { await feedExtras.petsChanged() }
+    }
+
     /// After a block or an unblock: the next read filters by the new list.
     private func refilterFeed() {
         Task {
@@ -164,7 +177,9 @@ struct SignedInView: View {
             await filteringFeed.switchAccount(to: user.uid)
             feedModel.prepare(for: user.uid)
             // Its own reset, then its own first load: the feed's `.task` that
-            // would ask ran once, for the account that left.
+            // would ask ran once, for the account that left. That load reads
+            // the new account's pets for the banner, so the pet lists' bump
+            // below is not passed on to it — it would be the same read twice.
             feedExtras.prepare(for: user.uid)
             Task { await feedExtras.loadIfNeeded() }
             path = []
@@ -197,11 +212,6 @@ struct SignedInView: View {
         .onChange(of: selectedTab) { _, tab in
             if tab != .home { video.releaseAll(reason: "left the home tab") }
         }
-        // A pet added, edited or removed may be one whose birthday is today —
-        // or may have been, and no longer is.
-        .onChange(of: petsChanged) { _, _ in
-            Task { await feedExtras.petsChanged() }
-        }
         // A link opened from outside the app (`petnote://post/<id>`): the
         // home stack shows it, as a tap on the post would. Read on appearing
         // too, for a link that arrived before sign-in had finished.
@@ -230,7 +240,10 @@ struct SignedInView: View {
 
     private var homeTab: some View {
         NavigationStack(path: $path) {
-            FeedView(model: feedModel, extras: feedExtras, path: $path)
+            FeedView(
+                model: feedModel, extras: feedExtras, path: $path,
+                onShareBirthday: { editor = .composeAbout(petID: $0) }
+            )
                 .environment(video)
                 .suspendedBanner(isSuspended)
                 // Back from the notifications list, or anywhere else, the dot
@@ -467,7 +480,11 @@ struct SignedInView: View {
     private func destinationContent(_ route: Route, stack: Binding<[Route]>) -> some View {
         switch route {
         case .feed:
-            FeedView(model: feedModel, extras: feedExtras, path: stack).environment(video)
+            FeedView(
+                model: feedModel, extras: feedExtras, path: stack,
+                onShareBirthday: { editor = .composeAbout(petID: $0) }
+            )
+            .environment(video)
         case .postDetail(let postID):
             PostDetailView(
                 model: PostDetailViewModel(
@@ -519,7 +536,7 @@ struct SignedInView: View {
                 reloadToken: petsChanged,
                 onEdit: { editor = .editPet(petID: $0) },
                 onDeleted: {
-                    petsChanged += 1
+                    notePetsChanged()
                     if stack.wrappedValue.last == .pet(petID: petID) {
                         stack.wrappedValue.removeLast()
                     }
@@ -581,7 +598,7 @@ struct SignedInView: View {
                     // No longer an owner: the family screen and the pet page
                     // under it were both drawn for one. Back past both, and
                     // re-read the pet lists.
-                    petsChanged += 1
+                    notePetsChanged()
                     stack.wrappedValue.removeAll { $0 == .family(petID: petID) || $0 == .pet(petID: petID) }
                 }
             )
@@ -645,7 +662,7 @@ struct SignedInView: View {
                 onOpenPet: { petID in
                     // Joined: the join screen is done, the pet is now one of
                     // theirs, and its page is where to go.
-                    petsChanged += 1
+                    notePetsChanged()
                     if stack.wrappedValue.last == .joinFamily { stack.wrappedValue.removeLast() }
                     stack.wrappedValue.append(.pet(petID: petID))
                 }
@@ -659,20 +676,9 @@ struct SignedInView: View {
     private func editorView(_ editor: Editor) -> some View {
         switch editor {
         case .compose:
-            ComposeHost(
-                user: user,
-                repositories: repositories,
-                onPublished: { _ in
-                    self.editor = nil
-                    // Back to the feed and re-read, so the post someone just
-                    // published is the first thing they see — the way the web
-                    // client navigates to "/" after a publish.
-                    selectedTab = .home
-                    path = []
-                    Task { await feedModel.reload() }
-                },
-                onClose: { self.editor = nil }
-            )
+            composer(about: nil)
+        case .composeAbout(let petID):
+            composer(about: petID)
         case .createPet:
             PetEditorHost(
                 mode: .create,
@@ -681,7 +687,7 @@ struct SignedInView: View {
                 viewerID: user.uid,
                 onSaved: { petID in
                     self.editor = nil
-                    petsChanged += 1
+                    notePetsChanged()
                     profilePath.append(.pet(petID: petID))
                 },
                 onCancel: { self.editor = nil }
@@ -694,7 +700,7 @@ struct SignedInView: View {
                 viewerID: user.uid,
                 onSaved: { _ in
                     self.editor = nil
-                    petsChanged += 1
+                    notePetsChanged()
                 },
                 onCancel: { self.editor = nil }
             )
@@ -713,6 +719,27 @@ struct SignedInView: View {
                 onClose: { self.editor = nil }
             )
         }
+    }
+
+    /// The composer, from the tab or from the birthday banner's "Share a
+    /// birthday post" — which is the web's `/create?petId=` and arrives with
+    /// that pet chosen.
+    private func composer(about petID: String?) -> some View {
+        ComposeHost(
+            user: user,
+            repositories: repositories,
+            preferredPetID: petID,
+            onPublished: { _ in
+                self.editor = nil
+                // Back to the feed and re-read, so the post someone just
+                // published is the first thing they see — the way the web
+                // client navigates to "/" after a publish.
+                selectedTab = .home
+                path = []
+                Task { await feedModel.reload() }
+            },
+            onClose: { self.editor = nil }
+        )
     }
 
     // MARK: - Onboarding
@@ -773,6 +800,8 @@ enum AppTab: Hashable {
 /// A screen that is finished or cancelled rather than navigated back through.
 enum Editor: Identifiable, Hashable {
     case compose
+    /// The composer with this pet already chosen.
+    case composeAbout(petID: String)
     case createPet
     case editPet(petID: String)
     case editPost(postID: String)
@@ -780,6 +809,7 @@ enum Editor: Identifiable, Hashable {
     var id: String {
         switch self {
         case .compose: "compose"
+        case .composeAbout(let id): "compose:\(id)"
         case .createPet: "createPet"
         case .editPet(let id): "editPet:\(id)"
         case .editPost(let id): "editPost:\(id)"

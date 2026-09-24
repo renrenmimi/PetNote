@@ -28,13 +28,15 @@ final class SharingUITests: XCTestCase {
         let (app, me) = try signInAsNewAccount(email)
         uid = me
 
-        // In the feed, every post has the button.
+        // In the feed, every post has the button. The first card's is under
+        // the tab bar until the list moves — the banner and spotlight rows
+        // are above it — so it is brought up rather than waited for.
         let feedShare = app.buttons.matching(identifier: "post.share").firstMatch
-        XCTAssertTrue(waitUntilHittable(feedShare, in: app, timeout: 30), "no share button in the feed\n\(app.debugDescription)")
+        XCTAssertTrue(bringIntoReach(feedShare, in: app, timeout: 30), "no share button in the feed\n\(app.debugDescription)")
 
         // Open the first post, and share from there.
         let firstText = app.staticTexts.matching(identifier: "post.text").firstMatch
-        XCTAssertTrue(waitUntilHittable(firstText, in: app, timeout: 20))
+        XCTAssertTrue(bringIntoReach(firstText, in: app, timeout: 20), "the first post's text is out of reach")
         firstText.tap()
         let composer = app.textFields["composer.field"]
         XCTAssertTrue(waitUntilHittable(composer, in: app, timeout: 20), "the post did not open\n\(app.debugDescription)")

@@ -56,14 +56,28 @@ final class AccessibilityUITests: XCTestCase {
     /// Behind the tab bar counts as below the fold: a feed row passing under
     /// it is a row not yet scrolled to, and no more hittable than one past the
     /// bottom of the screen.
+    ///
+    /// **And so does a tile cut by the side of the screen in the feed's
+    /// "⭐ Popular Pets" row**, which scrolls sideways. At AX5 its heading
+    /// moves above the tiles and a sixth tile starts at x≈396 of 402: six
+    /// points of it are on screen, on purpose — that sliver is how the row
+    /// says there is more. It is the next tile not yet scrolled to, exactly as
+    /// a card under the tab bar is the next card, and the tiles wholly on
+    /// screen are still held to 44pt and hittable. Only that row: a control
+    /// anywhere else cut by the side of the screen is still counted, because
+    /// there it is a layout pushing a control off the screen.
     private func visibleOwnControls(_ app: XCUIApplication) -> [XCUIElement] {
         let window = app.windows.firstMatch.frame
         let tabBar = app.tabBars.firstMatch
         let underBar = tabBar.exists ? tabBar.frame : .null
+        let spotlight = app.descendants(matching: .any).matching(identifier: "feed.spotlight").firstMatch
+        let sidewaysRow = spotlight.exists ? spotlight.frame : .null
         return app.buttons.allElementsBoundByIndex.filter {
             $0.exists && !$0.identifier.isEmpty
                 && !$0.frame.isEmpty && window.intersects($0.frame)
                 && !underBar.intersects($0.frame)
+                && !(sidewaysRow.intersects($0.frame)
+                     && ($0.frame.minX < window.minX || $0.frame.maxX > window.maxX))
         }
     }
 

@@ -77,8 +77,11 @@ final class DeviceAcceptanceUITests: XCTestCase {
         XCTAssertTrue(first.waitForExistence(timeout: 90))
         print("MEASURED liking the post whose text is: \(first.label)")
 
+        // Brought up rather than waited for: the feed's banner and spotlight
+        // rows sit above the first card, and on a phone its actions row
+        // starts under the tab bar.
         let like = app.buttons.matching(identifier: "post.like").firstMatch
-        XCTAssertTrue(waitUntilHittable(like, in: app, timeout: 60), "like is not tappable")
+        XCTAssertTrue(bringIntoReach(like, in: app, timeout: 60), "like is not tappable")
         let before = like.label
         let beforeValue = like.value as? String ?? "?"
         like.tap()
@@ -94,7 +97,7 @@ final class DeviceAcceptanceUITests: XCTestCase {
         print("MEASURED commenting on the post whose text is: \(first.label)")
 
         let comments = app.buttons.matching(identifier: "post.comments").firstMatch
-        XCTAssertTrue(waitUntilHittable(comments, in: app, timeout: 60))
+        XCTAssertTrue(bringIntoReach(comments, in: app, timeout: 60), "comments is not tappable")
         comments.tap()
 
         let field = app.textFields["composer.field"]
@@ -205,7 +208,7 @@ extension DeviceAcceptanceUITests {
         let postText = first.label
 
         let commentsButton = app.buttons.matching(identifier: "post.comments").firstMatch
-        XCTAssertTrue(waitUntilHittable(commentsButton, in: app, timeout: 60))
+        XCTAssertTrue(bringIntoReach(commentsButton, in: app, timeout: 60), "comments is not tappable")
         let before = Int(commentsButton.value as? String ?? "") ?? -1
         print("MEASURED feed comment count before: \(before) on \(postText)")
         XCTAssertGreaterThanOrEqual(before, 0, "could not read the feed's comment count")
@@ -236,7 +239,7 @@ extension DeviceAcceptanceUITests {
 
         // No refresh, no wait: the number has to be right on arrival.
         let after = app.buttons.matching(identifier: "post.comments").firstMatch
-        XCTAssertTrue(waitUntilHittable(after, in: app, timeout: 30))
+        XCTAssertTrue(bringIntoReach(after, in: app, timeout: 30), "comments is not tappable after coming back")
         let shown = Int(after.value as? String ?? "") ?? -1
         print("MEASURED feed comment count after returning: \(shown)")
         XCTAssertEqual(shown, before + 1, "the feed did not pick up the comment that was just written")
@@ -265,7 +268,7 @@ extension DeviceAcceptanceUITests {
                         .waitForExistence(timeout: 90))
 
         let open = app.buttons.matching(identifier: "post.comments").firstMatch
-        XCTAssertTrue(waitUntilHittable(open, in: app, timeout: 60))
+        XCTAssertTrue(bringIntoReach(open, in: app, timeout: 60), "comments is not tappable")
         open.tap()
 
         // How many of these are on screen at all, and where.

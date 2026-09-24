@@ -165,27 +165,19 @@ struct PostCard: View {
         HStack(spacing: Spacing.s) {
             Avatar(url: post.petAvatarURL ?? post.authorAvatarURL)
             VStack(alignment: .leading, spacing: Spacing.xs / 2) {
-                HStack(spacing: Spacing.xs) {
-                    // The pet leads when there is one; a post without a pet
-                    // degrades to the author rather than showing an empty row.
-                    Text(post.petName ?? post.authorName)
-                        .font(Typography.sectionTitle)
-                        .foregroundStyle(Palette.primaryText)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    if isBirthday {
-                        // Fixed, so a long name truncates before the cake
-                        // does. Inside the row's combined element, so it is
-                        // heard as part of "Mochi, birthday today, 2 hours ago".
-                        Text(FeedExtras.birthdayMark)
-                            .font(Typography.caption)
-                            .fixedSize()
-                            .accessibilityLabel("Birthday today")
-                    }
+                // The pet leads when there is one; a post without a pet
+                // degrades to the author rather than showing an empty row.
+                Text(post.petName ?? post.authorName)
+                    .font(Typography.sectionTitle)
+                    .foregroundStyle(Palette.primaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                HStack(spacing: Spacing.s) {
+                    Text(post.createdAt, style: .relative)
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.secondaryText)
+                    if isBirthday { birthdayPill }
                 }
-                Text(post.createdAt, style: .relative)
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.secondaryText)
             }
             Spacer(minLength: Spacing.s)
         }
@@ -208,12 +200,32 @@ struct PostCard: View {
         // `testTheCardAdvertisesThatItCanBeOpened` lose the app mid-scan.
         // Two gestures on two leaves add no container at all.
         .onTapGesture { onOpenPost?() }
-        // Author, pet and time read as one phrase.
+        // Author, pet and time read as one phrase — with the pill, "Mochi,
+        // 2 hours ago, birthday today".
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityHint("Opens the post")
         .accessibilityAction { onOpenPost?() }
         .accessibilityIdentifier("post.open")
+    }
+
+    /// The web card's "🎂 Birthday!" pill after the timestamp
+    /// (PostCard.tsx:551-555): the amber of the web's as a tint behind
+    /// ordinary text, the pairing `MeetupStatusBadge` uses for the same
+    /// reason — caption text on the status colour itself is not one the
+    /// contrast tests have measured.
+    ///
+    /// No vertical padding, so a card whose mark arrives after it was drawn
+    /// does not grow a line taller under the reader. Fixed, so a narrow row
+    /// cuts the timestamp before the pill.
+    private var birthdayPill: some View {
+        Text("🎂 Birthday!")
+            .font(Typography.caption.weight(.semibold))
+            .foregroundStyle(Palette.primaryText)
+            .padding(.horizontal, Spacing.s)
+            .background(Palette.warning.opacity(0.2), in: .capsule)
+            .fixedSize()
+            .accessibilityLabel("Birthday today")
     }
 
     private var text: some View {

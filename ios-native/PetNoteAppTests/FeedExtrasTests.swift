@@ -14,29 +14,52 @@ import Testing
 struct FeedExtrasTests {
     // MARK: - Fakes
 
+    /// One call's own behaviour, for the fakes below that can be told how
+    /// each read goes: held until a gate opens, or failed. Taken in order,
+    /// one per call; once they run out the fake answers from its inputs.
+    struct Step {
+        var gate: SocialGate?
+        var error: Error?
+    }
+
     /// Answers the way the Firestore query does: at or after the cutoff,
     /// newest first, at most `limit`.
     final class FakePopularPosts: PopularPostsReading, @unchecked Sendable {
-        /// Every record below is taken under this lock. The model's reads run
-        /// with `async let`, so calls arrive on several threads at once; an
-        /// unlocked append crashed a CI run (SIGSEGV in `posts(since:limit:)`,
-        /// run 35905119437, 2026-09-23).
+        /// Every input and record below is taken under this lock. The model's
+        /// reads run with `async let`, so calls arrive on several threads at
+        /// once, and some tests change an input while a read is still out;
+        /// an unlocked append crashed a CI run (SIGSEGV in
+        /// `posts(since:limit:)`, run 35905119437, 2026-09-23).
         private let lock = NSLock()
-        var stored: [Post] = []
-        var error: Error?
+        private var storedPosts: [Post] = []
+        private var storedError: Error?
+        private var steps: [Step] = []
         private var cutoffs: [Date] = []
         private var limits: [Int] = []
 
+        var stored: [Post] {
+            get { lock.withLock { storedPosts } }
+            set { lock.withLock { storedPosts = newValue } }
+        }
+        var error: Error? {
+            get { lock.withLock { storedError } }
+            set { lock.withLock { storedError = newValue } }
+        }
+        var script: [Step] {
+            get { lock.withLock { steps } }
+            set { lock.withLock { steps = newValue } }
+        }
         var recordedCutoffs: [Date] { lock.withLock { cutoffs } }
         var recordedLimits: [Int] { lock.withLock { limits } }
 
         func posts(since date: Date, limit: Int) async throws -> [Post] {
-            let (stored, error) = lock.withLock { () -> ([Post], Error?) in
+            let (stored, error, step) = lock.withLock { () -> ([Post], Error?, Step?) in
                 cutoffs.append(date)
                 limits.append(limit)
-                return (self.stored, self.error)
+                return (storedPosts, storedError, steps.isEmpty ? nil : steps.removeFirst())
             }
-            if let error { throw error }
+            if let gate = step?.gate { await gate.wait() }
+            if let failure = step?.error ?? error { throw failure }
             return stored
                 .filter { $0.createdAt >= date }
                 .sorted { $0.createdAt > $1.createdAt }
@@ -48,19 +71,35 @@ struct FeedExtrasTests {
     /// Pets by id. A chunk holding any id in `failing` fails whole, as a
     /// Firestore read does.
     final class FakeBirthdayPets: PetBirthdayReading, @unchecked Sendable {
-        /// Locked, for the reason `FakePopularPosts` gives.
+        /// Inputs and records under the lock, for the reason
+        /// `FakePopularPosts` gives.
         private let lock = NSLock()
-        var byID: [String: Pet] = [:]
-        var failing: Set<String> = []
+        private var petsByID: [String: Pet] = [:]
+        private var failingIDs: Set<String> = []
+        private var heldBy: SocialGate?
         private var asked: [[String]] = []
 
+        var byID: [String: Pet] {
+            get { lock.withLock { petsByID } }
+            set { lock.withLock { petsByID = newValue } }
+        }
+        var failing: Set<String> {
+            get { lock.withLock { failingIDs } }
+            set { lock.withLock { failingIDs = newValue } }
+        }
+        /// When set, every read waits for it before answering.
+        var gate: SocialGate? {
+            get { lock.withLock { heldBy } }
+            set { lock.withLock { heldBy = newValue } }
+        }
         var requests: [[String]] { lock.withLock { asked } }
 
         func pets(ids: [String]) async throws -> [Pet] {
-            let (byID, failing) = lock.withLock { () -> ([String: Pet], Set<String>) in
+            let (byID, failing, gate) = lock.withLock { () -> ([String: Pet], Set<String>, SocialGate?) in
                 asked.append(ids)
-                return (self.byID, self.failing)
+                return (petsByID, failingIDs, heldBy)
             }
+            if let gate { await gate.wait() }
             if !failing.isDisjoint(with: ids) { throw SocialFixture.readFailure }
             return ids.compactMap { byID[$0] }
         }
@@ -68,20 +107,35 @@ struct FeedExtrasTests {
 
     /// The signed-in person's pets, per account.
     final class FakeOwnedPets: PetChoiceProviding, @unchecked Sendable {
-        /// Locked, for the reason `FakePopularPosts` gives.
+        /// Inputs and records under the lock, for the reason
+        /// `FakePopularPosts` gives.
         private let lock = NSLock()
-        var byOwner: [String: [Pet]] = [:]
-        var error: Error?
+        private var petsByOwner: [String: [Pet]] = [:]
+        private var storedError: Error?
+        private var steps: [Step] = []
         private var asked: [String] = []
 
+        var byOwner: [String: [Pet]] {
+            get { lock.withLock { petsByOwner } }
+            set { lock.withLock { petsByOwner = newValue } }
+        }
+        var error: Error? {
+            get { lock.withLock { storedError } }
+            set { lock.withLock { storedError = newValue } }
+        }
+        var script: [Step] {
+            get { lock.withLock { steps } }
+            set { lock.withLock { steps = newValue } }
+        }
         var reads: [String] { lock.withLock { asked } }
 
         func pets(ownedBy uid: String) async throws -> [Pet] {
-            let (pets, error) = lock.withLock { () -> ([Pet], Error?) in
+            let (pets, error, step) = lock.withLock { () -> ([Pet], Error?, Step?) in
                 asked.append(uid)
-                return (self.byOwner[uid] ?? [], self.error)
+                return (petsByOwner[uid] ?? [], storedError, steps.isEmpty ? nil : steps.removeFirst())
             }
-            if let error { throw error }
+            if let gate = step?.gate { await gate.wait() }
+            if let failure = step?.error ?? error { throw failure }
             return pets
         }
     }
@@ -123,6 +177,15 @@ struct FeedExtrasTests {
         return (try #require(UserDefaults(suiteName: name)), name)
     }
 
+    /// Where both clients put a picked birthday: midnight, in the calendar
+    /// of the person who picked it (AddPet.tsx:290-306,
+    /// `FirestorePetRepository.birthdayFields`).
+    private static func localMidnight(_ year: Int, _ month: Int, _ day: Int, in calendar: Calendar) throws -> Date {
+        try #require(calendar.date(from: DateComponents(year: year, month: month, day: day)))
+    }
+
+    /// The legacy timestamp as the server's month/day derivation reads it,
+    /// for the pet page's own `isBirthday` fallback.
     private static func utcMidnight(_ year: Int, _ month: Int, _ day: Int) throws -> Date {
         var utc = Calendar(identifier: .gregorian)
         utc.timeZone = try #require(TimeZone(secondsFromGMT: 0))
@@ -401,15 +464,20 @@ struct FeedExtrasTests {
 
     // MARK: - Spotlight: names
 
-    /// `truncate(value, 8)`, in characters.
-    @Test func namesAreCutAtEightCharacters() {
+    /// `truncate(value, 8)`, counted as JavaScript counts: UTF-16 units.
+    @Test func namesAreCutAtEightUnitsAsTheWebCutsThem() {
         #expect(FeedExtras.truncated("Biscuit") == "Biscuit")
         #expect(FeedExtras.truncated("Mochiko!") == "Mochiko!", "eight is not more than eight")
         #expect(FeedExtras.truncated("Mochi the Great") == "Mochi th…")
-        // The seed's long CJK name.
+        // The seed's long CJK name: one unit a character.
         #expect(FeedExtras.truncated("麻薯团子小豆泥花生酱") == "麻薯团子小豆泥花…")
-        #expect(FeedExtras.truncated("🐶🐶🐶🐶🐶🐶🐶🐶🐶") == "🐶🐶🐶🐶🐶🐶🐶🐶…",
-                "an emoji is one character, not two halves of one")
+        // An emoji is two units, so four of them are eight and are not cut...
+        #expect(FeedExtras.truncated("🐶🐶🐶🐶") == "🐶🐶🐶🐶")
+        // ...and nine are cut after four, where the web cuts them.
+        #expect(FeedExtras.truncated("🐶🐶🐶🐶🐶🐶🐶🐶🐶") == "🐶🐶🐶🐶…")
+        // A cut through the middle of one leaves half of it, as the web's
+        // `slice` does; the half is drawn as the replacement mark.
+        #expect(FeedExtras.truncated("Mochi🐶🐶") == "Mochi🐶\u{FFFD}…")
     }
 
     /// The pet, then the author, then "Pet" — and the whole name is what is
@@ -455,6 +523,7 @@ struct FeedExtrasTests {
         #expect(banner.petID == "canonical")
         #expect(banner.title == "🎂🎉 Happy Birthday, Mochi! 🎉🎂 +1")
         #expect(pets.reads == ["me"])
+        #expect(model.bannerReadsSettled == 1, "the probe's count did not see the read come back")
     }
 
     @Test func oneBirthdayIsNamedAndTheRestAreCounted() throws {
@@ -475,31 +544,39 @@ struct FeedExtrasTests {
         #expect(FeedExtras.banner(for: [], on: now, calendar: calendar) == nil)
     }
 
-    /// "Turning N years old today!" needs a birth year, read in UTC.
-    @Test func theAgeLineNeedsABirthYear() throws {
+    /// "Turning N years old today!": the viewer's calendar year less the
+    /// birth year in the same calendar, whatever that gives — as the web's
+    /// `getFullYear()` subtraction does.
+    @Test func theAgeLineIsTheLocalYearsBetween() throws {
         let (now, calendar) = try Self.clock()
-        let three = PetFixture.pet(birthday: try Self.utcMidnight(2023, 9, 23), birthdayMonth: 9, birthdayDay: 23)
+        let three = PetFixture.pet(
+            birthday: try Self.localMidnight(2023, 9, 23, in: calendar), birthdayMonth: 9, birthdayDay: 23
+        )
         #expect(FeedExtras.ageLine(for: three, on: now, calendar: calendar) == "Turning 3 years old today!")
 
-        let one = PetFixture.pet(birthday: try Self.utcMidnight(2025, 9, 23))
+        let one = PetFixture.pet(birthday: try Self.localMidnight(2025, 9, 23, in: calendar))
         #expect(FeedExtras.ageLine(for: one, on: now, calendar: calendar) == "Turning 1 year old today!")
 
         let noYear = PetFixture.pet(birthdayMonth: 9, birthdayDay: 23)
         #expect(FeedExtras.ageLine(for: noYear, on: now, calendar: calendar) == nil,
                 "a month and a day say nothing about an age")
 
-        let newborn = PetFixture.pet(birthday: try Self.utcMidnight(2026, 9, 23))
-        #expect(FeedExtras.ageLine(for: newborn, on: now, calendar: calendar) == nil,
-                "\"Turning 0 years old\" is not said")
+        let newborn = PetFixture.pet(birthday: try Self.localMidnight(2026, 9, 23, in: calendar))
+        #expect(FeedExtras.ageLine(for: newborn, on: now, calendar: calendar) == "Turning 0 years old today!",
+                "the web says it, so this does")
 
-        // Born on New Year's Day, stored at UTC midnight. West of Greenwich
-        // that instant is still the year before; read locally, the pet would
-        // come out a year older than it is.
-        var honolulu = Calendar(identifier: .gregorian)
-        honolulu.timeZone = try #require(TimeZone(identifier: "Pacific/Honolulu"))
-        let newYear = try #require(honolulu.date(from: DateComponents(year: 2027, month: 1, day: 1, hour: 9)))
-        let janFirst = PetFixture.pet(birthday: try Self.utcMidnight(2024, 1, 1))
-        #expect(FeedExtras.ageLine(for: janFirst, on: newYear, calendar: honolulu) == "Turning 3 years old today!")
+        // Born on New Year's Day in Tokyo and stored as both clients store it,
+        // at local midnight — which in UTC is still 31 December of the year
+        // before. Read in UTC, the pet would come out a year older than it is.
+        var tokyo = Calendar(identifier: .gregorian)
+        tokyo.timeZone = try #require(TimeZone(identifier: "Asia/Tokyo"))
+        let newYear = try #require(tokyo.date(from: DateComponents(year: 2027, month: 1, day: 1, hour: 12)))
+        let born = try Self.localMidnight(2024, 1, 1, in: tokyo)
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+        #expect(utc.component(.year, from: born) == 2023, "the control: in UTC this birthday is in 2023")
+        let janFirst = PetFixture.pet(birthday: born, birthdayMonth: 1, birthdayDay: 1)
+        #expect(FeedExtras.ageLine(for: janFirst, on: newYear, calendar: tokyo) == "Turning 3 years old today!")
     }
 
     /// Closed for the session: not back on a refresh or a pet edit, back for
@@ -550,6 +627,7 @@ struct FeedExtrasTests {
 
         #expect(model.visibleBanner == nil)
         #expect(model.spotlight == .empty, "the banner's failure stopped the spotlight answering")
+        #expect(model.bannerReadsSettled == 1, "a read that failed is still a read that came back")
     }
 
     /// A pet added with today's birthday shows up without a pull.
@@ -706,5 +784,266 @@ struct FeedExtrasTests {
         await model.checkBirthdays(for: [card])
         #expect(birthdays.requests.count == 2)
         #expect(model.hasBirthday(petID: "pet-1"))
+    }
+
+    // MARK: - Birthday marks: the day, and this person's own pets
+
+    /// A refresh that brings back the same posts changes no ids, so the view
+    /// does not ask about their pets again; the refresh itself does, and on a
+    /// new day that is what takes yesterday's pills off and puts today's on.
+    @Test func aRefreshThatBringsBackTheSamePostsAsksAgainTheNextDay() async throws {
+        let (now, calendar) = try Self.clock()
+        let (defaults, name) = try Self.defaults()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let clock = TestClock(now)
+        let birthdays = FakeBirthdayPets()
+        birthdays.byID["pet-1"] = PetFixture.pet(id: "pet-1", birthdayMonth: 9, birthdayDay: 23)
+        birthdays.byID["pet-2"] = PetFixture.pet(id: "pet-2", birthdayMonth: 9, birthdayDay: 24)
+        let model = FeedExtrasModel(
+            accountID: "me", pets: FakeOwnedPets(), popular: FakePopularPosts(), birthdays: birthdays,
+            blocked: BlockFilteringFeed(base: FeedViewModelTests.FakeFeed(), social: FakeSocialRepository(), viewerID: "me"),
+            seenStore: UserDefaultsSpotlightSeenStore(defaults: defaults),
+            now: { clock.now }, calendar: calendar
+        )
+        let cards = [Self.post("post-1", petID: "pet-1"), Self.post("post-2", petID: "pet-2")]
+        await model.loadIfNeeded()
+        await model.checkBirthdays(for: cards)
+        #expect(model.hasBirthday(petID: "pet-1"))
+        #expect(!model.hasBirthday(petID: "pet-2"))
+
+        clock.advance(by: 24 * 3600)
+        // The pull, and nothing else: the posts that come back are the same.
+        await model.reload()
+
+        #expect(birthdays.requests.count == 2, "a refresh on the next day did not ask about the same cards again")
+        #expect(!model.hasBirthday(petID: "pet-1"), "yesterday's pill survived the refresh")
+        #expect(model.hasBirthday(petID: "pet-2"), "today's birthday did not get its pill")
+    }
+
+    /// Past midnight, yesterday's pill is not shown even before anything has
+    /// asked again — the next page or pull may be a while.
+    @Test func yesterdaysPillIsNotShownPastMidnight() async throws {
+        let (now, calendar) = try Self.clock()
+        let (defaults, name) = try Self.defaults()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let clock = TestClock(now)
+        let birthdays = FakeBirthdayPets()
+        birthdays.byID["pet-1"] = PetFixture.pet(id: "pet-1", birthdayMonth: 9, birthdayDay: 23)
+        let model = FeedExtrasModel(
+            accountID: "me", pets: FakeOwnedPets(), popular: FakePopularPosts(), birthdays: birthdays,
+            blocked: BlockFilteringFeed(base: FeedViewModelTests.FakeFeed(), social: FakeSocialRepository(), viewerID: "me"),
+            seenStore: UserDefaultsSpotlightSeenStore(defaults: defaults),
+            now: { clock.now }, calendar: calendar
+        )
+        await model.checkBirthdays(for: [Self.post("post-1", petID: "pet-1")])
+        #expect(model.hasBirthday(petID: "pet-1"))
+
+        clock.advance(by: 12 * 3600 + 60)
+
+        #expect(birthdays.requests.count == 1, "the control: nothing has asked again")
+        #expect(!model.hasBirthday(petID: "pet-1"), "yesterday's pill is still shown after midnight")
+    }
+
+    /// A pet edited to or away from today's birthday moves the pill on its
+    /// own cards — through the banner's read of this person's pets, with no
+    /// read of its own. Before, the pet stayed "already asked about" for the
+    /// rest of the session and its cards never changed.
+    @Test func aPetEditMovesThePillOnItsCards() async throws {
+        let (now, calendar) = try Self.clock()
+        let (defaults, name) = try Self.defaults()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let pets = FakeOwnedPets()
+        pets.byOwner["me"] = [PetFixture.pet(id: "mochi", name: "Mochi", birthdayMonth: 3, birthdayDay: 1)]
+        let birthdays = FakeBirthdayPets()
+        birthdays.byID["mochi"] = PetFixture.pet(id: "mochi", name: "Mochi", birthdayMonth: 3, birthdayDay: 1)
+        let model = makeModel(
+            pets: pets, birthdays: birthdays, seen: UserDefaultsSpotlightSeenStore(defaults: defaults),
+            now: now, calendar: calendar
+        )
+        await model.loadIfNeeded()
+        await model.checkBirthdays(for: [Self.post("mochis-post", petID: "mochi")])
+        #expect(!model.hasBirthday(petID: "mochi"))
+
+        pets.byOwner["me"] = [PetFixture.pet(id: "mochi", name: "Mochi", birthdayMonth: 9, birthdayDay: 23)]
+        await model.petsChanged()
+        #expect(model.hasBirthday(petID: "mochi"), "a pet edited to today's birthday did not reach its cards")
+        #expect(model.visibleBanner?.petID == "mochi", "the control: the banner read saw the edit")
+
+        pets.byOwner["me"] = [PetFixture.pet(id: "mochi", name: "Mochi", birthdayMonth: 3, birthdayDay: 1)]
+        await model.petsChanged()
+        #expect(!model.hasBirthday(petID: "mochi"), "a birthday edited away from today kept its pill")
+        #expect(birthdays.requests.isEmpty, "this person's own pet cost a read of its own")
+    }
+
+    // MARK: - Reads that overlap
+
+    /// A newer spotlight read that fails decides nothing: an older one still
+    /// out that then answers is what is shown. Before, the failure — the
+    /// newest request — was allowed to stand and the answer was thrown away.
+    @Test func aNewerSpotlightReadThatFailsDoesNotBeatAnOlderOneThatAnswered() async throws {
+        let (now, calendar) = try Self.clock()
+        let (defaults, name) = try Self.defaults()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let popular = FakePopularPosts()
+        popular.stored = (1...10).map { Self.post("p\($0)", likes: $0, hoursAgo: 1, from: now) }
+        let older = SocialGate()
+        popular.script = [Step(gate: older), Step(error: SocialFixture.readFailure)]
+        let model = makeModel(
+            popular: popular, seen: UserDefaultsSpotlightSeenStore(defaults: defaults), now: now, calendar: calendar
+        )
+
+        let first = Task { await model.reload() }
+        let firstIsOut = await eventuallyTrueAnywhere { popular.recordedCutoffs.count == 1 }
+        await model.reload()
+        let afterTheFailure = model.spotlight
+        older.open()
+        await first.value
+
+        #expect(firstIsOut, "the first read never went out")
+        #expect(afterTheFailure == .empty, "the control: with nothing arrived yet, the failure shows the empty line")
+        #expect(Self.ids(model.spotlight).count == 10, "a newer read's failure threw away tiles that did arrive")
+    }
+
+    /// And the other way round: an older answer that lands after a newer one
+    /// does not replace it.
+    @Test func anOlderSpotlightAnswerLandingLateDoesNotReplaceANewerOne() async throws {
+        let (now, calendar) = try Self.clock()
+        let (defaults, name) = try Self.defaults()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let popular = FakePopularPosts()
+        popular.stored = (1...10).map { Self.post("old-\($0)", likes: $0, hoursAgo: 1, from: now) }
+        let older = SocialGate()
+        popular.script = [Step(gate: older)]
+        let model = makeModel(
+            popular: popular, seen: UserDefaultsSpotlightSeenStore(defaults: defaults), now: now, calendar: calendar
+        )
+
+        let first = Task { await model.reload() }
+        let firstIsOut = await eventuallyTrueAnywhere { popular.recordedCutoffs.count == 1 }
+        popular.stored = (1...10).map { Self.post("new-\($0)", likes: $0, hoursAgo: 1, from: now) }
+        await model.reload()
+        older.open()
+        await first.value
+
+        #expect(firstIsOut)
+        #expect(Self.ids(model.spotlight).allSatisfy { $0.hasPrefix("new-") },
+                "an older answer landed over a newer one: \(Self.ids(model.spotlight))")
+    }
+
+    /// The banner keeps the same rule: a newer read that fails does not hide
+    /// the answer an older read brings.
+    @Test func aNewerBannerReadThatFailsDoesNotHideAnOlderAnswer() async throws {
+        let (now, calendar) = try Self.clock()
+        let (defaults, name) = try Self.defaults()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let pets = FakeOwnedPets()
+        pets.byOwner["me"] = [PetFixture.pet(id: "mochi", name: "Mochi", birthdayMonth: 9, birthdayDay: 23)]
+        let older = SocialGate()
+        pets.script = [Step(gate: older), Step(error: SocialFixture.readFailure)]
+        let model = makeModel(
+            pets: pets, seen: UserDefaultsSpotlightSeenStore(defaults: defaults), now: now, calendar: calendar
+        )
+
+        let first = Task { await model.loadIfNeeded() }
+        let firstIsOut = await eventuallyTrueAnywhere { pets.reads.count == 1 }
+        await model.petsChanged()
+        let afterTheFailure = model.visibleBanner
+        older.open()
+        await first.value
+
+        #expect(firstIsOut)
+        #expect(afterTheFailure == nil, "the control: nothing had arrived when the newer read failed")
+        #expect(model.visibleBanner?.petID == "mochi", "a newer read's failure hid the banner an older read brought")
+        #expect(model.bannerReadsSettled == 2)
+    }
+
+    /// All three reads out for one account, then a switch to another, then
+    /// the answers: none of them lands on the account that is signed in now.
+    @Test func readsStillOutWhenTheAccountChangesLandNowhere() async throws {
+        let (now, calendar) = try Self.clock()
+        let (defaults, name) = try Self.defaults()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let gate = SocialGate()
+        let pets = FakeOwnedPets()
+        pets.byOwner["alice-uid"] = [PetFixture.pet(id: "mochi", name: "Mochi", birthdayMonth: 9, birthdayDay: 23)]
+        pets.script = [Step(gate: gate)]
+        let popular = FakePopularPosts()
+        popular.stored = [Self.post("alices-pick", likes: 5, hoursAgo: 1, from: now)]
+        popular.script = [Step(gate: gate)]
+        let birthdays = FakeBirthdayPets()
+        birthdays.byID["mochi"] = PetFixture.pet(id: "mochi", birthdayMonth: 9, birthdayDay: 23)
+        birthdays.gate = gate
+        let model = makeModel(
+            uid: "alice-uid", pets: pets, popular: popular, birthdays: birthdays,
+            seen: UserDefaultsSpotlightSeenStore(defaults: defaults), now: now, calendar: calendar
+        )
+
+        let load = Task { await model.loadIfNeeded() }
+        let marks = Task { await model.checkBirthdays(for: [Self.post("mochis-post", petID: "mochi")]) }
+        let allOut = await eventuallyTrueAnywhere {
+            pets.reads.count == 1 && popular.recordedCutoffs.count == 1 && birthdays.requests.count == 1
+        }
+        model.prepare(for: "bob-uid")
+        gate.open()
+        await load.value
+        await marks.value
+
+        #expect(allOut, "not every read went out before the switch")
+        #expect(model.visibleBanner == nil, "alice's birthday banner landed on bob")
+        #expect(model.spotlight == .loading, "alice's spotlight landed on bob")
+        #expect(!model.hasBirthday(petID: "mochi"), "alice's marks landed on bob")
+        #expect(model.bannerReadsSettled == 0, "alice's read was counted as bob's")
+    }
+
+    // MARK: - The spotlight's pictures
+
+    /// The picture a tile asks for is the web tile's — the stored `thumbUrl`
+    /// before anything derived — so the two clients share one CDN rendition.
+    @Test func aVideoTileAsksForTheStoredThumbnailAsTheWebDoes() throws {
+        let clip = try #require(URL(string: "https://res.cloudinary.com/demo/video/upload/v1/clip.mp4"))
+        let stored = try #require(URL(string: "https://res.cloudinary.com/demo/video/upload/so_0,w_400,h_400,c_fill/v1/clip.jpg"))
+        let video = MediaItem(url: clip, kind: .video, thumbnailURL: stored)
+        let chosen = try #require(FeedExtras.spotlightPictureURL(for: video))
+        #expect(chosen == stored, "the tile derived its own poster instead of using the stored thumbUrl")
+        #expect(CloudinaryURL.optimized(chosen, size: .spotlight) == stored,
+                "the size step changed a /video/upload/ address, which the web's leaves alone")
+
+        let photoURL = try #require(URL(string: "https://res.cloudinary.com/demo/image/upload/v1/cat.jpg"))
+        let photo = try #require(FeedExtras.spotlightPictureURL(for: MediaItem(url: photoURL, kind: .image, thumbnailURL: nil)))
+        #expect(CloudinaryURL.optimized(photo, size: .spotlight).absoluteString
+                == "https://res.cloudinary.com/demo/image/upload/w_200,h_200,c_fill,q_auto,f_auto/v1/cat.jpg")
+
+        // No stored thumbnail: the web hands the video file to an <img> and
+        // draws nothing; this derives the frame-0 poster at the tile's size.
+        let bare = MediaItem(url: clip, kind: .video, thumbnailURL: nil)
+        #expect(FeedExtras.spotlightPictureURL(for: bare)?.absoluteString
+                == "https://res.cloudinary.com/demo/video/upload/so_0,w_200,h_200,c_fill,q_auto,f_auto/v1/clip.jpg")
+        #expect(FeedExtras.spotlightPictureURL(for: nil) == nil)
+    }
+
+    // MARK: - Share a birthday post
+
+    /// The banner's "Share a birthday post" opens the composer for its pet —
+    /// the web's `/create?petId=` — and only a pet that is theirs is chosen.
+    @Test func theComposerOpenedForAPetStartsOnIt() async {
+        let owned = [PetFixture.pet(id: "bean", name: "Bean"), PetFixture.pet(id: "mochi", name: "Mochi")]
+        func composer(for petID: String?) -> ComposeViewModel {
+            ComposeViewModel(
+                uid: "me", isEmailVerified: true, uploader: FakeUploader(), writes: FakePostWrites(),
+                pets: FixedPets(pets: owned), preferredPetID: petID, drafts: InMemoryDraftStore()
+            )
+        }
+
+        let plain = composer(for: nil)
+        await plain.start()
+        #expect(plain.selectedPetID == nil, "the control: with two pets, nothing is chosen for them")
+
+        let forMochi = composer(for: "mochi")
+        await forMochi.start()
+        #expect(forMochi.selectedPetID == "mochi", "the composer did not start on the birthday pet")
+
+        let forSomeoneElse = composer(for: "not-theirs")
+        await forSomeoneElse.start()
+        #expect(forSomeoneElse.selectedPetID == nil, "a pet that is not theirs was chosen")
     }
 }
