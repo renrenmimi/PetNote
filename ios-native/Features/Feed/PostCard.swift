@@ -29,6 +29,10 @@ struct PostCard: View {
     /// all, by a test or by a finger, and no like ever reached the emulator.
     /// Keeping the gesture off the actions row is what makes both work.
     var onOpenPost: (() -> Void)?
+    /// The post's pet has its birthday today — the web card's
+    /// `initialBirthday`. Only the feed asks (`FeedExtrasModel.checkBirthdays`);
+    /// the pet page says it in words of its own.
+    var isBirthday = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.m) {
@@ -161,13 +165,24 @@ struct PostCard: View {
         HStack(spacing: Spacing.s) {
             Avatar(url: post.petAvatarURL ?? post.authorAvatarURL)
             VStack(alignment: .leading, spacing: Spacing.xs / 2) {
-                // The pet leads when there is one; a post without a pet
-                // degrades to the author rather than showing an empty row.
-                Text(post.petName ?? post.authorName)
-                    .font(Typography.sectionTitle)
-                    .foregroundStyle(Palette.primaryText)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                HStack(spacing: Spacing.xs) {
+                    // The pet leads when there is one; a post without a pet
+                    // degrades to the author rather than showing an empty row.
+                    Text(post.petName ?? post.authorName)
+                        .font(Typography.sectionTitle)
+                        .foregroundStyle(Palette.primaryText)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if isBirthday {
+                        // Fixed, so a long name truncates before the cake
+                        // does. Inside the row's combined element, so it is
+                        // heard as part of "Mochi, birthday today, 2 hours ago".
+                        Text(FeedExtras.birthdayMark)
+                            .font(Typography.caption)
+                            .fixedSize()
+                            .accessibilityLabel("Birthday today")
+                    }
+                }
                 Text(post.createdAt, style: .relative)
                     .font(Typography.caption)
                     .foregroundStyle(Palette.secondaryText)

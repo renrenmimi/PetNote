@@ -8,6 +8,9 @@ import SwiftUI
 /// step — but not before a measurement says so.
 struct FeedView: View {
     @State private var model: FeedViewModel
+    /// The birthday banner, the spotlight row and the cards' birthday marks.
+    /// Owned by the shell with `model`, and reset with it on an account switch.
+    @State private var extras: FeedExtrasModel
     @Binding private var path: [Route]
     @Environment(VideoPlaybackCoordinator.self) private var video
     @Environment(SessionStore.self) private var session
@@ -23,8 +26,9 @@ struct FeedView: View {
     /// so dismissing one failure does not silence the next.
     @State private var refreshFailureDismissed = false
 
-    init(model: FeedViewModel, path: Binding<[Route]>) {
+    init(model: FeedViewModel, extras: FeedExtrasModel, path: Binding<[Route]>) {
         _model = State(initialValue: model)
+        _extras = State(initialValue: extras)
         _path = path
     }
 
@@ -68,7 +72,22 @@ struct FeedView: View {
         .background(Palette.background)
         .task { await model.loadFirstPageIfNeeded() }
         .task { returnToWhereTheSessionEnded() }
-        .refreshable { await model.reload() }
+        .task { await extras.loadIfNeeded() }
+        // On the ids, so a new page or a refresh asks about the pets it
+        // brought and nothing else — `checkBirthdays` skips the ones it has.
+        // A task of its own rather than `.task(id:)`: that one is cancelled
+        // when the ids change, and a read cancelled half way loses its answer
+        // — those pets would go unmarked until some later page asked again.
+        .onChange(of: model.posts.map(\.id), initial: true) { _, _ in
+            Task { await extras.checkBirthdays(for: model.posts) }
+        }
+        .refreshable {
+            // Alongside the feed's own refresh, not in front of it: the
+            // spotlight's read is not a reason for the list's refresh control
+            // to spin any longer.
+            Task { await extras.reload() }
+            await model.reload()
+        }
         // An inset rather than an overlay: this one says the list underneath
         // is out of date, and a banner that covers the row it is talking
         // about is its own small problem.
@@ -207,6 +226,26 @@ struct FeedView: View {
         // Anchoring to an identity survives that.
         ScrollViewReader { proxy in
             List {
+                // The web feed's order: the birthday banner, then the
+                // spotlight, then the posts. Rows of this list rather than
+                // views above it, so they scroll away with it.
+                if let banner = extras.visibleBanner {
+                    BirthdayBannerRow(
+                        banner: banner,
+                        onOpen: { openPet(banner.petID) },
+                        onDismiss: { extras.dismissBanner() }
+                    )
+                    .listRowInsets(EdgeInsets(
+                        top: Spacing.s, leading: Layout.pageInset, bottom: 0, trailing: Layout.pageInset
+                    ))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Palette.background)
+                }
+                PetSpotlightRow(phase: extras.spotlight, onOpen: { openFromSpotlight($0) })
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Palette.background)
+
                 ForEach(model.posts) { post in
                 PostCard(
                     post: post
@@ -217,7 +256,8 @@ struct FeedView: View {
                     onOpenComments: { open(post) },
                     // The gesture is inside the card, on its content only. A
                     // row-level tap gesture swallowed every button in the card.
-                    onOpenPost: { open(post) }
+                    onOpenPost: { open(post) },
+                    isBirthday: extras.hasBirthday(petID: post.petID)
                 )
                 .listRowInsets(EdgeInsets())
                 .listRowSeparator(.hidden)
@@ -273,6 +313,24 @@ struct FeedView: View {
         guard !path.contains(.postDetail(postID: post.id)) else { return }
         model.rememberScrollAnchor(post.id)
         path.append(.postDetail(postID: post.id))
+    }
+
+    /// A spotlight tile: seen from now on, then the post.
+    ///
+    /// No scroll anchor. The post may not be a row of this list at all — the
+    /// spotlight reaches back a week — and an anchor naming a row that is not
+    /// there would replace the one that is.
+    private func openFromSpotlight(_ postID: String) {
+        extras.markSeen(postID)
+        guard !path.contains(.postDetail(postID: postID)) else { return }
+        path.append(.postDetail(postID: postID))
+    }
+
+    /// The birthday banner: the pet's page, once per tap for the reason
+    /// `open(_:)` gives.
+    private func openPet(_ petID: String) {
+        guard !path.contains(.pet(petID: petID)) else { return }
+        path.append(.pet(petID: petID))
     }
 
     private func pagingFailureRow(_ failure: FeedViewModel.FailureKind) -> some View {

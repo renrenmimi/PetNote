@@ -66,6 +66,10 @@ struct SignedInView: View {
     /// redraw of the parent, and a filter made fresh each time would not be
     /// the one the model holds — invalidating it would change nothing.
     @State private var filteringFeed: BlockFilteringFeed
+    /// The birthday banner, the spotlight row and the cards' birthday marks.
+    /// From the same initialisation as the feed's model, for the same reason,
+    /// and reading its blocked list through the same filter.
+    @State private var feedExtras: FeedExtrasModel
 
     init(user: UserSession, repositories: Repositories = .live) {
         self.user = user
@@ -79,6 +83,15 @@ struct SignedInView: View {
                 feed: filtering, likes: repositories.likes, accountID: user.uid
             )
         )
+        _feedExtras = State(
+            initialValue: FeedExtrasModel(
+                accountID: user.uid,
+                pets: repositories.petChoices,
+                popular: repositories.popularPosts,
+                birthdays: repositories.petBirthdays,
+                blocked: filtering
+            )
+        )
     }
 
     /// After a block or an unblock: the next read filters by the new list.
@@ -86,6 +99,10 @@ struct SignedInView: View {
         Task {
             await filteringFeed.invalidate()
             await feedModel.reload()
+            // The spotlight too, after the filter has forgotten the old list:
+            // somebody just blocked must not stay featured at the top of the
+            // feed until the next pull.
+            await feedExtras.blocksChanged()
         }
     }
 
@@ -146,6 +163,10 @@ struct SignedInView: View {
             // read for the new account uses the new account's blocks.
             await filteringFeed.switchAccount(to: user.uid)
             feedModel.prepare(for: user.uid)
+            // Its own reset, then its own first load: the feed's `.task` that
+            // would ask ran once, for the account that left.
+            feedExtras.prepare(for: user.uid)
+            Task { await feedExtras.loadIfNeeded() }
             path = []
             profilePath = []
             placesPath = []
@@ -176,6 +197,11 @@ struct SignedInView: View {
         .onChange(of: selectedTab) { _, tab in
             if tab != .home { video.releaseAll(reason: "left the home tab") }
         }
+        // A pet added, edited or removed may be one whose birthday is today —
+        // or may have been, and no longer is.
+        .onChange(of: petsChanged) { _, _ in
+            Task { await feedExtras.petsChanged() }
+        }
         // A link opened from outside the app (`petnote://post/<id>`): the
         // home stack shows it, as a tap on the post would. Read on appearing
         // too, for a link that arrived before sign-in had finished.
@@ -204,7 +230,7 @@ struct SignedInView: View {
 
     private var homeTab: some View {
         NavigationStack(path: $path) {
-            FeedView(model: feedModel, path: $path)
+            FeedView(model: feedModel, extras: feedExtras, path: $path)
                 .environment(video)
                 .suspendedBanner(isSuspended)
                 // Back from the notifications list, or anywhere else, the dot
@@ -441,7 +467,7 @@ struct SignedInView: View {
     private func destinationContent(_ route: Route, stack: Binding<[Route]>) -> some View {
         switch route {
         case .feed:
-            FeedView(model: feedModel, path: stack).environment(video)
+            FeedView(model: feedModel, extras: feedExtras, path: stack).environment(video)
         case .postDetail(let postID):
             PostDetailView(
                 model: PostDetailViewModel(
@@ -789,8 +815,14 @@ struct Repositories {
     let places: any PlacesReading
     let placeReviews: any PlaceReviewing
     let meetups: any MeetupsReading
+    /// The spotlight row's candidates. The search repository's own read — see
+    /// `PopularPostsReading`.
+    let popularPosts: any PopularPostsReading
+    /// The pets behind the feed cards' birthday marks.
+    let petBirthdays: any PetBirthdayReading
 
     static var live: Repositories {
+        let search = FirestoreSearchRepository()
         let places = FirestorePlacesSource()
         return Repositories(
             feed: FirestoreFeedRepository(),
@@ -806,7 +838,7 @@ struct Repositories {
             auth: LiveAccountAuth(),
             social: FirestoreSocialRepository(),
             family: FirestoreFamilyRepository(),
-            search: FirestoreSearchRepository(),
+            search: search,
             reports: FirestoreContentReporter(),
             feedback: FirestoreFeedbackSender(),
             saved: FirestoreSavedPostsSource(),
@@ -817,7 +849,9 @@ struct Repositories {
             notifications: FirestoreNotificationsSource(),
             places: places,
             placeReviews: places,
-            meetups: FirestoreMeetupsSource()
+            meetups: FirestoreMeetupsSource(),
+            popularPosts: search,
+            petBirthdays: FirestorePetBirthdaySource()
         )
     }
 }
