@@ -278,11 +278,19 @@ struct ComposeView: View {
             Text(draftBannerText).font(Typography.body)
             HStack(spacing: Spacing.m) {
                 Button("Restore") { model.restoreDraft() }
+                    .disabled(!model.canRestoreDraft)
                     .accessibilityIdentifier("compose.draft.restore")
                 Button("Discard") { model.discardDraft() }
                     .accessibilityIdentifier("compose.draft.discard")
             }
             .font(Typography.caption)
+            if !model.canRestoreDraft {
+                // Why Restore is greyed out: see `canRestoreDraft`.
+                Text("The draft can't be restored once photos are picked or a post has started.")
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.secondaryText)
+                    .accessibilityIdentifier("compose.draft.cannotRestore")
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.m)

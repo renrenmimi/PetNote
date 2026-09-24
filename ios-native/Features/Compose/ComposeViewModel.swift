@@ -195,8 +195,26 @@ final class ComposeViewModel {
 
     // MARK: - Drafts
 
+    /// Whether Restore can bring the draft back without mixing two posts.
+    ///
+    /// A restored draft's uploaded files become the post's first photos —
+    /// publishing sends `uploadedAssets` and uploads only the picked photos
+    /// after that many. So with photos already picked here, a draft that has
+    /// uploads would post its files in place of some of the picks, and the
+    /// picks' tiles would still be on screen. And once an attempt has started
+    /// here (an operation id, or uploads of its own), restoring would swap
+    /// that attempt's identity for the draft's, and the next Share could post
+    /// a second time. Both are refused; a draft without uploads and nothing
+    /// started yet restores as before, keeping the picks.
+    var canRestoreDraft: Bool {
+        guard let draft = restorableDraft, !isSubmitting, !hasPublished else { return false }
+        if operationID != nil || !uploadedAssets.isEmpty { return false }
+        if !draft.uploadedAssets.isEmpty && !items.isEmpty { return false }
+        return true
+    }
+
     func restoreDraft() {
-        guard let draft = restorableDraft else { return }
+        guard canRestoreDraft, let draft = restorableDraft else { return }
         caption = draft.text
         tags = draft.tags
         selectedPetID = draft.petID
