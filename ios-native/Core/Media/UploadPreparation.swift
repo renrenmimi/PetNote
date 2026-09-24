@@ -195,6 +195,13 @@ enum UploadPreparation {
     /// 1920px picture rather than the 48-megapixel one, and upright, because
     /// the orientation has already been applied. `.normal` does not touch the
     /// decoded image at all.
+    ///
+    /// The web client does it the other way round — filters the original,
+    /// then shrinks (src/pages/Create.tsx:627-628). For the colour functions
+    /// the order makes no visible difference: each is the same affine change
+    /// to every pixel, and a resample only averages pixels. For the blur it
+    /// would, so the blur is scaled to the original's size to land where the
+    /// web client's does; see `PhotoFilter.pixelsPerCSSPixel`.
     static func encodeJPEG(
         _ data: Data, filter: PhotoFilter = .normal, options: Options = .default
     ) throws -> Data {
@@ -219,8 +226,13 @@ enum UploadPreparation {
         } else {
             // A photo the person chose a filter for does not go up without
             // it: failing to render is a failure to prepare, not a reason to
-            // quietly upload the original.
-            guard let filtered = PhotoFilterRenderer.shared.render(filter, decoded) else {
+            // quietly upload the original. `.upload` renders on the CPU, so
+            // a person who swipes home during "Preparing" does not get a
+            // blank picture posted instead; see `PhotoFilterRenderer`.
+            let originalLongSide = pixelSize(of: data).map { max($0.width, $0.height) }
+            guard let filtered = PhotoFilterRenderer.shared.render(
+                filter, decoded, originalLongSide: originalLongSide, for: .upload
+            ) else {
                 throw PreparationError.unencodable
             }
             image = filtered

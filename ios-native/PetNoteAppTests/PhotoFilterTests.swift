@@ -26,10 +26,29 @@ enum FilterTestImages {
         return UploadTestImages.encoded(context.makeImage()!, as: .png)!
     }
 
+    /// Left half black, right half white: an edge with nothing in between,
+    /// so any value between the two is the blur's.
+    static func hardEdge(width: Int, height: Int) -> CGImage {
+        let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: sRGB, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        )!
+        context.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width / 2, height: height))
+        context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: width / 2, y: 0, width: width - width / 2, height: height))
+        return context.makeImage()!
+    }
+
     /// Every pixel of an encoded image as sRGB bytes, RGBX.
     static func pixels(of data: Data) -> (bytes: [UInt8], width: Int, height: Int)? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        return pixels(of: image)
+    }
+
+    /// Every pixel of a picture as sRGB bytes, RGBX.
+    static func pixels(of image: CGImage) -> (bytes: [UInt8], width: Int, height: Int)? {
         let width = image.width
         let height = image.height
         guard let context = CGContext(
@@ -40,6 +59,13 @@ enum FilterTestImages {
         guard let raw = context.data else { return nil }
         let buffer = UnsafeBufferPointer(start: raw.assumingMemoryBound(to: UInt8.self), count: width * height * 4)
         return (Array(buffer), width, height)
+    }
+
+    /// The red channel, 0…255, of every pixel along the middle row.
+    static func middleRow(of image: CGImage) -> [Int]? {
+        guard let picture = pixels(of: image) else { return nil }
+        let start = (picture.height / 2) * picture.width
+        return (0..<picture.width).map { Int(picture.bytes[(start + $0) * 4]) }
     }
 
     /// The colour in the middle of an encoded image, 0…255 per channel.
@@ -247,6 +273,52 @@ struct PhotoFilterTests {
         let prepared = try UploadPreparation.prepareImage(rotated, filename: "IMG.jpg", filter: .warm)
         let size = try #require(UploadPreparation.pixelSize(of: prepared.data))
         #expect(size.width < size.height, "the filtered photo came out on its side: \(size)")
+    }
+
+    // MARK: - Soft's blur is the web client's uploaded blur
+
+    /// The web client blurs the original by 0.5px and then shrinks it to
+    /// 1920 (src/pages/Create.tsx:627-628, :860), so the file it uploads
+    /// carries 0.5 × 1920 ÷ the original's long side — and the whole 0.5 for
+    /// a photo it does not shrink.
+    @Test func softsBlurIsHalfAPixelOfTheOriginal() {
+        // A 12-megapixel phone photo: about a quarter of a pixel in the upload.
+        let phone = PhotoFilter.pixelsPerCSSPixel(decodedLongSide: 1920, originalLongSide: 4032)
+        #expect(abs(0.5 * phone - 0.238) < 0.001, "Soft's blur in a 4032px photo's upload is \(0.5 * phone)px")
+        // Already 1920 or smaller: not enlarged on either client.
+        #expect(PhotoFilter.pixelsPerCSSPixel(decodedLongSide: 1200, originalLongSide: 1200) == 1)
+        // Sizes that could not be read leave the blur at its CSS value.
+        #expect(PhotoFilter.pixelsPerCSSPixel(decodedLongSide: 1920, originalLongSide: 0) == 1)
+    }
+
+    /// And the upload render uses it. A hard edge in a 1920-wide picture
+    /// decoded from a 4032-pixel original comes out with the web client's
+    /// quarter-pixel blur: the second pixel out from the edge, on either
+    /// side, has not moved. The rule this replaced — half a pixel per 400 of
+    /// the short side — made that 1.35 pixels here and moved those two by
+    /// about thirty levels.
+    ///
+    /// Then the same picture said to be decoded *larger* than its original,
+    /// which the app never does, turns the blur up to 2 pixels — so the first
+    /// half is the scale at work, not a blur that was never applied.
+    @Test func theUploadRenderBlursByTheOriginalsScale() throws {
+        let edge = FilterTestImages.hardEdge(width: 1920, height: 1080)
+        let upload = try #require(
+            PhotoFilterRenderer.shared.render(.soft, edge, originalLongSide: 4032, for: .upload)
+        )
+        let row = try #require(FilterTestImages.middleRow(of: upload))
+        // Soft's brightness and contrast take black to about 13 and white to
+        // about 242 before the blur; columns 900 and 1000 are far from it.
+        #expect(abs(row[958] - row[900]) <= 3 && abs(row[961] - row[1000]) <= 3, """
+            The second pixel out from the edge moved: \(row[956...963]) against \(row[900]) and \(row[1000]). \
+            The blur is wider than the web client's upload carries.
+            """)
+
+        let enlarged = try #require(
+            PhotoFilterRenderer.shared.render(.soft, edge, originalLongSide: 480, for: .upload)
+        )
+        let wide = try #require(FilterTestImages.middleRow(of: enlarged))
+        #expect(wide[958] - wide[900] >= 15, "no blur where it should be two pixels wide: \(wide[956...963])")
     }
 
     /// The web client skips its filter for GIFs; so do the bytes here.

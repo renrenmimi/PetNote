@@ -93,35 +93,44 @@ enum PhotoFilter: String, CaseIterable, Identifiable, Sendable {
         steps.isEmpty ? "none" : steps.map(\.css).joined(separator: " ")
     }
 
-    /// How wide, in points, a photo is taken to be shown when the one length
-    /// in these chains — `blur(0.5px)` — is turned into image pixels.
+    /// Image pixels per CSS pixel, for the one length in these chains —
+    /// `blur(0.5px)` — in a picture decoded at `decodedLongSide` pixels on its
+    /// longer side from an original `originalLongSide` pixels long.
     ///
-    /// CSS lengths are display lengths: on the web the preview is blurred by
-    /// half a CSS pixel *at the size it is drawn*. A stored photo has no
-    /// display size of its own, so it borrows the one it is mostly seen at:
-    /// about a phone's width, which is how wide the feed draws a photo and how
-    /// wide the web composer draws a single-photo preview. The blur is then
-    /// the same fraction of the photo in every rendering of it — the strip's
-    /// 64pt swatch, the grid tile, and the uploaded file — so each preview is
-    /// the upload, smaller. Measured against the photo's shorter side, the one
-    /// a square tile or a 4:5 feed card fills.
+    /// **The reference is the web client's uploaded file**, because that is
+    /// what everyone sees, on both clients, once the post is up. Its
+    /// `applyFilter` (src/pages/Create.tsx:848) draws the picked photo through
+    /// the CSS filter onto a canvas at the photo's own full size
+    /// (`canvas.width = img.width`, :860), so the blur is half a pixel *of the
+    /// original*; only afterwards does `compressImage` shrink the result to
+    /// 1920 (:628). The uploaded file therefore carries 0.5 × 1920 ÷ (the
+    /// original's long side) pixels of blur — about 0.24 for a 4032-pixel
+    /// photo — and the whole 0.5 for a photo already 1920 or smaller, which
+    /// `compressImage` does not enlarge.
     ///
-    /// Not what the web client's *upload* does: it applies `blur(0.5px)` to
-    /// the full-resolution original on a canvas and then downscales, which
-    /// leaves almost none of the blur the person saw. Matching the preview
-    /// they chose from is the better half of that parity to keep.
-    static let referenceDisplayPoints: CGFloat = 400
-
-    /// Image pixels per CSS pixel for an image of this size.
-    static func pixelsPerCSSPixel(width: Int, height: Int) -> CGFloat {
-        CGFloat(max(1, min(width, height))) / referenceDisplayPoints
+    /// Scaling by decoded ÷ original gives exactly that for the 1920 upload,
+    /// and for a smaller decode the same blur as a fraction of the picture:
+    /// a swatch or a tile rendered this way is the upload, smaller.
+    ///
+    /// Not what the web client's *previews* show. Those are the CSS filter on
+    /// an `<img>` at display size, half a CSS pixel on a 64pt swatch, which is
+    /// visibly softer than the file it then uploads. This client previews the
+    /// file instead.
+    static func pixelsPerCSSPixel(decodedLongSide: CGFloat, originalLongSide: CGFloat) -> CGFloat {
+        guard decodedLongSide > 0, originalLongSide > 0 else { return 1 }
+        return decodedLongSide / originalLongSide
     }
 
-    /// Runs the chain over an image, in order.
-    func apply(to image: CIImage, pixelsPerCSSPixel: CGFloat) -> CIImage {
-        steps.reduce(image) { current, step in
-            step.apply(to: current, pixelsPerCSSPixel: pixelsPerCSSPixel)
+    /// Runs the chain over an image, in order. Nil when Core Image could not
+    /// build one of the steps — a photo the person chose a filter for is not
+    /// quietly given part of it.
+    func apply(to image: CIImage, pixelsPerCSSPixel: CGFloat) -> CIImage? {
+        var current = image
+        for step in steps {
+            guard let next = step.apply(to: current, pixelsPerCSSPixel: pixelsPerCSSPixel) else { return nil }
+            current = next
         }
+        return current
     }
 }
 
@@ -206,13 +215,14 @@ extension PhotoFilter {
             }
         }
 
-        func apply(to image: CIImage, pixelsPerCSSPixel: CGFloat) -> CIImage {
+        func apply(to image: CIImage, pixelsPerCSSPixel: CGFloat) -> CIImage? {
             if let matrix = colorMatrix {
                 return matrix.apply(to: image)
             }
             guard case .gaussianBlur(let cssPixels) = self else { return image }
             // CSS `blur()` takes the Gaussian's standard deviation, which is
-            // what `applyingGaussianBlur(sigma:)` takes too.
+            // what `applyingGaussianBlur(sigma:)` takes too — in pixels of the
+            // picture being rendered, hence the scale.
             let sigma = cssPixels * Double(pixelsPerCSSPixel)
             guard sigma > 0 else { return image }
             // Clamped first so the edges blur against themselves rather than
@@ -245,7 +255,7 @@ extension PhotoFilter {
             ]
         }
 
-        func apply(to image: CIImage) -> CIImage {
+        func apply(to image: CIImage) -> CIImage? {
             let matrix = CIFilter.colorMatrix()
             matrix.inputImage = image
             matrix.rVector = CIVector(x: CGFloat(red[0]), y: CGFloat(red[1]), z: CGFloat(red[2]), w: 0)
@@ -253,7 +263,7 @@ extension PhotoFilter {
             matrix.bVector = CIVector(x: CGFloat(blue[0]), y: CGFloat(blue[1]), z: CGFloat(blue[2]), w: 0)
             matrix.aVector = CIVector(x: 0, y: 0, z: 0, w: 1)
             matrix.biasVector = CIVector(x: CGFloat(bias[0]), y: CGFloat(bias[1]), z: CGFloat(bias[2]), w: 0)
-            guard let transformed = matrix.outputImage else { return image }
+            guard let transformed = matrix.outputImage else { return nil }
 
             // Each CSS function's output is clamped before the next one reads
             // it. Core Image's intermediates are half-float and would carry a
@@ -262,28 +272,48 @@ extension PhotoFilter {
             clamp.inputImage = transformed
             clamp.minComponents = CIVector(x: 0, y: 0, z: 0, w: 0)
             clamp.maxComponents = CIVector(x: 1, y: 1, z: 1, w: 1)
-            return clamp.outputImage ?? transformed
+            return clamp.outputImage
         }
     }
 }
 
 // MARK: - Rendering
 
-/// Renders a filter chain over a decoded picture. One shared instance, one
-/// `CIContext`.
+/// Renders a filter chain over a decoded picture. One shared instance.
 ///
-/// A context is expensive to make — it owns a Metal device queue and a cache
-/// of compiled kernels — and cheap to reuse, so every preview and every upload
-/// goes through this one.
+/// A context is expensive to make — it owns a device queue and a cache of
+/// compiled kernels — and cheap to reuse, so there are two for the life of
+/// the app, one per `Use`, and every render goes through one of them.
 ///
 /// `@unchecked Sendable` because `CIContext` is documented as thread-safe and
 /// is not marked `Sendable`. That claim is the unchecked part and nothing
-/// else: both stored properties are `let`, and every `CIFilter` is made fresh
+/// else: every stored property is `let`, and every `CIFilter` is made fresh
 /// per render, never shared.
 final class PhotoFilterRenderer: @unchecked Sendable {
     static let shared = PhotoFilterRenderer()
 
-    private let context: CIContext
+    /// What a render is for, which decides where it runs.
+    enum Use: Sendable {
+        /// A swatch or a tile, drawn while the composer is on screen.
+        case preview
+        /// The picture that is encoded and uploaded.
+        case upload
+    }
+
+    /// The GPU, for previews: they are only asked for while the composer is
+    /// on screen, and a photo has up to nine of them.
+    private let previewContext: CIContext
+    /// The CPU, for the upload.
+    ///
+    /// iOS does not let an app submit GPU work while it is in the background,
+    /// and preparation can be running then: Share pressed, then a swipe home
+    /// during "Preparing 2/3…". A GPU render refused that way is not reliably
+    /// an error — it can come back as a picture of nothing — and that picture
+    /// would be encoded, uploaded and published. The software renderer is
+    /// slower, and on a 1920-pixel picture that is a fraction of a second
+    /// against an upload measured in seconds; it gives the same result whether
+    /// or not the app is on screen.
+    private let uploadContext: CIContext
     private let colorSpace: CGColorSpace
 
     init() {
@@ -291,20 +321,31 @@ final class PhotoFilterRenderer: @unchecked Sendable {
         colorSpace = sRGB
         // sRGB-encoded working space, so the chain sees the same numbers the
         // browser's CSS filters see. See `PhotoFilter`.
-        context = CIContext(options: [.workingColorSpace: sRGB])
+        previewContext = CIContext(options: [.workingColorSpace: sRGB])
+        uploadContext = CIContext(options: [.workingColorSpace: sRGB, .useSoftwareRenderer: true])
     }
 
     /// The filtered picture, the same size as the input, in sRGB — the space
     /// a browser canvas writes. A wide-gamut original therefore loses its
     /// extra gamut when, and only when, a filter is chosen. Nil when Core
-    /// Image could not render.
-    func render(_ filter: PhotoFilter, _ image: CGImage) -> CGImage? {
+    /// Image could not render, which the upload treats as a failure to
+    /// prepare.
+    ///
+    /// - Parameter originalLongSide: the longer side, in pixels, of the photo
+    ///   as picked, which `image` was decoded from. It sets the blur; see
+    ///   `PhotoFilter.pixelsPerCSSPixel`. Nil when it could not be read, and
+    ///   then `image` is taken to be the original.
+    func render(
+        _ filter: PhotoFilter, _ image: CGImage, originalLongSide: CGFloat?, for use: Use
+    ) -> CGImage? {
         guard filter != .normal else { return image }
-        let input = CIImage(cgImage: image)
-        let output = filter.apply(
-            to: input,
-            pixelsPerCSSPixel: PhotoFilter.pixelsPerCSSPixel(width: image.width, height: image.height)
+        let decodedLongSide = CGFloat(max(image.width, image.height))
+        let scale = PhotoFilter.pixelsPerCSSPixel(
+            decodedLongSide: decodedLongSide, originalLongSide: originalLongSide ?? decodedLongSide
         )
+        let input = CIImage(cgImage: image)
+        guard let output = filter.apply(to: input, pixelsPerCSSPixel: scale) else { return nil }
+        let context = use == .upload ? uploadContext : previewContext
         return context.createCGImage(output, from: input.extent, format: .RGBA8, colorSpace: colorSpace)
     }
 }

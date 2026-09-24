@@ -12,10 +12,10 @@ import UIKit
 /// the same photo start one decode between them, not ten.
 ///
 /// **Previews are the upload, smaller.** They go through the same
-/// `PhotoFilterRenderer` as `UploadPreparation`, and `blur(0.5px)` is scaled to
-/// the picture's size rather than the screen's (see
-/// `PhotoFilter.referenceDisplayPoints`), so what a swatch shows is what the
-/// feed will show.
+/// `PhotoFilterRenderer` as `UploadPreparation`, and `blur(0.5px)` is scaled
+/// by the decode's size against the original's (see
+/// `PhotoFilter.pixelsPerCSSPixel`), so what a swatch shows is what the feed
+/// will show.
 ///
 /// `NSCache` for the same reason `ImageLoader` uses it: it gives memory back
 /// under pressure without an eviction policy of our own. Keys carry the item
@@ -47,8 +47,9 @@ actor ComposeFilterPreviews {
         // Detached, as in `ImageLoader`: work started inside an actor method
         // inherits the actor, and a render running *on* it would queue every
         // other swatch's cache hit behind it.
+        let data = item.data
         let rendered = await Task.detached(priority: .userInitiated) {
-            Self.render(filter, over: base)
+            Self.render(filter, over: base, pickedData: data)
         }.value
         if let rendered {
             cache.setObject(rendered, forKey: key as NSString, cost: Self.cost(of: rendered))
@@ -94,10 +95,14 @@ actor ComposeFilterPreviews {
         return UIImage(cgImage: cgImage)
     }
 
-    private nonisolated static func render(_ filter: PhotoFilter, over base: UIImage) -> UIImage? {
-        guard let cgImage = base.cgImage,
-              let filtered = PhotoFilterRenderer.shared.render(filter, cgImage)
-        else { return nil }
+    /// The small copy through `filter`, with the blur scaled against the
+    /// photo as picked — the same rule the upload uses.
+    private nonisolated static func render(_ filter: PhotoFilter, over base: UIImage, pickedData: Data) -> UIImage? {
+        guard let cgImage = base.cgImage else { return nil }
+        let originalLongSide = UploadPreparation.pixelSize(of: pickedData).map { max($0.width, $0.height) }
+        guard let filtered = PhotoFilterRenderer.shared.render(
+            filter, cgImage, originalLongSide: originalLongSide, for: .preview
+        ) else { return nil }
         return UIImage(cgImage: filtered)
     }
 
