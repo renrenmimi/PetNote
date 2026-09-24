@@ -900,6 +900,107 @@ final class VideoPlaybackUITests: XCTestCase {
 
     // MARK: - Buffering
 
+    /// The condition the test below once failed on, made on purpose rather
+    /// than waited for: a video still opening, parked with only part of it on
+    /// screen. On CI the row stopped at 78%, and every later run stopped at
+    /// 80% or more, so the path that accepts a lower stop had never run.
+    ///
+    /// The row is dragged — slowly, held, no fling — until 65–79% of it is in
+    /// the window, cut at the bottom where it enters. What is recorded, not
+    /// assumed: how much is on screen, whether the tab bar covers the middle
+    /// square that is photographed, and the colour found there.
+    func testThePosterIsReadWithTheVideoPartlyOffScreen() throws {
+        let app = launch(videoPath: "/a2-slow.mp4")
+        waitForFeedRows(app)
+        let window = app.windows.firstMatch.frame
+
+        // A video row just entering from the bottom — under half of it in
+        // view, so no player has been given to it yet. Small held drags, not
+        // swipes: a swipe coasts, and the first attempt overshot to 81%, where
+        // the clip had already opened.
+        func entering() -> XCUIElement? {
+            surfaces(app).map(\.element).first { element in
+                let frame = element.frame
+                guard frame.height > 100, frame.minY < window.maxY, frame.maxY > window.maxY else { return false }
+                return window.intersection(frame).height / frame.height < 0.5
+            }
+        }
+        var target: XCUIElement?
+        for _ in 0..<40 {
+            target = entering()
+            if target != nil { break }
+            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -120)),
+                        withVelocity: .slow, thenHoldForDuration: 0.3)
+        }
+        let row = try XCTUnwrap(target, "no video row came in from the bottom")
+
+        // Park it with 65–79% on screen, in two steps. The slow clip keeps a
+        // player without a picture for only a few seconds (1.5 s per request,
+        // scripts/a2-media-server.py), and a player is given only at 60%
+        // visibility (VideoPlaybackCoordinator.visibilityThreshold). So: first
+        // to 40–58%, where nothing has started; then one short drag from
+        // standing still to about 72%, which starts the opening, and look at
+        // once. Measured before: parking in several drags took so long the
+        // clip was already playing.
+        func shownFraction() -> CGFloat {
+            let frame = row.frame
+            return frame.height > 0 ? window.intersection(frame).height / frame.height : 0
+        }
+        func drag(by distance: CGFloat, hold: TimeInterval) {
+            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -distance)),
+                        withVelocity: .slow, thenHoldForDuration: hold)
+        }
+        var drags: [String] = [String(format: "%.0f%%", shownFraction() * 100)]
+        for _ in 0..<5 where !(0.40...0.58).contains(shownFraction()) {
+            drag(by: (0.5 - shownFraction()) * row.frame.height, hold: 0.3)
+            drags.append(String(format: "%.0f%%", shownFraction() * 100))
+        }
+        guard (0.40...0.58).contains(shownFraction()) else {
+            throw XCTSkip("could not stand the row at 40–58% first (\(drags.joined(separator: " → "))); nothing measured")
+        }
+        let staged = row.value as? String ?? ""
+        drag(by: (0.72 - shownFraction()) * row.frame.height, hold: 0.5)
+        let frame = row.frame
+        var shown = shownFraction()
+        drags.append(String(format: "%.0f%%", shown * 100))
+        print("MEASURED partly-off-screen parking: \(drags.joined(separator: " → ")); before the last drag: \(staged)")
+        guard (0.65...0.79).contains(shown) else {
+            throw XCTSkip("the last drag ended at \(Int(shown * 100))%, outside 65–79%; nothing measured")
+        }
+
+        // What the photograph's middle square has over it.
+        let middle = CGRect(x: frame.minX + frame.width * 0.3, y: frame.minY + frame.height * 0.3,
+                            width: frame.width * 0.4, height: frame.height * 0.4)
+        let tabBar = app.tabBars.firstMatch.exists ? app.tabBars.firstMatch.frame : .zero
+        let covered = middle.intersection(tabBar).height
+        print(String(format: "MEASURED middle square y=%.0f…%.0f, tab bar y=%.0f…, covered %.0fpt",
+                     middle.minY, middle.maxY, tabBar.minY, max(0, covered)))
+
+        // Opening, photographed while still opening.
+        var colour: Sample?
+        var states: [String] = []
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline {
+            let state = row.value as? String ?? ""
+            if states.last != state { states.append(state) }
+            if state.contains("state=opening"),
+               let sample = Self.centreColourOnScreen(of: row, in: app),
+               (row.value as? String ?? "").contains("state=opening") {
+                colour = sample
+                break
+            }
+            if state.contains("state=picture") { break }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        print("MEASURED partly-off-screen states: \(states.joined(separator: " | "))")
+        let sample = try XCTUnwrap(colour, "never photographed the row while opening; states: \(states.joined(separator: " | "))")
+        print("MEASURED partly-off-screen colour: \(sample)")
+        XCTAssertTrue(sample.isNear(Self.posterColour, tolerance: 0.3),
+                      "a video still opening, \(Int(shown * 100))% on screen, drew something other than its poster: \(sample)")
+    }
+
     /// While a video is opening, the poster stays up.
     ///
     /// `/a2-slow.mp4` makes the server wait before answering, so the state
@@ -1008,12 +1109,37 @@ final class VideoPlaybackUITests: XCTestCase {
             width: frame.width * 0.4, height: frame.height * 0.4
         )
         let window = app.windows.firstMatch.frame
-        guard window.contains(middle), window.width > 0 else { return nil }
+        guard window.width > 0 else { return nil }
+        // Only what is actually seen: the window less the bars drawn over
+        // it. "The square is inside the window" was not enough — parked 74%
+        // on screen, 63pt of a 201pt square sat under the tab bar
+        // (testThePosterIsReadWithTheVideoPartlyOffScreen, 2026-09-23), and a
+        // photograph there is partly of the tab bar. The square itself stays
+        // the middle of the element, inside the picture under aspect-fit.
+        var uncovered = window
+        for bar in [app.navigationBars.firstMatch, app.tabBars.firstMatch] where bar.exists {
+            let edge = bar.frame
+            guard edge.intersects(uncovered) else { continue }
+            if edge.midY > window.midY {
+                uncovered.size.height = max(0, edge.minY - uncovered.minY)
+            } else {
+                let top = max(uncovered.minY, edge.maxY)
+                uncovered.size.height = max(0, uncovered.maxY - top)
+                uncovered.origin.y = top
+            }
+        }
+        let seen = middle.intersection(uncovered)
+        guard !seen.isNull, seen.width > 0, seen.height >= frame.height * 0.15 else {
+            print("MEASURED sample refused: frame=\(frame) uncovered=\(uncovered) seen=\(seen) "
+                  + "nav=\(app.navigationBars.firstMatch.exists ? "\(app.navigationBars.firstMatch.frame)" : "-") "
+                  + "tab=\(app.tabBars.firstMatch.exists ? "\(app.tabBars.firstMatch.frame)" : "-")")
+            return nil
+        }
         guard let full = XCUIScreen.main.screenshot().image.cgImage else { return nil }
         let scale = CGFloat(full.width) / window.width
         let pixels = CGRect(
-            x: middle.minX * scale, y: middle.minY * scale,
-            width: middle.width * scale, height: middle.height * scale
+            x: seen.minX * scale, y: seen.minY * scale,
+            width: seen.width * scale, height: seen.height * scale
         ).integral
         guard let cropped = full.cropping(to: pixels) else { return nil }
         return average(of: cropped)

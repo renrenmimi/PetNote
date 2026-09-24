@@ -269,6 +269,45 @@ jobs:
             exit "$TEST_STATUS"
           fi
 
+      # **The stream-break recovery test, five more times, here.** Its second
+      # failure (run 35836743915: a clock run past its bytes to the clip's end,
+      # parked there as paused) has only ever happened on this runner's iOS
+      # 26.2 simulator — iOS 27 on a Mac never runs the clock past its bytes,
+      # so no local run can say whether the fix holds. Passing runs since are
+      # not proof; this repeats the one test under the conditions it failed
+      # in, on every push, and says how many times it got through. A failure
+      # is a failure: the job goes red with the test's own timeline.
+      - name: "Repeat: stream-break recovery, 5 iterations"
+        env:
+          TEST_RUNNER_PETNOTE_REQUIRE_MEDIA_SERVER: "1"
+        run: |
+          set +e
+          xcodebuild test-without-building \
+            -project PetNoteApp.xcodeproj \
+            -scheme PetNote-Emulator \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            "-only-testing:PetNoteAppTests/VideoPlaybackTests/automaticRecoveryIsBoundedAndThenOffersAWayOut()" \
+            -test-iterations 5 \
+            -parallel-testing-enabled NO \
+            -derivedDataPath build/dd \
+            -clonedSourcePackagesDirPath build/spm \
+            > repeat.log 2>&1
+          REPEAT_STATUS=$?
+          set -e
+          grep -E '^(✔|✘)|Test run with|MEASURED automatic rebuilds before|timed out waiting' repeat.log || true
+          # One iteration, one line: Swift Testing reports the repeated test
+          # once, so the iterations are counted by what each one prints.
+          DONE=$(grep -c 'MEASURED automatic rebuilds before the offer appeared' repeat.log || true)
+          echo "iterations that reached the offer: ${DONE:-0} of 5"
+          if [ "$REPEAT_STATUS" -ne 0 ]; then
+            echo "::error::the stream-break recovery test failed in a repeat on this runner; its timeline is in the ✘ lines above and in repeat.log"
+            exit "$REPEAT_STATUS"
+          fi
+          if [ "${DONE:-0}" -ne 5 ]; then
+            echo "::error::expected 5 iterations to reach the offer, saw ${DONE:-0}; the repeat did not run as asked"
+            exit 1
+          fi
+
       # **The guard, shown to fail here.** `theMediaServerIsUpWhereItIsRequired`
       # is what turns "the server is not up" into a red job instead of a
       # quietly skipped set of stream-break tests. For a long time it never had
@@ -336,6 +375,7 @@ jobs:
           name: ios-native-test-diagnostics-${{ github.run_id }}
           path: |
             ios-native/test.log
+            ios-native/repeat.log
             ios-native/control.log
             ios-native/build/dd/Logs/Test/*.xcresult
             ${{ runner.temp }}/media-server.log

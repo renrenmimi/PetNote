@@ -46,9 +46,15 @@ struct LikeConvergenceRegressionTests {
         var liked: Set<String> = []
         var likeResults: [LikeMutationResult] = []
         var unlikeResults: [LikeMutationResult] = []
-        var calls: [String] = []
+        /// Records taken under this lock: the model calls from its own tasks,
+        /// on another executor, while the test reads on the main actor (the
+        /// CI evidence review of 2026-09-23 found these unlocked).
+        private let lock = NSLock()
+        private var _calls: [String] = []
+        var calls: [String] { lock.withLock { _calls } }
         var batchError: Error?
-        private(set) var batchCalls = 0
+        private var _batchCalls = 0
+        var batchCalls: Int { lock.withLock { _batchCalls } }
         /// When set, `like`/`unlike` never return until cancelled.
         var neverAnswer = false
 
@@ -86,49 +92,50 @@ struct LikeConvergenceRegressionTests {
         }
 
         func like(postID: String) async throws -> LikeMutationResult {
-            calls.append("like")
+            lock.withLock { _calls.append("like") }
             if neverAnswer {
                 await blockUntilCancelled()
                 throw CancellationError()
             }
             if let gate { for await _ in gate.stream { break } }
-            return likeResults.isEmpty ? .changed : likeResults.removeFirst()
+            return lock.withLock { likeResults.isEmpty ? .changed : likeResults.removeFirst() }
         }
 
         func unlike(postID: String) async throws -> LikeMutationResult {
-            calls.append("unlike")
+            lock.withLock { _calls.append("unlike") }
             if neverAnswer {
                 await blockUntilCancelled()
                 throw CancellationError()
             }
             if let gate { for await _ in gate.stream { break } }
-            return unlikeResults.isEmpty ? .changed : unlikeResults.removeFirst()
+            return lock.withLock { unlikeResults.isEmpty ? .changed : unlikeResults.removeFirst() }
         }
 
         func likedPostIDs(among postIDs: [String]) async throws -> Set<String> {
-            batchCalls += 1
             // Sampled here, before the gate: a read reports the state it saw
             // when it ran, however long it takes to come back. That is what
             // makes a held answer *stale* rather than merely slow.
-            let sampled = liked
-            let n = batchCalls
+            let (sampled, n) = lock.withLock { () -> (Set<String>, Int) in
+                _batchCalls += 1
+                return (liked, _batchCalls)
+            }
             if let held = batchGates[n] { for await _ in held.stream { break } }
             if let batchError { throw batchError }
             return sampled.intersection(postIDs)
         }
     }
 
-    /// Runs the model's own tasks until `condition` holds. No sleeping and no
-    /// wall clock.
+    /// Runs the model's own tasks until `condition` holds. Bounded by the
+    /// clock, not by a count of turns: the fakes answer on another executor,
+    /// and a turn count ran out before it was scheduled (see `eventuallyTrue`).
+    /// No deadline in the model is involved — those are `ManualDeadline`'s.
+    @MainActor
     static func settle(
         until condition: @MainActor () -> Bool,
         _ what: String,
         sourceLocation: SourceLocation = #_sourceLocation
     ) async {
-        for _ in 0..<20_000 {
-            if condition() { return }
-            await Task.yield()
-        }
+        if await eventuallyTrue(condition) { return }
         Issue.record("never reached: \(what)", sourceLocation: sourceLocation)
     }
 
@@ -569,7 +576,11 @@ struct LikeConvergenceRegressionTests {
         await Self.settle(until: { likes.calls.count == 2 }, "the second tap never reached the repository")
         await model.waitForPendingLikes()
 
-        #expect(deadline.durations.count == 2, "each request starts its own deadline: \(deadline.durations)")
+        // Waited for, not read at once: `waitForPendingLikes` waits for the
+        // requests, not for their timers, so the second timer may not have
+        // started yet (CI evidence review, 2026-09-23).
+        #expect(await eventuallyTrueAnywhere { deadline.durations.count == 2 },
+                "each request starts its own deadline: \(deadline.durations)")
         #expect(model.isLiked(Self.post(likeCount: 10)))
         #expect(model.displayLikeCount(for: model.posts[0]) == 11)
     }
