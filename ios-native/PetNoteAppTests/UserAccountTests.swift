@@ -13,9 +13,10 @@ import Testing
 /// Stands in for `FirestoreUserRepository`.
 ///
 /// `@unchecked Sendable` and plain mutable state, matching `FeedViewModelTests`'
-/// fakes: the protocol is `Sendable` and nonisolated, the tests drive it from
-/// one task at a time, and a lock here would only make the recordings harder to
-/// read.
+/// fakes: the protocol is `Sendable` and nonisolated, and most tests drive it
+/// from one task at a time. The exception is `updateProfile`, which the
+/// double-tap tests call from two saves at once — so its record and its hook
+/// are taken under a lock (an unlocked record in another fake crashed CI).
 final class FakeUserRepository: UserRepository, @unchecked Sendable {
     /// What `profile(uid:)` answers. Nil means "no document", which is a real
     /// state rather than a failure.
@@ -39,7 +40,9 @@ final class FakeUserRepository: UserRepository, @unchecked Sendable {
     private(set) var profileReads: [String] = []
     private(set) var nameChecks: [String] = []
     private(set) var ensureCalls = 0
-    private(set) var updateCalls: [(displayName: String?, avatarURL: String?, bio: String?)] = []
+    private let lock = NSLock()
+    private var _updateCalls: [(displayName: String?, avatarURL: String?, bio: String?)] = []
+    var updateCalls: [(displayName: String?, avatarURL: String?, bio: String?)] { lock.withLock { _updateCalls } }
     private(set) var completeOnboardingCalls: [String] = []
     private(set) var generateCalls = 0
 
@@ -80,11 +83,12 @@ final class FakeUserRepository: UserRepository, @unchecked Sendable {
     func updateProfile(
         displayName: String?, avatarURL: String?, bio: String?
     ) async throws -> ProfileUpdateResult {
-        updateCalls.append((displayName, avatarURL, bio))
-        if let hook = whileUpdating {
-            whileUpdating = nil
-            await hook()
+        let hook = lock.withLock { () -> (@Sendable () async -> Void)? in
+            _updateCalls.append((displayName, avatarURL, bio))
+            defer { whileUpdating = nil }
+            return whileUpdating
         }
+        if let hook { await hook() }
         return try updateResult.get()
     }
 
