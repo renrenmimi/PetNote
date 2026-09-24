@@ -163,11 +163,14 @@ final class PetDeletionUITests: XCTestCase {
         menu.tap()
     }
 
-    /// A tap outside a menu closes it and goes no further. The navigation
-    /// bar's title is somewhere a tap that did go further would land on
-    /// nothing.
+    /// A tap outside a menu closes it and goes no further. Low on the left,
+    /// as far as the screen allows from the menu, which hangs under its
+    /// button at the top right: a tap at the top middle landed on the menu's
+    /// own Edit and opened the editor (2026-09-24), which also made the menu
+    /// "disappear". So the editor not being open is checked too.
     private func closePetMenu(_ app: XCUIApplication) {
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1)).tap()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.85)).tap()
         XCTAssertTrue(waitForDisappearance(of: app.buttons["pet.edit"], timeout: 10), "the pet menu would not close")
+        XCTAssertFalse(app.buttons["petEditor.save"].exists, "closing the menu opened the pet editor")
     }
 }

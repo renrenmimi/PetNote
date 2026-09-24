@@ -156,8 +156,11 @@ struct PhotoFilterTests {
     @Test func theTableAboveIsStillWhatTheWebClientShips() throws {
         let url = Self.repositoryRoot.appendingPathComponent("src/components/ImageFilter.tsx")
         let source = try String(contentsOf: url, encoding: .utf8)
+        // `\x22` is a double quote: a quote inside the raw literal throws off
+        // ClaimGuardTests' scanner, which then cannot see this test's
+        // assertions.
         let regex = try NSRegularExpression(
-            pattern: #"\{\s*key:\s*"([^"]+)",\s*label:\s*"([^"]+)",\s*css:\s*"([^"]+)"\s*\}"#
+            pattern: #"\{\s*key:\s*\x22([^\x22]+)\x22,\s*label:\s*\x22([^\x22]+)\x22,\s*css:\s*\x22([^\x22]+)\x22\s*\}"#
         )
         let rows: [[String]] = regex.matches(in: source, range: NSRange(source.startIndex..., in: source))
             .map { match in

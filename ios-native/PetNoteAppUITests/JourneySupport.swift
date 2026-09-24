@@ -152,7 +152,7 @@ extension XCTestCase {
         }
         if let tab {
             let button = app.tabBars.buttons[tab]
-            XCTAssertTrue(waitUntilHittable(button, in: app, timeout: 15), "no \(tab) tab")
+            XCTAssertTrue(waitUntilHittable(button, in: app, timeout: 15), "no \(tab) tab\n\(app.debugDescription)")
             button.tap()
         }
     }

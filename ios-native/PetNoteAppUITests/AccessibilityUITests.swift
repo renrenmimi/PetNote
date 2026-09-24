@@ -122,9 +122,21 @@ final class AccessibilityUITests: XCTestCase {
         line: UInt = #line
     ) {
         let window = app.windows.firstMatch.frame
+        // The feed's "⭐ Popular Pets" row scrolls sideways, and the tile it
+        // shows only a sliver of is cut by the side of the screen on purpose
+        // (see `visibleOwnControls`) — and so is the name under it: at AX5 the
+        // sixth tile's name starts at x≈396 and ends near 460. That is the
+        // next tile, not text pushed off the screen, so only there, and only a
+        // text the side of the screen cuts, is left out. Text anywhere else
+        // is held to the edges as before, and so are texts in that row that
+        // are wholly on screen.
+        let spotlight = app.descendants(matching: .any).matching(identifier: "feed.spotlight").firstMatch
+        let sidewaysRow = spotlight.exists ? spotlight.frame : .null
         // A 1pt tolerance: hairline separators are laid out on the boundary.
         for element in app.staticTexts.allElementsBoundByIndex
-        where element.exists && !element.frame.isEmpty && window.intersects(element.frame) {
+        where element.exists && !element.frame.isEmpty && window.intersects(element.frame)
+            && !(sidewaysRow.intersects(element.frame)
+                 && (element.frame.minX < window.minX - 1 || element.frame.maxX > window.maxX + 1)) {
             XCTAssertGreaterThanOrEqual(
                 element.frame.minX, window.minX - 1,
                 "\(context): \"\(element.label.prefix(40))\" starts off the left edge",
@@ -174,7 +186,7 @@ final class AccessibilityUITests: XCTestCase {
                 guard control.isEnabled else { continue }
                 XCTAssertTrue(
                     waitUntilHittable(control, in: app, timeout: 10),
-                    "\(context): \(control.identifier) is not reachable", file: file, line: line
+                    "\(context): \(control.identifier) is not reachable\n\(app.debugDescription)", file: file, line: line
                 )
             } else {
                 // Compared at a thousandth of a point. A frame is reported as
