@@ -80,7 +80,7 @@ struct DeepLinkTests {
         func isAPlaceToLook(_ route: Route) -> Bool {
             switch route {
             case .feed, .postDetail, .pet, .user, .search, .petFollowers, .followingPets, .savedPosts,
-                 .notifications, .place, .meetup: return true
+                 .myCheckins, .notifications, .place, .meetup: return true
             // Management, not a place to look: the one case a link must never
             // produce, and the reason this switch has no `default`.
             case .family, .joinFamily, .blockedUsers, .contactUs, .settings: return false

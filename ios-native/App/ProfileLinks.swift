@@ -12,6 +12,7 @@ struct ProfileLinks: View {
     let onJoinFamily: () -> Void
     let onFollowing: () -> Void
     let onSaved: () -> Void
+    let onCheckins: () -> Void
     let onBlocked: () -> Void
     let onContact: () -> Void
 
@@ -51,6 +52,15 @@ struct ProfileLinks: View {
                 action: onSaved
             )
             .accessibilityIdentifier("profile.saved")
+            Divider().overlay(Palette.separator)
+            // After Saved, as the web's tabs run: pets, saved, check-ins.
+            row(
+                title: "Check-ins",
+                detail: nil,
+                systemImage: "mappin.circle",
+                action: onCheckins
+            )
+            .accessibilityIdentifier("profile.checkins")
             Divider().overlay(Palette.separator)
             row(
                 title: "Blocked people",

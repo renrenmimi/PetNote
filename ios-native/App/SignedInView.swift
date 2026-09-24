@@ -398,6 +398,7 @@ struct SignedInView: View {
                             onJoinFamily: { profilePath.append(.joinFamily) },
                             onFollowing: { profilePath.append(.followingPets) },
                             onSaved: { profilePath.append(.savedPosts) },
+                            onCheckins: { profilePath.append(.myCheckins) },
                             onBlocked: { profilePath.append(.blockedUsers) },
                             onContact: { profilePath.append(.contactUs) }
                         )
@@ -431,8 +432,8 @@ struct SignedInView: View {
     static func showsTabBar(on route: Route) -> Bool {
         switch route {
         case .feed, .search, .notifications: return true
-        case .postDetail, .pet, .user, .petFollowers, .followingPets, .savedPosts, .family, .joinFamily,
-             .blockedUsers, .contactUs, .settings, .place, .meetup: return false
+        case .postDetail, .pet, .user, .petFollowers, .followingPets, .savedPosts, .myCheckins, .family,
+             .joinFamily, .blockedUsers, .contactUs, .settings, .place, .meetup: return false
         }
     }
 
@@ -596,6 +597,14 @@ struct SignedInView: View {
                 uid: user.uid,
                 source: repositories.saved,
                 onOpenPost: { stack.wrappedValue.append(.postDetail(postID: $0)) }
+            )
+        case .myCheckins:
+            // A place that is gone still opens its page, which says so — the
+            // web navigates to `/location/:id` either way.
+            CheckinHistoryView(
+                uid: user.uid,
+                source: repositories.checkinHistory,
+                onOpenPlace: { stack.wrappedValue.append(.place(placeID: $0)) }
             )
         case .blockedUsers:
             BlockedUsersView(
@@ -772,6 +781,7 @@ struct Repositories {
     let reports: any ContentReporting
     let feedback: any FeedbackSending
     let saved: any SavedPostsReading
+    let checkinHistory: any CheckinHistoryReading
     let suspension: any SuspensionReading
     let preferences: any PreferencesStoring
     let security: any AccountSecurity
@@ -800,6 +810,7 @@ struct Repositories {
             reports: FirestoreContentReporter(),
             feedback: FirestoreFeedbackSender(),
             saved: FirestoreSavedPostsSource(),
+            checkinHistory: FirestoreCheckinHistorySource(),
             suspension: FirestoreSuspensionSource(),
             preferences: FirestorePreferencesStore(),
             security: LiveAccountSecurity(),
