@@ -116,8 +116,12 @@ enum UploadPreparation {
     /// - Parameter filename: what the picker called it, used only for the
     ///   multipart part name. The extension is corrected when the bytes are
     ///   re-encoded, so a `.HEIC` name never travels with JPEG bytes.
+    /// - Parameter filter: the composer's choice for this photo. `.normal`
+    ///   takes exactly the path this function took before filters existed —
+    ///   same checks, same passthrough, same encode — so an unfiltered photo
+    ///   is byte-for-byte what it always was.
     static func prepareImage(
-        _ data: Data, filename: String, options: Options = .default
+        _ data: Data, filename: String, filter: PhotoFilter = .normal, options: Options = .default
     ) throws -> Prepared {
         guard data.count <= options.maxInputBytes else {
             throw PreparationError.tooLargeToProcess(bytes: data.count, limit: options.maxInputBytes)
@@ -126,6 +130,29 @@ enum UploadPreparation {
 
         let size = pixelSize(of: data)
         let ratio = size.map { $0.width / $0.height }
+
+        // A filter is new pixels, so there is nothing to pass through: the
+        // photo is re-encoded whatever its size or format, on the same ladder
+        // and to the same caps as every other re-encode here — and, like every
+        // other re-encode here, without its metadata (EXIF, GPS), because the
+        // encode writes the pixels and nothing else. The web client's canvas
+        // round trip drops them the same way.
+        //
+        // Never a GIF, for the web client's reason: `applyFilter` is skipped
+        // for `image/gif`, because re-encoding one to JPEG throws the
+        // animation away. The composer does not offer a filter for one; this
+        // is the same rule held by the bytes rather than by the screen.
+        if filter != .normal && type != UTType.gif.identifier {
+            let jpeg = try encodeJPEG(data, filter: filter, options: options)
+            return Prepared(
+                data: jpeg,
+                mimeType: UTType.jpeg.preferredMIMEType ?? "image/jpeg",
+                filename: renamed(filename, to: "jpg"),
+                aspectRatio: ratio,
+                wasTranscoded: true
+            )
+        }
+
         let mustTranscode = alwaysTranscodedTypes.contains(type)
         let fitsAsIs = data.count <= options.targetBytes
             && passthroughTypes.contains(type)
@@ -163,7 +190,14 @@ enum UploadPreparation {
     /// 12-megapixel photo well over 2 MB, and a single encode at 0.3 makes
     /// every photo look like 2009. Stepping means only the photos that need it
     /// pay for it.
-    static func encodeJPEG(_ data: Data, options: Options = .default) throws -> Data {
+    ///
+    /// A filter runs after the downsample and before the ladder: on the
+    /// 1920px picture rather than the 48-megapixel one, and upright, because
+    /// the orientation has already been applied. `.normal` does not touch the
+    /// decoded image at all.
+    static func encodeJPEG(
+        _ data: Data, filter: PhotoFilter = .normal, options: Options = .default
+    ) throws -> Data {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
             throw PreparationError.undecodable
         }
@@ -176,8 +210,21 @@ enum UploadPreparation {
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceThumbnailMaxPixelSize: max(1, options.maxPixelSize),
         ]
-        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions as CFDictionary)
+        guard let decoded = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions as CFDictionary)
         else { throw PreparationError.undecodable }
+
+        let image: CGImage
+        if filter == .normal {
+            image = decoded
+        } else {
+            // A photo the person chose a filter for does not go up without
+            // it: failing to render is a failure to prepare, not a reason to
+            // quietly upload the original.
+            guard let filtered = PhotoFilterRenderer.shared.render(filter, decoded) else {
+                throw PreparationError.unencodable
+            }
+            image = filtered
+        }
 
         var quality = options.quality
         var encoded = try write(image, quality: quality)

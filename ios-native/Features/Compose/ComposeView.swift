@@ -16,6 +16,8 @@ struct ComposeView: View {
 
     @State private var selection: [PhotosPickerItem] = []
     @State private var isLoadingSelection = false
+    /// Filtered previews for this composer's photos; gone when it closes.
+    @State private var previews = ComposeFilterPreviews()
 
     var body: some View {
         NavigationStack {
@@ -86,7 +88,17 @@ struct ComposeView: View {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Spacing.s), count: 3),
                       spacing: Spacing.s) {
                 ForEach(model.items) { item in
-                    ComposeThumbnail(item: item) { model.remove(id: item.id); model.persistDraft() }
+                    // Each tile shows its own photo's filter, as the web
+                    // client's grid does; the outlined one is what the strip
+                    // below is for.
+                    ComposeThumbnail(
+                        item: item,
+                        filter: model.filter(for: item.id),
+                        isSelected: model.selectedItemID == item.id,
+                        previews: previews,
+                        onSelect: { model.select(id: item.id) },
+                        onRemove: { model.remove(id: item.id); model.persistDraft() }
+                    )
                 }
                 ForEach(model.uploadedAssets, id: \.publicID) { asset in
                     // Media a previous attempt already got onto the CDN. Shown
@@ -119,6 +131,24 @@ struct ComposeView: View {
             Text("\(model.items.count + model.uploadedAssets.count)/\(ComposeViewModel.maxFiles) files")
                 .font(Typography.caption)
                 .foregroundStyle(Palette.tertiaryText)
+
+            // Photos only, as on the web; never a video or a GIF.
+            if let selected = model.selectedItem, selected.isFilterable {
+                ComposeFilterStrip(
+                    item: selected,
+                    selected: model.filter(for: selected.id),
+                    previews: previews,
+                    onSelect: { filter in
+                        model.setFilter(filter, for: selected.id)
+                        // A change that released an attempt must not leave
+                        // the draft pointing at it — the same call `remove`
+                        // is followed by.
+                        model.persistDraft()
+                    }
+                )
+                // The model refuses too; this says so before the tap.
+                .disabled(model.isWorking)
+            }
         }
     }
 
@@ -282,15 +312,26 @@ struct ComposeView: View {
     }
 }
 
-/// A picked file's preview.
+/// A picked file's preview, through its filter.
 ///
 /// Decoded through ImageIO at thumbnail size rather than `UIImage(data:)`,
 /// which would hold a full-resolution bitmap per tile — nine of those is how a
 /// composer gets killed for memory on an older phone. Same technique and the
 /// same quantisation step as `ImageLoader`, so a 110pt tile and a 120pt tile
-/// ask for the same pixels.
+/// ask for the same pixels. The decode now lives in `ComposeFilterPreviews`,
+/// which the filter strip shares, so the tile and the swatches are one decode.
+///
+/// Tapping the picture selects it for the strip. The picture is laid out as a
+/// square with the photo *over* it rather than as a filled photo in a square
+/// frame: a `scaledToFill` image reports the rectangle it would fill, not the
+/// one it is clipped to, and inside a button that overhang would take taps
+/// meant for the tile next to it.
 struct ComposeThumbnail: View {
     let item: ComposeViewModel.PickedItem
+    let filter: PhotoFilter
+    let isSelected: Bool
+    let previews: ComposeFilterPreviews
+    let onSelect: () -> Void
     let onRemove: () -> Void
 
     @State private var image: UIImage?
@@ -298,19 +339,30 @@ struct ComposeThumbnail: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            Group {
-                if let image {
-                    Image(uiImage: image).resizable().aspectRatio(contentMode: .fill)
-                } else {
-                    Rectangle().fill(Palette.secondaryBackground)
-                        .overlay {
+            Button(action: onSelect) {
+                Rectangle()
+                    .fill(Palette.secondaryBackground)
+                    .aspectRatio(1, contentMode: .fit)
+                    .overlay {
+                        if let image {
+                            Image(uiImage: image).resizable().scaledToFill()
+                        } else {
                             Image(systemName: item.kind == .video ? "film" : "photo")
                                 .foregroundStyle(Palette.tertiaryText)
                         }
-                }
+                    }
+                    .clipShape(.rect(cornerRadius: Radius.control))
+                    .overlay {
+                        if isSelected {
+                            RoundedRectangle(cornerRadius: Radius.control)
+                                .strokeBorder(Palette.brandPrimary, lineWidth: 2)
+                        }
+                    }
+                    .contentShape(.rect)
             }
-            .aspectRatio(1, contentMode: .fit)
-            .clipShape(.rect(cornerRadius: Radius.control))
+            .buttonStyle(.plain)
+            .accessibilityLabel(item.kind == .video ? Text("Video") : Text("Photo"))
+            .accessibilityAddTraits(isSelected ? [.isSelected] : [])
 
             Button(action: onRemove) {
                 Image(systemName: "xmark.circle.fill")
@@ -322,24 +374,14 @@ struct ComposeThumbnail: View {
             .foregroundStyle(Palette.primaryText)
             .accessibilityLabel("Remove file")
         }
-        .task(id: item.id) { await loadThumbnail() }
+        // Keyed on the filter too, so choosing one re-renders the tile. The
+        // previous picture stays up until the new one lands.
+        .task(id: "\(item.id)|\(filter.rawValue)") { await loadThumbnail() }
     }
 
     private func loadThumbnail() async {
         guard item.kind == .image else { return }
-        let pixels = ImageLoader.quantizedPixels(120 * displayScale)
-        let data = item.data
-        image = await Task.detached(priority: .userInitiated) {
-            guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
-            let options: [CFString: Any] = [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceShouldCacheImmediately: true,
-                kCGImageSourceThumbnailMaxPixelSize: pixels,
-            ]
-            guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
-            else { return nil }
-            return UIImage(cgImage: cgImage)
-        }.value
+        let pixels = ComposeFilterPreviews.pixelSize(displayScale: displayScale)
+        image = await previews.preview(of: item, filter: filter, maxPixelSize: pixels)
     }
 }

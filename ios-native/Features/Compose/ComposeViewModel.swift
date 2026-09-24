@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import OSLog
+import UniformTypeIdentifiers
 
 /// Drives the composer: pick, prepare, upload, publish.
 ///
@@ -57,6 +58,14 @@ final class ComposeViewModel {
         let mimeType: String
         /// Seconds, for a video. Nil for an image.
         let duration: Double?
+
+        /// Whether a filter can be chosen for it: images, and not GIFs. The
+        /// web client shows its strip for a GIF and then skips the filter at
+        /// upload, because a GIF re-encoded to JPEG loses its animation; not
+        /// offering it is the honest version of the same rule.
+        var isFilterable: Bool {
+            kind == .image && mimeType != UTType.gif.preferredMIMEType
+        }
     }
 
     /// Where a submission got to, so the feedback names the stage it is in.
@@ -74,6 +83,22 @@ final class ComposeViewModel {
     // MARK: - State
 
     private(set) var items: [PickedItem] = []
+
+    /// The filter chosen for each picked photo, by item id — the web client's
+    /// `filtersById`. Absent means Normal.
+    ///
+    /// **Not in the draft, because there is nothing there to attach it to.**
+    /// The draft holds no picked files (see `PickedItem`), and a photo that
+    /// did reach the CDN carries its filter in its bytes. So a restored draft
+    /// shows its uploaded photos as they were filtered, and photos picked
+    /// again after a relaunch start at Normal.
+    private(set) var filters: [String: PhotoFilter] = [:]
+
+    /// The picked file the filter strip is for — the web client's
+    /// `selectedIndex`, held by id so removing an earlier file cannot move it
+    /// onto a different photo.
+    private(set) var selectedItemID: String?
+
     var caption: String = "" {
         didSet {
             if caption.count > Self.maxCharacters {
@@ -211,7 +236,13 @@ final class ComposeViewModel {
 
     // MARK: - Selection
 
-    var selectionSignature: String { items.map(\.id).joined(separator: "|") }
+    /// What this attempt's uploads have to line up with: the files, in order,
+    /// and the filter on each — a filter changes the bytes as surely as a
+    /// different photo does. Same shape as the web client's
+    /// `selectionSignature`.
+    var selectionSignature: String {
+        items.map { "\($0.id):\(self.filter(for: $0.id).rawValue)" }.joined(separator: "|")
+    }
 
     var remainingSlots: Int { max(0, Self.maxFiles - items.count) }
 
@@ -238,13 +269,67 @@ final class ComposeViewModel {
         if duplicates > 0 { notice = String(localized: "Duplicate file skipped") }
         guard !accepted.isEmpty else { return }
         items += accepted
+        // Something is always selected once there is something to select, so
+        // the strip is there under the first photo without a tap. A photo
+        // before a video, because the strip is for photos.
+        if selectedItem == nil {
+            selectedItemID = (accepted.first(where: \.isFilterable) ?? accepted.first)?.id
+        }
         selectionChanged()
     }
 
     func remove(id: String) {
-        guard items.contains(where: { $0.id == id }) else { return }
-        items.removeAll { $0.id == id }
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        items.remove(at: index)
+        filters[id] = nil
+        // The web client's rule: the one before it, or the new first.
+        if selectedItemID == id {
+            selectedItemID = items.isEmpty ? nil : items[max(0, index - 1)].id
+        }
         selectionChanged()
+    }
+
+    // MARK: - Filters
+
+    var selectedItem: PickedItem? {
+        guard let selectedItemID else { return nil }
+        return items.first { $0.id == selectedItemID }
+    }
+
+    func select(id: String) {
+        guard items.contains(where: { $0.id == id }) else { return }
+        selectedItemID = id
+    }
+
+    func filter(for id: String) -> PhotoFilter { filters[id] ?? .normal }
+
+    /// Chooses a filter for one picked photo.
+    ///
+    /// **A photo that is already on the CDN is sent again.** Its bytes carry
+    /// the old filter, and the uploads are matched to the files by position,
+    /// so the attempt is released exactly as a changed selection releases it
+    /// — kept on the CDN, dropped from this attempt, a fresh operation id —
+    /// and the next Share prepares and uploads every photo with what is now
+    /// chosen. Nothing is deleted: see `AssetReclaim`.
+    ///
+    /// A photo that has *not* been uploaded yet changes nothing that is
+    /// recorded, so the attempt and the photos before it are kept, and it is
+    /// prepared with the new choice when its turn comes. The web client
+    /// releases in that case too, which only costs a re-upload.
+    ///
+    /// Refused while a submission is running: the loop would otherwise append
+    /// the next upload to a list this had just emptied, and the positions
+    /// would stop meaning anything. The strip is disabled then as well.
+    func setFilter(_ filter: PhotoFilter, for id: String) {
+        guard !isSubmitting, !hasPublished else { return }
+        guard let index = items.firstIndex(where: { $0.id == id }), items[index].isFilterable else { return }
+        guard self.filter(for: id) != filter else { return }
+        filters[id] = filter == .normal ? nil : filter
+        if index < uploadedAssets.count {
+            selectionChanged()
+        } else {
+            attemptSelectionSignature = selectionSignature
+        }
     }
 
     /// Why this file cannot be posted, if it cannot.
@@ -443,6 +528,8 @@ final class ComposeViewModel {
             self.operationID = nil
             uploadedAssets = []
             items = []
+            filters = [:]
+            selectedItemID = nil
             phase = .published(postID: outcome.postID, deduplicated: outcome.deduplicated)
             notice = outcome.deduplicated ? String(localized: "That post was already published.") : String(localized: "Posted.")
             // The feed's loaded pages cannot contain what was just made, so
@@ -474,12 +561,16 @@ final class ComposeViewModel {
             )
         case .image:
             let source = item
+            // This photo's choice as it stood when Share was pressed —
+            // `setFilter` refuses while a submission runs — and Normal for
+            // anything that cannot be filtered.
+            let chosen = source.isFilterable ? self.filter(for: source.id) : .normal
             // Off the main actor: this is a full decode and re-encode, and on
             // a large photo it is the slowest thing the composer does. Running
             // it here would stop the progress label it is supposed to be
             // driving from ever being drawn.
             let prepared = try await Task.detached(priority: .userInitiated) {
-                try UploadPreparation.prepareImage(source.data, filename: source.filename)
+                try UploadPreparation.prepareImage(source.data, filename: source.filename, filter: chosen)
             }.value
             if prepared.data.count > Self.maxImageBytes {
                 throw UploadError.tooLarge(

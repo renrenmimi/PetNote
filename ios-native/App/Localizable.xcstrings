@@ -7567,6 +7567,176 @@
         }
       }
     },
+    "photoFilter.bright": {
+      "comment": "Photo filter name",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bright"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "明亮"
+          }
+        }
+      }
+    },
+    "photoFilter.bw": {
+      "comment": "Photo filter name: black and white",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "B&W"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "黑白"
+          }
+        }
+      }
+    },
+    "photoFilter.contrast": {
+      "comment": "Photo filter name: stronger contrast",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contrast"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高对比"
+          }
+        }
+      }
+    },
+    "photoFilter.cool": {
+      "comment": "Photo filter name",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cool"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "冷色"
+          }
+        }
+      }
+    },
+    "photoFilter.normal": {
+      "comment": "Photo filter: the photo as it was taken",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Normal"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原图"
+          }
+        }
+      }
+    },
+    "photoFilter.rose": {
+      "comment": "Photo filter name: a pink tint",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rose"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "玫瑰"
+          }
+        }
+      }
+    },
+    "photoFilter.soft": {
+      "comment": "Photo filter name",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Soft"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "柔和"
+          }
+        }
+      }
+    },
+    "photoFilter.vintage": {
+      "comment": "Photo filter name",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vintage"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复古"
+          }
+        }
+      }
+    },
+    "photoFilter.vivid": {
+      "comment": "Photo filter name",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vivid"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "鲜艳"
+          }
+        }
+      }
+    },
+    "photoFilter.warm": {
+      "comment": "Photo filter name",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Warm"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暖色"
+          }
+        }
+      }
+    },
     "resume=%@ path=%lld": {
       "shouldTranslate": false
     },
