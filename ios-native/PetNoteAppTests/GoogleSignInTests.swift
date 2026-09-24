@@ -70,7 +70,7 @@ struct GoogleSignInTests {
         let error = NSError(domain: AuthErrorDomain, code: AuthErrorCode.accountExistsWithDifferentCredential.rawValue)
         let mapped = AuthError(error)
         #expect(mapped == .differentSignInMethod)
-        #expect(mapped.message == "This email is set up with another sign-in method. Use that one, or reset your password.")
+        #expect(mapped.message == String(localized: "This email is set up with another sign-in method. Use that one, or reset your password."))
         #expect(!mapped.isRetryable)
     }
 }

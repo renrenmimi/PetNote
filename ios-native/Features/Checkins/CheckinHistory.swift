@@ -24,10 +24,15 @@ struct CheckinHistoryEntry: Identifiable, Equatable, Sendable {
     /// `getUserCheckins`' mapping: the place is the document's parent, unless
     /// the document names one itself — the web spreads the stored fields over
     /// the parent's id, so a stored `locationId` wins.
+    ///
+    /// A stored id that could not name a document (a "/" in it, say) is
+    /// treated as no place at all: it would reach a Firestore document or
+    /// `in` query, which throws on such an id rather than failing. The server
+    /// never writes one; data edited by hand could.
     static func decode(id: String, pathPlaceID: String?, _ data: [String: Any]) -> CheckinHistoryEntry {
         let stored = (data["locationId"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         return CheckinHistoryEntry(
-            placeID: stored ?? pathPlaceID ?? "",
+            placeID: DeepLink.validDocumentID(stored ?? pathPlaceID ?? "") ?? "",
             checkin: PlaceCheckin.decode(id: id, data)
         )
     }

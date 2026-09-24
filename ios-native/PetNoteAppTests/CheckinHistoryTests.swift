@@ -114,6 +114,10 @@ struct CheckinHistoryTests {
         #expect(unnamed.placeID == "from-path")
         let nowhere = CheckinHistoryEntry.decode(id: "me_2026-09-23", pathPlaceID: nil, [:])
         #expect(nowhere.placeID == "")
+        // An id that cannot name a document never reaches a query.
+        let malformed = CheckinHistoryEntry.decode(id: "me_2026-09-23", pathPlaceID: "from-path", ["locationId": "a/b"])
+        #expect(malformed.placeID == "")
+        #expect(CheckinHistoryModel.placeIDs(in: [malformed]).isEmpty)
     }
 
     /// `{uid}_{day}` is unique within one place only. Two places on one day
@@ -193,7 +197,7 @@ struct CheckinHistoryTests {
             Issue.record("expected a list, got \(model.state)")
             return
         }
-        #expect(rows.map(\.placeName) == ["Unknown location", "TEST CONTENT Here"])
+        #expect(rows.map(\.placeName) == [String(localized: "Unknown location"), "TEST CONTENT Here"])
         #expect(rows[0].placePhoto == nil)
         #expect(rows[0].entry.placeID == "gone")
     }
@@ -238,7 +242,7 @@ struct CheckinHistoryTests {
         let model = CheckinHistoryModel(uid: "me", source: source)
 
         await model.load()
-        #expect(model.state == .failed("Couldn't load your check-ins."))
+        #expect(model.state == .failed(String(localized: "Couldn't load your check-ins.")))
 
         await model.load()
         guard case .loaded(let rows) = model.state else {
@@ -259,7 +263,7 @@ struct CheckinHistoryTests {
 
         await model.load()
 
-        #expect(model.state == .failed("Couldn't load your check-ins."))
+        #expect(model.state == .failed(String(localized: "Couldn't load your check-ins.")))
     }
 
     /// Coming back to the list re-reads it. If that read fails, the list that
