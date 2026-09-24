@@ -494,6 +494,36 @@ struct PhotoFilterComposeTests {
         #expect(harness.model.selectedItemID == "item-3")
     }
 
+    /// The tile and the chosen filter's swatch ask for the same picture at
+    /// the same moment: one render between them, handed to both. Two asks
+    /// that each rendered would get two different images.
+    @Test func twoAsksAtOnceShareOneRender() async throws {
+        let previews = ComposeFilterPreviews()
+        let item = Self.photo(1)
+
+        async let first = previews.preview(of: item, filter: .vivid, maxPixelSize: 128)
+        async let second = previews.preview(of: item, filter: .vivid, maxPixelSize: 128)
+        let (one, other) = await (first, second)
+
+        let image = try #require(one)
+        #expect(other === image, "each ask made its own render")
+    }
+
+    /// A removed photo's previews are dropped, and nothing more is made for
+    /// it; another photo's are untouched.
+    @Test func aRemovedPhotosPreviewsAreDropped() async {
+        let previews = ComposeFilterPreviews()
+        let removed = Self.photo(1)
+        let kept = Self.photo(2)
+        #expect(await previews.preview(of: removed, filter: .bw, maxPixelSize: 128) != nil)
+
+        await previews.forget(itemID: removed.id)
+
+        #expect(await previews.preview(of: removed, filter: .bw, maxPixelSize: 128) == nil, "the render was kept")
+        #expect(await previews.preview(of: removed, filter: .normal, maxPixelSize: 128) == nil, "the decode was kept")
+        #expect(await previews.preview(of: kept, filter: .bw, maxPixelSize: 128) != nil)
+    }
+
     /// The previews are rendered once and kept.
     @Test func aPreviewIsRenderedOnceAndKept() async throws {
         let previews = ComposeFilterPreviews()

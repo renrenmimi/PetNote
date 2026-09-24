@@ -104,6 +104,10 @@ final class PhotoFilterUITests: XCTestCase {
         XCTAssertTrue(waitForExistence(of: normal, in: app, timeout: 20),
                       "no filter strip under the picked photo\n\(app.debugDescription)")
         XCTAssertTrue(normal.isSelected, "a newly picked photo does not start at Normal")
+        // VoiceOver hears the tile's filter as its value, in the same words
+        // the strip uses.
+        let tile = app.buttons["compose.thumbnail"].firstMatch
+        XCTAssertEqual(tile.value as? String, normal.label, "the photo tile does not say which filter is on it")
 
         if let filter {
             // Seventh of ten, so usually past the right edge: the strip scrolls
@@ -115,6 +119,7 @@ final class PhotoFilterUITests: XCTestCase {
             filter.tap()
             XCTAssertTrue(waitForSelection(of: filter, timeout: 10), "tapping the filter did not choose it")
             XCTAssertFalse(normal.isSelected, "Normal is still marked chosen next to it")
+            XCTAssertEqual(tile.value as? String, filter.label, "the photo tile does not say the filter just chosen")
         }
 
         let captionField = app.textViews["compose.caption"]

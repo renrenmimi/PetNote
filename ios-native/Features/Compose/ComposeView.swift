@@ -97,7 +97,13 @@ struct ComposeView: View {
                         isSelected: model.selectedItemID == item.id,
                         previews: previews,
                         onSelect: { model.select(id: item.id) },
-                        onRemove: { model.remove(id: item.id); model.persistDraft() }
+                        onRemove: {
+                            model.remove(id: item.id)
+                            model.persistDraft()
+                            // Its previews go with it, and any still being
+                            // made for it are not kept.
+                            Task { await previews.forget(itemID: item.id) }
+                        }
                     )
                 }
                 ForEach(model.uploadedAssets, id: \.publicID) { asset in
@@ -146,6 +152,9 @@ struct ComposeView: View {
                         model.persistDraft()
                     }
                 )
+                // A fresh strip per photo, so no swatch can show the photo
+                // selected before this one while its own render is on the way.
+                .id(selected.id)
                 // The model refuses too; this says so before the tap.
                 .disabled(model.isWorking)
             }
@@ -362,7 +371,12 @@ struct ComposeThumbnail: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(item.kind == .video ? Text("Video") : Text("Photo"))
+            // Which filter the picture is shown through — the one thing about
+            // the tile that the label does not say. Nothing for a video or a
+            // GIF, which cannot have one.
+            .accessibilityValue(item.isFilterable ? filter.label : "")
             .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+            .accessibilityIdentifier("compose.thumbnail")
 
             Button(action: onRemove) {
                 Image(systemName: "xmark.circle.fill")
@@ -382,6 +396,11 @@ struct ComposeThumbnail: View {
     private func loadThumbnail() async {
         guard item.kind == .image else { return }
         let pixels = ComposeFilterPreviews.pixelSize(displayScale: displayScale)
-        image = await previews.preview(of: item, filter: filter, maxPixelSize: pixels)
+        let loaded = await previews.preview(of: item, filter: filter, maxPixelSize: pixels)
+        // Superseded while it rendered — another filter chosen, or the tile
+        // reused for another photo — and the newer task will write instead.
+        // Writing here could put the older picture over the newer one.
+        guard !Task.isCancelled else { return }
+        image = loaded
     }
 }
