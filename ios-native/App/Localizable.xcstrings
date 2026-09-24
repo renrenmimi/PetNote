@@ -378,6 +378,26 @@
         }
       }
     },
+    "Account created, but we could not send the verification email to %@. Use Resend below.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号已创建，但验证邮件没能发送到 %@。请使用下方的「重新发送」。"
+          }
+        }
+      }
+    },
+    "Account created. We are still finishing your profile setup.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号已创建，我们还在完成你的资料设置。"
+          }
+        }
+      }
+    },
     "Add a birthday": {
       "localizations": {
         "zh-Hans": {
@@ -665,6 +685,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "生日"
+          }
+        }
+      }
+    },
+    "Birthday today": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天生日"
           }
         }
       }
@@ -1001,6 +1031,16 @@
         }
       }
     },
+    "Choose a longer password.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请换一个更长的密码。"
+          }
+        }
+      }
+    },
     "Choose a photo": {
       "localizations": {
         "zh-Hans": {
@@ -1227,6 +1267,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "复制邀请码"
+          }
+        }
+      }
+    },
+    "Could not check just now. Try again in a moment.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂时无法检查，请稍后再试。"
           }
         }
       }
@@ -1661,6 +1711,16 @@
         }
       }
     },
+    "Couldn't load your check-ins.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载你的打卡。"
+          }
+        }
+      }
+    },
     "Couldn't load your saved posts.": {
       "localizations": {
         "zh-Hans": {
@@ -1727,6 +1787,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "创建账号中"
+          }
+        }
+      }
+    },
+    "Creating an account with an email address is unavailable right now.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目前暂时无法用邮箱注册账号。"
           }
         }
       }
@@ -2533,6 +2603,16 @@
         }
       }
     },
+    "If an account exists with this email, we have sent a reset link. If you signed up with Google, use Google Sign-In instead.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如果这个邮箱注册过账号，我们已发送重置链接。如果你是用 Google 注册的，请改用 Google 登录。"
+          }
+        }
+      }
+    },
     "Image failed to load. Tap to retry.": {
       "localizations": {
         "zh-Hans": {
@@ -2915,6 +2995,16 @@
         }
       }
     },
+    "Loading popular pets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载人气萌宠"
+          }
+        }
+      }
+    },
     "Loading posts": {
       "localizations": {
         "zh-Hans": {
@@ -3253,6 +3343,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "当前没有有效的邀请码。"
+          }
+        }
+      }
+    },
+    "No check-ins yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有打卡"
           }
         }
       }
@@ -4075,6 +4175,16 @@
         }
       }
     },
+    "Please enter a valid email address.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入有效的邮箱地址。"
+          }
+        }
+      }
+    },
     "Please sign in again.": {
       "localizations": {
         "zh-Hans": {
@@ -4428,6 +4538,36 @@
         }
       }
     },
+    "Resend email": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新发送邮件"
+          }
+        }
+      }
+    },
+    "Resend in %llds": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 秒后可重新发送"
+          }
+        }
+      }
+    },
+    "Reset link sent. Check your email.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重置链接已发送，请查收邮件。"
+          }
+        }
+      }
+    },
     "Reset password": {
       "localizations": {
         "zh-Hans": {
@@ -4669,6 +4809,16 @@
         }
       }
     },
+    "Seen": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已看过"
+          }
+        }
+      }
+    },
     "Send": {
       "localizations": {
         "zh-Hans": {
@@ -4799,6 +4949,16 @@
         }
       }
     },
+    "Share a birthday post": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享生日帖子"
+          }
+        }
+      }
+    },
     "Share a code so someone can join %@'s family. Each code works once, for 48 hours, and stops working if it is revoked or if the person who made it leaves.": {
       "localizations": {
         "zh-Hans": {
@@ -4835,6 +4995,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "说说你在这里的体验..."
+          }
+        }
+      }
+    },
+    "Share your pet to get featured! 🐾": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享你的宠物，就有机会上榜！🐾"
           }
         }
       }
@@ -5075,6 +5245,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "保存个人资料时出了问题，请重试。"
+          }
+        }
+      }
+    },
+    "Something went wrong signing in. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录时出了点问题，请重试。"
           }
         }
       }
@@ -5404,6 +5584,36 @@
         }
       }
     },
+    "That does not look like an email address.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这看起来不是一个邮箱地址。"
+          }
+        }
+      }
+    },
+    "That email already has an account. Sign in instead.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个邮箱已经注册过账号，请直接登录。"
+          }
+        }
+      }
+    },
+    "That email and password do not match an account.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邮箱和密码不匹配任何账号。"
+          }
+        }
+      }
+    },
     "That file is not an image we can use.": {
       "localizations": {
         "zh-Hans": {
@@ -5680,6 +5890,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "你回复的评论已被删除。"
+          }
+        }
+      }
+    },
+    "The last Share may already have posted this photo, so its filter can't be changed now.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上一次「发布」可能已经把这张照片发出去了，所以现在不能更换滤镜。"
           }
         }
       }
@@ -6004,6 +6224,16 @@
         }
       }
     },
+    "This account has been disabled.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个账号已被停用。"
+          }
+        }
+      }
+    },
     "This account is not available.": {
       "localizations": {
         "zh-Hans": {
@@ -6060,6 +6290,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法识别这份草稿，请重新发帖。"
+          }
+        }
+      }
+    },
+    "This email is set up with another sign-in method. Use that one, or reset your password.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个邮箱使用的是另一种登录方式。请用那种方式登录，或者重置密码。"
           }
         }
       }
@@ -6194,12 +6434,32 @@
         }
       }
     },
+    "Too many attempts from this device. Wait a minute and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台设备尝试次数过多，请一分钟后再试。"
+          }
+        }
+      }
+    },
     "Too many attempts. Please try again later.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "尝试次数过多，请稍后再试。"
+          }
+        }
+      }
+    },
+    "Too many attempts. Wait a moment before trying again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尝试次数过多，请稍等片刻再试。"
           }
         }
       }
@@ -6344,6 +6604,26 @@
         }
       }
     },
+    "Turning %lld years old today!": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天满 %lld 岁啦！"
+          }
+        }
+      }
+    },
+    "Turning 1 year old today!": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天满 1 岁啦！"
+          }
+        }
+      }
+    },
     "Type": {
       "localizations": {
         "zh-Hans": {
@@ -6420,6 +6700,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "叔叔"
+          }
+        }
+      }
+    },
+    "Unknown location": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未知地点"
           }
         }
       }
@@ -6694,6 +6984,16 @@
         }
       }
     },
+    "Visit a pet-friendly place and check in": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "去一个宠物友好的地方打卡吧"
+          }
+        }
+      }
+    },
     "Waste bags": {
       "localizations": {
         "zh-Hans": {
@@ -6760,6 +7060,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法确认是否已保存。请重新打开此页面查看。"
+          }
+        }
+      }
+    },
+    "We could not reach PetNote. Check your connection and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法连接 PetNote。请检查网络后重试。"
           }
         }
       }
@@ -7570,16 +7880,16 @@
     "photoFilter.bright": {
       "comment": "Photo filter name",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bright"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "明亮"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bright"
           }
         }
       }
@@ -7587,16 +7897,16 @@
     "photoFilter.bw": {
       "comment": "Photo filter name: black and white",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "B&W"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "黑白"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "B&W"
           }
         }
       }
@@ -7604,16 +7914,16 @@
     "photoFilter.contrast": {
       "comment": "Photo filter name: stronger contrast",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Contrast"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "高对比"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contrast"
           }
         }
       }
@@ -7621,16 +7931,16 @@
     "photoFilter.cool": {
       "comment": "Photo filter name",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cool"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "冷色"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cool"
           }
         }
       }
@@ -7638,16 +7948,16 @@
     "photoFilter.normal": {
       "comment": "Photo filter: the photo as it was taken",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Normal"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "原图"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Normal"
           }
         }
       }
@@ -7655,16 +7965,16 @@
     "photoFilter.rose": {
       "comment": "Photo filter name: a pink tint",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rose"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "玫瑰"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rose"
           }
         }
       }
@@ -7672,16 +7982,16 @@
     "photoFilter.soft": {
       "comment": "Photo filter name",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Soft"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "柔和"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Soft"
           }
         }
       }
@@ -7689,16 +7999,16 @@
     "photoFilter.vintage": {
       "comment": "Photo filter name",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Vintage"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "复古"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vintage"
           }
         }
       }
@@ -7706,16 +8016,16 @@
     "photoFilter.vivid": {
       "comment": "Photo filter name",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Vivid"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "鲜艳"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vivid"
           }
         }
       }
@@ -7723,16 +8033,16 @@
     "photoFilter.warm": {
       "comment": "Photo filter name",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Warm"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "暖色"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Warm"
           }
         }
       }
@@ -7820,6 +8130,16 @@
     "⭐ %@": {
       "shouldTranslate": false
     },
+    "⭐ Popular Pets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⭐ 人气萌宠"
+          }
+        }
+      }
+    },
     "🅿️ Easy parking": {
       "localizations": {
         "zh-Hans": {
@@ -7856,6 +8176,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "🎂 今天生日"
+          }
+        }
+      }
+    },
+    "🎂 Birthday!": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🎂 生日快乐！"
+          }
+        }
+      }
+    },
+    "🎂🎉 Happy Birthday, %@! 🎉🎂": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🎂🎉 %@，生日快乐！🎉🎂"
           }
         }
       }
