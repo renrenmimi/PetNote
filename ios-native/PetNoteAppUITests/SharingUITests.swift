@@ -1,7 +1,8 @@
 import XCTest
 
-/// Sharing a post, through the screens: the menu, the copied link, and iOS's
-/// own share sheet for the link and for the card.
+/// Sharing a post, through the screens: the menu, the copied link (a test
+/// build's, which opens the app), opening that link, and iOS's own share
+/// sheet for the link and for the card.
 ///
 /// The test process may not read the pasteboard — iOS refuses a process in
 /// the background ("Operation not authorized", measured on the first run) —
@@ -23,7 +24,8 @@ final class SharingUITests: XCTestCase {
     }
 
     func testCopyTheLinkShareItAndShareTheCard() throws {
-        let (app, me) = try signInAsNewAccount("share-\(run)@petnote.test")
+        let email = "share-\(run)@petnote.test"
+        let (app, me) = try signInAsNewAccount(email)
         uid = me
 
         // In the feed, every post has the button.
@@ -60,13 +62,13 @@ final class SharingUITests: XCTestCase {
         paste.tap()
         let pasted = try XCTUnwrap(composer.value as? String)
         let link = try XCTUnwrap(URL(string: pasted), "not a link: \(pasted)")
-        XCTAssertEqual(link.scheme, "https")
-        XCTAssertEqual(link.host(), "petnote.vercel.app")
-        let parts = link.pathComponents
-        XCTAssertEqual(parts.count, 3, "\(link)")
-        XCTAssertEqual(parts[1], "post")
+        // A test build links to the app, not to the website: the website
+        // reads production, where this emulator's post does not exist.
+        XCTAssertEqual(link.scheme, "petnote", "\(link)")
+        XCTAssertEqual(link.host(), "post", "\(link)")
+        let postID = String(link.path().dropFirst())
         // The link is to *this* post: its text on the server is what is on screen.
-        let post = try XCTUnwrap(try JourneyAdmin.fields(path: "posts/\(parts[2])"), "the link names no post: \(link)")
+        let post = try XCTUnwrap(try JourneyAdmin.fields(path: "posts/\(postID)"), "the link names no post: \(link)")
         XCTAssertEqual(JourneyAdmin.string(post["text"]), shownText, "the link is to another post")
         // Not sent: clear the box.
         composer.tap()
@@ -98,6 +100,35 @@ final class SharingUITests: XCTestCase {
         // sheet closes, and the keyboard then covers the post's buttons.
         XCTAssertTrue(share.exists, "the post was not there after copying the card\n\(app.debugDescription)")
         XCTAssertEqual(app.state, .runningForeground)
+
+        // And the copied link works. First with the app running: from the
+        // feed, the system opens the link and the app shows that post.
+        app.navigationBars.buttons["BackButton"].firstMatch.tap()
+        XCTAssertTrue(waitForExistence(of: app.buttons.matching(identifier: "post.share").firstMatch, in: app, timeout: 20))
+        XCTAssertFalse(app.textFields["composer.field"].exists, "still on the post")
+        XCUIDevice.shared.system.open(link)
+        confirmOpenInAppIfAsked()
+        XCTAssertTrue(waitForExistence(of: app.textFields["composer.field"], in: app, timeout: 20),
+                      "the link opened nothing in the running app\n\(app.debugDescription)")
+        XCTAssertEqual(app.staticTexts.matching(identifier: "post.text").firstMatch.label, shownText,
+                       "the link opened another post")
+
+        // Then from cold: `open` relaunches the app, which these tests start
+        // signed out — so the link arrives before anyone is signed in, and
+        // must open once someone is (measured: the relaunch lands on sign-in).
+        app.open(link)
+        XCTAssertTrue(app.staticTexts["login.title"].waitForExistence(timeout: 30), "the relaunch did not land on sign-in")
+        _ = signIn(app, email: email, expectFeed: false)
+        XCTAssertTrue(waitForExistence(of: app.textFields["composer.field"], in: app, timeout: 40),
+                      "a link from before sign-in was not opened after it\n\(app.debugDescription)")
+        XCTAssertEqual(app.staticTexts.matching(identifier: "post.text").firstMatch.label, shownText)
+    }
+
+    /// iOS may ask before handing a link to an app; answer yes if it does.
+    private func confirmOpenInAppIfAsked() {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let open = springboard.buttons["Open"]
+        if open.waitForExistence(timeout: 3) { open.tap() }
     }
 
     private enum Spacing { static let clearance: CGFloat = 8 }

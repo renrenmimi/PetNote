@@ -7,25 +7,41 @@ import UniformTypeIdentifiers
 
 /// What a shared post says and where it points.
 enum PostShareContent {
-    /// The site a shared link opens. One place, because it is a decision
-    /// rather than a detail: the web builds the link from whatever address it
-    /// was loaded from, which inside the old iPhone app is
-    /// `capacitor://localhost` — a link nobody else can open. This is the live
-    /// site, the same one the terms and privacy pages come from, and its post
-    /// page opens without signing in. `petnote.app`, which the link handling
-    /// accepts, does not answer today.
-    ///
-    /// The site reads the production project, so a post shared from a test
-    /// build is one it will not find.
+    /// The site a shared link opens in the production app. One place,
+    /// because it is a decision rather than a detail: the web builds the link
+    /// from whatever address it was loaded from — the live site is
+    /// `petnote.vercel.app`, and its post page opens without signing in —
+    /// while inside the old iPhone app that address is `capacitor://localhost`,
+    /// a link nobody else can open. `petnote.app`, which the link handling
+    /// accepts, has no DNS at all.
     static let site = URL(string: "https://petnote.vercel.app")!
+
+    /// Where links point in this build. The site reads the production
+    /// project, so a post from a test project would be a link that opens and
+    /// finds nothing. Test builds link with the app's own scheme instead,
+    /// which opens the post in a test build of the app and nowhere else.
+    static var linksToTheSite: Bool { AppEnvironment.current.backend == .production }
+
+    /// The one place a link is made, for a post or a place.
+    static func link(path kind: String, id: String, toSite: Bool = linksToTheSite) -> URL {
+        if toSite { return site.appending(path: kind).appending(component: id) }
+        var components = URLComponents()
+        components.scheme = DeepLink.scheme
+        components.host = kind
+        // The id is one encoded component either way: a `/` in it cannot
+        // make the link point anywhere else.
+        let oneComponent = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))
+        components.percentEncodedPath = "/" + (id.addingPercentEncoding(withAllowedCharacters: oneComponent) ?? id)
+        return components.url ?? site
+    }
 
     /// The web's `SHARE_TITLE`, word for word.
     static var title: String { String(localized: "Check out this cute pet on PetNote!") }
 
     /// The id as one path component, encoded: a `/` in it cannot make the
     /// link point anywhere but a post.
-    static func link(to postID: String) -> URL {
-        site.appending(path: "post").appending(component: postID)
+    static func link(to postID: String, toSite: Bool = linksToTheSite) -> URL {
+        link(path: "post", id: postID, toSite: toSite)
     }
 
     /// The first 100 characters of the post, as the web sends.
@@ -152,6 +168,10 @@ struct PostShareMenu: View {
 
     var body: some View {
         Menu {
+            if !PostShareContent.linksToTheSite {
+                // Said where the link is made, not left to be discovered.
+                Text("Test build: links open this app, not the website")
+            }
             Button {
                 UIPasteboard.general.url = PostShareContent.link(to: post.id)
                 copied = true

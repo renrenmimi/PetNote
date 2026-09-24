@@ -103,7 +103,7 @@ struct PlaceDetailView: View {
                     }
                     .accessibilityIdentifier("place.directions")
                 }
-                ShareLink(item: PostShareContent.site.appending(path: "location").appending(component: place.id)) {
+                ShareLink(item: PostShareContent.link(path: "location", id: place.id)) {
                     Label("Share", systemImage: "square.and.arrow.up")
                         .frame(minHeight: Layout.minTouchTarget)
                         .contentShape(.rect)

@@ -176,6 +176,15 @@ struct SignedInView: View {
         .onChange(of: selectedTab) { _, tab in
             if tab != .home { video.releaseAll(reason: "left the home tab") }
         }
+        // A link opened from outside the app (`petnote://post/<id>`): the
+        // home stack shows it, as a tap on the post would. Read on appearing
+        // too, for a link that arrived before sign-in had finished.
+        .onChange(of: session.pendingLink, initial: true) { _, link in
+            guard link != nil, let route = session.consumeLink() else { return }
+            editor = nil
+            selectedTab = .home
+            path.append(route)
+        }
     }
 
     // MARK: - Tabs

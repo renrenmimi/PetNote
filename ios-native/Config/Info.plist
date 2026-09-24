@@ -20,6 +20,14 @@
 				<string>$(PETNOTE_GOOGLE_REVERSED_CLIENT_ID)</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>petnote-links</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>petnote</string>
+			</array>
+		</dict>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

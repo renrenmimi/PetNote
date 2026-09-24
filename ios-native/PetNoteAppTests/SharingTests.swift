@@ -19,20 +19,46 @@ struct SharingTests {
         )
     }
 
-    /// A link somebody else can open: the live site's post page. The web
-    /// built it from wherever the page was loaded, which in the old iPhone app
-    /// was `capacitor://localhost`.
-    @Test func theLinkIsTheLiveSitesPostPage() {
-        #expect(PostShareContent.link(to: "abc123").absoluteString == "https://petnote.vercel.app/post/abc123")
+    /// The production app links to the live site's post page. The web built
+    /// the link from wherever it was loaded, which in the old iPhone app was
+    /// `capacitor://localhost`.
+    @Test func theProductionLinkIsTheLiveSitesPostPage() {
+        #expect(PostShareContent.link(to: "abc123", toSite: true).absoluteString
+            == "https://petnote.vercel.app/post/abc123")
+        #expect(PostShareContent.link(path: "location", id: "loc1", toSite: true).absoluteString
+            == "https://petnote.vercel.app/location/loc1")
+    }
+
+    /// A test build's link opens the post in the app and nowhere else: the
+    /// site reads production, where a test project's post does not exist.
+    @Test func aTestBuildsLinkOpensTheAppAtThatPost() throws {
+        let link = PostShareContent.link(to: "abc123", toSite: false)
+        #expect(link.absoluteString == "petnote://post/abc123")
+        #expect(DeepLink.route(for: link) == .postDetail(postID: "abc123"))
+        let place = PostShareContent.link(path: "location", id: "loc1", toSite: false)
+        #expect(DeepLink.route(for: place) == .place(placeID: "loc1"))
+    }
+
+    /// This build is a test build, so it must not link to the site.
+    @Test func theseTestsRunInABuildThatDoesNotLinkToTheSite() {
+        #expect(AppEnvironment.current.backend != .production)
+        #expect(!PostShareContent.linksToTheSite)
     }
 
     /// Ids are the server's, but a link is built from one, so it is encoded
-    /// rather than trusted to be path-safe.
+    /// rather than trusted to be path-safe — in both forms.
     @Test func anIdCannotChangeWhereTheLinkGoes() {
-        let link = PostShareContent.link(to: "a/../../settings")
-        #expect(link.host() == "petnote.vercel.app")
-        #expect(link.path(percentEncoded: true).hasPrefix("/post/"))
-        #expect(!link.path(percentEncoded: true).dropFirst("/post/".count).contains("/"), "\(link)")
+        let site = PostShareContent.link(to: "a/../../settings", toSite: true)
+        #expect(site.host() == "petnote.vercel.app")
+        #expect(site.path(percentEncoded: true).hasPrefix("/post/"))
+        #expect(!site.path(percentEncoded: true).dropFirst("/post/".count).contains("/"), "\(site)")
+
+        let app = PostShareContent.link(to: "a/../../settings", toSite: false)
+        #expect(app.host() == "post")
+        #expect(!app.path(percentEncoded: true).dropFirst().contains("/"), "\(app)")
+        // What the app does with it: the id fails the id check, so it opens
+        // nothing rather than something else.
+        #expect(DeepLink.route(for: app) == .feed)
     }
 
     @Test func theTextIsTheFirstHundredCharacters() {

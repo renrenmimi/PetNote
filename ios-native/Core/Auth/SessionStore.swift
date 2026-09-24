@@ -301,6 +301,28 @@ final class SessionStore {
         }
     }
 
+    // MARK: - Links
+
+    /// A place a link asked for, waiting for the signed-in shell to open it.
+    /// Only places to look: the link rules never produce an editor or a
+    /// management screen, and one that names nothing known opens nothing.
+    private(set) var pendingLink: Route?
+
+    func openLink(_ url: URL) {
+        let route = DeepLink.route(for: url)
+        guard route != .feed else {
+            log.info("link names nothing this app opens; ignored")
+            return
+        }
+        pendingLink = route
+    }
+
+    /// Hands the link's place to the shell, once.
+    func consumeLink() -> Route? {
+        defer { pendingLink = nil }
+        return pendingLink
+    }
+
     // MARK: - Where the person was
 
     func noteCurrentRoute(_ route: Route) {
