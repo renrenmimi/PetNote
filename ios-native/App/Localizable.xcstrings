@@ -689,16 +689,6 @@
         }
       }
     },
-    "Birthday today": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今天生日"
-          }
-        }
-      }
-    },
     "Block": {
       "localizations": {
         "zh-Hans": {
@@ -2995,16 +2985,6 @@
         }
       }
     },
-    "Loading popular pets": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在加载人气萌宠"
-          }
-        }
-      }
-    },
     "Loading posts": {
       "localizations": {
         "zh-Hans": {
@@ -4809,16 +4789,6 @@
         }
       }
     },
-    "Seen": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已看过"
-          }
-        }
-      }
-    },
     "Send": {
       "localizations": {
         "zh-Hans": {
@@ -4949,16 +4919,6 @@
         }
       }
     },
-    "Share a birthday post": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "分享生日帖子"
-          }
-        }
-      }
-    },
     "Share a code so someone can join %@'s family. Each code works once, for 48 hours, and stops working if it is revoked or if the person who made it leaves.": {
       "localizations": {
         "zh-Hans": {
@@ -4995,16 +4955,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "说说你在这里的体验..."
-          }
-        }
-      }
-    },
-    "Share your pet to get featured! 🐾": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "分享你的宠物，就有机会上榜！🐾"
           }
         }
       }
@@ -5894,6 +5844,16 @@
         }
       }
     },
+    "The draft can't be restored once photos are picked or a post has started.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已经选了照片或开始发布之后，就不能再恢复草稿了。"
+          }
+        }
+      }
+    },
     "The last Share may already have posted this photo, so its filter can't be changed now.": {
       "localizations": {
         "zh-Hans": {
@@ -6600,26 +6560,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "换个关键词试试。"
-          }
-        }
-      }
-    },
-    "Turning %lld years old today!": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今天满 %lld 岁啦！"
-          }
-        }
-      }
-    },
-    "Turning 1 year old today!": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今天满 1 岁啦！"
           }
         }
       }
@@ -8130,16 +8070,6 @@
     "⭐ %@": {
       "shouldTranslate": false
     },
-    "⭐ Popular Pets": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "⭐ 人气萌宠"
-          }
-        }
-      }
-    },
     "🅿️ Easy parking": {
       "localizations": {
         "zh-Hans": {
@@ -8176,26 +8106,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "🎂 今天生日"
-          }
-        }
-      }
-    },
-    "🎂 Birthday!": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "🎂 生日快乐！"
-          }
-        }
-      }
-    },
-    "🎂🎉 Happy Birthday, %@! 🎉🎂": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "🎂🎉 %@，生日快乐！🎉🎂"
           }
         }
       }
