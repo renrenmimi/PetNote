@@ -195,6 +195,7 @@ struct UserProfileView: View {
             .buttonStyle(.plain)
             .accessibilityElement(children: .combine)
             .accessibilityHint("Opens \(entry.pet.name)'s page.")
+            .accessibilityIdentifier("user.pet.\(entry.pet.id)")
 
             if let follow = model.followModels[entry.pet.id] {
                 PetFollowButton(model: follow, compact: true)

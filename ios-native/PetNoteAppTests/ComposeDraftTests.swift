@@ -153,3 +153,76 @@ struct ComposeDraftTests {
         init(_ now: Date) { self.now = now }
     }
 }
+
+/// The draft on offer is kept until the person chooses Restore or Discard.
+///
+/// The web client's autosave does not run while its "unsaved draft" banner is
+/// up (src/pages/Create.tsx:283). Saving what is typed then replaces the draft
+/// being offered — and an interrupted attempt's draft is the only record of
+/// its operation id and of the photos already on the CDN.
+@MainActor
+struct ComposeDraftOfferTests {
+    static let pet = PetFixture.pet(id: "pet-1", name: "Momo")
+
+    private func makeModel(over drafts: InMemoryDraftStore) -> ComposeViewModel {
+        ComposeViewModel(
+            uid: "user-1", isEmailVerified: true,
+            uploader: FakeUploader(), writes: FakePostWrites(),
+            pets: FixedPets(pets: [Self.pet]), drafts: drafts
+        )
+    }
+
+    @Test func typingWhileADraftIsOfferedDoesNotReplaceIt() async throws {
+        let drafts = InMemoryDraftStore()
+        let operationID = OperationID.new()
+        drafts.save(
+            ComposeDraft(
+                text: "morning walk", tags: ["cat"], petID: Self.pet.id, savedAt: Date(),
+                operationID: operationID, uploadedAssets: [ComposeDraftTests.sampleAsset(1)]
+            ),
+            uid: "user-1"
+        )
+        let model = makeModel(over: drafts)
+        await model.start()
+        #expect(model.restorableDraft != nil, "precondition: the stored draft is offered")
+
+        // What the composer's fields do on every edit.
+        model.caption = "something else"
+        model.persistDraft()
+        model.tagInput = "dog"
+        model.commitTagInput()
+
+        let stored = try #require(drafts.load(uid: "user-1"), "the offered draft is gone")
+        #expect(stored.text == "morning walk", "typing replaced the draft on offer")
+        #expect(stored.tags == ["cat"])
+        #expect(stored.operationID == operationID, "the interrupted attempt's operation id was lost")
+        #expect(stored.uploadedAssets == [ComposeDraftTests.sampleAsset(1)], "the upload records were lost")
+    }
+
+    /// And once the person has chosen, what they type is kept again.
+    @Test func afterRestoringWhatIsTypedIsKeptAgain() async {
+        let drafts = InMemoryDraftStore()
+        drafts.save(ComposeDraft(text: "morning walk", petID: Self.pet.id), uid: "user-1")
+        let model = makeModel(over: drafts)
+        await model.start()
+        model.restoreDraft()
+
+        model.caption = "morning walk, then a nap"
+        model.persistDraft()
+
+        #expect(drafts.load(uid: "user-1")?.text == "morning walk, then a nap")
+    }
+
+    @Test func afterDiscardingWhatIsTypedIsKeptAgain() async {
+        let drafts = InMemoryDraftStore()
+        drafts.save(ComposeDraft(text: "morning walk", petID: Self.pet.id), uid: "user-1")
+        let model = makeModel(over: drafts)
+        await model.start()
+        model.discardDraft()
+
+        model.caption = "a new post"
+        model.persistDraft()
+
+        #expect(drafts.load(uid: "user-1")?.text == "a new post")
+    }
+}

@@ -45,6 +45,10 @@ struct PetFollowersView: View {
                         detail: nil
                     ) { onOpenUser(follower.id) }
                     .task { await model.loadMoreIfNeeded(after: follower) }
+                    // By uid, so a test can hold the list against the
+                    // server's `followers` documents one for one: two new
+                    // accounts can share a name, and neither has a photo.
+                    .accessibilityIdentifier("followers.user.\(follower.id)")
                 }
                 if let failure = model.pageFailure {
                     SocialRetryNotice(message: failure, identifier: "followers.pageFailed") {
@@ -97,6 +101,7 @@ struct FollowingPetsView: View {
                     PersonRow(name: pet.petName, avatarURL: pet.petAvatarURL, detail: nil) {
                         onOpenPet(pet.id)
                     }
+                    .accessibilityIdentifier("following.pet.\(pet.id)")
                 }
             }
         }

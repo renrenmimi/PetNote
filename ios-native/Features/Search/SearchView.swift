@@ -113,6 +113,10 @@ struct SearchView: View {
                         detail: personDetail(person),
                         trailing: person.id == search.viewerID ? String(localized: "You", comment: "Marks the signed-in person's own row in search results") : nil
                     ) { onOpenUser(person.id) }
+                    // Every result row is named by the server's id, so a test
+                    // can hold the results against the query that produced
+                    // them rather than against names two accounts can share.
+                    .accessibilityIdentifier("search.person.\(person.id)")
                 }
             }
         }
@@ -138,6 +142,7 @@ struct SearchView: View {
                         avatarURL: pet.avatarURL,
                         detail: pet.breed.isEmpty ? PetDisplay.label(for: pet.species) : pet.breed
                     ) { onOpenPet(pet.id) }
+                    .accessibilityIdentifier("search.pet.\(pet.id)")
                 }
             }
         }
@@ -166,6 +171,7 @@ struct SearchView: View {
                     .buttonStyle(.plain)
                     .accessibilityElement(children: .combine)
                     .accessibilityAddTraits(.isButton)
+                    .accessibilityIdentifier("search.tag.\(tag.name)")
                 }
             }
         }
@@ -177,6 +183,7 @@ struct SearchView: View {
             section(String(localized: "Posts")) {
                 ForEach(search.visiblePosts) { post in
                     PostSearchRow(post: post) { onOpenPost(post.id) }
+                        .accessibilityIdentifier("search.post.\(post.id)")
                 }
             }
         }
@@ -210,6 +217,7 @@ struct SearchView: View {
                             }
                             .buttonStyle(SocialButtonStyle(kind: .secondary))
                             .accessibilityLabel("Tag \(tag.name), \(SearchLogic.postCountLabel(tag.postCount))")
+                            .accessibilityIdentifier("explore.tag.\(tag.name)")
                         }
                     }
                 }
@@ -245,6 +253,7 @@ struct SearchView: View {
                         .buttonStyle(.plain)
                         .accessibilityLabel(PostThumbnail.label(for: post))
                         .accessibilityAddTraits(.isButton)
+                        .accessibilityIdentifier("explore.post.\(post.id)")
                     }
                 }
             }
@@ -325,6 +334,9 @@ struct SearchView: View {
             .buttonStyle(.plain)
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isButton)
+            // Unique within a module: "Most posts" leaves out every pet that
+            // "Discover pets" already shows (`SearchLogic.alsoActive`).
+            .accessibilityIdentifier("explore.pet.\(pet.id)")
 
             if let follow {
                 PetFollowButton(model: follow)

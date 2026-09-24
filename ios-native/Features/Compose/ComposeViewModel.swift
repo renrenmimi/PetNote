@@ -220,10 +220,28 @@ final class ComposeViewModel {
         uploadedAssets = []
     }
 
+    /// Keeps what is being typed, as it is typed — but not while an earlier
+    /// draft is still on offer.
+    ///
+    /// The web client's autosave waits for Restore or Discard
+    /// (src/pages/Create.tsx:283, `showDraftBanner`). Saving before then
+    /// writes over the draft being offered, and with it the operation id and
+    /// the upload records a relaunch needs to finish an interrupted post
+    /// without publishing it twice: one letter typed before choosing, then
+    /// leaving, and the draft no longer knows it was half published.
+    /// `ComposeDraftOfferTests` pins this; `ComposeDraftUITests` walks it
+    /// through the screens.
+    func persistDraft() {
+        guard restorableDraft == nil else { return }
+        saveDraft()
+    }
+
     /// Writes the current state down. Called after each upload lands and again
     /// immediately before publishing, so a process death at any point resumes
-    /// with the same operation id and the same media.
-    func persistDraft() {
+    /// with the same operation id and the same media. Unconditional, unlike
+    /// `persistDraft`: the attempt in progress is the one worth resuming, as
+    /// the web client's own pre-publish save is (Create.tsx:661).
+    private func saveDraft() {
         guard !hasPublished else { return }
         drafts.save(
             ComposeDraft(
@@ -536,7 +554,7 @@ final class ComposeViewModel {
                 // Recorded as it lands: a failure on the next one must not
                 // throw this one away.
                 uploadedAssets.append(asset)
-                persistDraft()
+                saveDraft()
             }
 
             phase = .publishing
@@ -546,7 +564,7 @@ final class ComposeViewModel {
             // publishing" flag: that write can fail while publishing goes
             // ahead, and a stale copy of it is what made the web client delete
             // a live post's photos.
-            persistDraft()
+            saveDraft()
 
             let outcome = try await writes.publish(
                 PublishRequest(
@@ -579,7 +597,7 @@ final class ComposeViewModel {
             // committed post.
             phase = .failed(stage: handedOff ? .publish : .upload)
             failureMessage = Self.message(for: error, handedOff: handedOff)
-            persistDraft()
+            saveDraft()
             log.error("publish attempt failed: \(String(describing: error), privacy: .public)")
         }
     }
