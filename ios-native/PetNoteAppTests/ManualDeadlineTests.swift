@@ -14,8 +14,8 @@ struct ManualDeadlineTests {
         let released = Released()
         deadline.pass()
         let timer = Task { try? await deadline.sleeper(.seconds(12)); await released.mark() }
-        for _ in 0..<20_000 where deadline.armed == 0 { await Task.yield() }
-        #expect(deadline.armed == 1, "the timer never parked")
+        #expect(await deadline.waitUntilArmed(), "the timer never parked")
+        #expect(deadline.armed == 1)
         for _ in 0..<200 { await Task.yield() }
         #expect(await released.value == false, "a pass reached a timer that was not yet waiting")
         timer.cancel()
