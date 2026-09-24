@@ -224,13 +224,9 @@ final class LikeUITests: XCTestCase {
     /// hittable a second later. XCUITest reported `Computed hit point {-1, -1}`
     /// and carried on, so the tap silently did nothing and the failure landed
     /// on the assertion after it, describing the wrong thing.
-    ///
-    /// Brought into reach first, not only waited for: the feed's banner and
-    /// spotlight rows put the first card's actions under the tab bar until
-    /// the list is moved, and a refresh puts the list back at its top.
     private func tapLike(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertTrue(
-            bringIntoReach(likeButton(app), in: app, timeout: 30),
+            waitUntilHittable(likeButton(app), in: app, timeout: 30),
             "the like button is not tappable", file: file, line: line
         )
         likeButton(app).tap()
@@ -276,9 +272,7 @@ final class LikeUITests: XCTestCase {
         )
         let app = signedIn()
         let like = likeButton(app)
-        // The first card's row starts under the tab bar, below the feed's
-        // banner and spotlight rows; a small drag brings it up.
-        XCTAssertTrue(bringIntoReach(like, in: app, timeout: 30), "no like button within reach")
+        XCTAssertTrue(waitUntilHittable(like, in: app, timeout: 30), "no like button")
         let postID = try XCTUnwrap(firstPostID(app), "could not tell which post the first row is")
         print("MEASURED target=\(postID) uid=\(uid)")
 
@@ -385,9 +379,7 @@ final class LikeUITests: XCTestCase {
         let uid = try XCTUnwrap(uid(forEmail: account))
         let app = signedIn()
         let like = likeButton(app)
-        // The first card's row starts under the tab bar, below the feed's
-        // banner and spotlight rows; a small drag brings it up.
-        XCTAssertTrue(bringIntoReach(like, in: app, timeout: 30), "no like button within reach")
+        XCTAssertTrue(waitUntilHittable(like, in: app, timeout: 30), "no like button")
         let postID = try XCTUnwrap(firstPostID(app))
 
         let startLabel = like.label
@@ -641,9 +633,7 @@ final class LikeUITests: XCTestCase {
         let uid = try XCTUnwrap(uid(forEmail: account), "no uid for \(account)")
         let app = signedIn()
         let like = likeButton(app)
-        // The first card's row starts under the tab bar, below the feed's
-        // banner and spotlight rows; a small drag brings it up.
-        XCTAssertTrue(bringIntoReach(like, in: app, timeout: 30), "no like button within reach")
+        XCTAssertTrue(waitUntilHittable(like, in: app, timeout: 30), "no like button")
         let postID = try XCTUnwrap(firstPostID(app), "could not tell which post the first row is")
 
         let startLabel = like.label

@@ -296,10 +296,8 @@ extension XCTestCase {
         guard clearProbeOverlays(app) else { return false }
         if app.staticTexts["login.title"].exists, !signInFromLoginScreen(app) { return false }
         if app.navigationBars["Post"].exists { return true }
-        // Brought up, not only waited for: the feed's banner and spotlight
-        // rows put the first card's actions under the tab bar.
         let rows = app.buttons.matching(identifier: "post.comments")
-        guard bringIntoReach(rows.firstMatch, in: app, timeout: 40) else { return false }
+        guard waitUntilHittable(rows.firstMatch, in: app, timeout: 40) else { return false }
         rows.firstMatch.tap()
         return waitForExistence(of: app.navigationBars["Post"], in: app, timeout: 30)
     }

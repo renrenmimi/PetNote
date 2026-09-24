@@ -68,23 +68,6 @@ actor BlockFilteringFeed: FeedRepository {
     private let social: any SocialRepository
     private var viewerID: String
     private var blocked: Set<String>?
-    /// The read of the list that is out now, if one is. A second caller while
-    /// it is out waits for it rather than asking again: on a cold start the
-    /// feed's first page and the spotlight row both ask at once, and that was
-    /// two reads of the same list. Nil when the read failed — which fills no
-    /// cache, so the next caller asks again.
-    private var inFlight: (number: Int, read: Task<Set<String>?, Never>)?
-    private var readsStarted = 0
-    /// Bumped whenever the cached list stops being the right one: a block, an
-    /// unblock, another account. A read begun under an older value still
-    /// answers the callers who were waiting for it, but may not fill the cache
-    /// — it could be the list from before the block, or somebody else's.
-    private var generation = 0
-    /// Callers waiting on the read that is out, the one that started it
-    /// included. Nothing depends on it; it is how a test can tell "the second
-    /// caller shared the read" from "the second caller came after it was
-    /// over", which otherwise look the same from outside.
-    private(set) var callersWaitingOnRead = 0
     private let log = Logger(subsystem: "dev.local.petnote.native", category: "moderation")
 
     /// Pages read past emptied ones before giving the model what there is.
@@ -99,52 +82,25 @@ actor BlockFilteringFeed: FeedRepository {
     /// A different account signed in on the same shell.
     func switchAccount(to viewerID: String) {
         self.viewerID = viewerID
-        forgetTheList()
+        blocked = nil
     }
 
     /// After a block or an unblock, so the next read filters by the new list.
     func invalidate() {
-        forgetTheList()
-    }
-
-    /// The cache, and the read that would have filled it: a caller after
-    /// this point starts a read of its own rather than joining one that began
-    /// before the change.
-    private func forgetTheList() {
         blocked = nil
-        inFlight = nil
-        generation += 1
     }
 
-    /// Not private: the feed's spotlight row filters by the same list, from
-    /// this same cache, so a block leaves both at once (`BlockedAuthorsProviding`).
-    func blockedIDs() async -> Set<String> {
+    private func blockedIDs() async -> Set<String> {
         if let blocked { return blocked }
-        let generation = self.generation
-        let current: (number: Int, read: Task<Set<String>?, Never>)
-        if let inFlight {
-            current = inFlight
-        } else {
-            readsStarted += 1
-            let social = self.social
-            let viewerID = self.viewerID
-            let log = self.log
-            current = (readsStarted, Task { () async -> Set<String>? in
-                do {
-                    return try await social.blockedUserIDs(viewerID: viewerID)
-                } catch {
-                    log.error("blocked users read failed; filtering nothing: \(String(describing: error), privacy: .public)")
-                    return nil
-                }
-            })
-            inFlight = current
+        let ids: Set<String>
+        do {
+            ids = try await social.blockedUserIDs(viewerID: viewerID)
+        } catch {
+            log.error("blocked users read failed; filtering nothing: \(String(describing: error), privacy: .public)")
+            return []
         }
-        callersWaitingOnRead += 1
-        let answer = await current.read.value
-        callersWaitingOnRead -= 1
-        if inFlight?.number == current.number { inFlight = nil }
-        if let answer, generation == self.generation { blocked = answer }
-        return answer ?? []
+        blocked = ids
+        return ids
     }
 
     func posts(after cursor: PageCursor?, limit: Int) async throws -> Page<Post> {

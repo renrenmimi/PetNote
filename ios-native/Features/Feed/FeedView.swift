@@ -8,9 +8,6 @@ import SwiftUI
 /// step — but not before a measurement says so.
 struct FeedView: View {
     @State private var model: FeedViewModel
-    /// The birthday banner, the spotlight row and the cards' birthday marks.
-    /// Owned by the shell with `model`, and reset with it on an account switch.
-    @State private var extras: FeedExtrasModel
     @Binding private var path: [Route]
     @Environment(VideoPlaybackCoordinator.self) private var video
     @Environment(SessionStore.self) private var session
@@ -25,76 +22,70 @@ struct FeedView: View {
     /// current. Reset by `onChange(of: model.state)` when a new one arrives,
     /// so dismissing one failure does not silence the next.
     @State private var refreshFailureDismissed = false
-    /// "Share a birthday post": the composer, with this pet chosen. The shell
-    /// owns the composer, so the feed only says which pet.
-    private let onShareBirthday: (String) -> Void
 
-    init(
-        model: FeedViewModel,
-        extras: FeedExtrasModel,
-        path: Binding<[Route]>,
-        onShareBirthday: @escaping (String) -> Void
-    ) {
+    init(model: FeedViewModel, path: Binding<[Route]>) {
         _model = State(initialValue: model)
-        _extras = State(initialValue: extras)
         _path = path
-        self.onShareBirthday = onShareBirthday
     }
 
     var body: some View {
-        // Always the list, whatever the posts are doing: the banner and the
-        // spotlight are its first rows, and the web draws them above the
-        // skeleton, the error and the empty state as well as above the posts
-        // (Feed.tsx:517-519). What stands where the posts go while there are
-        // none is `placeholder`.
-        list
-            .navigationTitle("PetNote")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .principal) { videoProbe } }
-            .overlay(alignment: .topLeading) { sessionProbe }
-            // The top-leading corner, like the session probe: the one corner
-            // of the feed with no control in it, so an invisible element over
-            // it cannot take a hit test meant for one — the banner's ✕ is at
-            // the other end.
-            .overlay(alignment: .topLeading) { extrasProbe }
-            .background(Palette.background)
-            .task { await model.loadFirstPageIfNeeded() }
-            .task { returnToWhereTheSessionEnded() }
-            .task { await extras.loadIfNeeded() }
-            // On the ids, so a new page or a refresh asks about the pets it
-            // brought and nothing else — `checkBirthdays` skips the ones it has.
-            // A task of its own rather than `.task(id:)`: that one is cancelled
-            // when the ids change, and a read cancelled half way loses its answer
-            // — those pets would go unmarked until some later page asked again.
-            // A refresh that brings the same ids back is `extras.reload()`'s to
-            // look at again.
-            .onChange(of: model.posts.map(\.id), initial: true) { _, _ in
-                Task { await extras.checkBirthdays(for: model.posts) }
+        Group {
+            switch model.state {
+            case .idle, .loadingFirstPage:
+                // A refresh is not a first load. `reload()` moves the model
+                // to `.loadingFirstPage` whatever was on screen, so switching
+                // on that state alone hands the whole screen to the first-load
+                // spinner for the length of the round trip — taking the rows
+                // the person is reading and the `List` that owns the refresh
+                // control they are still looking at.
+                //
+                // Not seen on a screen: against the local emulator the reload
+                // returns faster than a UI test can resolve its first query,
+                // and `testPullToRefreshDoesNotBlankTheFeed` sampled only the
+                // steady state. The length of the blank is the length of the
+                // round trip, which on a phone on a train is not 90ms — so
+                // this is a reading of the path rather than a repair of an
+                // observation, and is recorded as one.
+                if model.posts.isEmpty { loading } else { list }
+            case .failed(let kind):
+                // Same split, for the same reason. A refresh that fails is a
+                // reason to say so, not a reason to throw away a feed that is
+                // still perfectly readable — see `refreshFailureBanner`, which
+                // is where the saying-so happens.
+                if model.posts.isEmpty {
+                    FeedErrorView(message: kind.message) { Task { await model.reload() } }
+                } else {
+                    list
+                }
+            case .loaded:
+                if model.posts.isEmpty { emptyState } else { list }
             }
-            .refreshable {
-                // Alongside the feed's own refresh, not in front of it: the
-                // spotlight's read is not a reason for the list's refresh control
-                // to spin any longer.
-                Task { await extras.reload() }
-                await model.reload()
-            }
-            // An inset rather than an overlay: this one says the list underneath
-            // is out of date, and a banner that covers the row it is talking
-            // about is its own small problem.
-            .safeAreaInset(edge: .top, spacing: 0) { refreshFailureBanner }
-            .onChange(of: model.state) { _, newState in
-                if case .failed = newState { refreshFailureDismissed = false }
-            }
-            .overlay(alignment: .bottom) { likeFailureBanner }
-            // A session can be revoked while the app is in the background, and
-            // nothing about a cached ID token notices: it stays valid for an hour
-            // and neither Firestore nor the callables ask whether the account
-            // behind it still exists. So the question gets asked at a predictable
-            // moment — coming back to the app — instead of an arbitrary one.
-            .onChange(of: scenePhase) { _, phase in
-                guard phase == .active else { return }
-                Task { await session.revalidate() }
-            }
+        }
+        .navigationTitle("PetNote")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .principal) { videoProbe } }
+        .overlay(alignment: .topLeading) { sessionProbe }
+        .background(Palette.background)
+        .task { await model.loadFirstPageIfNeeded() }
+        .task { returnToWhereTheSessionEnded() }
+        .refreshable { await model.reload() }
+        // An inset rather than an overlay: this one says the list underneath
+        // is out of date, and a banner that covers the row it is talking
+        // about is its own small problem.
+        .safeAreaInset(edge: .top, spacing: 0) { refreshFailureBanner }
+        .onChange(of: model.state) { _, newState in
+            if case .failed = newState { refreshFailureDismissed = false }
+        }
+        .overlay(alignment: .bottom) { likeFailureBanner }
+        // A session can be revoked while the app is in the background, and
+        // nothing about a cached ID token notices: it stays valid for an hour
+        // and neither Firestore nor the callables ask whether the account
+        // behind it still exists. So the question gets asked at a predictable
+        // moment — coming back to the app — instead of an arbitrary one.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task { await session.revalidate() }
+        }
     }
 
     /// Puts the person back on the screen a revoked session took them off.
@@ -177,82 +168,6 @@ struct FeedView: View {
         "players=\(video.livePlayerCount) playing=\(video.playingID ?? "none")"
     }
 
-    /// How many birthday-banner reads have come back for this account.
-    ///
-    /// Behind a launch argument and effectively invisible, like the two
-    /// probes above, and for the same reason: "there is no banner" is the
-    /// right answer for an account with no birthday today and also what the
-    /// screen says before the read has come back, and only the count tells a
-    /// UI test which of the two it is looking at. Behind `#if DEBUG` too.
-    @ViewBuilder
-    private var extrasProbe: some View {
-        #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("-petnote-feed-extras-probe") {
-            Text(verbatim: "bannerReads=\(extras.bannerReadsSettled)")
-                .font(Typography.caption)
-                .opacity(0.001)
-                .allowsHitTesting(false)
-                .accessibilityIdentifier("feed.extrasProbe")
-        }
-        #endif
-    }
-
-    /// What stands where the posts go while there are none to show.
-    private enum Placeholder {
-        case loading
-        case failed(FeedViewModel.FailureKind)
-        case empty
-    }
-
-    /// Nil whenever there are posts, whatever the state says.
-    ///
-    /// A refresh is not a first load. `reload()` moves the model to
-    /// `.loadingFirstPage` whatever was on screen, so switching on that state
-    /// alone hands the posts' place to the first-load spinner for the length
-    /// of the round trip — taking the rows the person is reading with it.
-    ///
-    /// Not seen on a screen: against the local emulator the reload returns
-    /// faster than a UI test can resolve its first query, and
-    /// `testPullToRefreshDoesNotBlankTheFeed` sampled only the steady state.
-    /// The length of the blank is the length of the round trip, which on a
-    /// phone on a train is not 90ms — so this is a reading of the path rather
-    /// than a repair of an observation, and is recorded as one.
-    ///
-    /// Same for a failure: a refresh that fails is a reason to say so, not a
-    /// reason to throw away a feed that is still perfectly readable — see
-    /// `refreshFailureBanner`, which is where the saying-so happens.
-    private var placeholder: Placeholder? {
-        guard model.posts.isEmpty else { return nil }
-        switch model.state {
-        case .idle, .loadingFirstPage: return .loading
-        case .failed(let kind): return .failed(kind)
-        case .loaded: return .empty
-        }
-    }
-
-    /// Below the banner and the spotlight, as the web's skeleton, error and
-    /// empty state are, rather than over the whole screen.
-    @ViewBuilder
-    private func placeholderRow(_ placeholder: Placeholder) -> some View {
-        Group {
-            switch placeholder {
-            case .loading:
-                loading
-            case .failed(let kind):
-                FeedErrorView(message: kind.message) { Task { await model.reload() } }
-            case .empty:
-                emptyState
-            }
-        }
-        .padding(.vertical, Spacing.xxl)
-        // Plain, so the row is not one big button: in a List the default
-        // style makes the whole row the retry, message included.
-        .buttonStyle(.plain)
-        .listRowInsets(EdgeInsets())
-        .listRowSeparator(.hidden)
-        .listRowBackground(Palette.background)
-    }
-
     private var loading: some View {
         ProgressView()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -292,64 +207,38 @@ struct FeedView: View {
         // Anchoring to an identity survives that.
         ScrollViewReader { proxy in
             List {
-                // The web feed's order: the birthday banner, then the
-                // spotlight, then the posts. Rows of this list rather than
-                // views above it, so they scroll away with it.
-                if let banner = extras.visibleBanner {
-                    BirthdayBannerRow(
-                        banner: banner,
-                        onShare: { onShareBirthday(banner.petID) },
-                        onDismiss: { extras.dismissBanner() }
-                    )
-                    .listRowInsets(EdgeInsets(
-                        top: Spacing.s, leading: Layout.pageInset, bottom: 0, trailing: Layout.pageInset
-                    ))
+                ForEach(model.posts) { post in
+                PostCard(
+                    post: post
+                        .withLikeCount(model.displayLikeCount(for: post))
+                        .withCommentCount(model.displayCommentCount(for: post)),
+                    isLiked: model.isLiked(post),
+                    onLike: { model.toggleLike(post) },
+                    onOpenComments: { open(post) },
+                    // The gesture is inside the card, on its content only. A
+                    // row-level tap gesture swallowed every button in the card.
+                    onOpenPost: { open(post) }
+                )
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(Palette.background)
+                .task { await model.loadMoreIfNeeded(currentItem: post) }
+                .id(post.id)
+            }
+
+            // A lost page is shown where it happened, with its own retry. A
+            // modal would interrupt reading to report something that did not
+            // affect what is already on screen.
+                if let failure = model.pagingFailure {
+                    pagingFailureRow(failure)
+                } else if model.isLoadingMore {
+                    HStack {
+                        Spacer()
+                        ProgressView().accessibilityLabel("Loading more posts")
+                        Spacer()
+                    }
                     .listRowSeparator(.hidden)
                     .listRowBackground(Palette.background)
-                }
-                PetSpotlightRow(phase: extras.spotlight, onOpen: { openFromSpotlight($0) })
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Palette.background)
-
-                if let placeholder {
-                    placeholderRow(placeholder)
-                } else {
-                    ForEach(model.posts) { post in
-                        PostCard(
-                            post: post
-                                .withLikeCount(model.displayLikeCount(for: post))
-                                .withCommentCount(model.displayCommentCount(for: post)),
-                            isLiked: model.isLiked(post),
-                            onLike: { model.toggleLike(post) },
-                            onOpenComments: { open(post) },
-                            // The gesture is inside the card, on its content
-                            // only. A row-level tap gesture swallowed every
-                            // button in the card.
-                            onOpenPost: { open(post) },
-                            isBirthday: extras.hasBirthday(petID: post.petID)
-                        )
-                        .listRowInsets(EdgeInsets())
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Palette.background)
-                        .task { await model.loadMoreIfNeeded(currentItem: post) }
-                        .id(post.id)
-                    }
-
-                    // A lost page is shown where it happened, with its own
-                    // retry. A modal would interrupt reading to report
-                    // something that did not affect what is already on screen.
-                    if let failure = model.pagingFailure {
-                        pagingFailureRow(failure)
-                    } else if model.isLoadingMore {
-                        HStack {
-                            Spacer()
-                            ProgressView().accessibilityLabel("Loading more posts")
-                            Spacer()
-                        }
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Palette.background)
-                    }
                 }
             }
             .listStyle(.plain)
@@ -384,17 +273,6 @@ struct FeedView: View {
         guard !path.contains(.postDetail(postID: post.id)) else { return }
         model.rememberScrollAnchor(post.id)
         path.append(.postDetail(postID: post.id))
-    }
-
-    /// A spotlight tile: seen from now on, then the post.
-    ///
-    /// No scroll anchor. The post may not be a row of this list at all — the
-    /// spotlight reaches back a week — and an anchor naming a row that is not
-    /// there would replace the one that is.
-    private func openFromSpotlight(_ postID: String) {
-        extras.markSeen(postID)
-        guard !path.contains(.postDetail(postID: postID)) else { return }
-        path.append(.postDetail(postID: postID))
     }
 
     private func pagingFailureRow(_ failure: FeedViewModel.FailureKind) -> some View {

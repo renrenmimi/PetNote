@@ -11,12 +11,6 @@ enum CloudinaryURL {
         case medium = "w_800,q_auto,f_auto"
         case large = "w_1200,q_auto,f_auto"
         case avatar = "w_100,h_100,c_fill,q_auto,f_auto"
-        /// The feed's "Popular Pets" tiles — `PetSpotlight.tsx` asks for this
-        /// one, of the same source picture (`FeedExtras.spotlightPictureURL`:
-        /// the stored `thumbUrl`, else the photo), so asking for anything
-        /// else here would split the cache. A video's stored `thumbUrl` is
-        /// under `/video/upload/`, which neither client resizes.
-        case spotlight = "w_200,h_200,c_fill,q_auto,f_auto"
     }
 
     private static let host = "res.cloudinary.com"

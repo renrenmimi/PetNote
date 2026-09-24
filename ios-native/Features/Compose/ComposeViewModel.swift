@@ -141,11 +141,6 @@ final class ComposeViewModel {
     private let uploader: any MediaUploading
     private let writes: any PostWriteRepository
     private let petSource: any PetChoiceProviding
-    /// The pet to start on, when the composer was opened for one — the web
-    /// client's `/create?petId=`, which the feed's birthday banner opens.
-    /// Chosen only if it is one of this person's pets, as `Create.tsx` checks
-    /// (`pets.some(pet => pet.id === petId)`) before selecting it.
-    private let preferredPetID: String?
     private let drafts: any ComposeDraftStoring
     private let onPublished: (@MainActor (String) -> Void)?
     private let log = Logger(subsystem: "dev.local.petnote.native", category: "compose")
@@ -166,7 +161,6 @@ final class ComposeViewModel {
         uploader: any MediaUploading,
         writes: any PostWriteRepository,
         pets petSource: any PetChoiceProviding,
-        preferredPetID: String? = nil,
         drafts: any ComposeDraftStoring = UserDefaultsComposeDraftStore(),
         onPublished: (@MainActor (String) -> Void)? = nil
     ) {
@@ -175,7 +169,6 @@ final class ComposeViewModel {
         self.uploader = uploader
         self.writes = writes
         self.petSource = petSource
-        self.preferredPetID = preferredPetID
         self.drafts = drafts
         self.onPublished = onPublished
     }
@@ -191,11 +184,6 @@ final class ComposeViewModel {
         defer { petsLoaded = true }
         do {
             pets = try await petSource.pets(ownedBy: uid)
-            // Opened for a pet: that one, if it is theirs. Not over a choice
-            // the person has already made on this screen.
-            if selectedPetID == nil, let preferredPetID, pets.contains(where: { $0.id == preferredPetID }) {
-                selectedPetID = preferredPetID
-            }
             // One pet is not a choice; preselect it rather than making the
             // person tap the only option.
             if pets.count == 1, selectedPetID == nil { selectedPetID = pets[0].id }

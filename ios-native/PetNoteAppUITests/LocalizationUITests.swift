@@ -32,10 +32,9 @@ final class LocalizationUITests: XCTestCase {
         XCTAssertEqual(app.buttons["feed.notifications"].label, "通知")
         XCTAssertEqual(app.buttons["feed.search"].label, "搜索")
 
-        // A post's share menu. The first card's is under the tab bar until
-        // the list moves — the feed's banner and spotlight rows are above it.
+        // A post's share menu.
         let share = app.buttons.matching(identifier: "post.share").firstMatch
-        XCTAssertTrue(bringIntoReach(share, in: app, timeout: 30), "no share button within reach")
+        XCTAssertTrue(waitUntilHittable(share, in: app, timeout: 30), "no share button")
         XCTAssertEqual(share.label, "分享")
         share.tap()
         for label in ["复制链接", "分享到…", "分享为图片"] {

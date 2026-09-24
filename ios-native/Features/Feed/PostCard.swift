@@ -29,10 +29,6 @@ struct PostCard: View {
     /// all, by a test or by a finger, and no like ever reached the emulator.
     /// Keeping the gesture off the actions row is what makes both work.
     var onOpenPost: (() -> Void)?
-    /// The post's pet has its birthday today — the web card's
-    /// `initialBirthday`. Only the feed asks (`FeedExtrasModel.checkBirthdays`);
-    /// the pet page says it in words of its own.
-    var isBirthday = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.m) {
@@ -172,12 +168,9 @@ struct PostCard: View {
                     .foregroundStyle(Palette.primaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                HStack(spacing: Spacing.s) {
-                    Text(post.createdAt, style: .relative)
-                        .font(Typography.caption)
-                        .foregroundStyle(Palette.secondaryText)
-                    if isBirthday { birthdayPill }
-                }
+                Text(post.createdAt, style: .relative)
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.secondaryText)
             }
             Spacer(minLength: Spacing.s)
         }
@@ -200,32 +193,12 @@ struct PostCard: View {
         // `testTheCardAdvertisesThatItCanBeOpened` lose the app mid-scan.
         // Two gestures on two leaves add no container at all.
         .onTapGesture { onOpenPost?() }
-        // Author, pet and time read as one phrase — with the pill, "Mochi,
-        // 2 hours ago, birthday today".
+        // Author, pet and time read as one phrase.
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityHint("Opens the post")
         .accessibilityAction { onOpenPost?() }
         .accessibilityIdentifier("post.open")
-    }
-
-    /// The web card's "🎂 Birthday!" pill after the timestamp
-    /// (PostCard.tsx:551-555): the amber of the web's as a tint behind
-    /// ordinary text, the pairing `MeetupStatusBadge` uses for the same
-    /// reason — caption text on the status colour itself is not one the
-    /// contrast tests have measured.
-    ///
-    /// No vertical padding, so a card whose mark arrives after it was drawn
-    /// does not grow a line taller under the reader. Fixed, so a narrow row
-    /// cuts the timestamp before the pill.
-    private var birthdayPill: some View {
-        Text("🎂 Birthday!")
-            .font(Typography.caption.weight(.semibold))
-            .foregroundStyle(Palette.primaryText)
-            .padding(.horizontal, Spacing.s)
-            .background(Palette.warning.opacity(0.2), in: .capsule)
-            .fixedSize()
-            .accessibilityLabel("Birthday today")
     }
 
     private var text: some View {

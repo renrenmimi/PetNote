@@ -111,92 +111,12 @@ extension XCTestCase {
         XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 10), .completed, "onboarding did not close")
     }
 
-    /// Moves a list up by `distance` of the screen — a quarter unless told
-    /// otherwise — slowly enough that it stops where it is put rather than
-    /// flinging on past the row.
-    func nudgeListUp(_ app: XCUIApplication, by distance: CGFloat = 0.25) {
+    /// Moves a list up by about a quarter of the screen, slowly enough that it
+    /// stops where it is put rather than flinging on past the row.
+    func nudgeListUp(_ app: XCUIApplication) {
         let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65))
-        let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65 - distance))
+        let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
         from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.3)
-    }
-
-    /// The same, the other way. Only for a list that is not at its top — at
-    /// the top a downward drag is the start of a pull to refresh.
-    func nudgeListDown(_ app: XCUIApplication, by distance: CGFloat) {
-        let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
-        let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4 + distance))
-        from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.3)
-    }
-
-    /// Whether all of `element` is where a tap reaches it: inside the window
-    /// and clear of the tab bar, with `clearance` to spare above and below.
-    ///
-    /// `isHittable` is the weaker question — it holds while the control's hit
-    /// point is on screen, and `LikeUITests.isWhollyReachable` records a tap
-    /// XCUITest called hittable 3.7pt above the bottom edge that never
-    /// reached the app. This is the same test, shared.
-    func isWhollyOnScreen(_ element: XCUIElement, in app: XCUIApplication, clearance: CGFloat = 0) -> Bool {
-        guard element.exists else { return false }
-        let frame = element.frame
-        let window = app.windows.firstMatch.frame
-        guard !frame.isEmpty, !window.isEmpty else { return false }
-        let tabBar = app.tabBars.firstMatch
-        let bottom = tabBar.exists ? min(window.maxY, tabBar.frame.minY) : window.maxY
-        return frame.minX >= window.minX && frame.maxX <= window.maxX
-            && frame.minY >= window.minY + clearance && frame.maxY <= bottom - clearance
-    }
-
-    /// Brings a control on a feed card — usually the first card's — to where
-    /// a tap reaches it, by small drags of the list, and says whether it got
-    /// there.
-    ///
-    /// **Needed since the feed grew rows above its posts.** The birthday
-    /// banner and "⭐ Popular Pets" sit above the first card, as the web
-    /// draws them, and push its actions row from about y 776 to about y 844 on
-    /// an iPhone 17 — under the tab bar, whose top is at about 791. Tests that
-    /// found that row without scrolling were leaning on a layout, not on
-    /// anything the product promises; what the product promises is that the
-    /// row is *reachable*, which is what this establishes, the way
-    /// `openFirstPost` already did.
-    ///
-    /// Small drags — a tenth of the screen — so the card being used stays the
-    /// first card in the tree and its text stays on screen: a whole swipe
-    /// carried the first card off the top. Waits as well as drags, because a
-    /// card whose image is still arriving is not yet the height it will be.
-    @discardableResult
-    func bringIntoReach(
-        _ element: XCUIElement,
-        in app: XCUIApplication,
-        clearance: CGFloat = 0,
-        timeout: TimeInterval = 30
-    ) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        var drags = 0
-        while Date() < deadline {
-            dismissSavePasswordSheetIfPresent(app)
-            if element.exists {
-                if element.isHittable, isWhollyOnScreen(element, in: app, clearance: clearance) { return true }
-                let frame = element.frame
-                let window = app.windows.firstMatch.frame
-                if drags < 12, !frame.isEmpty, !window.isEmpty {
-                    if frame.midY > window.midY {
-                        nudgeListUp(app, by: 0.1)
-                        drags += 1
-                        continue
-                    }
-                    // Near the top only once the list has been moved: the
-                    // first card of a list at its top is never up there.
-                    if frame.minY < window.minY + window.height * 0.15 {
-                        nudgeListDown(app, by: 0.1)
-                        drags += 1
-                        continue
-                    }
-                }
-            }
-            Thread.sleep(forTimeInterval: 0.25)
-        }
-        return element.exists && element.isHittable
-            && isWhollyOnScreen(element, in: app, clearance: clearance)
     }
 
     func openFirstPost(_ app: XCUIApplication) {
