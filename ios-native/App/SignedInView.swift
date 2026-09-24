@@ -457,6 +457,13 @@ struct SignedInView: View {
     /// profile behaves exactly as the same screen opened from the feed.
     private func destination(_ route: Route, stack: Binding<[Route]>) -> some View {
         destinationContent(route, stack: stack)
+            // Every pushed screen, on every tab, not only the two that play
+            // video on purpose: a post card anywhere asks the environment for
+            // the coordinator, and a screen pushed onto a stack does not see
+            // what was set on that stack's root. The pet page lists its posts
+            // as cards and did not have it, so opening a pet with a video
+            // post crashed the app (SwiftUI's missing-environment trap).
+            .environment(video)
             .suspendedBanner(isSuspended)
             .toolbar(Self.showsTabBar(on: route) ? .visible : .hidden, for: .tabBar)
     }
