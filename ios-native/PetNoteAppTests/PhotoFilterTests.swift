@@ -40,6 +40,19 @@ enum FilterTestImages {
         return context.makeImage()!
     }
 
+    /// A detailed photo tagged Display P3, as an iPhone camera's are, encoded
+    /// as JPEG with its profile.
+    static func displayP3JPEG(width: Int, height: Int) -> Data? {
+        guard let p3 = CGColorSpace(name: CGColorSpace.displayP3),
+              let context = CGContext(
+                  data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                  space: p3, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+              )
+        else { return nil }
+        context.draw(UploadTestImages.noisy(width: width, height: height), in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage().flatMap { UploadTestImages.encoded($0, as: .jpeg) }
+    }
+
     /// Every pixel of an encoded image as sRGB bytes, RGBX.
     static func pixels(of data: Data) -> (bytes: [UInt8], width: Int, height: Int)? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
@@ -102,12 +115,39 @@ struct PhotoFilterTests {
         ("rose", "Rose", "sepia(0.2) saturate(1.3) hue-rotate(-10deg) brightness(1.05)"),
     ]
 
-    @Test func theTenFiltersAreTheWebClientsTen() {
+    /// The string catalog, read from the file.
+    ///
+    /// So the English can be checked on a simulator running in Chinese:
+    /// `label` is in whatever language the app runs in, and comparing it with
+    /// the web client's English failed on any simulator not set to English.
+    static func catalog() throws -> [String: Any] {
+        let url = repositoryRoot.appendingPathComponent("ios-native/App/Localizable.xcstrings")
+        let json = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+        return try #require(json?["strings"] as? [String: Any], "no strings in the catalog")
+    }
+
+    /// One entry of `catalog()` in one language, or nil.
+    static func value(_ key: String, in language: String, of catalog: [String: Any]) -> String? {
+        let entry = catalog[key] as? [String: Any]
+        let localized = (entry?["localizations"] as? [String: Any])?[language] as? [String: Any]
+        return (localized?["stringUnit"] as? [String: Any])?["value"] as? String
+    }
+
+    @Test func theTenFiltersAreTheWebClientsTen() throws {
         #expect(PhotoFilter.allCases.map { $0.rawValue } == Self.webTable.map { $0.key },
                 "same keys, in the same order the strip shows them")
+        let catalog = try Self.catalog()
+        // The language this run shows, as the app resolves it.
+        let running = Bundle.main.preferredLocalizations.first ?? "en"
         for (filter, row) in zip(PhotoFilter.allCases, Self.webTable) {
-            #expect(filter.label == row.label, "\(row.key)")
+            let key = "photoFilter.\(row.key)"
             #expect(filter.css == row.css, "\(row.key): the chain is not the web client's")
+            #expect(Self.value(key, in: "en", of: catalog) == row.label,
+                    "\(row.key): the English label is not the web client's")
+            // And `label` is that entry, in the language this run shows —
+            // which fails if it asks for another key, or for none.
+            let expected = Self.value(key, in: running, of: catalog) ?? Self.value(key, in: "en", of: catalog)
+            #expect(filter.label == expected, "\(row.key) in \(running): \(filter.label), catalog \(expected ?? "nil")")
         }
     }
 
@@ -127,9 +167,12 @@ struct PhotoFilterTests {
                 }
             }
         try #require(rows.count == 10, "expected ten FILTERS rows in ImageFilter.tsx, found \(rows.count)")
+        let catalog = try Self.catalog()
         for (row, filter) in zip(rows, PhotoFilter.allCases) {
-            #expect(row == [filter.rawValue, filter.label, filter.css],
-                    "ImageFilter.tsx says \(row); this client says \(filter.rawValue), \(filter.label), \(filter.css)")
+            // The English from the catalog, not `label`: see `catalog()`.
+            let english = Self.value("photoFilter.\(filter.rawValue)", in: "en", of: catalog) ?? "nil"
+            #expect(row == [filter.rawValue, english, filter.css],
+                    "ImageFilter.tsx says \(row); this client says \(filter.rawValue), \(english), \(filter.css)")
         }
     }
 
@@ -162,28 +205,76 @@ struct PhotoFilterTests {
 
     // MARK: - Normal changes nothing
 
-    /// The existing preparation path, byte for byte: passthrough stays
-    /// passthrough, and the re-encode is the same re-encode.
+    /// The existing preparation path, byte for byte — checked against that
+    /// path written out here, not against a second call to the same default.
+    /// A photo that fits goes up as picked; one that does not is a plain
+    /// ImageIO downsample and encode with nothing in between.
+    ///
+    /// The Display P3 photo is the one that can tell "nothing in between"
+    /// apart from "a render that happened to change nothing": a Core Image
+    /// render in sRGB, which is what the filter path does, would move every
+    /// pixel of that photo, where an sRGB one could come through it unchanged.
     @Test func normalLeavesThePreparedBytesExactlyAsTheyWere() throws {
-        var fixtures: [(name: String, data: Data)] = [
+        let asPicked: [(name: String, data: Data)] = [
             ("snap.jpg", UploadTestImages.jpeg(width: 400, height: 400, quality: 0.6)),
-            ("big.jpg", UploadTestImages.jpeg(width: 2400, height: 1800)),
             ("cat.gif", UploadTestImages.gif()),
             ("flat.png", FilterTestImages.solid(red: 0.2, green: 0.6, blue: 0.4)),
         ]
-        if let heic = UploadTestImages.encoded(UploadTestImages.noisy(width: 800, height: 600), as: .heic) {
-            fixtures.append((name: "IMG_0001.HEIC", data: heic))
-        }
-        for fixture in fixtures {
-            let before = try UploadPreparation.prepareImage(fixture.data, filename: fixture.name)
+        for fixture in asPicked {
             let normal = try UploadPreparation.prepareImage(fixture.data, filename: fixture.name, filter: .normal)
-            #expect(normal == before, "\(fixture.name): Normal took a different path")
+            #expect(!normal.wasTranscoded, "\(fixture.name) was re-encoded")
+            #expect(normal.data == fixture.data, "Normal must not re-encode \(fixture.name), which already fits")
+            #expect(normal.filename == fixture.name)
         }
 
-        let small = fixtures[0].data
-        let passed = try UploadPreparation.prepareImage(small, filename: "snap.jpg", filter: .normal)
-        #expect(!passed.wasTranscoded)
-        #expect(passed.data == small, "Normal must not re-encode a photo that already fits")
+        var reencoded: [(name: String, data: Data)] = [
+            ("big.jpg", UploadTestImages.jpeg(width: 2400, height: 1800)),
+        ]
+        if let wide = FilterTestImages.displayP3JPEG(width: 2400, height: 1800) {
+            reencoded.append((name: "wide.jpg", data: wide))
+        }
+        if let heic = UploadTestImages.encoded(UploadTestImages.noisy(width: 800, height: 600), as: .heic) {
+            reencoded.append((name: "IMG_0001.HEIC", data: heic))
+        }
+        for fixture in reencoded {
+            let normal = try UploadPreparation.prepareImage(fixture.data, filename: fixture.name, filter: .normal)
+            let plain = try #require(Self.plainReencode(fixture.data), "\(fixture.name): the reference encode failed")
+            #expect(normal.wasTranscoded, "\(fixture.name)")
+            #expect(normal.data == plain, "\(fixture.name): Normal's re-encode is not the plain one")
+        }
+    }
+
+    /// The re-encode as it was before filters, written out independently:
+    /// ImageIO's downsample to 1920 with the orientation applied, then JPEG at
+    /// 0.8, stepping down by 0.1 to 0.3 until it fits 2 MB — the numbers of
+    /// `compressImage` in src/utils/imageCompressor.ts.
+    static func plainReencode(_ data: Data) -> Data? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: CGFloat(1920),
+        ]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        func encode(_ quality: CGFloat) -> Data? {
+            let output = NSMutableData()
+            guard let destination = CGImageDestinationCreateWithData(
+                output as CFMutableData, UTType.jpeg.identifier as CFString, 1, nil
+            ) else { return nil }
+            CGImageDestinationAddImage(
+                destination, image, [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary
+            )
+            return CGImageDestinationFinalize(destination) ? output as Data : nil
+        }
+        var quality: CGFloat = 0.8
+        guard var encoded = encode(quality) else { return nil }
+        while encoded.count > 2 * 1024 * 1024 && quality > 0.3 {
+            quality = max(0.3, quality - 0.1)
+            guard let next = encode(quality) else { return nil }
+            encoded = next
+        }
+        return encoded
     }
 
     // MARK: - What a filter does to the pixels
@@ -250,7 +341,6 @@ struct PhotoFilterTests {
         let caps = UploadPreparation.Options.default
         for fixture in fixtures {
             let prepared = try UploadPreparation.prepareImage(fixture.data, filename: fixture.name, filter: .vintage)
-            let unfiltered = try UploadPreparation.prepareImage(fixture.data, filename: fixture.name)
 
             #expect(prepared.wasTranscoded, "\(fixture.name)")
             #expect(prepared.mimeType == "image/jpeg", "\(fixture.name)")
@@ -258,8 +348,13 @@ struct PhotoFilterTests {
             #expect(prepared.filename.hasSuffix(".jpg"), "\(fixture.name) → \(prepared.filename)")
             #expect(prepared.data.count <= caps.targetBytes, "\(fixture.name): \(prepared.data.count) bytes")
             #expect(prepared.data != fixture.data, "\(fixture.name) went up as picked")
-            #expect(prepared.aspectRatio == unfiltered.aspectRatio, "\(fixture.name): the shape changed")
+            // The shape of what was *uploaded*, read from its bytes, against
+            // the picked photo's — a render or a resize that cropped or
+            // stretched would move it.
+            let picked = try #require(UploadPreparation.pixelSize(of: fixture.data))
             let size = try #require(UploadPreparation.pixelSize(of: prepared.data))
+            #expect(abs(size.width / size.height - picked.width / picked.height) < 0.01,
+                    "\(fixture.name): the shape changed from \(picked) to \(size)")
             #expect(max(size.width, size.height) <= caps.maxPixelSize, "\(fixture.name): \(size)")
         }
     }

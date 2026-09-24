@@ -4,8 +4,10 @@ import XCTest
 /// the screens, with the upload read back from the stand-in.
 ///
 /// The same photo is posted twice by one new account: once as picked, once
-/// with B&W chosen from the strip. What the stand-in records per upload is the
-/// file part's name, type and **size**, not its pixels
+/// with B&W chosen from the strip. Each upload is read back from the stand-in
+/// by this account's folder, and matched to its post on the server by URL.
+/// What the stand-in records per upload is the file part's name, type and
+/// **size**, not its pixels
 /// (scripts/upload-standin.py), so that is what this can compare: the filtered
 /// upload has to be a JPEG, and a different number of bytes from the
 /// unfiltered one of the same photo. It cannot see that the pixels are grey —
@@ -79,7 +81,7 @@ final class PhotoFilterUITests: XCTestCase {
     private func publishTheFirstPhoto(
         _ app: XCUIApplication, caption: String, choosing filter: XCUIElement?
     ) throws -> [String: Any] {
-        let uploadsBefore = try JourneyAdmin.standInUploads().count
+        let uploadsBefore = try uploadsForThisAccount().count
 
         // Pushed screens have no tab bar; back to a tab's root first.
         popToTabRoot(app)
@@ -133,9 +135,30 @@ final class PhotoFilterUITests: XCTestCase {
         share.tap()
         XCTAssertTrue(waitForDisappearance(of: share, timeout: 90), "the composer did not close after sharing")
 
-        let uploads = try JourneyAdmin.standInUploads()
-        XCTAssertEqual(uploads.count, uploadsBefore + 1, "expected one upload to reach the stand-in")
-        return try XCTUnwrap(uploads.last)
+        // This account's uploads only: the stand-in is shared by every test
+        // that runs against it, and another's upload landing in between
+        // would otherwise be read as this one.
+        let uploads = try uploadsForThisAccount()
+        XCTAssertEqual(uploads.count, uploadsBefore + 1, "expected one upload to reach the stand-in for this account")
+        let upload = try XCTUnwrap(uploads.last)
+
+        // And it is the photo of the post this made, on the server.
+        let names = try JourneyAdmin.postDocumentNames(withText: caption)
+        XCTAssertEqual(names.count, 1, "expected one post on the server, found \(names.count)")
+        let post = try XCTUnwrap(try JourneyAdmin.fields(documentName: XCTUnwrap(names.first)))
+        XCTAssertEqual(
+            JourneyAdmin.firstMediaURL(post), upload["secureUrl"] as? String,
+            "the post does not carry the URL the upload answered with"
+        )
+        return upload
+    }
+
+    /// What the stand-in received, signed for this account's folder — the
+    /// check JourneyUITests makes on its upload.
+    private func uploadsForThisAccount() throws -> [[String: Any]] {
+        let uid = try XCTUnwrap(self.uid, "no account yet")
+        let folder = "petnote/users/\(uid)"
+        return try JourneyAdmin.standInUploads().filter { ($0["folder"] as? String) == folder }
     }
 
     private func waitForSelection(of element: XCUIElement, timeout: TimeInterval) -> Bool {
