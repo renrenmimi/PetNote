@@ -572,8 +572,13 @@ async function seedGatherings({ uidA, uidB, now }) {
     review(uidA, "Accept A", 5, "TEST CONTENT Mochi loved the water.", ["shady", "friendly"], 2 * hour));
   await db.doc(`locations/${places.reviewed}/reviews/${uidB}`).set(
     review(uidB, "Accept B", 4, "TEST CONTENT Busy on weekends.", ["busy"], 5 * hour));
+  // Five stars from one review, where the park has 4.5 from two: the trail is
+  // top rated, the park most reviewed and the café newest, so each of the
+  // three sorts puts the places in a different order. With three stars here
+  // Top Rated and Most Reviewed agreed, and a test could not tell them apart
+  // (PlacesMeetupsUITests.testEachSortOrdersThePlacesByTheServersNumbers).
   await db.doc(`locations/${places.trail}/reviews/${uidA}`).set(
-    review(uidA, "Accept A", 3, "TEST CONTENT Muddy after rain.", [], 8 * hour));
+    review(uidA, "Accept A", 5, "TEST CONTENT Worth the climb.", [], 8 * hour));
   const dayKey = new Date(now).toISOString().slice(0, 10);
   const checkin = (uid, name, pet, caption, ago) => ({
     locationId: places.reviewed, userId: uid, userName: name, userAvatar: avatar(uid),
@@ -667,20 +672,26 @@ async function seedGatherings({ uidA, uidB, now }) {
   return { places, meetups };
 }
 
-/** The review and check-in triggers counted the seeded place, within a minute. */
+/** The review and check-in triggers counted the seeded places, within a minute. */
 async function gatheringChecks({ places }) {
   let data = {};
+  let trail = {};
+  // The trail is waited for too: its review is its own trigger event, and
+  // nothing says it lands before the park's.
   for (let attempt = 0; attempt < 60; attempt += 1) {
     data = (await db.doc(`locations/${places.reviewed}`).get()).data() ?? {};
-    if (data.totalRatings === 2 && data.totalCheckins === 2) break;
+    trail = (await db.doc(`locations/${places.trail}`).get()).data() ?? {};
+    if (data.totalRatings === 2 && data.totalCheckins === 2 && trail.totalRatings === 1) break;
     await new Promise((r) => setTimeout(r, 1000));
   }
-  const trail = (await db.doc(`locations/${places.trail}`).get()).data() ?? {};
   return [
     [`the review trigger counted the park's 2 reviews`, data.totalRatings === 2, `${data.totalRatings} reviews, average ${data.averageRating}`],
     [`the park's average is 4.5`, data.averageRating === 4.5, data.averageRating],
     [`the check-in trigger counted 2 check-ins`, data.totalCheckins === 2, data.totalCheckins],
     [`the trail's one review counted`, trail.totalRatings === 1, trail.totalRatings],
+    // Above the park's 4.5, with fewer reviews: what makes Top Rated and
+    // Most Reviewed give different orders.
+    [`the trail's average is 5`, trail.averageRating === 5, trail.averageRating],
   ];
 }
 

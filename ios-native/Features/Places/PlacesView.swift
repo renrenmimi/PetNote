@@ -34,7 +34,9 @@ struct PlacesView: View {
                 Menu {
                     Picker("Sort by", selection: $model.sort) {
                         ForEach(PlaceSort.allCases, id: \.self) { sort in
-                            Text(sort.label).tag(sort)
+                            Text(sort.label)
+                                .accessibilityIdentifier("places.sort.\(sort.rawValue)")
+                                .tag(sort)
                         }
                     }
                 } label: {
