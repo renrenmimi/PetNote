@@ -6,13 +6,21 @@
  *     node functions/scripts/setup-test-cloudinary.mjs
  *
  * It asks for the test account's cloud name, then its API key and API secret
- * with hidden input. It never prints the key, the secret, a signature or a raw
- * Cloudinary response, and writes nothing to disk.
+ * with hidden input. It never prints the key, the secret, a signature, a raw
+ * Cloudinary response or Cloudinary's error text (which can echo the string
+ * that was signed). It writes no file of its own. firebase-tools, which it
+ * runs to store the secrets, writes a debug log that contains the request —
+ * the secret included — so it is run inside a private temporary folder that
+ * is deleted afterwards, with DEBUG unset.
  *
  * What it does, in order, stopping at the first failure:
  *   1. Refuses production's cloud name (`dgeunvmmn`) before any network call,
  *      and again if the credentials turn out to belong to it.
  *   2. Checks the key and secret belong to that cloud (GET /config).
+ *   2b. Refuses to go on while the account has an unsigned preset: with one,
+ *      anyone can upload into it, including into petnote/users/{uid}/, where
+ *      the app's delete function would treat the upload as that user's. It
+ *      offers to delete them (a new account comes with one).
  *   3. Creates or overwrites the two presets the app signs for,
  *      `petnote_image_signed` and `petnote_video_signed`, as SIGNED presets
  *      with nothing else set — no folder, no public-id prefix, no filename
@@ -35,6 +43,9 @@
  */
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import readline from "node:readline";
 
 const PRODUCTION_CLOUD = "dgeunvmmn";
@@ -90,7 +101,20 @@ function sign(params, secret) {
   return createHash("sha1").update(`${toSign}${secret}`).digest("hex");
 }
 
-/** Only Cloudinary's error message ever leaves this function, never a body. */
+/**
+ * What a failed request is called in output: the HTTP status and a fixed
+ * phrase. Never Cloudinary's own message — an "Invalid Signature" error
+ * repeats the string that was signed.
+ */
+function describe(status) {
+  if (status === 401) return "HTTP 401 — the key or secret was not accepted";
+  if (status === 403) return "HTTP 403 — this key may not do that";
+  if (status === 404) return "HTTP 404 — not found";
+  if (status === 420 || status === 429) return `HTTP ${status} — rate limited; wait and run again`;
+  return `HTTP ${status}`;
+}
+
+/** Only a fixed description of a failure leaves this function, never a body. */
 async function cloudinary(method, url, { auth, form } = {}) {
   const headers = {};
   if (auth) headers.Authorization = `Basic ${Buffer.from(`${auth.key}:${auth.secret}`).toString("base64")}`;
@@ -102,20 +126,39 @@ async function cloudinary(method, url, { auth, form } = {}) {
   const res = await fetch(url, { method, headers, body });
   let json = null;
   try { json = await res.json(); } catch { /* not JSON */ }
-  return { status: res.status, json, error: json?.error?.message ?? (res.ok ? null : `HTTP ${res.status}`) };
+  return { status: res.status, json, error: res.ok ? null : describe(res.status) };
 }
 
+/**
+ * Stores one secret in the TEST project. The value goes on stdin, never on a
+ * command line (so not into shell history or a process list). firebase-tools
+ * logs the full request — the value included — to ./firebase-debug.log, and
+ * keeps that file when it exits abnormally; so it runs in a private temporary
+ * folder, without DEBUG, and the folder is removed whatever happens.
+ */
 async function setSecret(name, value) {
-  return new Promise((resolve) => {
-    const child = spawn(
-      "npx",
-      ["firebase", "functions:secrets:set", name, "--project", TEST_PROJECT, "--data-file", "-", "--non-interactive"],
-      { stdio: ["pipe", "inherit", "inherit"] }
-    );
-    // No trailing newline: firebase-tools stores stdin as it arrives.
-    child.stdin.end(value);
-    child.on("close", (code) => resolve(code === 0));
-  });
+  const workdir = fs.mkdtempSync(path.join(os.tmpdir(), "petnote-secret-"));
+  const env = { ...process.env };
+  delete env.DEBUG;
+  try {
+    return await new Promise((resolve) => {
+      const child = spawn(
+        "firebase",
+        ["functions:secrets:set", name, "--project", TEST_PROJECT, "--data-file", "-", "--non-interactive"],
+        { stdio: ["pipe", "inherit", "inherit"], cwd: workdir, env }
+      );
+      child.on("error", (error) => {
+        console.log(`FAIL  could not run firebase-tools (${error.code ?? "error"}); is it installed?`);
+        resolve(false);
+      });
+      // No trailing newline: firebase-tools stores stdin as it arrives.
+      child.stdin.on("error", () => {});
+      child.stdin.end(value);
+      child.on("close", (code) => resolve(code === 0));
+    });
+  } finally {
+    fs.rmSync(workdir, { recursive: true, force: true });
+  }
 }
 
 async function main() {
@@ -134,11 +177,30 @@ async function main() {
   if (config.json?.cloud_name === PRODUCTION_CLOUD) { fail("these credentials belong to production"); return; }
   pass(`credentials accepted for ${cloud} (folder mode: ${config.json?.settings?.folder_mode ?? "unknown"})`);
 
-  const existing = await cloudinary("GET", `${api}/upload_presets?max_results=500`, { auth });
-  const unsigned = (existing.json?.presets ?? []).filter((p) => p.unsigned).map((p) => p.name);
+  // 2b. No unsigned presets: with one, anyone can upload into this account.
+  const listUnsigned = async () => {
+    const existing = await cloudinary("GET", `${api}/upload_presets?max_results=500`, { auth });
+    if (existing.status !== 200) return null;
+    return (existing.json?.presets ?? []).filter((p) => p.unsigned).map((p) => p.name);
+  };
+  let unsigned = await listUnsigned();
+  if (unsigned === null) { fail("could not list the account's upload presets"); return; }
   if (unsigned.length) {
-    console.log(`NOTE  unsigned presets in this account (anyone could upload with them): ${unsigned.join(", ")}`);
+    console.log(`      unsigned presets (anyone could upload with them): ${unsigned.join(", ")}`);
+    const answer = (await ask("Delete them from this TEST account now? [y/N] ")).toLowerCase();
+    if (answer === "y") {
+      for (const name of unsigned) {
+        const gone = await cloudinary("DELETE", `${api}/upload_presets/${encodeURIComponent(name)}`, { auth });
+        if (gone.status !== 200) console.log(`      could not delete ${name}: ${gone.error}`);
+      }
+      unsigned = await listUnsigned();
+    }
+    if (unsigned === null || unsigned.length) {
+      fail(`the account still has unsigned presets (${(unsigned ?? []).join(", ") || "unknown"}); delete them in the Cloudinary console (Settings → Upload) and run this again`);
+      return;
+    }
   }
+  pass("no unsigned presets: only signed uploads reach this account")
 
   // 3–4. Both presets, signed, nothing else; then read back.
   for (const name of PRESETS) {
@@ -174,12 +236,18 @@ async function main() {
     } else {
       fail(`${probe.resource} upload landed at public id "${publicId}"; the server needs /${cloud}/ and /petnote/ in the path`);
     }
-    const variant = await fetch(probe.variant(up.json?.secure_url ?? ""), { method: "GET" });
-    const type = variant.headers.get("content-type") ?? "";
-    if (variant.status === 200 && type.startsWith("image/")) {
-      pass(`${probe.resource}: the app's size transformation is served (${type})`);
-    } else {
-      fail(`${probe.resource}: the app's transformation came back HTTP ${variant.status} ${type} — strict transformations may be on`);
+    // Checked, but never allowed to skip the delete below: a probe left
+    // behind is exactly the kind of asset nobody knows the origin of.
+    try {
+      const variant = await fetch(probe.variant(up.json?.secure_url ?? ""), { method: "GET" });
+      const type = variant.headers.get("content-type") ?? "";
+      if (variant.status === 200 && type.startsWith("image/")) {
+        pass(`${probe.resource}: the app's size transformation is served (${type})`);
+      } else {
+        fail(`${probe.resource}: the app's transformation came back HTTP ${variant.status} ${type} — strict transformations may be on`);
+      }
+    } catch {
+      fail(`${probe.resource}: could not fetch the transformed address`);
     }
     const destroyTs = String(Math.floor(Date.now() / 1000));
     const destroyParams = { public_id: publicId, timestamp: destroyTs };

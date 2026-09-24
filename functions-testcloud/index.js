@@ -34,6 +34,20 @@
  * starts using a secret, this refuses to strip anything and the deploy fails
  * loudly, rather than quietly shipping a function whose secret was dropped.
  */
+// This entry deploys to the test project and nowhere else. `.firebaserc`
+// defaults to production, so a deploy that forgot `--project petnote-devtest`
+// would otherwise ship the test codebase there. firebase-tools sets the
+// target project in the environment before it loads this file, at deploy and
+// in the cloud; anything else refuses here, before a single function exists.
+const platform = require("./lib/platform");
+const TEST_PROJECT = "petnote-devtest";
+if (platform.runningProjectId() !== TEST_PROJECT) {
+  throw new Error(
+    `testcloud entry: loaded for project "${platform.runningProjectId() ?? "(none)"}"; `
+    + `this entry deploys to ${TEST_PROJECT} only`
+  );
+}
+
 const posts = require("./lib/posts");
 const notifications = require("./lib/notifications");
 const users = require("./lib/users");
@@ -92,15 +106,27 @@ const EXPORTS = {
 // The test project never resolves to production's Cloudinary account. With
 // no account of its own every media path refuses (platform.ts); this makes a
 // table edit that pointed it at production fail the deploy instead.
-const platform = require("./lib/platform");
-const testAccount = platform.cloudinaryAccountFor("petnote-devtest");
+const testAccount = platform.cloudinaryAccountFor(TEST_PROJECT);
 if (testAccount && testAccount.cloudName === platform.PRODUCTION_CLOUDINARY.cloudName) {
   throw new Error("testcloud entry: petnote-devtest resolves to production's Cloudinary account");
 }
 
+// The two media functions the owner authorized for the test project
+// (2026-09-23), and only once the test project has its own Cloudinary
+// account in platform.ts. Until then they are not exported at all, so a
+// deploy that names them finds nothing to deploy.
+//   getCloudinaryUploadSignature   signs an upload into petnote/users/{uid}/
+//   deleteCloudinaryAssetsCallable deletes the caller's own assets there
+const MEDIA_FUNCTIONS = ["getCloudinaryUploadSignature", "deleteCloudinaryAssetsCallable"];
+const MEDIA_SECRETS = ["CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"];
+if (testAccount) {
+  const media = require("./lib/media");
+  for (const name of MEDIA_FUNCTIONS) EXPORTS[name] = media[name];
+}
+
 // Exactly the authorized set: a name added here by accident is a deployment
 // nobody approved.
-const EXPECTED_COUNT = 34;
+const EXPECTED_COUNT = 34 + (testAccount ? MEDIA_FUNCTIONS.length : 0);
 if (Object.keys(EXPORTS).length !== EXPECTED_COUNT) {
   throw new Error(`testcloud entry: ${Object.keys(EXPORTS).length} exports, ${EXPECTED_COUNT} authorized`);
 }
@@ -123,16 +149,24 @@ for (const [name, fn] of Object.entries(EXPORTS)) {
 
 // --- parameter hygiene -----------------------------------------------------
 
-const boundSecrets = new Set();
+// Secrets: the two media functions bind exactly the two Cloudinary secrets,
+// and nothing else binds anything.
+const unexpectedSecrets = [];
+const usedSecrets = new Set();
 for (const [name, fn] of Object.entries(EXPORTS)) {
-  const bound = fn?.__endpoint?.secretEnvironmentVariables ?? [];
-  for (const s of bound) boundSecrets.add(`${name}:${s.key ?? s}`);
+  const bound = (fn?.__endpoint?.secretEnvironmentVariables ?? []).map((s) => s.key ?? s);
+  bound.forEach((key) => usedSecrets.add(key));
+  const allowed = MEDIA_FUNCTIONS.includes(name) ? MEDIA_SECRETS : [];
+  for (const key of bound) if (!allowed.includes(key)) unexpectedSecrets.push(`${name}:${key}`);
+  if (MEDIA_FUNCTIONS.includes(name) && MEDIA_SECRETS.some((key) => !bound.includes(key))) {
+    unexpectedSecrets.push(`${name}: does not bind ${MEDIA_SECRETS.join(" and ")}`);
+  }
 }
-if (boundSecrets.size > 0) {
+if (unexpectedSecrets.length > 0) {
   throw new Error(
-    "testcloud entry: one of these functions now binds a secret — "
-    + [...boundSecrets].join(", ")
-    + ". Stripping declarations would deploy it without that secret. "
+    "testcloud entry: secrets other than the authorized ones — "
+    + unexpectedSecrets.join(", ")
+    + ". Stripping declarations would deploy a function without its secret. "
     + "Decide deliberately instead of letting this file guess."
   );
 }
@@ -147,8 +181,12 @@ const paramsSymbol = Object.getOwnPropertySymbols(globalThis).find((s) =>
 );
 const declared = paramsSymbol ? globalThis[paramsSymbol] : undefined;
 if (Array.isArray(declared) && declared.length > 0) {
-  const dropped = declared.map((p) => p.name);
+  // Only the declarations no exported function binds: GEOAPIFY_API_KEY
+  // always, and the Cloudinary pair while the media functions are not here.
+  const dropped = declared.filter((p) => !usedSecrets.has(p.name)).map((p) => p.name);
+  const kept = declared.filter((p) => usedSecrets.has(p.name));
   declared.length = 0;
+  declared.push(...kept);
   // Printed, not silent: a deploy that removes declarations should say which.
-  console.log(`[testcloud entry] no function here uses a parameter; dropped ${dropped.join(", ")}`);
+  console.log(`[testcloud entry] dropped ${dropped.join(", ") || "nothing"}; kept ${kept.map((p) => p.name).join(", ") || "nothing"}`);
 }

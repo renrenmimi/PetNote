@@ -42,6 +42,17 @@ function flag(name, fallback) {
 const MAX_ATTEMPTS = Number(flag("attempts", "3"));
 const PROJECT = flag("project", "");
 
+// This deploys the whole default codebase — every function, schedules and
+// the Geoapify and Cloudinary functions included. The test project is
+// deployed only through functions-testcloud/ with each function named.
+if (PROJECT === "petnote-devtest") {
+  console.error(
+    "refused: deploy-functions.mjs deploys the whole codebase; for petnote-devtest use\n"
+    + "  node functions/scripts/prepare-testcloud-deploy.mjs and a named --only list"
+  );
+  process.exit(2);
+}
+
 const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "petnote-deploy-"));
 
 /** Runs one deploy attempt, teeing output to the console and a log file. */
