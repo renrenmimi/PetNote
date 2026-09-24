@@ -95,7 +95,7 @@ final class ForgotPasswordModel {
         do {
             try await auth.sendPasswordResetEmail(to: address)
             status = .sent
-            message = "Reset link sent. Check your email."
+            message = String(localized: "Reset link sent. Check your email.")
             resendAvailableAt = now.addingTimeInterval(Self.resendCooldown)
         } catch {
             // `sendPasswordResetEmail` is `throws(AuthError)`, so `error` is
@@ -113,10 +113,9 @@ final class ForgotPasswordModel {
         resendAvailableAt = nil
     }
 
-    static let neutralFallback = """
-        If an account exists with this email, we have sent a reset link. \
-        If you signed up with Google, use Google Sign-In instead.
-        """
+    static var neutralFallback: String {
+        String(localized: "If an account exists with this email, we have sent a reset link. If you signed up with Google, use Google Sign-In instead.")
+    }
 
     /// Failure → what to say, keeping the enumeration rule.
     ///
@@ -126,11 +125,11 @@ final class ForgotPasswordModel {
     static func message(for error: AuthError) -> String {
         switch error {
         case .networkUnavailable:
-            "We could not reach PetNote. Check your connection and try again."
+            String(localized: "We could not reach PetNote. Check your connection and try again.")
         case .tooManyAttempts:
-            "Too many attempts from this device. Wait a minute and try again."
+            String(localized: "Too many attempts from this device. Wait a minute and try again.")
         case .invalidEmailFormat:
-            "Please enter a valid email address."
+            String(localized: "Please enter a valid email address.")
         default:
             neutralFallback
         }

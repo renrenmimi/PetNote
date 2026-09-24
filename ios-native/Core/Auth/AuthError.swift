@@ -63,25 +63,25 @@ enum AuthError: Error, Sendable, Equatable {
     var message: String {
         switch self {
         case .invalidCredentials:
-            "That email and password do not match an account."
+            String(localized: "That email and password do not match an account.")
         case .invalidEmailFormat:
-            "That does not look like an email address."
+            String(localized: "That does not look like an email address.")
         case .networkUnavailable:
-            "No connection. Check your network and try again."
+            String(localized: "No connection. Check your network and try again.")
         case .tooManyAttempts:
-            "Too many attempts. Wait a moment before trying again."
+            String(localized: "Too many attempts. Wait a moment before trying again.")
         case .accountDisabled:
-            "This account has been disabled."
+            String(localized: "This account has been disabled.")
         case .weakPassword:
-            "Choose a longer password."
+            String(localized: "Choose a longer password.")
         case .emailAlreadyInUse:
-            "That email already has an account. Sign in instead."
+            String(localized: "That email already has an account. Sign in instead.")
         case .signUpNotAllowed:
-            "Creating an account with an email address is unavailable right now."
+            String(localized: "Creating an account with an email address is unavailable right now.")
         case .differentSignInMethod:
-            "This email is set up with another sign-in method. Use that one, or reset your password."
+            String(localized: "This email is set up with another sign-in method. Use that one, or reset your password.")
         case .unknown:
-            "Something went wrong signing in. Try again."
+            String(localized: "Something went wrong signing in. Try again.")
         }
     }
 

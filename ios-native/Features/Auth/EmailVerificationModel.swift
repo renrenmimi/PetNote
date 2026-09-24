@@ -107,7 +107,7 @@ final class EmailVerificationModel {
             }
             return verified
         } catch {
-            sendState = .failed("Could not check just now. Try again in a moment.")
+            sendState = .failed(String(localized: "Could not check just now. Try again in a moment."))
             return isVerified
         }
     }
@@ -138,8 +138,8 @@ final class EmailVerificationModel {
 
     /// What the resend control says right now.
     func resendLabel(now: Date = Date()) -> String {
-        if isSending { return "Sending…" }
+        if isSending { return String(localized: "Sending…") }
         let remaining = cooldownRemaining(now: now)
-        return remaining > 0 ? "Resend in \(remaining)s" : "Resend email"
+        return remaining > 0 ? String(localized: "Resend in \(remaining)s") : String(localized: "Resend email")
     }
 }

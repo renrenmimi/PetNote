@@ -50,9 +50,9 @@ final class AccountSetupService {
         var message: String {
             switch self {
             case .verificationEmailNotSent(let email):
-                "Account created, but we could not send the verification email to \(email). Use Resend below."
+                String(localized: "Account created, but we could not send the verification email to \(email). Use Resend below.")
             case .profileSetupIncomplete:
-                "Account created. We are still finishing your profile setup."
+                String(localized: "Account created. We are still finishing your profile setup.")
             }
         }
     }
