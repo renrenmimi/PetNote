@@ -180,6 +180,118 @@ final class PlacesMeetupsUITests: XCTestCase {
         XCTAssertFalse(app.buttons["meetupDetail.join"].exists, "a cancelled meetup still offers Join")
     }
 
+    // MARK: - Reviews
+
+    func testWritingAReviewOfAPlace() throws {
+        let park = try landmark("place_reviewed")
+        let (app, me) = try signInAsNewAccount("review-\(run)@petnote.test")
+        uid = me
+        let before = Self.number(try JourneyAdmin.fields(path: "locations/\(park)")?["totalRatings"]) ?? -1
+
+        app.tabBars.buttons["Places"].tap()
+        let row = app.buttons["place.\(park)"]
+        XCTAssertTrue(waitUntilHittable(row, in: app, timeout: 30))
+        row.tap()
+        let write = app.buttons["place.writeReview"]
+        for _ in 0..<6 where !(write.exists && write.isHittable) { app.swipeUp() }
+        XCTAssertTrue(waitUntilHittable(write, in: app, timeout: 20), "no Write a review\n\(app.debugDescription)")
+        write.tap()
+
+        let submit = app.buttons["review.submit"]
+        XCTAssertTrue(submit.waitForExistence(timeout: 10))
+        XCTAssertFalse(submit.isEnabled, "a review with no rating could be sent")
+        app.descendants(matching: .any)["review.rating"].buttons["4 out of 5"].tap()
+        app.buttons["review.tag.0"].tap()
+        // A form builds only the rows on screen; the comment is below the
+        // tags, so it is not in the hierarchy until scrolled to.
+        let comment = app.descendants(matching: .any)["review.comment"]
+        for _ in 0..<5 where !comment.exists { app.swipeUp() }
+        XCTAssertTrue(comment.waitForExistence(timeout: 5), "no comment field\n\(app.debugDescription)")
+        comment.tap()
+        comment.typeText("TEST CONTENT \(run)")
+        XCTAssertTrue(waitForEnabled(submit, timeout: 5))
+        submit.tap()
+        cleanup.append("locations/\(park)/reviews/\(me)")
+
+        // On the server, under the id the server gives a place review.
+        var review: [String: Any]?
+        for _ in 0..<30 {
+            review = try JourneyAdmin.fields(path: "locations/\(park)/reviews/\(me)")
+            if review != nil { break }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        let stored = try XCTUnwrap(review, "the review is not on the server")
+        XCTAssertEqual(Self.number(stored["rating"]), 4)
+        XCTAssertEqual(JourneyAdmin.string(stored["comment"]), "TEST CONTENT \(run)")
+        XCTAssertTrue("\(stored["tags"] ?? "")".contains("Spacious"), "\(stored["tags"] ?? "")")
+        try waitFor(ratings: before + 1, at: park)
+        // Written once: the screen stops offering it.
+        XCTAssertTrue(waitForDisappearance(of: write, timeout: 20), "Write a review is still offered")
+
+        // Leave the place as the other tests expect it.
+        JourneyAdmin.deleteDocument(path: "locations/\(park)/reviews/\(me)")
+        try waitFor(ratings: before, at: park)
+    }
+
+    func testRatingThePlaceOfACompletedMeetup() throws {
+        let past = try landmark("meetup_past")
+        let park = try landmark("place_reviewed")
+        let (app, me) = try signInAsNewAccount("rater-\(run)@petnote.test")
+        uid = me
+        let before = Self.number(try JourneyAdmin.fields(path: "locations/\(park)")?["totalRatings"]) ?? -1
+        // There, as the join callable would have written it — but not
+        // counted, so removing it afterwards takes nothing off the count.
+        try Self.write(path: "meetups/\(past)/participants/\(me)", [
+            "meetupId": past, "userId": me, "userName": "Rater \(run)", "userAvatar": "",
+            "petId": "", "petName": "Organizer", "petAvatar": "", "joinedAt": Date(), "status": "confirmed",
+            "counted": false,
+        ])
+        cleanup.append("meetups/\(past)/participants/\(me)")
+
+        app.tabBars.buttons["Meetups"].tap()
+        let mine = app.buttons["meetups.filter.mine"]
+        XCTAssertTrue(waitUntilHittable(mine, in: app, timeout: 30))
+        mine.tap()
+        try openMeetup(past, in: app)
+        XCTAssertTrue(app.staticTexts["meetupDetail.over"].exists)
+        let rate = app.buttons["meetupDetail.rate"]
+        for _ in 0..<4 where !(rate.exists && rate.isHittable) { app.swipeUp() }
+        XCTAssertTrue(waitUntilHittable(rate, in: app, timeout: 20), "no Rate this place\n\(app.debugDescription)")
+        rate.tap()
+        let submit = app.buttons["review.submit"]
+        XCTAssertTrue(submit.waitForExistence(timeout: 10))
+        app.descendants(matching: .any)["review.rating"].buttons["5 out of 5"].tap()
+        XCTAssertTrue(waitForEnabled(submit, timeout: 5))
+        submit.tap()
+        cleanup.append("locations/\(park)/reviews/\(me)_\(past)")
+
+        var review: [String: Any]?
+        for _ in 0..<30 {
+            review = try JourneyAdmin.fields(path: "locations/\(park)/reviews/\(me)_\(past)")
+            if review != nil { break }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        let stored = try XCTUnwrap(review, "the meetup review is not on the server")
+        XCTAssertEqual(JourneyAdmin.string(stored["meetupId"]), past)
+        XCTAssertEqual(Self.number(stored["rating"]), 5)
+        XCTAssertTrue(waitForExistence(of: app.descendants(matching: .any)["meetupDetail.rated"], in: app, timeout: 20),
+                      "the screen still offers rating after it was done\n\(app.debugDescription)")
+
+        JourneyAdmin.deleteDocument(path: "locations/\(park)/reviews/\(me)_\(past)")
+        try waitFor(ratings: before, at: park)
+    }
+
+    /// The count is the review triggers'; wait for it, not for a guess.
+    private func waitFor(ratings expected: Int, at place: String) throws {
+        var value: Int?
+        for _ in 0..<60 {
+            value = Self.number(try JourneyAdmin.fields(path: "locations/\(place)")?["totalRatings"])
+            if value == expected { return }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        XCTFail("totalRatings of \(place) is \(String(describing: value)), expected \(expected)")
+    }
+
     // MARK: - Steps
 
     private func openMeetup(_ id: String, in app: XCUIApplication) throws {

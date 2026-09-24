@@ -4,6 +4,7 @@ import SwiftUI
 /// reviews and the meetups held there — the web's location page, read only.
 struct PlaceDetailView: View {
     @State private var model: PlaceDetailModel
+    @State private var isReviewing = false
     private let onOpenMeetup: (String) -> Void
 
     init(model: PlaceDetailModel, onOpenMeetup: @escaping (String) -> Void) {
@@ -35,6 +36,16 @@ struct PlaceDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await model.load() }
         .refreshable { await model.load() }
+        .sheet(isPresented: $isReviewing) {
+            if case .loaded(let place) = model.state {
+                NavigationStack {
+                    PlaceReviewSheet(
+                        model: PlaceReviewModel(placeID: place.id, placeName: place.name, source: model.reviewer),
+                        onSubmitted: { Task { await model.load() } }
+                    )
+                }
+            }
+        }
     }
 
     private func loaded(_ place: Place) -> some View {
@@ -176,6 +187,15 @@ struct PlaceDetailView: View {
 
     private func reviews(_ place: Place) -> some View {
         section(String(localized: "Reviews (\(max(place.totalRatings, model.reviews.count)))")) {
+            if model.hasReviewed == false {
+                Button { isReviewing = true } label: {
+                    Label("Write a review", systemImage: "star.bubble")
+                        .font(Typography.body)
+                        .frame(minHeight: Layout.minTouchTarget)
+                        .contentShape(.rect)
+                }
+                .accessibilityIdentifier("place.writeReview")
+            }
             if model.failedSections.contains("reviews") {
                 failure(String(localized: "Could not load reviews."))
             } else if model.reviews.isEmpty {
@@ -203,7 +223,7 @@ struct PlaceDetailView: View {
                                 .foregroundStyle(Palette.primaryText)
                         }
                         if !review.tags.isEmpty {
-                            Text(review.tags.map { "#\($0)" }.joined(separator: " "))
+                            Text(review.tags.map { "#\(PlaceReviewDraft.tagLabel($0))" }.joined(separator: " "))
                                 .font(Typography.caption)
                                 .foregroundStyle(Palette.brandPrimary)
                         }

@@ -89,8 +89,12 @@ final class MeetupDetailModel {
     /// server's reason for a refused join, or why a request failed.
     private(set) var actionMessage: String?
 
+    /// Whether the viewer has rated this meetup's place for this meetup.
+    private(set) var hasRated: Bool?
+
     let meetupID: String
     let viewerID: String
+    let reviewer: (any PlaceReviewing)?
     private let source: any MeetupsReading
     private let petSource: any PetChoiceProviding
     private let now: @Sendable () -> Date
@@ -98,10 +102,12 @@ final class MeetupDetailModel {
 
     init(
         meetupID: String, viewerID: String, source: any MeetupsReading, pets: any PetChoiceProviding,
+        reviewer: (any PlaceReviewing)? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.meetupID = meetupID
         self.viewerID = viewerID
+        self.reviewer = reviewer
         self.source = source
         self.petSource = pets
         self.now = now
@@ -114,6 +120,15 @@ final class MeetupDetailModel {
     var isOrganizer: Bool { meetup?.organizerID == viewerID }
     var hasJoined: Bool { participants.contains { $0.id == viewerID } }
     var canAct: Bool { meetup?.status == .upcoming && working == nil }
+
+    /// The web's rule, which the server enforces: a completed meetup with
+    /// rating open, at a known place, rated by someone who was there — the
+    /// organiser or a participant — once.
+    var canRate: Bool {
+        guard let meetup, meetup.status == .completed, meetup.isRatingOpen,
+              meetup.locationID != nil, isOrganizer || hasJoined else { return false }
+        return hasRated == false
+    }
 
     /// The place to show: the real one when this person may see it.
     var shownPlace: MeetupPlace? {
@@ -159,6 +174,9 @@ final class MeetupDetailModel {
         }
         if pets.isEmpty, let owned = try? await petSource.pets(ownedBy: viewerID) {
             pets = owned
+        }
+        if let reviewer, let meetup, meetup.status == .completed, let placeID = meetup.locationID {
+            hasRated = try? await reviewer.hasReviewed(placeID: placeID, uid: viewerID, meetupID: meetupID)
         }
     }
 

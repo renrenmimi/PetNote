@@ -591,6 +591,7 @@ async function seedGatherings({ uidA, uidB, now }) {
     cancelled: meetup("cancelled"),
     private: meetup("private"),
     full: meetup("full"),
+    past: meetup("past"),
   };
   const organizerB = { organizerId: uidB, organizerName: "Accept B", organizerAvatar: avatar(uidB) };
   const requirements = (petType, maxPets) => ({
@@ -640,6 +641,12 @@ async function seedGatherings({ uidA, uidB, now }) {
     name: "TEST CONTENT 12 Elm St backyard", address: "12 Elm St, Somerville, MA",
     lat: 42.3876, lng: -71.0995, city: "Somerville", state: "MA",
   });
+  // Over, and open for rating: the server sets both when a meetup completes.
+  await db.doc(`meetups/${meetups.past}`).set(shape({
+    title: "TEST CONTENT Last week's walk", date: Timestamp.fromMillis(now - 2 * day),
+    location: publicPark, locationId: places.reviewed, locationVisibility: "everyone",
+    requirements: requirements("any", 0), status: "completed", isRatingOpen: true,
+  }));
   await db.doc(`meetups/${meetups.full}`).set(shape({
     title: "TEST CONTENT One-pet walk", date: Timestamp.fromMillis(now + 4 * day),
     location: publicPark, locationId: places.reviewed, locationVisibility: "everyone",

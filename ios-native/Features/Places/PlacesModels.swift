@@ -15,7 +15,7 @@ enum GatheringWords {
             || (ns.domain == FunctionsErrorDomain && ns.code == FunctionsErrorCode.unavailable.rawValue)
         if offline { return String(localized: "No connection. Check your network and try again.") }
         if ns.domain == FunctionsErrorDomain,
-           [FunctionsErrorCode.permissionDenied, .failedPrecondition, .notFound, .invalidArgument]
+           [FunctionsErrorCode.permissionDenied, .failedPrecondition, .notFound, .invalidArgument, .alreadyExists]
             .map(\.rawValue).contains(ns.code),
            !ns.localizedDescription.isEmpty {
             return ns.localizedDescription
@@ -137,14 +137,25 @@ final class PlaceDetailModel {
     /// section is never a failure in disguise.
     private(set) var failedSections: Set<String> = []
 
+    /// Whether the viewer has reviewed this place. Nil until known — the
+    /// button to write one waits rather than guessing.
+    private(set) var hasReviewed: Bool?
+
     let placeID: String
+    let viewerID: String
+    let reviewer: any PlaceReviewing
     private let places: any PlacesReading
     private let meetupSource: any MeetupsReading
     private let log = Logger(subsystem: "dev.local.petnote.native", category: "places")
 
-    init(placeID: String, places: any PlacesReading, meetups: any MeetupsReading) {
+    init(
+        placeID: String, viewerID: String, places: any PlacesReading,
+        reviewer: any PlaceReviewing, meetups: any MeetupsReading
+    ) {
         self.placeID = placeID
+        self.viewerID = viewerID
         self.places = places
+        self.reviewer = reviewer
         self.meetupSource = meetups
     }
 
@@ -177,6 +188,7 @@ final class PlaceDetailModel {
         do { self.reviews = try await reviews } catch { failedSections.insert("reviews") }
         do { self.checkins = try await checkins } catch { failedSections.insert("checkins") }
         do { self.meetups = try await meetups } catch { failedSections.insert("meetups") }
+        hasReviewed = try? await reviewer.hasReviewed(placeID: placeID, uid: viewerID, meetupID: nil)
         if !failedSections.isEmpty {
             log.error("place sections failed: \(self.failedSections.sorted().joined(separator: ","), privacy: .public)")
         }

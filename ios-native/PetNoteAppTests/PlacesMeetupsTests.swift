@@ -1,4 +1,5 @@
 import FirebaseFirestore
+import FirebaseFunctions
 import Foundation
 import Testing
 
@@ -10,7 +11,10 @@ import Testing
 struct PlacesMeetupsTests {
     // MARK: - Fakes
 
+    /// Every record taken under the lock: changing the filter starts a read
+    /// while another may still be running, so two calls can overlap.
     final class FakeMeetups: MeetupsReading, @unchecked Sendable {
+        private let lock = NSLock()
         var upcomingList: [Meetup] = []
         var weekList: [Meetup] = []
         var mineList: [Meetup] = []
@@ -19,38 +23,57 @@ struct PlacesMeetupsTests {
         var address: MeetupPlace?
         var joinAnswer: MeetupJoinOutcome = .joined
         var readError: Error?
-        private(set) var weekFrom: Date?
-        private(set) var mineFor: String?
-        private(set) var joined: [(String, String?)] = []
-        private(set) var left: [(String, String)] = []
-        private(set) var cancelled: [String] = []
-        private(set) var settled: [String] = []
-        private(set) var addressReads = 0
         /// What `settle` turns the stored meetup into.
         var afterSettle: Meetup?
+        private var _weekFrom: Date?
+        private var _mineFor: String?
+        private var _joined: [(String, String?)] = []
+        private var _left: [(String, String)] = []
+        private var _cancelled: [String] = []
+        private var _settled: [String] = []
+        private var _addressReads = 0
+
+        var weekFrom: Date? { lock.withLock { _weekFrom } }
+        var mineFor: String? { lock.withLock { _mineFor } }
+        var joined: [(String, String?)] { lock.withLock { _joined } }
+        var left: [(String, String)] { lock.withLock { _left } }
+        var cancelled: [String] { lock.withLock { _cancelled } }
+        var settled: [String] { lock.withLock { _settled } }
+        var addressReads: Int { lock.withLock { _addressReads } }
 
         func upcoming(limit: Int) async throws -> [Meetup] {
             if let readError { throw readError }
             return upcomingList
         }
-        func thisWeek(from now: Date, limit: Int) async throws -> [Meetup] { weekFrom = now; return weekList }
-        func mine(uid: String) async throws -> [Meetup] { mineFor = uid; return mineList }
+        func thisWeek(from now: Date, limit: Int) async throws -> [Meetup] {
+            lock.withLock { _weekFrom = now }
+            return weekList
+        }
+        func mine(uid: String) async throws -> [Meetup] {
+            lock.withLock { _mineFor = uid }
+            return mineList
+        }
         func atPlace(placeID: String, limit: Int) async throws -> [Meetup] { [] }
         func meetup(id: String) async throws -> Meetup? {
             if let readError { throw readError }
-            return stored[id]
+            return lock.withLock { stored[id] }
         }
         func participants(meetupID: String) async throws -> [MeetupParticipant] { participantList }
-        func privateAddress(meetupID: String) async -> MeetupPlace? { addressReads += 1; return address }
+        func privateAddress(meetupID: String) async -> MeetupPlace? {
+            lock.withLock { _addressReads += 1 }
+            return address
+        }
         func join(meetupID: String, petID: String?) async throws -> MeetupJoinOutcome {
-            joined.append((meetupID, petID))
+            lock.withLock { _joined.append((meetupID, petID)) }
             return joinAnswer
         }
-        func leave(meetupID: String, uid: String) async throws { left.append((meetupID, uid)) }
-        func cancel(meetupID: String) async throws { cancelled.append(meetupID) }
+        func leave(meetupID: String, uid: String) async throws { lock.withLock { _left.append((meetupID, uid)) } }
+        func cancel(meetupID: String) async throws { lock.withLock { _cancelled.append(meetupID) } }
         func settle(meetupID: String) async throws {
-            settled.append(meetupID)
-            if let afterSettle { stored[meetupID] = afterSettle }
+            lock.withLock {
+                _settled.append(meetupID)
+                if let afterSettle { stored[meetupID] = afterSettle }
+            }
         }
     }
 
@@ -61,16 +84,17 @@ struct PlacesMeetupsTests {
     private static func meetup(
         _ id: String = "m1", organizer: String = "u-org", date: Date? = Date().addingTimeInterval(3600),
         status: String = "upcoming", visibility: String? = "everyone", petType: String = "any", maxPets: Int = 0,
-        count: Int = 1
+        count: Int = 1, ratingOpen: Bool = false, locationID: String? = nil
     ) -> Meetup {
         var data: [String: Any] = [
             "organizerId": organizer, "organizerName": "Org", "title": "TEST \(id)",
-            "duration": 60, "status": status, "participantCount": count,
+            "duration": 60, "status": status, "participantCount": count, "isRatingOpen": ratingOpen,
             "location": ["name": "Park", "address": "1 Main St", "lat": 42.0, "lng": -71.0, "city": "Boston", "state": "MA"],
             "requirements": ["petType": petType, "maxPets": maxPets],
         ]
         if let date { data["date"] = Timestamp(date: date) }
         if let visibility { data["locationVisibility"] = visibility }
+        if let locationID { data["locationId"] = locationID }
         return Meetup.decode(id: id, data)
     }
 
@@ -249,5 +273,244 @@ struct PlacesMeetupsTests {
         await organiser.load()
         await organiser.cancel()
         #expect(source.cancelled == ["m1"])
+    }
+
+    // MARK: - Reviews
+
+    /// Records calls under a lock, and can hold a submission at the server
+    /// so that a second tap really overlaps the first.
+    final class FakeReviews: PlaceReviewing, @unchecked Sendable {
+        private let lock = NSLock()
+        private var calls: [PlaceReviewDraft] = []
+        private var held: CheckedContinuation<Void, Never>?
+        var holdNext = false
+        var error: Error?
+        var reviewed: Set<String> = []
+
+        var submitted: [PlaceReviewDraft] { lock.withLock { calls } }
+        var isHolding: Bool { lock.withLock { held != nil } }
+
+        func submitReview(_ draft: PlaceReviewDraft) async throws {
+            let hold = lock.withLock { () -> Bool in
+                calls.append(draft)
+                return holdNext
+            }
+            if hold {
+                await withCheckedContinuation { continuation in
+                    lock.withLock { held = continuation }
+                }
+            }
+            if let error { throw error }
+        }
+
+        func release() {
+            let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+                defer { held = nil }
+                return held
+            }
+            continuation?.resume()
+        }
+
+        func hasReviewed(placeID: String, uid: String, meetupID: String?) async throws -> Bool {
+            lock.withLock { reviewed.contains(PlaceReviewDraft.reviewID(uid: uid, meetupID: meetupID)) }
+        }
+    }
+
+    /// What goes to the server: the scores given, and only those — the
+    /// server refuses a 0 and fills a missing score in with the rating.
+    @Test func aReviewSendsOnlyTheScoresGiven() {
+        var draft = PlaceReviewDraft(placeID: "p1", meetupID: nil)
+        draft.rating = 4
+        draft.comment = "  TEST CONTENT lovely  "
+        #expect(draft.payload["petFriendly"] == nil)
+        #expect(draft.payload["meetupId"] == nil)
+        #expect(draft.payload["comment"] as? String == "TEST CONTENT lovely")
+        #expect(draft.payload["rating"] as? Int == 4)
+
+        draft.space = 5
+        let friendly = draft.payload["petFriendly"] as? [String: Any]
+        #expect(friendly?["space"] as? Int == 5)
+        #expect(friendly?["safety"] == nil)
+
+        let forMeetup = PlaceReviewDraft(placeID: "p1", meetupID: "m1")
+        #expect(forMeetup.payload["meetupId"] as? String == "m1")
+        #expect(PlaceReviewDraft.reviewID(uid: "u1", meetupID: "m1") == "u1_m1")
+        #expect(PlaceReviewDraft.reviewID(uid: "u1", meetupID: nil) == "u1")
+    }
+
+    @Test func aReviewNeedsARatingAndAShortEnoughComment() {
+        var draft = PlaceReviewDraft(placeID: "p1", meetupID: nil)
+        #expect(!draft.canSubmit, "no overall rating")
+        draft.rating = 3
+        #expect(draft.canSubmit)
+        draft.comment = String(repeating: "a", count: PlaceReviewDraft.maxComment + 1)
+        #expect(!draft.canSubmit)
+        // Counted as the web and the server count: an emoji is two.
+        draft.comment = String(repeating: "🐕", count: PlaceReviewDraft.maxComment / 2)
+        #expect(draft.canSubmit)
+        draft.comment += "🐕"
+        #expect(draft.comment.count == 151)
+        #expect(!draft.canSubmit, "151 emoji are 302 UTF-16 units, over the server's 300")
+    }
+
+    /// A second tap while the first is still with the server sends nothing.
+    @MainActor
+    @Test func aSecondTapWhileSubmittingSendsNothing() async {
+        let reviews = FakeReviews()
+        reviews.holdNext = true
+        let model = PlaceReviewModel(placeID: "p1", placeName: "Park", source: reviews)
+        model.draft.rating = 5
+        let first = Task { await model.submit() }
+        #expect(await eventuallyTrue { reviews.isHolding }, "the first submission never reached the server")
+        await model.submit()
+        reviews.release()
+        await first.value
+        #expect(reviews.submitted.count == 1, "the review was sent twice")
+        #expect(model.outcome == .submitted)
+    }
+
+    /// The server's own words for a refusal — "You have already reviewed
+    /// this location." — are what the person reads.
+    @MainActor
+    @Test func aRefusedReviewSaysTheServersWords() async {
+        let reviews = FakeReviews()
+        reviews.error = NSError(domain: FunctionsErrorDomain, code: FunctionsErrorCode.alreadyExists.rawValue,
+                                userInfo: [NSLocalizedDescriptionKey: "You have already reviewed this location."])
+        let model = PlaceReviewModel(placeID: "p1", placeName: "Park", source: reviews)
+        model.draft.rating = 2
+        await model.submit()
+        #expect(model.outcome == .failed("You have already reviewed this location."))
+        #expect(model.canSubmit, "a refusal left the button disabled")
+    }
+
+    /// Rating a meetup's place: completed, rating open, someone who was
+    /// there, not yet rated — the server's own conditions.
+    @MainActor
+    @Test func onlySomeoneWhoWasThereRatesACompletedMeetupOnce() async {
+        let source = FakeMeetups()
+        source.stored["m1"] = Self.meetup(date: Date().addingTimeInterval(-3 * 86_400), status: "completed",
+                                          ratingOpen: true, locationID: "p1")
+        let reviews = FakeReviews()
+
+        let stranger = MeetupDetailModel(meetupID: "m1", viewerID: "me", source: source, pets: NoPets(), reviewer: reviews)
+        await stranger.load()
+        #expect(!stranger.canRate, "someone who was not there could rate")
+
+        source.participantList = [Self.participant("me")]
+        let there = MeetupDetailModel(meetupID: "m1", viewerID: "me", source: source, pets: NoPets(), reviewer: reviews)
+        await there.load()
+        #expect(there.canRate)
+
+        reviews.reviewed = ["me_m1"]
+        let rated = MeetupDetailModel(meetupID: "m1", viewerID: "me", source: source, pets: NoPets(), reviewer: reviews)
+        await rated.load()
+        #expect(!rated.canRate, "rated twice")
+        #expect(rated.hasRated == true)
+
+        source.stored["m1"] = Self.meetup(status: "upcoming", locationID: "p1")
+        let notYet = MeetupDetailModel(meetupID: "m1", viewerID: "me", source: source, pets: NoPets(), reviewer: reviews)
+        await notYet.load()
+        #expect(!notYet.canRate, "an upcoming meetup offered rating")
+    }
+
+    // MARK: - The places list
+
+    /// Records every read under a lock; a read can be held so that a newer
+    /// choice overtakes it.
+    final class FakePlaces: PlacesReading, @unchecked Sendable {
+        private let lock = NSLock()
+        private var _reads: [(PlaceCategory?, PlaceSort, String?)] = []
+        private var _searches: [String] = []
+        private var held: CheckedContinuation<Void, Never>?
+        var holdNextRead = false
+        var pages: [[Place]] = [[]]
+        var found: [Place] = []
+
+        var reads: [(PlaceCategory?, PlaceSort, String?)] { lock.withLock { _reads } }
+        var searches: [String] { lock.withLock { _searches } }
+        var isHolding: Bool { lock.withLock { held != nil } }
+
+        func places(category: PlaceCategory?, sort: PlaceSort, after last: String?, limit: Int) async throws -> [Place] {
+            let (hold, index) = lock.withLock { () -> (Bool, Int) in
+                _reads.append((category, sort, last))
+                defer { holdNextRead = false }
+                return (holdNextRead, min(_reads.filter { $0.2 != nil }.count, pages.count - 1))
+            }
+            if hold { await withCheckedContinuation { continuation in lock.withLock { held = continuation } } }
+            return last == nil ? pages[0] : pages[index]
+        }
+        func release() {
+            let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+                defer { held = nil }
+                return held
+            }
+            continuation?.resume()
+        }
+        func search(prefix: String) async throws -> [Place] {
+            lock.withLock { _searches.append(prefix) }
+            return found
+        }
+        func place(id: String) async throws -> Place? { nil }
+        func reviews(placeID: String, limit: Int) async throws -> [PlaceReview] { [] }
+        func checkins(placeID: String, limit: Int) async throws -> [PlaceCheckin] { [] }
+    }
+
+    private static func place(_ id: String) -> Place { Place.decode(id: id, ["name": "TEST \(id)", "category": "cafe"]) }
+
+    @Test func aCategoryAndASortAreReadAsChosen() async {
+        let source = FakePlaces()
+        source.pages = [[Self.place("a")]]
+        let model = PlacesModel(source: source)
+        await model.load()
+        #expect(source.reads.last?.0 == nil)
+        #expect(source.reads.last?.1 == .newest, "the default is not the web's (newest without a location)")
+
+        model.category = .dogPark
+        #expect(await eventuallyTrue { source.reads.contains { $0.0 == .dogPark } })
+        model.sort = .topRated
+        #expect(await eventuallyTrue { source.reads.contains { $0.0 == .dogPark && $0.1 == .topRated } })
+    }
+
+    @Test func aNameSearchReplacesTheListAndClearingItComesBack() async {
+        let source = FakePlaces()
+        source.pages = [[Self.place("listed")]]
+        source.found = [Self.place("found")]
+        let model = PlacesModel(source: source)
+        await model.load()
+        model.search("  Riv ")
+        #expect(await eventuallyTrue { model.items.map(\.id) == ["found"] })
+        #expect(source.searches == ["Riv"], "the search text was not trimmed")
+        #expect(!model.hasMore, "a search result offered more pages")
+        model.search("")
+        #expect(await eventuallyTrue { model.items.map(\.id) == ["listed"] })
+    }
+
+    /// A slow answer for the old choice must not replace the new choice's.
+    @Test func aSlowOldAnswerDoesNotOverwriteANewerChoice() async {
+        let source = FakePlaces()
+        source.pages = [[Self.place("any")]]
+        let model = PlacesModel(source: source)
+        await model.load()
+        source.holdNextRead = true
+        model.category = .beach
+        #expect(await eventuallyTrue { source.isHolding }, "the first read never reached the source")
+        source.pages = [[Self.place("vet")]]
+        model.category = .vet
+        #expect(await eventuallyTrue { model.items.map(\.id) == ["vet"] })
+        source.release()
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(model.items.map(\.id) == ["vet"], "the held answer for beaches replaced the vets")
+    }
+
+    @Test func aFullPageMeansMoreAndTheNextPageStartsAfterTheLast() async {
+        let source = FakePlaces()
+        source.pages = [(0..<PlacesModel.pageSize).map { Self.place("p\($0)") }, [Self.place("tail")]]
+        let model = PlacesModel(source: source)
+        await model.load()
+        #expect(model.hasMore)
+        await model.loadMore()
+        #expect(model.items.count == PlacesModel.pageSize + 1)
+        #expect(source.reads.last?.2 == "p\(PlacesModel.pageSize - 1)")
+        #expect(!model.hasMore)
     }
 }

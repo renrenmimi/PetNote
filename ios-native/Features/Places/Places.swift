@@ -5,10 +5,10 @@ import Foundation
 // (`src/pages/Places.tsx`, `src/pages/LocationDetail.tsx`,
 // `src/services/locations.ts`, `src/services/checkins.ts`).
 //
-// Read only. The rules let no client write a place, a review or a check-in;
-// adding one goes through the server, and the server needs an address lookup
-// and a photo upload the test project does not have
-// (docs/places-meetups-plan.md).
+// The rules let no client write a place, a review or a check-in directly;
+// each goes through the server. Reviews without photos are here; adding a
+// place needs an address lookup and check-ins need a photo upload, which the
+// test project does not have yet (docs/places-meetups-plan.md).
 
 enum PlaceCategory: String, CaseIterable, Sendable {
     case dogPark = "dog_park"
@@ -166,6 +166,7 @@ struct Place: Identifiable, Equatable, Sendable {
 
 struct PlaceReview: Identifiable, Equatable, Sendable {
     let id: String
+    let userID: String
     let userName: String
     let userAvatarURL: URL?
     let rating: Int
@@ -177,6 +178,7 @@ struct PlaceReview: Identifiable, Equatable, Sendable {
     static func decode(id: String, _ data: [String: Any]) -> PlaceReview {
         PlaceReview(
             id: id,
+            userID: data["userId"] as? String ?? "",
             userName: (data["userName"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "PetNote User"),
             userAvatarURL: (data["userAvatar"] as? String).flatMap(URL.init(string:)),
             rating: (data["rating"] as? NSNumber)?.intValue ?? 0,
@@ -210,6 +212,87 @@ struct PlaceCheckin: Identifiable, Equatable, Sendable {
     }
 }
 
+/// A review as the person writes it — the web's rating sheet
+/// (`LocationRatingModal.tsx`) without photos, which need the test
+/// Cloudinary account.
+struct PlaceReviewDraft: Equatable, Sendable {
+    /// The web's tag choices, word for word; stored as written.
+    static let tagOptions = [
+        "🌳 Spacious", "🐕 Off-leash area", "💧 Water access", "🅿️ Easy parking",
+        "🚽 Restrooms nearby", "🪑 Seating available", "🌙 Well-lit", "🐕‍🦺 Dog-friendly",
+        "🐱 Cat-friendly", "☕ Café nearby", "🏖️ Beach access", "🏃 Trails available",
+    ]
+    /// The web's limit, in the web's units: UTF-16, which is what
+    /// JavaScript's `length` and the server's check count. An emoji is two.
+    static let maxComment = 300
+
+    /// A tag as shown. The stored words stay the web's — other people's
+    /// reviews carry them — and one this list does not know is shown as is.
+    static func tagLabel(_ tag: String) -> String {
+        switch tag {
+        case "🌳 Spacious": String(localized: "🌳 Spacious")
+        case "🐕 Off-leash area": String(localized: "🐕 Off-leash area")
+        case "💧 Water access": String(localized: "💧 Water access")
+        case "🅿️ Easy parking": String(localized: "🅿️ Easy parking")
+        case "🚽 Restrooms nearby": String(localized: "🚽 Restrooms nearby")
+        case "🪑 Seating available": String(localized: "🪑 Seating available")
+        case "🌙 Well-lit": String(localized: "🌙 Well-lit")
+        case "🐕‍🦺 Dog-friendly": String(localized: "🐕‍🦺 Dog-friendly")
+        case "🐱 Cat-friendly": String(localized: "🐱 Cat-friendly")
+        case "☕ Café nearby": String(localized: "☕ Café nearby")
+        case "🏖️ Beach access": String(localized: "🏖️ Beach access")
+        case "🏃 Trails available": String(localized: "🏃 Trails available")
+        default: tag
+        }
+    }
+
+    let placeID: String
+    /// Set when the review is of a meetup that took place there.
+    let meetupID: String?
+    var rating = 0
+    /// 0 means "not given"; the server then takes the overall rating.
+    var space = 0
+    var safety = 0
+    var cleanliness = 0
+    var tags: [String] = []
+    var comment = ""
+
+    var commentLength: Int { comment.utf16.count }
+
+    var canSubmit: Bool { (1...5).contains(rating) && commentLength <= Self.maxComment }
+
+    /// What `submitReviewCallable` takes. Subscores go only when given: the
+    /// server refuses a 0 and fills a missing one in with the rating.
+    var payload: [String: Any] {
+        var payload: [String: Any] = [
+            "locationId": placeID,
+            "rating": rating,
+            "comment": comment.trimmingCharacters(in: .whitespacesAndNewlines),
+            "tags": tags,
+            "photos": [String](),
+        ]
+        var friendly: [String: Any] = [:]
+        if space > 0 { friendly["space"] = space }
+        if safety > 0 { friendly["safety"] = safety }
+        if cleanliness > 0 { friendly["cleanliness"] = cleanliness }
+        if !friendly.isEmpty { payload["petFriendly"] = friendly }
+        if let meetupID { payload["meetupId"] = meetupID }
+        return payload
+    }
+
+    /// The server's own document id for this review, so "already reviewed"
+    /// is one read rather than a query.
+    static func reviewID(uid: String, meetupID: String?) -> String {
+        meetupID.map { "\(uid)_\($0)" } ?? uid
+    }
+}
+
+protocol PlaceReviewing: Sendable {
+    func submitReview(_ draft: PlaceReviewDraft) async throws
+    /// Whether this person has already reviewed the place (or the meetup).
+    func hasReviewed(placeID: String, uid: String, meetupID: String?) async throws -> Bool
+}
+
 protocol PlacesReading: Sendable {
     /// `limit` at a time; `after` is the last place already shown.
     func places(category: PlaceCategory?, sort: PlaceSort, after last: String?, limit: Int) async throws -> [Place]
@@ -221,7 +304,7 @@ protocol PlacesReading: Sendable {
     func checkins(placeID: String, limit: Int) async throws -> [PlaceCheckin]
 }
 
-actor FirestorePlacesSource: PlacesReading {
+actor FirestorePlacesSource: PlacesReading, PlaceReviewing {
     private let db: Firestore
     private var cursors: [String: DocumentSnapshot] = [:]
 
@@ -272,6 +355,16 @@ actor FirestorePlacesSource: PlacesReading {
             .limit(to: limit)
             .getDocuments()
         return snapshot.documents.map { PlaceReview.decode(id: $0.documentID, $0.data()) }
+    }
+
+    func submitReview(_ draft: PlaceReviewDraft) async throws {
+        try await CallableClient.callIgnoringResult(Callables.submitReview, draft.payload)
+    }
+
+    func hasReviewed(placeID: String, uid: String, meetupID: String?) async throws -> Bool {
+        try await db.collection("locations").document(placeID).collection("reviews")
+            .document(PlaceReviewDraft.reviewID(uid: uid, meetupID: meetupID))
+            .getDocument().exists
     }
 
     func checkins(placeID: String, limit: Int) async throws -> [PlaceCheckin] {

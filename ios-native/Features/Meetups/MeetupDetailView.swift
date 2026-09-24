@@ -7,6 +7,7 @@ struct MeetupDetailView: View {
     @State private var isChoosingPet = false
     @State private var isConfirmingLeave = false
     @State private var isConfirmingCancel = false
+    @State private var isRating = false
     private let onOpenPlace: (String) -> Void
 
     init(model: MeetupDetailModel, onOpenPlace: @escaping (String) -> Void) {
@@ -38,6 +39,19 @@ struct MeetupDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await model.load() }
         .refreshable { await model.load() }
+        .sheet(isPresented: $isRating) {
+            if let meetup = model.meetup, let placeID = meetup.locationID, let reviewer = model.reviewer {
+                NavigationStack {
+                    PlaceReviewSheet(
+                        model: PlaceReviewModel(
+                            placeID: placeID, placeName: model.shownPlace?.name ?? meetup.place.name,
+                            meetupID: meetup.id, source: reviewer
+                        ),
+                        onSubmitted: { Task { await model.load() } }
+                    )
+                }
+            }
+        }
         .confirmationDialog("Join with which pet?", isPresented: $isChoosingPet, titleVisibility: .visible) {
             ForEach(model.pets) { pet in
                 Button(pet.name) { Task { await model.join(petID: pet.id) } }
@@ -209,6 +223,21 @@ struct MeetupDetailView: View {
                     .font(Typography.body)
                     .foregroundStyle(Palette.secondaryText)
                     .accessibilityIdentifier("meetupDetail.over")
+                if model.canRate {
+                    Button { isRating = true } label: {
+                        Text("Rate this place")
+                            .frame(maxWidth: .infinity, minHeight: Layout.minTouchTarget)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Palette.brandPrimary)
+                    .accessibilityIdentifier("meetupDetail.rate")
+                } else if model.hasRated == true {
+                    Label("You rated this meetup's place", systemImage: "checkmark.circle")
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.secondaryText)
+                        .accessibilityIdentifier("meetupDetail.rated")
+                }
             }
             if let message = model.actionMessage {
                 Text(message)

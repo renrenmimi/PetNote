@@ -119,6 +119,9 @@ struct Meetup: Identifiable, Equatable, Sendable {
     let requirements: MeetupRequirements
     let status: MeetupStatus
     let participantCount: Int
+    /// Set by the server when the meetup is completed: reviews that name the
+    /// meetup are accepted from then on, and only from those who were there.
+    let isRatingOpen: Bool
 
     var endsAt: Date? {
         date.map { $0.addingTimeInterval(TimeInterval(max(durationMinutes, 0) * 60)) }
@@ -164,7 +167,8 @@ struct Meetup: Identifiable, Equatable, Sendable {
             isAddressPrivate: (data["locationVisibility"] as? String) != "everyone",
             requirements: MeetupRequirements.decode(data["requirements"] as? [String: Any]),
             status: MeetupStatus(rawValue: text("status")) ?? .upcoming,
-            participantCount: (data["participantCount"] as? NSNumber)?.intValue ?? 0
+            participantCount: (data["participantCount"] as? NSNumber)?.intValue ?? 0,
+            isRatingOpen: data["isRatingOpen"] as? Bool ?? false
         )
     }
 }

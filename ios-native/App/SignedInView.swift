@@ -562,14 +562,18 @@ struct SignedInView: View {
             ContactUsView(sender: repositories.feedback)
         case .place(let placeID):
             PlaceDetailView(
-                model: PlaceDetailModel(placeID: placeID, places: repositories.places, meetups: repositories.meetups),
+                model: PlaceDetailModel(
+                    placeID: placeID, viewerID: user.uid, places: repositories.places,
+                    reviewer: repositories.placeReviews, meetups: repositories.meetups
+                ),
                 onOpenMeetup: { stack.wrappedValue.append(.meetup(meetupID: $0)) }
             )
         case .meetup(let meetupID):
             MeetupDetailView(
                 model: MeetupDetailModel(
                     meetupID: meetupID, viewerID: user.uid,
-                    source: repositories.meetups, pets: repositories.petChoices
+                    source: repositories.meetups, pets: repositories.petChoices,
+                    reviewer: repositories.placeReviews
                 ),
                 onOpenPlace: { stack.wrappedValue.append(.place(placeID: $0)) }
             )
@@ -773,10 +777,12 @@ struct Repositories {
     let security: any AccountSecurity
     let notifications: any NotificationsReading
     let places: any PlacesReading
+    let placeReviews: any PlaceReviewing
     let meetups: any MeetupsReading
 
     static var live: Repositories {
-        Repositories(
+        let places = FirestorePlacesSource()
+        return Repositories(
             feed: FirestoreFeedRepository(),
             likes: FirestoreLikeRepository(),
             comments: FirestoreCommentRepository(),
@@ -798,7 +804,8 @@ struct Repositories {
             preferences: FirestorePreferencesStore(),
             security: LiveAccountSecurity(),
             notifications: FirestoreNotificationsSource(),
-            places: FirestorePlacesSource(),
+            places: places,
+            placeReviews: places,
             meetups: FirestoreMeetupsSource()
         )
     }

@@ -2171,6 +2171,16 @@
         }
       }
     },
+    "Failed to submit review.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "评价提交失败。"
+          }
+        }
+      }
+    },
     "Failed to update password": {
       "localizations": {
         "zh-Hans": {
@@ -3845,6 +3855,16 @@
         }
       }
     },
+    "Pet-friendly scores": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "宠物友好评分"
+          }
+        }
+      }
+    },
     "PetNote": {
       "localizations": {
         "zh-Hans": {
@@ -4237,6 +4257,16 @@
         }
       }
     },
+    "Rate this place": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "给这个地点打分"
+          }
+        }
+      }
+    },
     "Recent Check-ins (%lld)": {
       "localizations": {
         "zh-Hans": {
@@ -4435,6 +4465,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "重试"
+          }
+        }
+      }
+    },
+    "Review": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "评价"
           }
         }
       }
@@ -4789,6 +4829,16 @@
         }
       }
     },
+    "Share your experience about this location...": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "说说你在这里的体验..."
+          }
+        }
+      }
+    },
     "Show less": {
       "localizations": {
         "zh-Hans": {
@@ -5111,6 +5161,26 @@
         }
       }
     },
+    "Submit Review": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提交评价"
+          }
+        }
+      }
+    },
+    "Submitting...": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提交中..."
+          }
+        }
+      }
+    },
     "Tag %@, %@": {
       "localizations": {
         "zh-Hans": {
@@ -5213,6 +5283,16 @@
     },
     "Tertiary": {
       "shouldTranslate": false
+    },
+    "Test build: links open this app, not the website": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "测试版：链接只会打开这个 App，不会打开网站"
+          }
+        }
+      }
     },
     "Thank you for reporting. We'll review this shortly.": {
       "localizations": {
@@ -6915,6 +6995,16 @@
         }
       }
     },
+    "Write a review": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写评价"
+          }
+        }
+      }
+    },
     "You": {
       "comment": "Marks the signed-in person's own row in search results",
       "localizations": {
@@ -7192,6 +7282,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "发帖前需要先添加宠物"
+          }
+        }
+      }
+    },
+    "You rated this meetup's place": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你已给这次聚会的地点打过分"
           }
         }
       }
@@ -7517,6 +7617,16 @@
     "• %@": {
       "shouldTranslate": false
     },
+    "☕ Café nearby": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "☕ 附近有咖啡馆"
+          }
+        }
+      }
+    },
     "✓ Verified": {
       "localizations": {
         "zh-Hans": {
@@ -7527,8 +7637,48 @@
         }
       }
     },
+    "✨ Cleanliness": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "✨ 清洁度"
+          }
+        }
+      }
+    },
     "⭐ %@": {
       "shouldTranslate": false
+    },
+    "🅿️ Easy parking": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🅿️ 停车方便"
+          }
+        }
+      }
+    },
+    "🌙 Well-lit": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🌙 照明良好"
+          }
+        }
+      }
+    },
+    "🌳 Spacious": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🌳 宽敞"
+          }
+        }
+      }
     },
     "🎂 Birthday today": {
       "localizations": {
@@ -7540,12 +7690,112 @@
         }
       }
     },
+    "🏃 Trails available": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🏃 有步道"
+          }
+        }
+      }
+    },
+    "🏖️ Beach access": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🏖️ 可下海滩"
+          }
+        }
+      }
+    },
+    "🐕 Off-leash area": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🐕 可解绳区域"
+          }
+        }
+      }
+    },
+    "🐕‍🦺 Dog-friendly": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🐕‍🦺 对狗友好"
+          }
+        }
+      }
+    },
+    "🐱 Cat-friendly": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🐱 对猫友好"
+          }
+        }
+      }
+    },
     "🐾 Shared from PetNote": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "🐾 分享自 PetNote"
+          }
+        }
+      }
+    },
+    "🐾 Space for pets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🐾 宠物活动空间"
+          }
+        }
+      }
+    },
+    "💧 Water access": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "💧 可以玩水"
+          }
+        }
+      }
+    },
+    "🚽 Restrooms nearby": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🚽 附近有洗手间"
+          }
+        }
+      }
+    },
+    "🛡️ Safety": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🛡️ 安全"
+          }
+        }
+      }
+    },
+    "🪑 Seating available": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🪑 有座位"
           }
         }
       }
