@@ -310,7 +310,16 @@ final class ComposeViewModel {
     /// so the attempt is released exactly as a changed selection releases it
     /// — kept on the CDN, dropped from this attempt, a fresh operation id —
     /// and the next Share prepares and uploads every photo with what is now
-    /// chosen. Nothing is deleted: see `AssetReclaim`.
+    /// chosen. Nothing is deleted: see `AssetReclaim`. The cost is one more
+    /// copy of each photo on the CDN, unreferenced, and it is only a cost:
+    /// no publish has carried this attempt's id, so the server has no post
+    /// under it, and the fresh id still makes exactly one.
+    ///
+    /// **Except after a publish that may have gone through.** Then the fresh
+    /// id *would* be a second post, and the failure message has just told
+    /// the person that pressing Share again won't post twice. So the change is
+    /// refused — see `filterChangeRefusal(for:)` — and the retry publishes the
+    /// photos as they were uploaded, under the same id.
     ///
     /// A photo that has *not* been uploaded yet changes nothing that is
     /// recorded, so the attempt and the photos before it are kept, and it is
@@ -324,12 +333,38 @@ final class ComposeViewModel {
         guard !isSubmitting, !hasPublished else { return }
         guard let index = items.firstIndex(where: { $0.id == id }), items[index].isFilterable else { return }
         guard self.filter(for: id) != filter else { return }
+        guard filterChangeRefusal(for: id) == nil else { return }
         filters[id] = filter == .normal ? nil : filter
         if index < uploadedAssets.count {
             selectionChanged()
         } else {
             attemptSelectionSignature = selectionSignature
         }
+    }
+
+    /// Why this photo's filter cannot be changed now, in words for the
+    /// person; nil when it can.
+    ///
+    /// When the last attempt failed at the publish stage — `phase` records
+    /// that as `.failed(stage: .publish)`, and it stays so until another
+    /// attempt runs or the selection changes — the publish may have committed
+    /// with its answer lost, so a post may already hold these uploads. Every
+    /// picked photo is uploaded by then (publishing starts only after the
+    /// last upload lands). Changing one's filter would release the attempt
+    /// and mint a fresh operation id, and the next Share would make a second
+    /// post; the retry the failure message invites is only safe under the
+    /// same id with the same media. `setFilter` refuses, and the screen
+    /// disables the strip and shows this.
+    ///
+    /// Not a lookup of `publishStatus`: its `false` answer means "not visible
+    /// yet", never "not published" (see `selectionChanged`), so it could not
+    /// make the change safe either.
+    func filterChangeRefusal(for id: String) -> String? {
+        guard phase == .failed(stage: .publish),
+              let index = items.firstIndex(where: { $0.id == id }),
+              index < uploadedAssets.count
+        else { return nil }
+        return String(localized: "The last Share may already have posted this photo, so its filter can't be changed now.")
     }
 
     /// Why this file cannot be posted, if it cannot.

@@ -140,6 +140,7 @@ struct ComposeView: View {
 
             // Photos only, as on the web; never a video or a GIF.
             if let selected = model.selectedItem, selected.isFilterable {
+                let refusal = model.filterChangeRefusal(for: selected.id)
                 ComposeFilterStrip(
                     item: selected,
                     selected: model.filter(for: selected.id),
@@ -156,7 +157,14 @@ struct ComposeView: View {
                 // selected before this one while its own render is on the way.
                 .id(selected.id)
                 // The model refuses too; this says so before the tap.
-                .disabled(model.isWorking)
+                .disabled(model.isWorking || refusal != nil)
+                if let refusal {
+                    Text(refusal)
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.secondaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("compose.filters.locked")
+                }
             }
         }
     }

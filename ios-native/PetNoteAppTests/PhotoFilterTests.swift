@@ -374,35 +374,78 @@ struct PhotoFilterComposeTests {
         #expect(sent.last?.data == Self.photo(2).data, "the Normal photo must go up exactly as before")
     }
 
-    /// The case the retry design is for: a photo already on the CDN has its
-    /// filter changed. Its bytes are stale, so the attempt is released — kept
-    /// on the CDN, dropped from this attempt — and the next Share sends it
-    /// again under a fresh operation id.
+    /// A photo already on the CDN has its filter changed, after an attempt
+    /// that failed while *uploading*. Its bytes are stale, so the attempt is
+    /// released — kept on the CDN, dropped from this attempt — and the next
+    /// Share sends it again under a fresh operation id.
+    ///
+    /// The consequence, stated: that photo is on the CDN twice, the first
+    /// copy left there unreferenced (nothing is ever deleted; see
+    /// `AssetReclaim`), and the attempt starts over under a new id. That is
+    /// safe only because the old id never reached the publish call, so the
+    /// server holds no post under it and the new id makes the one post.
+    /// After a publish-stage failure the same change would make a second post,
+    /// and it is refused — the next test.
     @Test func changingTheFilterOfAnUploadedPhotoSendsItAgain() async {
+        let harness = Harness(photos: 2)
+        harness.uploader.fail(atSend: [2])
+        await harness.model.share()
+        #expect(harness.model.phase == .failed(stage: .upload))
+        #expect(harness.model.uploadedAssets.count == 1, "item-1 landed and item-2 did not")
+        #expect(harness.writes.publishAttempts.isEmpty)
+        let firstOperationID = harness.model.operationID
+        #expect(firstOperationID != nil)
+        #expect(harness.model.filterChangeRefusal(for: "item-1") == nil, "nothing was published, so nothing to refuse")
+
+        harness.model.setFilter(.warm, for: "item-1")
+
+        #expect(harness.model.filter(for: "item-1") == .warm)
+        #expect(harness.model.uploadedAssets.isEmpty, "the upload of item-1 carries the old filter and must not be published")
+        #expect(harness.model.operationID == nil, "the old id was kept for a new set of uploads")
+
+        harness.uploader.fail(atSend: [])
+        await harness.model.share()
+
+        #expect(harness.uploader.sendCount == 4, "item-1, item-2's failed send, then both again")
+        let sent = harness.uploader.sentItems
+        #expect(sent.count == 4 && sent[2].data != sent[0].data, "item-1 was re-sent without its new filter")
+        #expect(sent.count == 4 && sent[3].data == sent[1].data, "item-2 is unchanged, so its bytes are too")
+        #expect(harness.writes.publishAttempts.count == 1)
+        #expect(harness.writes.publishAttempts.first?.operationID != firstOperationID)
+        #expect(harness.writes.postCount == 1, "the old id never reached the server, so there is one post")
+        #expect(harness.model.hasPublished)
+    }
+
+    /// After a publish whose answer was lost, an uploaded photo's filter
+    /// cannot change: the model says why, refuses, and keeps the attempt — so
+    /// the retry the failure message invites makes exactly one post.
+    ///
+    /// What it guards: allowing the change releases the attempt and mints a
+    /// fresh id, and the fake server, which holds the first attempt's post,
+    /// takes the retry as a second one.
+    @Test func afterAPublishFailureAFilterChangeIsRefusedAndTheRetryMakesOnePost() async {
         let harness = Harness(photos: 2)
         harness.writes.loseAnswer(onAttempts: [1])
         await harness.model.share()
         #expect(harness.model.phase == .failed(stage: .publish))
-        #expect(harness.model.uploadedAssets.count == 2)
-        let firstOperationID = harness.writes.publishAttempts.first?.operationID
+        #expect(harness.writes.postCount == 1, "the first publish landed; only its answer was lost")
+        let operationID = harness.model.operationID
 
+        #expect(harness.model.filterChangeRefusal(for: "item-1") != nil, "no reason for the screen to show")
+        #expect(harness.model.filterChangeRefusal(for: "item-2") != nil)
         harness.model.setFilter(.warm, for: "item-1")
 
-        #expect(harness.model.uploadedAssets.isEmpty, "the upload of item-1 carries the old filter and must not be published")
-        #expect(harness.model.operationID == nil, """
-            Reusing the id would hand back the post the first attempt may have \
-            made, with the unfiltered photo in it.
-            """)
+        #expect(harness.model.filter(for: "item-1") == .normal, "the change was taken")
+        #expect(harness.model.uploadedAssets.count == 2, "the attempt was released")
+        #expect(harness.model.operationID == operationID)
 
         await harness.model.share()
 
-        #expect(harness.uploader.sendCount == 4, "both photos are sent again, after the two first sends")
-        let sent = harness.uploader.sentItems
-        #expect(sent.count == 4 && sent[2].data != sent[0].data, "item-1 was re-sent without its new filter")
-        #expect(sent.count == 4 && sent[3].data == sent[1].data, "item-2 is unchanged, so its bytes are too")
+        #expect(harness.writes.postCount == 1, "the retry made a second post")
         #expect(harness.writes.publishAttempts.count == 2)
-        #expect(harness.writes.publishAttempts.last?.operationID != firstOperationID)
-        #expect(harness.model.hasPublished)
+        #expect(harness.writes.publishAttempts.allSatisfy { $0.operationID == operationID })
+        #expect(harness.uploader.sendCount == 2, "the photos were uploaded again")
+        #expect(harness.model.phase == .published(postID: "post-1", deduplicated: true))
     }
 
     /// Choosing what is already chosen is not a change and releases nothing.
