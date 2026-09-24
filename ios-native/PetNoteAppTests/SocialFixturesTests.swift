@@ -49,10 +49,7 @@ func socialEventually(
     _ condition: () -> Bool,
     sourceLocation: SourceLocation = #_sourceLocation
 ) async {
-    for _ in 0..<2_000 {
-        if condition() { return }
-        await Task.yield()
-    }
+    if await eventuallyTrue(condition) { return }
     Issue.record("the condition never became true", sourceLocation: sourceLocation)
 }
 
@@ -102,25 +99,25 @@ final class FakeSocialRepository: SocialRepository, @unchecked Sendable {
         lock.withLock { followCalls.append(petID) }
         if let followGate { await followGate.wait() }
         if let followError { throw followError }
-        following.insert(petID)
+        lock.withLock { _ = following.insert(petID) }
     }
 
     func unfollow(petID: String) async throws {
         lock.withLock { unfollowCalls.append(petID) }
         if let unfollowError { throw unfollowError }
-        following.remove(petID)
+        lock.withLock { _ = following.remove(petID) }
     }
 
     func isFollowing(petID: String, viewerID: String) async throws -> Bool {
         lock.withLock { isFollowingReads += 1 }
         if let isFollowingError { throw isFollowingError }
-        return following.contains(petID)
+        return lock.withLock { following.contains(petID) }
     }
 
     func followedPetIDs(among petIDs: [String], viewerID: String) async throws -> Set<String> {
         lock.withLock { batchReads.append(petIDs) }
         if let followedBatchError { throw followedBatchError }
-        return following.intersection(petIDs)
+        return lock.withLock { following.intersection(petIDs) }
     }
 
     func followedPets(viewerID: String, limit: Int) async throws -> [FollowedPet] {
@@ -176,7 +173,7 @@ final class FakeSocialRepository: SocialRepository, @unchecked Sendable {
     func blockedUserIDs(viewerID: String) async throws -> Set<String> {
         lock.withLock { blockedReads += 1 }
         if let blockedError { throw blockedError }
-        return blocked
+        return lock.withLock { blocked }
     }
 
     var blockError: Error?
@@ -185,13 +182,13 @@ final class FakeSocialRepository: SocialRepository, @unchecked Sendable {
     func block(userID: String, viewerID: String) async throws {
         lock.withLock { blockedNow.append(userID) }
         if let blockError { throw blockError }
-        blocked.insert(userID)
+        lock.withLock { _ = blocked.insert(userID) }
     }
 
     func unblock(userID: String, viewerID: String) async throws {
         lock.withLock { unblocked.append(userID) }
         if let unblockError { throw unblockError }
-        blocked.remove(userID)
+        lock.withLock { _ = blocked.remove(userID) }
     }
 }
 

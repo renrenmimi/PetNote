@@ -166,7 +166,7 @@ struct CommentDeleteTests {
         comments.holdDelete()
 
         let first = Task { await model.deleteComment(id: "c1") }
-        for _ in 0..<50 where comments.deleteCalls.isEmpty { await Task.yield() }
+        #expect(await eventuallyTrue { !comments.deleteCalls.isEmpty }, "the first delete never reached the server")
         #expect(model.deletingCommentIDs == ["c1"])
         #expect(model.comments.map(\.id) == ["c1"], "removed before the server answered")
 

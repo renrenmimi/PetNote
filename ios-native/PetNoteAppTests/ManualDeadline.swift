@@ -53,11 +53,7 @@ final class ManualDeadline: @unchecked Sendable {
     /// arrives can count 0 on a slow runner (run 35929225283, `durations.count
     /// → 0`). Wait for them, then count.
     func waitUntilArmed(_ count: Int = 1) async -> Bool {
-        for _ in 0..<20_000 {
-            if armed >= count { return true }
-            await Task.yield()
-        }
-        return false
+        await eventuallyTrueAnywhere { self.armed >= count }
     }
 
     /// Waits until `count` deadlines are parked, then passes them. What the

@@ -285,6 +285,34 @@ struct ProfileEditTests {
         #expect(users.updateCalls.count == 1, "the profile was written twice")
     }
 
+    /// The half the held test above does not cover: a second tap that runs
+    /// at the first save's first suspension — two taps queued back to back on
+    /// the main actor, which is what a real double tap is. The held test taps
+    /// again only once the first save is at the server, so a guard that is
+    /// checked, then suspends, then set would pass it; this one fails on that
+    /// (checked with the guard so broken, 2026-09-23). Proposed by the CI
+    /// evidence review.
+    @Test func aSecondTapAtTheFirstSuspensionWritesNothing() async {
+        let users = loadedRepository()
+        let model = makeModel(users: users)
+        await model.load()
+        model.displayName = "SparklyKoala19"
+        await model.name.awaitPending()
+
+        let gate = HeldWrite()
+        users.whileUpdating = { await gate.hold() }
+        let first = Task { await model.save() }
+        let second = Task { await model.save() }
+        #expect(await gate.arrives(), "the first save never reached the server")
+        // Every chance for the second tap to write, on this actor.
+        for _ in 0..<2_000 { await Task.yield() }
+        gate.release()
+        await first.value
+        await second.value
+
+        #expect(users.updateCalls.count == 1, "the profile was written twice")
+    }
+
     /// Holds the fake's write until released, and says when one has arrived.
     private final class HeldWrite: @unchecked Sendable {
         private let lock = NSLock()
@@ -304,12 +332,11 @@ struct ProfileEditTests {
             }
         }
 
+        /// Bounded by the clock: the fake's write runs on another executor,
+        /// and a count of turns here ran out before it arrived (a parallel run,
+        /// 2026-09-23; see `eventuallyTrueAnywhere`).
         func arrives() async -> Bool {
-            for _ in 0..<20_000 {
-                if lock.withLock({ arrived }) { return true }
-                await Task.yield()
-            }
-            return false
+            await eventuallyTrueAnywhere { self.lock.withLock { self.arrived } }
         }
 
         func release() {
