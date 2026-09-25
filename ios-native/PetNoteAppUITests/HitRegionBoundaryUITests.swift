@@ -207,7 +207,8 @@ final class HitRegionBoundaryUITests: XCTestCase {
         var description: String {
             guard let outside else {
                 let why = limitIsWindowEdge
-                    ? "which is the window edge — no outer boundary is visible from outside the app"
+                    ? "which is the window edge or a bar in front of the list — no outer boundary "
+                      + "is visible from outside the app"
                     : "which is as far as this search was told to look (reach); the region "
                       + "continues past it and this is not a measurement of where it ends"
                 return "\(name): still activating at \(fmt(inside)), \(why)"
@@ -268,6 +269,15 @@ final class HitRegionBoundaryUITests: XCTestCase {
                 bad = mid
                 badOutcome = outcome
             }
+        }
+        // The nearest point that did not activate was one no tap could reach:
+        // off the window, or under a bar. That is where the screen stops, not
+        // where the region does, so it is reported as the window edge is.
+        // Scoring it as a boundary is how the tab bar's top came back as the
+        // like button's bottom on 09-23.
+        if badOutcome == .offWindow {
+            return Edge(name: name, inside: good, outside: nil, outsideOutcome: badOutcome,
+                        searchedUpwards: upwards, limitIsWindowEdge: true, probes: probes)
         }
         return Edge(name: name, inside: good, outside: bad, outsideOutcome: badOutcome,
                     searchedUpwards: upwards, limitIsWindowEdge: limitIsWindowEdge,
@@ -582,6 +592,17 @@ final class HitRegionBoundaryUITests: XCTestCase {
     /// What is *not* claimed here is a §6.4 verdict on the two buttons. Their
     /// frames are 44 and their touch regions are larger than their frames;
     /// that is recorded, and the verdict line still prints.
+    ///
+    /// ## The tab bar the readings above never saw
+    ///
+    /// Every figure in this comment was read at `08c1105`, before the app had
+    /// a tab bar (`0867749`). With one, the first card's action row starts
+    /// the run under it — frame to y 797, bar from y 791 — and the one run
+    /// since read the bar's top as the like button's bottom and failed
+    /// containment on it. So the row is brought clear of both bars before the
+    /// anchor is read, and every probe puts it back there
+    /// (`bringClearOfBars`), rather than a control group being measured
+    /// through something in front of it.
     func testTheInstrumentAgreesWithTheKnownGeometryOfTheFeedActionRow() {
         let app = XCUIApplication()
         XCTAssertTrue(launchSignedInForProbing(app), "could not sign in")
@@ -589,6 +610,9 @@ final class HitRegionBoundaryUITests: XCTestCase {
 
         let like = app.buttons.matching(identifier: "post.like").firstMatch
         XCTAssertTrue(waitUntilHittable(like, in: app, timeout: 40), "no post in the feed")
+        XCTAssertTrue(bringClearOfBars(like, in: app),
+                      "the first card's action row could not be moved clear of the tab bar; "
+                      + "a control group measured through a bar is not a control group")
         XCTAssertTrue(frameSettled(like), "the feed is still moving")
         let likeFrame = like.frame
         let comments = app.buttons.matching(identifier: "post.comments").firstMatch
