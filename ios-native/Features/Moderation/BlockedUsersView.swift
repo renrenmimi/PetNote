@@ -24,6 +24,11 @@ final class BlockedUsersModel {
     private(set) var unblocking: Set<String> = []
     /// Per row, so one failure does not speak for the others.
     private(set) var failures: [String: String] = [:]
+    /// Unblocks that landed while a read of the list was out. That read may
+    /// have left before the unblock did, so its answer can still hold the
+    /// person; they are taken out of it rather than put back on the list.
+    private var unblockedDuringRead: Set<String> = []
+    private var readsOut = 0
 
     private let viewerID: String
     private let social: any SocialRepository
@@ -36,6 +41,11 @@ final class BlockedUsersModel {
 
     func load() async {
         if case .loaded = state {} else { state = .loading }
+        readsOut += 1
+        defer {
+            readsOut -= 1
+            if readsOut == 0 { unblockedDuringRead = [] }
+        }
         do {
             let ids = try await social.blockedUserIDs(viewerID: viewerID).sorted()
             var rows: [Row] = []
@@ -43,7 +53,7 @@ final class BlockedUsersModel {
                 let profile = try? await social.profile(userID: id)
                 rows.append(Row(id: id, profile: profile))
             }
-            state = .loaded(rows)
+            state = .loaded(rows.filter { !unblockedDuringRead.contains($0.id) })
         } catch {
             log.error("blocked users read failed: \(String(describing: error), privacy: .public)")
             state = .failed(String(localized: "Couldn't load the people you've blocked."))
@@ -53,13 +63,17 @@ final class BlockedUsersModel {
     /// Returns whether the block is gone.
     @discardableResult
     func unblock(_ id: String) async -> Bool {
-        guard !unblocking.contains(id), case .loaded(let rows) = state else { return false }
+        guard !unblocking.contains(id), case .loaded = state else { return false }
         unblocking.insert(id)
         failures[id] = nil
         defer { unblocking.remove(id) }
         do {
             try await social.unblock(userID: id, viewerID: viewerID)
-            state = .loaded(rows.filter { $0.id != id })
+            if readsOut > 0 { unblockedDuringRead.insert(id) }
+            // The list as it is now, not as it was when this began: another
+            // unblock may have answered in between, and taking this row out
+            // of the older list would put that person back on it.
+            if case .loaded(let rows) = state { state = .loaded(rows.filter { $0.id != id }) }
             return true
         } catch {
             failures[id] = String(localized: "Couldn't unblock. Try again.")
