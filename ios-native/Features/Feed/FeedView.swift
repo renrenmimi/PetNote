@@ -57,6 +57,9 @@ struct FeedView: View {
             // it cannot take a hit test meant for one — the banner's ✕ is at
             // the other end.
             .overlay(alignment: .topLeading) { extrasProbe }
+            #if DEBUG
+            .overlay(alignment: .bottomLeading) { HitTestProbe() }
+            #endif
             .background(Palette.background)
             .task { await model.loadFirstPageIfNeeded() }
             .task { returnToWhereTheSessionEnded() }

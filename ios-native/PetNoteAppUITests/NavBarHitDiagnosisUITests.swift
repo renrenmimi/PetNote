@@ -20,7 +20,9 @@ final class NavBarHitDiagnosisUITests: XCTestCase {
     }
 
     func testWhatSitsAtTheBarItemsOnTheFeedsFirstAppearance() {
-        let app = launchOnSignIn()
+        // The bell's centre and, as the control, the search button's, from
+        // the frames the first run read: (194, 66, 58, 36) and (268, 66, 58, 36).
+        let app = launchOnSignIn(extraArguments: ["-petnote-hit-probe", "223,84;297,84"])
         signIn(app, email: "accept-a@example.com")
         waitForQuietUI(app)
 
@@ -33,10 +35,12 @@ final class NavBarHitDiagnosisUITests: XCTestCase {
         reading("3s later", app)
         Thread.sleep(forTimeInterval: 7)
         reading("10s later", app)
+        askTheApp("at the top of the list", app)
 
         nudgeListUp(app)
         _ = waitForQuietUI(app, quietFor: 1, timeout: 10)
         reading("after the list moved up", app)
+        askTheApp("after the list moved up", app)
 
         let bell = app.buttons["feed.notifications"]
         bell.tap()
@@ -48,6 +52,24 @@ final class NavBarHitDiagnosisUITests: XCTestCase {
             reading("back from Notifications", app)
         } else {
             print("DIAG no back button after tapping the bell")
+        }
+    }
+
+    /// The app's own answer, both ways, from `HitTestProbe`.
+    private func askTheApp(_ when: String, _ app: XCUIApplication) {
+        let probe = app.buttons["diag.hitProbe"]
+        guard probe.waitForExistence(timeout: 5) else {
+            print("DIAG [\(when)] no probe")
+            return
+        }
+        probe.tap()
+        let answered = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value != %@", "none"), object: probe
+        )
+        _ = XCTWaiter().wait(for: [answered], timeout: 5)
+        let value = (probe.value as? String) ?? "\(String(describing: probe.value))"
+        for part in value.components(separatedBy: " || ") {
+            print("DIAG [\(when)] APP \(part)")
         }
     }
 
