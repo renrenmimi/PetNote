@@ -279,6 +279,21 @@ final class VideoPlaybackCoordinator {
     /// The URL each id was last asked to play, so a retry can rebuild without
     /// the view having to hand it back.
     private var sources: [String: URL] = [:]
+    /// Where this coordinator's items come from. Nil in the app.
+    ///
+    /// For one test, and said here because this is product code. The state
+    /// CI's iOS 26.2 simulator produced (a clock that ran to the end of a clip
+    /// whose bytes stopped at 5.53s of 16.00s) has never happened on iOS 27
+    /// here, and the rules that handle it read `duration` and
+    /// `loadedTimeRanges` off the player's current item. So
+    /// `aPlayerParkedAtAnEndItsBytesNeverReachedGoesOnToTheOffer` hands in
+    /// items over a real clip that report CI's two numbers; the player, the
+    /// observers, the sampler and every decision are the app's own. Rebuilds
+    /// take their item from here too, because a genuine rebuilt item recovers,
+    /// refunds the budget, and the test can then never reach the state CI was
+    /// in. Nil makes exactly what this always made: `AVPlayer(url:)` for a new
+    /// row, `AVPlayerItem(url:)` for a rebuild.
+    private let makeItem: (@MainActor (URL) -> AVPlayerItem)?
 
     private(set) var playingID: String?
     /// Muted by default and only changed by an explicit tap: §5D.4 says video
@@ -323,6 +338,9 @@ final class VideoPlaybackCoordinator {
     /// earn the manual offer — and the row sat on a frozen frame calling
     /// itself `playing`, with nothing said and nothing offered, for as long
     /// as anyone watched. Cleared by a new item, a real end, or the row going.
+    /// iOS 27 here has never got a row into this state by itself;
+    /// `aPlayerParkedAtAnEndItsBytesNeverReachedGoesOnToTheOffer` puts one
+    /// here on any simulator, through `makeItem`.
     private(set) var strandedAtFalseEnd: Set<String> = []
 
     /// The one video currently showing buffering feedback, or nil.
@@ -377,7 +395,8 @@ final class VideoPlaybackCoordinator {
     /// Set once, so the session is not reconfigured on every player.
     private var audioSessionConfigured = false
 
-    init() {
+    init(makeItem: (@MainActor (URL) -> AVPlayerItem)? = nil) {
+        self.makeItem = makeItem
         observeAudioInterruptions()
     }
 
@@ -553,7 +572,12 @@ final class VideoPlaybackCoordinator {
             audioSessionConfigured = true
         }
 
-        let player = AVPlayer(url: url)
+        let player: AVPlayer
+        if let makeItem {
+            player = AVPlayer(playerItem: makeItem(url))
+        } else {
+            player = AVPlayer(url: url)
+        }
         player.isMuted = isMuted
         // Nothing sensible to do with a stalled network stream except wait; the
         // default behaviour of playing whatever has buffered is right here.
@@ -1175,7 +1199,7 @@ final class VideoPlaybackCoordinator {
         }
         detachItemObservations(from: &entry)
         strandedAtFalseEnd.remove(id)
-        entry.player.replaceCurrentItem(with: AVPlayerItem(url: url))
+        entry.player.replaceCurrentItem(with: makeItem?(url) ?? AVPlayerItem(url: url))
         entry.player.isMuted = isMuted
         attachItemObservations(to: &entry)
         entries[index] = entry

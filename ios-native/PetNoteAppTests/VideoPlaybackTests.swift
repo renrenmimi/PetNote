@@ -1486,6 +1486,190 @@ struct VideoPlaybackTests {
         )
     }
 
+    // MARK: - 6b. An end the bytes never reached, without the network
+
+    /// **CI's second recovery failure, built on purpose instead of waited for.**
+    ///
+    /// CI run 35836743915 (iOS 26.2): after the third automatic rebuild the
+    /// clock ran from 6.48s to the clip's 16.00s over bytes that ended at
+    /// 5.53s. AVFoundation then did two things: it parked the player
+    /// `.paused`, and it posted "played to the end". The coordinator already
+    /// knew not to loop an end its bytes never reached, but the sampler read
+    /// `.paused` as "nobody asked for playback" and cleared the stall before
+    /// the ten seconds that earn the manual offer, and the row sat on a frozen
+    /// frame calling itself `playing`. iOS 27 on this Mac has never run a
+    /// clock past its bytes, so `automaticRecoveryIsBoundedAndThenOffersAWayOut`
+    /// does not reach that state here, and on CI it only tests it on the runs
+    /// where 26.2 happens to do it. Running it more times adds nothing.
+    ///
+    /// So the state is built from the three facts CI recorded, and nothing
+    /// else is faked:
+    ///
+    ///   - the item says its `duration` is 16.00s and its `loadedTimeRanges`
+    ///     end at 5.53s. `ScriptedPlayerItem` is a real item over the real
+    ///     fixture clip that reports those two numbers, and a picture size,
+    ///     because only a row that has shown a picture gets automatic rebuilds;
+    ///   - the player is `.paused`: a real `pause()` on the coordinator's own
+    ///     `AVPlayer`;
+    ///   - "played to the end" is posted for the item the coordinator is
+    ///     watching, as `aVideoThatIsNoLongerTheChosenOneDoesNotRestartItself`
+    ///     already does.
+    ///
+    /// The player, the observers, the 0.2s sampler and the wall clock are the
+    /// app's. The coordinator asks `player.currentItem` for both numbers every
+    /// time it decides anything and keeps no copy of them, which is what makes
+    /// an item that reports them an honest stand-in.
+    ///
+    /// **Every rebuilt item ends the same way.** A genuine rebuilt item would
+    /// play, refund the budget, and the row would never reach the state CI was
+    /// in. CI's third rebuild is this test's fourth item, and what that item
+    /// did on CI is what every item here does. That is also why the items come
+    /// in through `makeItem`: the coordinator makes a new one on every
+    /// rebuild.
+    ///
+    /// Takes about ten seconds, and the ten are the policy's:
+    /// `recoveryOfferDelay`, counted from the stall the first false end
+    /// confirms. The coordinator's clock is `Date()` and is not injected.
+    ///
+    /// **The mutation this must fail under.** Delete, in `sampleTheClock`,
+    ///
+    ///     if strandedAtFalseEnd.contains(id) {
+    ///         noteStallSample(id: id)
+    ///         return
+    ///     }
+    ///
+    /// The checks straight after the end still pass, because `confirmStallNow`
+    /// confirmed the stall when the notification arrived. The next tick, at
+    /// most `pollInterval` later, falls through to the `.paused` guard and
+    /// clears it. Nothing calls `play()` again (`reconcile` returns early,
+    /// the row is still the winner), so every tick after that clears it too,
+    /// `noteStallSample` is never reached, no automatic rebuild happens, and
+    /// the wait for the first one fails with `phase=playing attempts=0
+    /// stranded=true status=paused`: CI's row. Deleting
+    /// `strandedAtFalseEnd.insert(id)` in `restartFromTheBeginning` instead
+    /// fails one check earlier and then the same way.
+    @Test func aPlayerParkedAtAnEndItsBytesNeverReachedGoesOnToTheOffer() async throws {
+        let url = try await clip()
+        // CI run 35836743915's numbers.
+        let script = EndOfClipScript(id: "cut", duration: 16.00, loadedTo: 5.53, endsEveryRebuiltItem: true)
+        let coordinator = VideoPlaybackCoordinator(makeItem: { script.item(for: $0) })
+        script.coordinator = coordinator
+        defer { coordinator.releaseAll(reason: "test finished") }
+        coordinator.reportVisibility(id: "cut", fraction: 0.9, distanceFromCentre: 0)
+        let player = try #require(coordinator.player(for: "cut", url: url))
+
+        func seen() -> String {
+            "phase=\(coordinator.state(for: "cut").name) "
+                + "attempts=\(coordinator.automaticRecoveryAttempts(for: "cut")) "
+                + "stranded=\(coordinator.strandedAtFalseEnd.contains("cut")) "
+                + "status=\(player.timeControlStatus == .paused ? "paused" : "not paused") "
+                + "items=\(script.itemsMade)"
+        }
+
+        let pictured = await eventuallyTrue { coordinator.hasPicture(for: "cut") }
+        try #require(pictured, "the scripted picture size never reached the coordinator: \(seen())")
+
+        // 1 — the end the bytes never reached.
+        script.runToTheEnd()
+        let stalled = await eventuallyTrue { coordinator.isBuffering(for: "cut") }
+        try #require(stalled, "an end with 5.53s of 16.00s loaded was not taken as a stall: \(seen())")
+        #expect(coordinator.strandedAtFalseEnd.contains("cut"), "the row was not remembered as stranded: \(seen())")
+        #expect(player.timeControlStatus == .paused, "the player should be parked, as AVFoundation parked it")
+        #expect(coordinator.state(for: "cut") == .stalled(offeringRecovery: false))
+
+        // 2 — and it goes on being one while the player sits paused. The
+        //     first automatic rebuild is the sampler's own evidence: it only
+        //     happens to a stall that survived every tick since the end.
+        let rebuilt = await eventuallyTrue(within: .seconds(20)) {
+            coordinator.automaticRecoveryAttempts(for: "cut") >= 1
+        }
+        try #require(rebuilt, "a paused player at a false end stopped counting as stalled: \(seen())")
+
+        // 3 — every rebuilt item ends the same way, the budget is spent, and
+        //     then the person is offered the button.
+        let offered = await eventuallyTrue(within: .seconds(40)) {
+            coordinator.needsManualRecovery(for: "cut")
+        }
+        try #require(offered, "the manual offer never came: \(seen())")
+        #expect(coordinator.state(for: "cut") == .stalled(offeringRecovery: true))
+        #expect(
+            coordinator.automaticRecoveryAttempts(for: "cut") == VideoStallPolicy.maximumAutomaticRecoveries,
+            "the offer came with automatic attempts left, which is not the state CI was in: \(seen())"
+        )
+        #expect(
+            script.itemsMade == 1 + VideoStallPolicy.maximumAutomaticRecoveries,
+            "one item and one per automatic rebuild, and no more: \(seen())"
+        )
+        // Reached *from* the stranded state: the last item ran to its false
+        // end and the player is still parked. That is CI's row after its third
+        // rebuild, now with the button it never got.
+        #expect(coordinator.strandedAtFalseEnd.contains("cut"), "\(seen())")
+        #expect(player.timeControlStatus == .paused, "\(seen())")
+        #expect(coordinator.failure(for: "cut") == nil, "a stream that stopped is not a load failure")
+    }
+
+    /// **The same end with every byte loaded is a loop, as it always was.**
+    ///
+    /// The control for the test above: the same scripted item, the same parked
+    /// player, the same notification. Only the loaded edge differs, 16.00s of
+    /// 16.00s instead of 5.53s. If the false-end rule caught this too, every
+    /// healthy clip in the feed would freeze on its last frame with a spinner
+    /// over it. `VideoStallPolicyTests` has the boundary itself; this is the
+    /// coordinator acting on it.
+    ///
+    /// Fails if `restartFromTheBeginning` treats every end as false (the
+    /// player stays parked and the row is stranded), and the test above fails
+    /// if it treats every end as real (it loops, and nothing is stalled).
+    @Test func theSameEndWithEveryByteLoadedLoops() async throws {
+        let url = try await clip()
+        let script = EndOfClipScript(id: "whole", duration: 16.00, loadedTo: 16.00, endsEveryRebuiltItem: false)
+        let coordinator = VideoPlaybackCoordinator(makeItem: { script.item(for: $0) })
+        script.coordinator = coordinator
+        defer { coordinator.releaseAll(reason: "test finished") }
+        coordinator.reportVisibility(id: "whole", fraction: 0.9, distanceFromCentre: 0)
+        let player = try #require(coordinator.player(for: "whole", url: url))
+
+        // Far enough in that going back to the start can be told apart from
+        // never having left it, and playing, so that whatever is seen after the
+        // end belongs to the end.
+        let underway = await eventuallyTrue(within: .seconds(20)) {
+            (coordinator.currentTime(of: "whole") ?? 0) > 1.0 && coordinator.state(for: "whole") == .playing
+        }
+        try #require(
+            underway,
+            "the clip never got going: t=\(coordinator.currentTime(of: "whole") ?? -1) "
+                + "phase=\(coordinator.state(for: "whole").name)"
+        )
+        // Counted from here. The scripted loaded edge never grows, so a start
+        // slow enough to be called a stall could have spent a rebuild already;
+        // that would be a different question from this one.
+        let itemsBeforeTheEnd = script.itemsMade
+
+        script.runToTheEnd()
+        // The script left the player parked. Only the loop's own `play()`
+        // starts it again.
+        let resumed = await eventuallyTrue { player.timeControlStatus != .paused }
+        #expect(resumed, "a fully loaded clip that reached its end was left parked")
+        #expect(!coordinator.strandedAtFalseEnd.contains("whole"), "a real end was taken for a false one")
+        #expect(!coordinator.isBuffering(for: "whole"))
+        #expect(coordinator.state(for: "whole") == .playing)
+
+        // Back to the start and on past it, with nothing shown on the way.
+        var everBuffered = false
+        let wrapped = await eventuallyTrue(within: .seconds(20)) {
+            everBuffered = everBuffered || coordinator.isBuffering(for: "whole")
+            return (coordinator.currentTime(of: "whole") ?? .greatestFiniteMagnitude) < 1.0
+        }
+        #expect(wrapped, "the clock was not put back to the start: t=\(coordinator.currentTime(of: "whole") ?? -1)")
+        let carriedOn = await eventuallyTrue(within: .seconds(20)) {
+            everBuffered = everBuffered || coordinator.isBuffering(for: "whole")
+            return (coordinator.currentTime(of: "whole") ?? 0) > 1.2
+        }
+        #expect(carriedOn, "it went back to the start and stopped: t=\(coordinator.currentTime(of: "whole") ?? -1)")
+        #expect(!everBuffered, "a loop was reported as a stall")
+        #expect(script.itemsMade == itemsBeforeTheEnd, "a real end was answered with a rebuild")
+    }
+
     /// **A server that connects and then says nothing.**
     ///
     /// The failure with no error anywhere: the socket is open, the response
@@ -1693,6 +1877,101 @@ final class Flag: @unchecked Sendable {
     var isRaised: Bool {
         lock.lock(); defer { lock.unlock() }
         return value
+    }
+}
+
+// MARK: - What CI's iOS 26.2 simulator did, as a script
+
+/// A real item over a real clip that reports chosen numbers for the three
+/// things the stall rules read off an item: how long it is, how far its bytes
+/// reach, and how big its picture is.
+///
+/// Overrides of `AVPlayerItem`'s own Objective-C properties, so every read
+/// goes through the object: the coordinator asks `player.currentItem` for
+/// `duration` and `loadedTimeRanges` each time it decides anything, and keeps
+/// no copy. Everything else about the item is AVFoundation's: it opens the
+/// file and becomes ready as any other item would. The picture size is
+/// scripted as well, because only a row that has shown a picture gets
+/// automatic rebuilds, and waiting for a decoder to report one would be a
+/// dependency on AVFoundation that the question does not need.
+///
+/// Immutable after `init`, so the getters are safe from whichever thread
+/// AVFoundation calls them on.
+final class ScriptedPlayerItem: AVPlayerItem {
+    let scriptedDuration: Double
+    let scriptedLoadedTo: Double
+
+    init(url: URL, duration: Double, loadedTo: Double) {
+        scriptedDuration = duration
+        scriptedLoadedTo = loadedTo
+        // What `AVPlayerItem(url:)` does, written out: a subclass with an
+        // initializer of its own does not inherit that one.
+        super.init(asset: AVURLAsset(url: url), automaticallyLoadedAssetKeys: ["duration"])
+    }
+
+    nonisolated override var duration: CMTime {
+        CMTime(seconds: scriptedDuration, preferredTimescale: 600)
+    }
+
+    nonisolated override var loadedTimeRanges: [NSValue] {
+        [NSValue(timeRange: CMTimeRange(
+            start: .zero,
+            duration: CMTime(seconds: scriptedLoadedTo, preferredTimescale: 600)
+        ))]
+    }
+
+    /// `TestVideoFixture.size`, written out because that is main-actor
+    /// isolated and this getter is not.
+    nonisolated override var presentationSize: CGSize {
+        CGSize(width: 320, height: 240)
+    }
+}
+
+/// Makes every item a coordinator plays, and does on request the two things
+/// AVFoundation does when a clock reaches an item's end.
+///
+/// Main-actor isolated, like the coordinator that calls it, so none of its
+/// state can be reached from two tasks.
+@MainActor
+final class EndOfClipScript {
+    let id: String
+    let duration: Double
+    let loadedTo: Double
+    /// Whether each rebuilt item is run to its end as soon as the coordinator
+    /// has it. The first item is left to the test.
+    let endsEveryRebuiltItem: Bool
+    weak var coordinator: VideoPlaybackCoordinator?
+    private(set) var itemsMade = 0
+
+    init(id: String, duration: Double, loadedTo: Double, endsEveryRebuiltItem: Bool) {
+        self.id = id
+        self.duration = duration
+        self.loadedTo = loadedTo
+        self.endsEveryRebuiltItem = endsEveryRebuiltItem
+    }
+
+    /// Handed to the coordinator as its `makeItem`.
+    func item(for url: URL) -> AVPlayerItem {
+        itemsMade += 1
+        if itemsMade > 1, endsEveryRebuiltItem {
+            // Not now: this runs inside `rebuildItem`, before the item is the
+            // player's and before the coordinator is watching it. A task on
+            // this actor runs once `rebuildItem` has returned, and ahead of the
+            // sampler's next tick, which is `pollInterval` away. A tick that
+            // did get in first would only take its baseline reading, because a
+            // rebuild forgets the last clock.
+            Task { @MainActor [weak self] in self?.runToTheEnd() }
+        }
+        return ScriptedPlayerItem(url: url, duration: duration, loadedTo: loadedTo)
+    }
+
+    /// AVFoundation at the end of an item: the player is parked `.paused`, and
+    /// the item says it played to its end. The sampler runs on this actor
+    /// too, so it cannot read the player between the two.
+    func runToTheEnd() {
+        guard let player = coordinator?.activePlayer(for: id), let item = player.currentItem else { return }
+        player.pause()
+        NotificationCenter.default.post(name: AVPlayerItem.didPlayToEndTimeNotification, object: item)
     }
 }
 
