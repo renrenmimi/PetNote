@@ -42,8 +42,16 @@ final class NavBarHitDiagnosisUITests: XCTestCase {
         reading("after the list moved up", app)
         askTheApp("after the list moved up", app)
 
+        // A tap at the bell's centre by coordinate — where a finger would
+        // go — not `bell.tap()`, which taps wherever XCUITest puts the hit
+        // point. Taken while XCUITest still calls the bell not hittable.
         let bell = app.buttons["feed.notifications"]
-        bell.tap()
+        print("DIAG [before the coordinate tap] bell hittable=\(bell.isHittable)")
+        app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: bell.frame.midX, dy: bell.frame.midY))
+            .tap()
+        let notifications = app.navigationBars["Notifications"]
+        print("DIAG [coordinate tap] Notifications opened=\(notifications.waitForExistence(timeout: 10))")
         let back = app.navigationBars.buttons.element(boundBy: 0)
         if back.waitForExistence(timeout: 10) {
             back.tap()
@@ -69,6 +77,22 @@ final class NavBarHitDiagnosisUITests: XCTestCase {
         }
     }
 
+    /// XCUITest's own idea of how much of the element is visible, which it
+    /// works out before it will call anything hittable. Private, so read
+    /// only if the snapshot answers to it.
+    ///
+    /// UI tests run on the main thread, so the snapshot is taken and turned
+    /// into text there, and only the text leaves.
+    private func visibleFrame(of element: XCUIElement) -> String {
+        nonisolated(unsafe) let element = element
+        return MainActor.assumeIsolated {
+            guard let snapshot = try? element.snapshot() as? NSObject else { return "no snapshot" }
+            let key = "visibleFrame"
+            guard snapshot.responds(to: NSSelectorFromString(key)) else { return "not available" }
+            return "\(snapshot.value(forKey: key) ?? "nil")"
+        }
+    }
+
     private func reading(_ when: String, _ app: XCUIApplication) {
         let ids = ["feed.notifications", "feed.search", "account.menu"]
         var bellCentre: CGPoint?
@@ -79,7 +103,8 @@ final class NavBarHitDiagnosisUITests: XCTestCase {
                 continue
             }
             let frame = button.frame
-            print("DIAG [\(when)] \(id) hittable=\(button.isHittable) frame=\(frame)")
+            print("DIAG [\(when)] \(id) hittable=\(button.isHittable) frame=\(frame) "
+                  + "xcuiVisibleFrame=\(visibleFrame(of: button))")
             if id == "feed.notifications" { bellCentre = CGPoint(x: frame.midX, y: frame.midY) }
         }
         let bar = app.navigationBars["PetNote"]
