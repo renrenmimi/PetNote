@@ -53,6 +53,7 @@ extension XCTestCase {
         passwordField.tap()
         passwordField.typeText(password)
         app.buttons["login.submit"].tap()
+        SavePasswordPrompt.lastSubmitted = Date()
     }
 
     /// Signed in means the feed's navigation bar is up.
@@ -77,6 +78,9 @@ extension XCTestCase {
         if expectFeed {
             XCTAssertTrue(reachedFeed(app), "did not reach the feed as \(email)\n\(app.debugDescription)")
             waitForQuietUI(app)
+            // Signed in means the system has finished asking about the
+            // password too: see `settleSavePasswordPrompt`.
+            settleSavePasswordPrompt(app)
         }
         return app
     }

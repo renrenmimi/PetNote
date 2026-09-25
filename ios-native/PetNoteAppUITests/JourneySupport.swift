@@ -113,6 +113,7 @@ extension XCTestCase {
         signIn(app, email: email, expectFeed: false)
         dismissOnboardingIfShown(app)
         XCTAssertTrue(reachedFeed(app), "did not reach the feed", file: file, line: line)
+        settleSavePasswordPrompt(app)
         return (app, uid)
     }
 
