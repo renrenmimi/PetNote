@@ -540,7 +540,10 @@ struct PostDetailViewModelTests {
 
         model.draft = "TEST CONTENT hello"
         await model.send(authorID: "uid", authorName: "A")
-        await settle()
+        // Until the check has looked, by the clock rather than a fixed half
+        // second: under a parallel run these four took 21 s and the half
+        // second ran out first (2026-09-24).
+        #expect(await eventuallyTrue { model.sendFailure?.tone == .resolved }, "the check never reported it posted")
 
         #expect(comments.createCalls.count == 1, "never sent a second time")
         #expect(model.sendFailure?.tone == .resolved)
@@ -560,7 +563,7 @@ struct PostDetailViewModelTests {
         await model.send(authorID: "uid", authorName: "A")
         #expect(model.sendFailure?.canRetry == false, "not before we have looked")
 
-        await settle()
+        #expect(await eventuallyTrue { model.sendFailure?.canRetry == true }, "the check never offered a retry")
 
         #expect(comments.createCalls.count == 1, "looking is a read; it never resends")
         #expect(model.sendFailure?.canRetry == true, "we looked, it is not there, so it is safe")
@@ -577,7 +580,8 @@ struct PostDetailViewModelTests {
 
         model.draft = "TEST CONTENT hello"
         await model.send(authorID: "uid", authorName: "A")
-        await settle()
+        #expect(await eventuallyTrue { (model.sendFailure?.message ?? "").contains("could not check") },
+                "the failed check never said so")
 
         #expect(comments.createCalls.count == 1)
         #expect(model.sendFailure?.canRetry == false, "we still do not know")
@@ -604,7 +608,7 @@ struct PostDetailViewModelTests {
 
         model.draft = "TEST CONTENT hello"
         await model.send(authorID: "uid", authorName: "A")
-        await settle()
+        #expect(await eventuallyTrue { model.sendFailure?.canRetry == true }, "the check never finished")
 
         #expect(model.sendFailure?.tone == .problem, "the old comment is not evidence this one landed")
         #expect(model.sendFailure?.canRetry == true)
