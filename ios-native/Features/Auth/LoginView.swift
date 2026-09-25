@@ -15,7 +15,23 @@ struct LoginView: View {
     @State private var password = ""
     @State private var error: AuthError?
     @State private var isSubmitting = false
+    /// Where the signed-out part of the app is. Local to this screen rather
+    /// than in the app's `Route`: see `AuthRoute` for why nothing outside may
+    /// link into sign-up or password reset.
+    @State private var path: [AuthRoute] = []
     @FocusState private var focused: Field?
+
+    /// Injected so the two screens behind this one can be driven by fakes.
+    /// The defaults are what the app uses; `AccountSetupService.live` is a
+    /// single instance for the process, and its own note says why that
+    /// matters.
+    private let auth: any AccountAuthenticating
+    private let setup: AccountSetupService?
+
+    init(auth: any AccountAuthenticating = LiveAccountAuth(), setup: AccountSetupService? = nil) {
+        self.auth = auth
+        self.setup = setup
+    }
 
     private enum Field: Hashable {
         case email
@@ -29,22 +45,75 @@ struct LoginView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Spacing.l) {
-                header
-                sessionEndedNotice
-                fields
-                submitButton
-                errorMessage
-                footer
+        NavigationStack(path: $path) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Spacing.l) {
+                    header
+                    sessionEndedNotice
+                    fields
+                    submitButton
+                    errorMessage
+                    alternatives
+                    footer
+                }
+                .padding(.horizontal, Layout.pageInset)
+                .padding(.vertical, Spacing.xl)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, Layout.pageInset)
-            .padding(.vertical, Spacing.xl)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .scrollDismissesKeyboard(.interactively)
+            .background(Palette.background)
+            .onSubmit(submit)
+            // No bar on the sign-in screen itself: this is the root of the
+            // stack and an empty navigation bar above the logo is a strip of
+            // nothing. The two screens pushed from here show their own, which
+            // is where the back button comes from.
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: AuthRoute.self) { route in
+                destination(for: route)
+            }
         }
-        .scrollDismissesKeyboard(.interactively)
-        .background(Palette.background)
-        .onSubmit(submit)
+    }
+
+    @ViewBuilder
+    private func destination(for route: AuthRoute) -> some View {
+        switch route {
+        case .signUp:
+            SignUpView(setup: setup ?? .live) { existingAddress in
+                // The address comes back with them rather than being typed
+                // twice, and the cursor lands on the field they still have to
+                // fill. `path = []` and not a `removeLast`: this is "go to
+                // sign-in", not "go back one".
+                email = existingAddress
+                path = []
+                error = nil
+                focused = .password
+            }
+        case .forgotPassword:
+            ForgotPasswordView(auth: auth)
+        }
+    }
+
+    /// The two ways out of "I cannot sign in".
+    ///
+    /// Both live on the page rather than inside the error, on purpose. The web
+    /// client used to promote "create an account" into the wrong-password
+    /// notice, which told somebody who mistyped their password that they had
+    /// no account.
+    private var alternatives: some View {
+        VStack(alignment: .leading, spacing: Spacing.m) {
+            Button("Forgot your password?") { path.append(.forgotPassword) }
+                .font(Typography.body)
+                .foregroundStyle(Palette.brandPrimary)
+                .frame(minHeight: Layout.minTouchTarget)
+                .accessibilityIdentifier("login.forgotPassword")
+
+            Button("New here? Create an account") { path.append(.signUp) }
+                .font(Typography.body)
+                .foregroundStyle(Palette.brandPrimary)
+                .frame(minHeight: Layout.minTouchTarget)
+                .accessibilityIdentifier("login.signUp")
+        }
+        .disabled(isSubmitting)
     }
 
     private var header: some View {
@@ -205,6 +274,8 @@ struct LoginView: View {
     }
 }
 
+#if DEBUG
 #Preview {
-    LoginView().environment(SessionStore())
+    LoginView(auth: PreviewAccountAuth(), setup: .preview).environment(SessionStore())
 }
+#endif

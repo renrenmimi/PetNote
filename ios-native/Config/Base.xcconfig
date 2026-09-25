@@ -36,5 +36,18 @@ INFOPLIST_FILE = Config/Info.plist
 INFOPLIST_KEY_UILaunchScreen_Generation = YES
 INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait
 
+// The icon is the Capacitor app's, byte for byte. Not redrawn, not
+// regenerated, not re-exported: the source is
+// ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png in the web
+// repository, 1024x1024, and the copy here has the same md5. The two apps have
+// different bundle ids and coexist on a device, so sharing the artwork does not
+// overwrite anything.
+//
+// Single 1024 entry, which is what Xcode 14+ wants: it derives every other size
+// itself. The source is full-bleed with square corners and stays that way — iOS
+// applies the mask, and an icon with the rounding already baked in gets rounded
+// twice.
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
+
 CODE_SIGN_STYLE = Automatic
 ENABLE_PREVIEWS = YES

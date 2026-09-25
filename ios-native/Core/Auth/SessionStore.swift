@@ -153,6 +153,23 @@ final class SessionStore {
         resetScope()
     }
 
+    /// Records that the signed-in account's email is verified now.
+    ///
+    /// Additive, and deliberately not a reload: the account has already been
+    /// re-read and its ID token already force-refreshed by whoever calls this
+    /// (see `EmailVerificationModel.checkNow`). What is left is the session's
+    /// own snapshot, which is a *value* captured when the auth listener last
+    /// fired — and the listener does not fire for a verification link being
+    /// followed. Without this the banner goes away and every other gate in the
+    /// app keeps reading `isEmailVerified == false`.
+    func noteEmailVerified() {
+        guard case .signedIn(let session) = state, !session.isEmailVerified else { return }
+        state = .signedIn(
+            UserSession(uid: session.uid, email: session.email, isEmailVerified: true)
+        )
+        log.info("session: \(session.shortID, privacy: .public) is now verified")
+    }
+
     // MARK: - Is this session still real?
 
     /// Asks the server whether the session is still good, and returns whether
