@@ -227,15 +227,21 @@ struct PostCard: View {
 
     private var actions: some View {
         HStack(spacing: Spacing.xl) {
+            // The web client's row (`PostActions.tsx`): outline icons in one
+            // grey at the same size, and a like as a filled red heart. Only
+            // the heart turns red; the count beside it is text and stays grey
+            // (see `Palette.likeActive`).
             Button(action: onLike) {
                 Label {
                     Text("\(post.likeCount)")
                         .font(Typography.caption)
                         .monospacedDigit()
+                        .foregroundStyle(Palette.secondaryText)
                 } icon: {
                     Image(systemName: isLiked ? "heart.fill" : "heart")
+                        .imageScale(.large)
+                        .foregroundStyle(isLiked ? Palette.likeActive : Palette.iconInactive)
                 }
-                .foregroundStyle(isLiked ? Palette.brandPrimary : Palette.secondaryText)
                 .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget, alignment: .leading)
                 .contentShape(.rect)
             }
@@ -255,7 +261,10 @@ struct PostCard: View {
                         .font(Typography.caption)
                         .monospacedDigit()
                 } icon: {
-                    Image(systemName: "bubble.right")
+                    // Round, as the web's MessageCircle is.
+                    Image(systemName: "message")
+                        .imageScale(.large)
+                        .foregroundStyle(Palette.iconInactive)
                 }
                 .foregroundStyle(Palette.secondaryText)
                 .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget, alignment: .leading)

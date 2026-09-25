@@ -50,6 +50,19 @@ enum Palette {
         )
     }
 
+    // MARK: Icons
+    /// A control's icon at rest: the feed's bar buttons and a post's actions
+    /// use this one grey, as the web client used one slate for its bars and
+    /// posts (`Navbar.tsx`, `PostActions.tsx`). The tab bar's resting items
+    /// are the system's colour on iOS 26, which does not take one from us.
+    /// Selected or active is `brandPrimary`, except a like.
+    static let iconInactive = secondaryText
+    /// A post someone has liked: the web client's filled heart in red-500
+    /// (`PostActions.tsx`), which is Tailwind 4's #FB2C36. An icon colour,
+    /// not a text colour — 3.9:1 on white clears the 3:1 a graphic needs and
+    /// not the 4.5:1 text does — so the count beside the heart stays grey.
+    static let likeActive = Color("LikeActive", bundle: .main)
+
     // MARK: Status
     /// Also measured. On a white page the system greens and oranges are 2.22:1
     /// and 2.31:1 — below even the 3:1 icon threshold, let alone 4.5:1 for the

@@ -193,8 +193,12 @@ struct PostShareMenu: View {
                 Label("Share as Image", systemImage: "photo")
             }
         } label: {
+            // The system's share symbol rather than the web's paper plane:
+            // this opens iOS's own share sheet, and that is the symbol iOS
+            // uses for it. Same size and grey as the rest of the row.
             Image(systemName: copied ? "checkmark" : "square.and.arrow.up")
-                .foregroundStyle(copied ? Palette.success : Palette.secondaryText)
+                .imageScale(.large)
+                .foregroundStyle(copied ? Palette.success : Palette.iconInactive)
                 .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget)
                 .contentShape(.rect)
         }

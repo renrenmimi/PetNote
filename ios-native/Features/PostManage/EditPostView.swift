@@ -223,7 +223,10 @@ struct PostActionsMenu: View {
                 }
             }
         } label: {
+            // A post's own control, so the post's grey (`PostActions.tsx`'s
+            // slate), not the bar tint the rest of this bar's items take.
             Image(systemName: "ellipsis")
+                .foregroundStyle(Palette.iconInactive)
                 .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget)
                 .contentShape(.rect)
         }
