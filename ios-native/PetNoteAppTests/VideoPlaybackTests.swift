@@ -1637,8 +1637,7 @@ struct VideoPlaybackTests {
         }
         try #require(
             underway,
-            "the clip never got going: t=\(coordinator.currentTime(of: "whole") ?? -1) "
-                + "phase=\(coordinator.state(for: "whole").name)"
+            "the clip never got going: t=\(coordinator.currentTime(of: "whole") ?? -1) phase=\(coordinator.state(for: "whole").name)"
         )
         // Counted from here. The scripted loaded edge never grows, so a start
         // slow enough to be called a stall could have spent a rebuild already;
