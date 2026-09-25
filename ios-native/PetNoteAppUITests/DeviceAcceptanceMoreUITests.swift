@@ -507,6 +507,12 @@ extension XCTestCase {
     /// UITestSupport call it — so on a Chinese phone they never clear the
     /// sheet, and whatever is behind it reads as "not hittable".
     func deviceDismissSavePasswordSheet(_ app: XCUIApplication) {
+        // Already dismissed for this sign-in — by UITestSupport's own helper,
+        // which the shared waits call too. The sheet is still in the tree
+        // while it animates away, and a second tap then fails half way with
+        // "No matches found" (test10 on the phone, 2026-09-25).
+        if let submitted = SavePasswordPrompt.lastSubmitted,
+           let dismissed = SavePasswordPrompt.lastDismissed, dismissed > submitted { return }
         let notNow = deviceNotNowButton(app)
         guard notNow.exists, notNow.isHittable else { return }
         // Checking and tapping are two moments and the sheet closes itself;
