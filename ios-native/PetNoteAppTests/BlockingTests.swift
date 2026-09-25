@@ -59,18 +59,25 @@ struct BlockingTests {
 
     // MARK: - The feed
 
+    /// Its record is kept under the lock: in the test of one shared read of
+    /// the list, both page reads reach this at the same moment when that read
+    /// comes back.
     final class PagedFeed: FeedRepository, @unchecked Sendable {
         var pages: [[Post]] = []
-        private(set) var reads = 0
+        private let lock = NSLock()
+        private var readCount = 0
         private var cursors: [PageCursor] = []
+        var reads: Int { lock.withLock { readCount } }
 
         func posts(after cursor: PageCursor?, limit: Int) async throws -> Page<Post> {
-            reads += 1
-            let index = cursor.flatMap { cursors.firstIndex(of: $0) }.map { $0 + 1 } ?? 0
-            guard index < pages.count else { return .empty }
-            let next: PageCursor? = index + 1 < pages.count ? PageCursor() : nil
-            if let next { cursors.append(next) }
-            return Page(items: pages[index], next: next)
+            lock.withLock { () -> Page<Post> in
+                readCount += 1
+                let index = cursor.flatMap { cursors.firstIndex(of: $0) }.map { $0 + 1 } ?? 0
+                guard index < pages.count else { return .empty }
+                let next: PageCursor? = index + 1 < pages.count ? PageCursor() : nil
+                if let next { cursors.append(next) }
+                return Page(items: pages[index], next: next)
+            }
         }
 
         func post(id: String) async throws -> Post? { pages.flatMap { $0 }.first { $0.id == id } }
@@ -152,6 +159,110 @@ struct BlockingTests {
         #expect(try await feed.posts(after: nil, limit: 1).items.count == 1, "cached until told")
         await feed.invalidate()
         #expect(try await feed.posts(after: nil, limit: 1).items.isEmpty)
+    }
+
+    // MARK: - One read of the list at a time
+
+    /// Waits, by the clock as `eventuallyTrue` does, for a number only the
+    /// filter's own actor can give.
+    private func waitForCallers(_ count: Int, on feed: BlockFilteringFeed) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(10))
+        while clock.now < deadline {
+            if await feed.callersWaitingOnRead == count { return true }
+            try? await Task.sleep(for: .milliseconds(2))
+        }
+        return await feed.callersWaitingOnRead == count
+    }
+
+    /// Two page reads while the list is being read — a pull to refresh while
+    /// another page read is out and the list is not in the cache — share that
+    /// one read, and the one read fills the cache for both.
+    @Test func pageReadsWhileTheListIsBeingReadShareTheOneRead() async throws {
+        let base = PagedFeed()
+        base.pages = [[post("a", by: "alice"), post("b", by: "bob")]]
+        let social = FakeSocialRepository()
+        let gate = SocialGate()
+        // A second entry, so a second read — the defect — would answer
+        // differently and on the same gate, rather than hang the test.
+        social.blockedReadScript = [(answer: ["bob"], gate: gate), (answer: ["a second read"], gate: gate)]
+        let feed = BlockFilteringFeed(base: base, social: social, viewerID: "me")
+
+        let first = Task { try await feed.posts(after: nil, limit: 2).items.map(\.id) }
+        let second = Task { try await feed.posts(after: nil, limit: 2).items.map(\.id) }
+        let bothWaiting = await waitForCallers(2, on: feed)
+        gate.open()
+        let firstPage = try await first.value
+        let secondPage = try await second.value
+
+        #expect(bothWaiting, "the second page read never arrived while the list was being read")
+        #expect(social.blockedReadCount == 1, "two page reads at once read the list twice")
+        #expect(firstPage == ["a"])
+        #expect(secondPage == ["a"])
+        #expect(try await feed.posts(after: nil, limit: 2).items.map(\.id) == ["a"])
+        #expect(social.blockedReadCount == 1, "the shared read did not fill the cache")
+    }
+
+    /// A read that went out before a block answers the page read that asked
+    /// for it, but the list it brings back is from before the block, and it
+    /// must not land in the cache on top of the one read after it.
+    @Test func aReadFromBeforeABlockDoesNotRefillTheCacheAfterIt() async throws {
+        let base = PagedFeed()
+        base.pages = [[post("a", by: "alice"), post("b", by: "bob")]]
+        let social = FakeSocialRepository()
+        let before = SocialGate()
+        let after = SocialGate()
+        after.open()
+        social.blockedReadScript = [(answer: [], gate: before), (answer: ["bob"], gate: after)]
+        let feed = BlockFilteringFeed(base: base, social: social, viewerID: "me")
+
+        let stale = Task { try await feed.posts(after: nil, limit: 2).items.map(\.id) }
+        let staleIsOut = await eventuallyTrueAnywhere { social.blockedReadCount == 1 }
+        await feed.invalidate()
+        let fresh = Task { try await feed.posts(after: nil, limit: 2).items.map(\.id) }
+        let freshAsked = await eventuallyTrueAnywhere { social.blockedReadCount == 2 }
+        // A page read that wrongly joined the old read would wait on its gate
+        // for ever; let it through, so the test fails rather than hangs.
+        if !freshAsked { before.open() }
+        let freshPage = try await fresh.value
+        before.open()
+        let stalePage = try await stale.value
+
+        #expect(staleIsOut)
+        #expect(freshAsked, "the page read after the block joined the read from before it")
+        #expect(freshPage == ["a"])
+        #expect(stalePage == ["a", "b"], "the control: the old read answers its own page read with what it read")
+        #expect(
+            try await feed.posts(after: nil, limit: 2).items.map(\.id) == ["a"],
+            "the read from before the block overwrote the list after it"
+        )
+        #expect(social.blockedReadCount == 2, "the list after the block was not kept")
+    }
+
+    /// The same for a switch of account: the previous person's list, arriving
+    /// late, is not kept as the next person's.
+    @Test func aReadForThePreviousAccountIsNotKeptForTheNextOne() async throws {
+        let base = PagedFeed()
+        base.pages = [[post("b", by: "bob"), post("c", by: "carol"), post("e", by: "erin")]]
+        let social = FakeSocialRepository()
+        social.blocked = ["carol"]
+        let gate = SocialGate()
+        social.blockedReadScript = [(answer: ["bob"], gate: gate)]
+        let feed = BlockFilteringFeed(base: base, social: social, viewerID: "alice")
+
+        let previous = Task { try await feed.posts(after: nil, limit: 3).items.map(\.id) }
+        let isOut = await eventuallyTrueAnywhere { social.blockedReadCount == 1 }
+        await feed.switchAccount(to: "dana")
+        gate.open()
+        let previousPage = try await previous.value
+
+        #expect(isOut)
+        #expect(previousPage == ["c", "e"], "the control: alice's read answers alice's page read")
+        #expect(
+            try await feed.posts(after: nil, limit: 3).items.map(\.id) == ["b", "e"],
+            "alice's block list was kept as dana's"
+        )
+        #expect(social.blockedReadCount == 2)
     }
 
     // MARK: - The list

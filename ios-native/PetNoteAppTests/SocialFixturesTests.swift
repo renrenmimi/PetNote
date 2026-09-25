@@ -170,8 +170,30 @@ final class FakeSocialRepository: SocialRepository, @unchecked Sendable {
         return profiles[userID]
     }
 
+    /// Reads of the blocked list that answer on the test's say-so: each
+    /// read takes the next entry, answers with its list — the list as it
+    /// was when the read went out — and waits for its gate first. Once they
+    /// run out, `blocked` answers at once as before. Set before the reads
+    /// start; taken under the lock, because the reads arrive from the
+    /// filter's own task.
+    var blockedReadScript: [(answer: Set<String>, gate: SocialGate)] {
+        get { lock.withLock { scriptedBlockedReads } }
+        set { lock.withLock { scriptedBlockedReads = newValue } }
+    }
+    private var scriptedBlockedReads: [(answer: Set<String>, gate: SocialGate)] = []
+    /// `blockedReads`, read under the lock, for a test polling it while a
+    /// read may still be arriving.
+    var blockedReadCount: Int { lock.withLock { blockedReads } }
+
     func blockedUserIDs(viewerID: String) async throws -> Set<String> {
-        lock.withLock { blockedReads += 1 }
+        let scripted = lock.withLock { () -> (answer: Set<String>, gate: SocialGate)? in
+            blockedReads += 1
+            return scriptedBlockedReads.isEmpty ? nil : scriptedBlockedReads.removeFirst()
+        }
+        if let scripted {
+            await scripted.gate.wait()
+            return scripted.answer
+        }
         if let blockedError { throw blockedError }
         return lock.withLock { blocked }
     }
