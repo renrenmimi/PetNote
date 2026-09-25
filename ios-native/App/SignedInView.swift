@@ -131,7 +131,7 @@ struct SignedInView: View {
             Color.clear
                 .tabItem {
                     Label {
-                        Text(String(localized: "tab.create", defaultValue: "Post", comment: "Tab that opens the composer"))
+                        Text(String(localized: "tab.create", defaultValue: "Create", comment: "Tab that opens the composer"))
                     } icon: {
                         Image(uiImage: CreateTabIcon.image).renderingMode(.original)
                     }

@@ -208,7 +208,7 @@ final class ComposeDraftUITests: XCTestCase {
     /// The Post tab. The composer reads the stored draft before it reads the
     /// pets, so once the pet is on screen it has decided whether to offer one.
     private func openComposer(_ app: XCUIApplication) {
-        let tab = app.tabBars.buttons["Post"]
+        let tab = app.tabBars.buttons["Create"]
         XCTAssertTrue(waitUntilHittable(tab, in: app, timeout: 20), "no Post tab")
         tab.tap()
         XCTAssertTrue(waitForExistence(of: app.buttons["compose.pet.\(petID)"], in: app, timeout: 30),

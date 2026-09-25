@@ -7987,6 +7987,108 @@
         }
       }
     },
+    "post.age.days": {
+      "comment": "A post's age in days, short: 3d",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lldd"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld天前"
+          }
+        }
+      }
+    },
+    "post.age.hours": {
+      "comment": "A post's age in hours, short: 5h",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lldh"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld小时前"
+          }
+        }
+      }
+    },
+    "post.age.minutes": {
+      "comment": "A post's age in minutes, short: 30m",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lldm"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld分钟前"
+          }
+        }
+      }
+    },
+    "post.age.now": {
+      "comment": "A post's age under five seconds",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "just now"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刚刚"
+          }
+        }
+      }
+    },
+    "post.age.seconds": {
+      "comment": "A post's age in seconds, short: 42s",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%llds"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld秒前"
+          }
+        }
+      }
+    },
+    "post.age.weeks": {
+      "comment": "A post's age in weeks, short: 2w",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lldw"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld周前"
+          }
+        }
+      }
+    },
     "resume=%@ path=%lld": {
       "shouldTranslate": false
     },
@@ -8002,7 +8104,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Post"
+            "value": "Create"
           }
         }
       }

@@ -168,9 +168,23 @@ struct PostCard: View {
                     .foregroundStyle(Palette.primaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text(post.createdAt, style: .relative)
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.secondaryText)
+                // The web client's second line (`PostIdentity.tsx`): the
+                // owner and the age when a pet leads, the age alone when the
+                // author already does.
+                HStack(spacing: Spacing.xs) {
+                    if post.petName != nil {
+                        Text(post.authorName)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Text(verbatim: "·")
+                            .accessibilityHidden(true)
+                    }
+                    Text(PostAge.short(post.createdAt))
+                        .fixedSize()
+                        .accessibilityLabel(PostAge.spoken(post.createdAt))
+                }
+                .font(Typography.caption)
+                .foregroundStyle(Palette.secondaryText)
             }
             Spacer(minLength: Spacing.s)
         }
