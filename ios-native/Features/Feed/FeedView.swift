@@ -62,6 +62,9 @@ struct FeedView: View {
             }
         }
         .navigationTitle("PetNote")
+        // Kept as the bar's identity and hidden from view: the name is drawn
+        // by `FeedBrandLockup`, beside the paw, where the web client has it.
+        .toolbar(removing: .title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .principal) { videoProbe } }
         .overlay(alignment: .topLeading) { sessionProbe }
@@ -180,10 +183,7 @@ struct FeedView: View {
     /// slogan, which read like a feature rather than an empty state.
     private var emptyState: some View {
         VStack(spacing: Spacing.m) {
-            Image(systemName: "pawprint")
-                .font(Typography.pageTitle)
-                .foregroundStyle(Palette.tertiaryText)
-                .accessibilityHidden(true)
+            BrandMark(size: 36)
             Text("No posts yet")
                 .font(Typography.sectionTitle)
                 .foregroundStyle(Palette.primaryText)

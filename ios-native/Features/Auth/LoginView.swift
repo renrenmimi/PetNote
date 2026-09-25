@@ -129,10 +129,7 @@ struct LoginView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: Spacing.s) {
-            Image(systemName: "pawprint.fill")
-                .font(Typography.pageTitle)
-                .foregroundStyle(Palette.brandPrimary)
-                .accessibilityHidden(true)
+            BrandMark(size: 40)
             Text("PetNote")
                 .font(Typography.pageTitle)
                 .foregroundStyle(Palette.primaryText)

@@ -25,11 +25,19 @@ struct RootView: View {
 
 private struct RestoringView: View {
     var body: some View {
+        // The web client's splash (`SplashScreen.tsx`): the paw at 64 over the
+        // name in the brand gradient, on the plain background. Its pulse is
+        // not carried over — an animation that repeats forever keeps the app
+        // from ever reporting itself idle — and the native spinner below says
+        // "working" instead.
         VStack(spacing: Spacing.l) {
-            Image(systemName: "pawprint.fill")
-                .font(Typography.pageTitle)
-                .foregroundStyle(Palette.brandPrimary)
-                .accessibilityHidden(true)
+            VStack(spacing: Spacing.m) {
+                BrandMark(size: 64)
+                Text("PetNote")
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(Palette.brandGradient)
+                    .accessibilityHidden(true)
+            }
             ProgressView()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
