@@ -440,14 +440,19 @@ enum DeviceWords {
     static let settingsTitle = ["Settings", "设置"]
 }
 
+/// `key` equal to any of `words`, ignoring case. Case because an English
+/// section header may be drawn in capitals; Chinese has none.
+///
+/// A free function, not a method on the test case: a predicate returned from
+/// a method shares the test case's isolation region, and Swift 6 refuses to
+/// hand it to XCUIElementQuery on the main actor. One made here is fresh.
+func deviceMatch(_ key: String, anyOf words: [String]) -> NSPredicate {
+    NSCompoundPredicate(orPredicateWithSubpredicates: words.map {
+        NSPredicate(format: "\(key) ==[c] %@", $0)
+    })
+}
+
 extension XCTestCase {
-    /// `key` equal to any of `words`, ignoring case. Case because an English
-    /// section header may be drawn in capitals; Chinese has none.
-    func deviceMatch(_ key: String, anyOf words: [String]) -> NSPredicate {
-        NSCompoundPredicate(orPredicateWithSubpredicates: words.map {
-            NSPredicate(format: "\(key) ==[c] %@", $0)
-        })
-    }
 
     /// A tab by its title in either language. The tab items carry no
     /// identifier of their own — `tab.home` and the rest are on the tabs'
