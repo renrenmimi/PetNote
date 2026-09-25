@@ -208,7 +208,28 @@ final class RefreshAndPagingUITests: XCTestCase {
         XCTAssertTrue(waitForExistence(of: posts.firstMatch, in: app, timeout: 60),
                       "the feed never loaded")
 
-        let firstPage = visiblePostIndices(app)
+        // The first rows of page one, read with two of them on screen.
+        //
+        // The feed's "⭐ Popular Pets" row — and the birthday banner, on a day
+        // it is up — sit above the first card now, and push the second card's
+        // text past the bottom of the screen, where the list has not built its
+        // row: the full regression of 2026-09-24 read one post here and
+        // stopped. So the list is moved up a tenth of the screen at a time
+        // until a second row is read, and only while the first card's text
+        // would stay below the navigation bar: the reading still starts at
+        // the first row of page one, as it did before those rows existed, and
+        // `step` below is still worked out from two neighbours in it.
+        var firstPage = visiblePostIndices(app)
+        for _ in 0..<6 where firstPage.count < 2 {
+            let first = posts.firstMatch
+            let bar = app.navigationBars["PetNote"]
+            guard first.exists, bar.exists,
+                  first.frame.minY - app.windows.firstMatch.frame.height * 0.1 > bar.frame.maxY
+            else { break }
+            nudgeListUp(app, by: 0.1)
+            firstPage = visiblePostIndices(app)
+        }
+        print("MEASURED first page read as \(firstPage)")
         XCTAssertGreaterThan(firstPage.count, 1, "only \(firstPage.count) rows realised")
 
         // The failure is reported at the end of the list, where it happened.
