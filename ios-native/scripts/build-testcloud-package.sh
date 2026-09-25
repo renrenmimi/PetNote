@@ -134,8 +134,19 @@ STATUS_LAUNCH="TODO - needs the phone attached"
 # `strings PetNote | grep petnote-` on such a package returns almost nothing
 # and looks exactly like a clean result. Measured on this project: main binary
 # 2 hits, whole bundle 12.
+#
+# Property lists are read as XML, not as bytes. A compiled Info.plist is a
+# binary plist, where a string is followed straight away by the next object's
+# marker byte: the URL scheme "petnote" came out of the byte scan as
+# "petnoteQ" (2026-09-24), a token that exists nowhere in the app. Converted,
+# every string the plist really holds is still scanned, whole.
 scan_bundle() {  # scan_bundle <app path>  -> prints "file:token" lines
-  LC_ALL=C grep -raoE "$SCAN_RE" "$1" 2>/dev/null | sed "s|^$1/||" | sort -u
+  {
+    LC_ALL=C grep -raoE --exclude='*.plist' "$SCAN_RE" "$1" 2>/dev/null
+    find "$1" -type f -name '*.plist' -print0 | while IFS= read -r -d '' f; do
+      plutil -convert xml1 -o - "$f" 2>/dev/null | LC_ALL=C grep -aoE "$SCAN_RE" | sed "s|^|$f:|"
+    done
+  } | sed "s|^$1/||" | sort -u
 }
 scan_tokens() { scan_bundle "$1" | sed 's/^.*://' | sort -u; }
 

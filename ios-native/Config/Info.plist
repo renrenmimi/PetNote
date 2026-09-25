@@ -22,7 +22,7 @@
 		</dict>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>petnote-links</string>
+			<string>dev.local.petnote.native.links</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>petnote</string>

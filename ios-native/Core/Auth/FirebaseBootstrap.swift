@@ -124,7 +124,9 @@ enum FirebaseBootstrap {
         return settings
     }
 
-    static let droppedDiskCacheKey = "petnoteDroppedFirestoreDiskCache"
+    /// Not a lowercase `petnote…` name: the package audit reads those in a
+    /// Release binary as test switches, and this key ships.
+    static let droppedDiskCacheKey = "PetNote.droppedFirestoreDiskCache"
 
     /// Builds before this one wrote Firestore's cache to disk. Memory-only
     /// stops new writes; this removes what an earlier build left, once,
