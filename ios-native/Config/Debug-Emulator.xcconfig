@@ -3,7 +3,24 @@
 #include "Base.xcconfig"
 
 PETNOTE_BACKEND = emulator
-SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG
+// PETNOTE_FAULT_INJECTION gates the code that deliberately breaks things:
+// refreshes that fail, pages that never arrive, streams that stall. It is set
+// HERE ONLY, so that code does not exist in any package a person runs.
+//
+// `#if DEBUG` is not enough for that. Debug-TestCloud is a Debug configuration,
+// so DEBUG is set in the very package that goes on the phone. Read-only probes
+// belong there — device acceptance needs -petnote-start-signed-out and the
+// video state probe to say anything at all — but a switch that makes a refresh
+// fail does not: the failure tests run on the simulator, and nothing on the
+// phone ever asks for one.
+//
+//   #if DEBUG                    probes, overrides, seeded sign-in
+//   #if PETNOTE_FAULT_INJECTION  anything that makes the app misbehave
+//
+// Compiling it out also removes the `-petnote-…` string literals, which is
+// what lets scripts/build-testcloud-package.sh prove the absence by grepping
+// the binary rather than by reading the source and trusting it.
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG PETNOTE_FAULT_INJECTION
 ONLY_ACTIVE_ARCH = YES
 SWIFT_OPTIMIZATION_LEVEL = -Onone
 GCC_OPTIMIZATION_LEVEL = 0

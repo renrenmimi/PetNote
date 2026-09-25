@@ -1,0 +1,11 @@
+{
+  "name": "petnote-functions-testcloud",
+  "description": "Deploy-only entry point for the independent test project. No business logic lives here.",
+  "private": true,
+  "main": "index.js",
+  "engines": { "node": "22" },
+  "dependencies": {
+    "firebase-admin": "^13.8.0",
+    "firebase-functions": "^7.2.5"
+  }
+}

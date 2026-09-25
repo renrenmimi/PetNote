@@ -25,6 +25,10 @@ DEAD_CODE_STRIPPING = YES
 // screenshot can be tied to the source that produced it (spec §15.5).
 PETNOTE_BUILD_STAMP = local
 
+// Empty for emulator builds, where the project id is whatever the emulator was
+// started with. Set by Debug-TestCloud and (later) by production.
+PETNOTE_EXPECTED_PROJECT =
+
 MARKETING_VERSION = 0.1
 CURRENT_PROJECT_VERSION = 1
 
