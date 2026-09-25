@@ -283,6 +283,55 @@ struct BlockingTests {
         #expect(after.map(\.id) == ["carol"])
     }
 
+    /// Two unblocks out at once. Each used to take its person off the list
+    /// as it was when that unblock began, so the one answering second put
+    /// back the person the first had just taken off: unblocked on the
+    /// server, still listed here.
+    @Test func twoUnblocksOutAtOnceBothLeaveTheList() async {
+        let social = FakeSocialRepository()
+        social.blocked = ["bob", "carol", "dave"]
+        let bobGate = SocialGate()
+        let carolGate = SocialGate()
+        social.unblockGates = ["bob": bobGate, "carol": carolGate]
+        let model = BlockedUsersModel(viewerID: "me", social: social)
+        await model.load()
+
+        let bob = Task { await model.unblock("bob") }
+        let carol = Task { await model.unblock("carol") }
+        await socialEventually { model.unblocking == ["bob", "carol"] }
+        bobGate.open()
+        #expect(await bob.value)
+        carolGate.open()
+        #expect(await carol.value)
+
+        #expect(social.blocked == ["dave"])
+        guard case .loaded(let rows) = model.state else { Issue.record("not loaded: \(model.state)"); return }
+        #expect(rows.map(\.id) == ["dave"], "carol's answer put bob back")
+    }
+
+    /// A refresh that went out before an unblock landed answers with the
+    /// person still on it. The row that was just taken off stays off.
+    @Test func aRefreshThatLeftBeforeAnUnblockDoesNotPutThePersonBack() async {
+        let social = FakeSocialRepository()
+        social.blocked = ["bob", "carol"]
+        let model = BlockedUsersModel(viewerID: "me", social: social)
+        await model.load()
+
+        let gate = SocialGate()
+        social.blockedReadScript = [(answer: ["bob", "carol"], gate: gate)]
+        let refresh = Task { await model.load() }
+        await socialEventually { social.blockedReadCount == 2 }
+        #expect(await model.unblock("bob"))
+        guard case .loaded(let between) = model.state else { Issue.record("not loaded"); return }
+        #expect(between.map(\.id) == ["carol"])
+
+        gate.open()
+        await refresh.value
+
+        guard case .loaded(let rows) = model.state else { Issue.record("not loaded: \(model.state)"); return }
+        #expect(rows.map(\.id) == ["carol"], "the refresh's older answer put bob back")
+    }
+
     @Test func aFailedUnblockKeepsTheRowAndSaysSo() async {
         let social = FakeSocialRepository()
         social.blocked = ["bob"]

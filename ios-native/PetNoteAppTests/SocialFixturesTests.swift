@@ -207,8 +207,15 @@ final class FakeSocialRepository: SocialRepository, @unchecked Sendable {
         lock.withLock { _ = blocked.insert(userID) }
     }
 
+    /// Per person: `unblock` waits on that person's gate before answering.
+    var unblockGates: [String: SocialGate] = [:]
+
     func unblock(userID: String, viewerID: String) async throws {
-        lock.withLock { unblocked.append(userID) }
+        let gate = lock.withLock { () -> SocialGate? in
+            unblocked.append(userID)
+            return unblockGates[userID]
+        }
+        if let gate { await gate.wait() }
         if let unblockError { throw unblockError }
         lock.withLock { _ = blocked.remove(userID) }
     }
