@@ -474,13 +474,28 @@ extension XCTestCase {
     func deviceTypeCredentialsAndSubmit(_ app: XCUIApplication) {
         let email = app.textFields["login.email"]
         XCTAssertTrue(waitUntilHittable(email, in: app, timeout: 30), "the email field never became usable")
-        email.tap()
+        deviceFocus(email)
         email.typeText(DeviceAccount.email)
         let password = app.secureTextFields["login.password"]
-        password.tap()
+        // On the phone a tap while the keyboard is still settling from the
+        // email field can leave focus where it was, and typing then fails
+        // with "Neither element nor any descendant has keyboard focus"
+        // (2026-09-25). Tap until the field says it has focus, then type.
+        deviceFocus(password)
         password.typeText(DeviceAccount.password)
         app.buttons["login.submit"].tap()
         SavePasswordPrompt.lastSubmitted = Date()
+    }
+
+    /// Taps `field` until it reports keyboard focus, at most three times.
+    func deviceFocus(_ field: XCUIElement) {
+        for _ in 0..<3 {
+            field.tap()
+            let focused = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "hasKeyboardFocus == true"), object: field
+            )
+            if XCTWaiter().wait(for: [focused], timeout: 2) == .completed { return }
+        }
     }
 
     /// Launched signed out, signed in by typing, on the feed, and past the
@@ -491,8 +506,11 @@ extension XCTestCase {
         XCTAssertTrue(app.staticTexts["login.title"].waitForExistence(timeout: 60),
                       "sign-in never appeared\n\(app.debugDescription)", file: file, line: line)
         deviceTypeCredentialsAndSubmit(app)
+        // The fields' values and any error the sign-in screen shows are what
+        // tell a refused sign-in from one that never went out; the app's own
+        // tree, as text — nothing outside PetNote.
         XCTAssertTrue(waitForExistence(of: app.navigationBars["PetNote"], in: app, timeout: 90),
-                      "never reached the feed", file: file, line: line)
+                      "never reached the feed\n\(app.debugDescription)", file: file, line: line)
         deviceSettleSavePasswordSheet(app)
         return app
     }
