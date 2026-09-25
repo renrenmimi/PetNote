@@ -57,16 +57,12 @@ final class NavBarHitDiagnosisUITests: XCTestCase {
 
     /// The app's own answer, both ways, from `HitTestProbe`.
     private func askTheApp(_ when: String, _ app: XCUIApplication) {
-        let probe = app.buttons["diag.hitProbe"]
+        let probe = app.descendants(matching: .any)["diag.hitProbe"]
         guard probe.waitForExistence(timeout: 5) else {
             print("DIAG [\(when)] no probe")
             return
         }
-        probe.tap()
-        let answered = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value != %@", "none"), object: probe
-        )
-        _ = XCTWaiter().wait(for: [answered], timeout: 5)
+        // Reading the value is what takes the reading; see HitTestProbe.
         let value = (probe.value as? String) ?? "\(String(describing: probe.value))"
         for part in value.components(separatedBy: " || ") {
             print("DIAG [\(when)] APP \(part)")

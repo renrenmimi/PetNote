@@ -7,11 +7,11 @@ import UIKit
 /// Asks the app itself what answers at given window points, both ways:
 /// `accessibilityHitTest` — what XCUITest's `isHittable` and VoiceOver's
 /// touch exploration go by — and `hitTest` — where a finger's touch goes.
-/// Points come from `-petnote-hit-probe "x,y;x,y"`. Tapping the probe takes
-/// a reading and publishes it as the probe's accessibility value.
+/// Points come from `-petnote-hit-probe "x,y;x,y"`. The reading is taken
+/// when XCUITest reads the probe's accessibility value — no tap, which on
+/// the first try went through to the card underneath, and no timer, which
+/// would keep the app from ever going idle.
 struct HitTestProbe: View {
-    @State private var reading = "none"
-
     private static var points: [CGPoint]? {
         let arguments = ProcessInfo.processInfo.arguments
         guard let index = arguments.firstIndex(of: "-petnote-hit-probe"),
@@ -24,22 +24,14 @@ struct HitTestProbe: View {
 
     var body: some View {
         if let points = Self.points {
-            Button("hit") { reading = Self.read(points) }
-                .font(.caption2)
-                .frame(width: 44, height: 44)
-                .opacity(0.02)
-                .accessibilityIdentifier("diag.hitProbe")
-                .accessibilityValue(reading)
+            ProbeRepresentable(points: points)
+                .frame(width: 2, height: 2)
+                .allowsHitTesting(false)
         }
     }
 
-    private static func read(_ points: [CGPoint]) -> String {
-        guard let window = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .flatMap(\.windows)
-            .first(where: \.isKeyWindow)
-        else { return "no key window" }
-        return points.map { point in
+    static func read(_ points: [CGPoint], in window: UIWindow) -> String {
+        points.map { point in
             let ax = accessibilityHit(window, point)
             let view = window.hitTest(point, with: nil)
             return "@\(Int(point.x)),\(Int(point.y)) AX=[\(describe(ax))] VIEW=[\(chain(view))]"
@@ -88,6 +80,32 @@ struct HitTestProbe: View {
             current = v.superview
         }
         return names.isEmpty ? "nil" : names.joined(separator: " < ")
+    }
+}
+private struct ProbeRepresentable: UIViewRepresentable {
+    let points: [CGPoint]
+    func makeUIView(context: Context) -> ProbeView { ProbeView(points: points) }
+    func updateUIView(_ view: ProbeView, context: Context) {}
+}
+
+private final class ProbeView: UIView {
+    private let points: [CGPoint]
+
+    init(points: [CGPoint]) {
+        self.points = points
+        super.init(frame: .zero)
+        isUserInteractionEnabled = false
+        isAccessibilityElement = true
+        accessibilityIdentifier = "diag.hitProbe"
+        accessibilityTraits = .staticText
+        accessibilityLabel = "hit probe"
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override var accessibilityValue: String? {
+        get { window.map { HitTestProbe.read(points, in: $0) } ?? "no window" }
+        set {}
     }
 }
 #endif
