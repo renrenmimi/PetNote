@@ -37,14 +37,10 @@ final class NavBarHitDiagnosisUITests: XCTestCase {
         reading("10s later", app)
         askTheApp("at the top of the list", app)
 
-        nudgeListUp(app)
-        _ = waitForQuietUI(app, quietFor: 1, timeout: 10)
-        reading("after the list moved up", app)
-        askTheApp("after the list moved up", app)
-
         // A tap at the bell's centre by coordinate — where a finger would
         // go — not `bell.tap()`, which taps wherever XCUITest puts the hit
-        // point. Taken while XCUITest still calls the bell not hittable.
+        // point. Taken here, at the top of the list, while XCUITest calls
+        // the bell not hittable.
         let bell = app.buttons["feed.notifications"]
         print("DIAG [before the coordinate tap] bell hittable=\(bell.isHittable)")
         app.coordinate(withNormalizedOffset: .zero)
