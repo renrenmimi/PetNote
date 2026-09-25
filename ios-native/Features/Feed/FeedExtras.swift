@@ -268,20 +268,31 @@ enum FeedExtras {
     }
 
     /// "Turning N years old today!", when the year is known — the web's
-    /// `today.getFullYear() - date.getFullYear()`, both in the viewer's own
-    /// calendar (BirthdayCelebration.tsx:51).
+    /// `today.getFullYear() - date.getFullYear()`, both on the viewer's local
+    /// clock (BirthdayCelebration.tsx:51).
+    ///
+    /// Gregorian years, whatever calendar the viewer has chosen.
+    /// `getFullYear()` is always the Gregorian year; the viewer's calendar
+    /// need not be. With Settings › Calendar set to Japanese, its `.year` is
+    /// the year of the era — 2026 is Reiwa 8, 2015 is Heisei 27 — and the
+    /// subtraction said "Turning -19 years old today!" for an eleven-year-old
+    /// pet. Buddhist years only happen to subtract right, and an Islamic,
+    /// Hebrew or Chinese year does not start on 1 January.
     ///
     /// Local, not UTC, because both clients store the birthday at *local*
     /// midnight of the day that was picked (AddPet.tsx:290-306,
     /// `FirestorePetRepository.birthdayFields`). Read in UTC, a pet born on 1
     /// January east of Greenwich — stored at 31 December, 15:00 UTC in Tokyo —
-    /// would come out a year older than it is.
+    /// would come out a year older than it is. So the Gregorian calendar here
+    /// takes the viewer calendar's time zone, not its own default.
     ///
     /// Whatever the subtraction gives is said, as on the web: a pet born this
     /// year is "Turning 0 years old today!".
     static func ageLine(for pet: Pet, on date: Date, calendar: Calendar) -> String? {
         guard let birthday = pet.birthday else { return nil }
-        let years = calendar.component(.year, from: date) - calendar.component(.year, from: birthday)
+        var gregorian = Calendar(identifier: .gregorian)
+        gregorian.timeZone = calendar.timeZone
+        let years = gregorian.component(.year, from: date) - gregorian.component(.year, from: birthday)
         return years == 1
             ? String(localized: "Turning 1 year old today!")
             : String(localized: "Turning \(years) years old today!")
