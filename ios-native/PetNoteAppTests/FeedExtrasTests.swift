@@ -544,8 +544,8 @@ struct FeedExtrasTests {
         #expect(FeedExtras.banner(for: [], on: now, calendar: calendar) == nil)
     }
 
-    /// "Turning N years old today!": the viewer's calendar year less the
-    /// birth year in the same calendar, whatever that gives — as the web's
+    /// "Turning N years old today!": this year less the birth year, both
+    /// read on the viewer's local clock, whatever that gives — as the web's
     /// `getFullYear()` subtraction does.
     @Test func theAgeLineIsTheLocalYearsBetween() throws {
         let (now, calendar) = try Self.clock()
@@ -577,6 +577,41 @@ struct FeedExtrasTests {
         #expect(utc.component(.year, from: born) == 2023, "the control: in UTC this birthday is in 2023")
         let janFirst = PetFixture.pet(birthday: born, birthdayMonth: 1, birthdayDay: 1)
         #expect(FeedExtras.ageLine(for: janFirst, on: newYear, calendar: tokyo) == "Turning 3 years old today!")
+    }
+
+    /// Gregorian years whatever calendar the viewer has chosen, as the web's
+    /// `getFullYear()` always is. With Settings › Calendar set to Japanese,
+    /// the calendar's `.year` is the year of the era, and subtracting those
+    /// said "Turning -19 years old today!" for a pet born in 2015.
+    @Test func theAgeLineCountsGregorianYearsInAJapaneseCalendar() throws {
+        let zone = try #require(TimeZone(identifier: "Asia/Tokyo"))
+        var japanese = Calendar(identifier: .japanese)
+        japanese.timeZone = zone
+        // The dates are made in the Gregorian calendar: the Japanese one would
+        // read "2015" as a year of the current era.
+        var tokyo = Calendar(identifier: .gregorian)
+        tokyo.timeZone = zone
+
+        let now = try #require(tokyo.date(from: DateComponents(year: 2026, month: 9, day: 23, hour: 12)))
+        let born = try Self.localMidnight(2015, 9, 23, in: tokyo)
+        #expect(japanese.component(.year, from: now) - japanese.component(.year, from: born) == -19,
+                "the control: in the Japanese calendar this is Reiwa 8 less Heisei 27")
+        let eleven = PetFixture.pet(birthday: born, birthdayMonth: 9, birthdayDay: 23)
+        #expect(eleven.isBirthday(on: now, calendar: japanese),
+                "the control: the Japanese calendar's months and days are the Gregorian ones, so the banner is up")
+        #expect(FeedExtras.ageLine(for: eleven, on: now, calendar: japanese) == "Turning 11 years old today!")
+        #expect(FeedExtras.banner(for: [eleven], on: now, calendar: japanese)?.ageLine == "Turning 11 years old today!")
+
+        // Still on the viewer's clock: the Gregorian years are read in the
+        // viewer calendar's time zone, not in the Gregorian calendar's
+        // default one. Late on New Year's Day in Tokyo it is 1 January in UTC
+        // too, but a birthday stored at Tokyo midnight is 31 December 2023
+        // there — so read anywhere west of Tokyo, this pet would be four.
+        let newYear = try #require(tokyo.date(from: DateComponents(year: 2027, month: 1, day: 1, hour: 23)))
+        let janFirst = PetFixture.pet(
+            birthday: try Self.localMidnight(2024, 1, 1, in: tokyo), birthdayMonth: 1, birthdayDay: 1
+        )
+        #expect(FeedExtras.ageLine(for: janFirst, on: newYear, calendar: japanese) == "Turning 3 years old today!")
     }
 
     /// Closed for the session: not back on a refresh or a pet edit, back for
