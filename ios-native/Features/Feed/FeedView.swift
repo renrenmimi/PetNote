@@ -10,6 +10,7 @@ struct FeedView: View {
     @State private var model: FeedViewModel
     @Binding private var path: [Route]
     @Environment(VideoPlaybackCoordinator.self) private var video
+    @Environment(PostBookmarks.self) private var bookmarks: PostBookmarks?
     @Environment(SessionStore.self) private var session
     /// Read here rather than in the detail screen because the feed is the root
     /// of the signed-in stack: it stays in the hierarchy whatever is pushed on
@@ -93,7 +94,7 @@ struct FeedView: View {
             }
         }
         .overlay(alignment: .topLeading) { sessionProbe }
-        .background(Palette.background)
+        .background(Palette.groupedBackground)
         .task { await model.loadFirstPageIfNeeded() }
         .task { returnToWhereTheSessionEnded() }
         .refreshable { await model.reload() }
@@ -222,7 +223,7 @@ struct FeedView: View {
     private var loading: some View {
         ProgressView()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Palette.background)
+            .background(Palette.groupedBackground)
             .accessibilityIdentifier("feed.loading")
             .accessibilityLabel("Loading posts")
     }
@@ -243,7 +244,7 @@ struct FeedView: View {
         }
         .padding(Layout.pageInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Palette.background)
+        .background(Palette.groupedBackground)
     }
 
     private var list: some View {
@@ -265,11 +266,17 @@ struct FeedView: View {
                     onOpenComments: { open(post) },
                     // The gesture is inside the card, on its content only. A
                     // row-level tap gesture swallowed every button in the card.
-                    onOpenPost: { open(post) }
+                    onOpenPost: { open(post) },
+                    chrome: .card
                 )
-                .listRowInsets(EdgeInsets())
+                // The web client's cards: inset from the edges, with room
+                // between them for the shadow, on the grouped background.
+                .listRowInsets(EdgeInsets(
+                    top: Spacing.s, leading: Layout.pageInset,
+                    bottom: Spacing.s, trailing: Layout.pageInset
+                ))
                 .listRowSeparator(.hidden)
-                .listRowBackground(Palette.background)
+                .listRowBackground(Color.clear)
                 .task { await model.loadMoreIfNeeded(currentItem: post) }
                 .id(post.id)
             }
@@ -286,11 +293,18 @@ struct FeedView: View {
                         Spacer()
                     }
                     .listRowSeparator(.hidden)
-                    .listRowBackground(Palette.background)
+                    .listRowBackground(Color.clear)
                 }
             }
             .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Palette.groupedBackground)
             .accessibilityIdentifier("feed.list")
+            // A page's saved state in one read, as it arrives: the save button
+            // is on every card. Ids already known are not read again.
+            .task(id: model.posts.map(\.id)) {
+                await bookmarks?.load(model.posts.map(\.id))
+            }
             .onChange(of: path.isEmpty) { _, isAtFeed in
                 // Popped back to the feed: put the row we left from back where
                 // it was. `anchor: .center` rather than .top because the row
@@ -342,7 +356,7 @@ struct FeedView: View {
         }
         .padding(.vertical, Spacing.m)
         .listRowSeparator(.hidden)
-        .listRowBackground(Palette.background)
+        .listRowBackground(Color.clear)
     }
 
     /// A reload that failed over a feed that still has something on it.
@@ -446,7 +460,7 @@ struct FeedErrorView: View {
         }
         .padding(Layout.pageInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Palette.background)
+        .background(Palette.groupedBackground)
         // No identifier on this container: it would overwrite feed.retry on the
         // button inside it, the way root.signedIn once overwrote every element
         // on that screen.

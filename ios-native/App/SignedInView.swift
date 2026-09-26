@@ -30,6 +30,13 @@ struct SignedInView: View {
     /// "only the most visible one plays" are global properties, and a per-view
     /// owner could not enforce either.
     @State private var video = VideoPlaybackCoordinator()
+    /// Which posts this person has saved, for the save button on every card
+    /// and the detail screen's menu. Replaced on an account switch.
+    @State private var bookmarks: PostBookmarks
+    /// The signed-in person's own picture, for the account entry in the feed
+    /// bar (the web client's navbar shows it). Nil until read, and when there
+    /// is none — the entry then shows the placeholder.
+    @State private var accountAvatarURL: URL?
     /// Whether the account menu is on screen. Opening it is all the
     /// navigation-bar control does.
     @State private var isAccountMenuOpen = false
@@ -81,6 +88,7 @@ struct SignedInView: View {
                 feed: filtering, likes: repositories.likes, accountID: user.uid
             )
         )
+        _bookmarks = State(initialValue: PostBookmarks(writes: repositories.postWrites))
         // Unselected tab items stay the system's colour. On iOS 26 the glass
         // tab bar ignores both `unselectedItemTintColor` and the item
         // appearance's normal colours — measured on 09-25, the labels and
@@ -180,6 +188,9 @@ struct SignedInView: View {
             // read for the new account uses the new account's blocks.
             await filteringFeed.switchAccount(to: user.uid)
             feedModel.prepare(for: user.uid)
+            // The previous person's saves and picture are theirs.
+            bookmarks = PostBookmarks(writes: repositories.postWrites)
+            accountAvatarURL = nil
             path = []
             profilePath = []
             placesPath = []
@@ -209,6 +220,21 @@ struct SignedInView: View {
         // nobody can see.
         .onChange(of: selectedTab) { _, tab in
             if tab != .home { video.releaseAll(reason: "left the home tab") }
+            // Back from the profile tab, where the picture can be changed.
+            if tab == .home { Task { await refreshAccountAvatar() } }
+        }
+        // A save that did not go through, from a card or from the menu: said,
+        // and the button is already back to what it was.
+        .alert(
+            "Couldn't update saved posts",
+            isPresented: Binding(
+                get: { bookmarks.failureMessage != nil },
+                set: { if !$0 { bookmarks.failureMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { bookmarks.failureMessage = nil }
+        } message: {
+            Text(bookmarks.failureMessage ?? "")
         }
         // A link opened from outside the app (`petnote://post/<id>`): the
         // home stack shows it, as a tap on the post would. Read on appearing
@@ -240,6 +266,7 @@ struct SignedInView: View {
         NavigationStack(path: $path) {
             FeedView(model: feedModel, path: $path)
                 .environment(video)
+                .environment(bookmarks)
                 .suspendedBanner(isSuspended)
                 // Back from the notifications list, or anywhere else, the dot
                 // is read again.
@@ -341,7 +368,7 @@ struct SignedInView: View {
                         // The bar holds the *entry*, not the action: ending a
                         // session is a row in a menu we lay out ourselves,
                         // where its hit region can be stated as a number.
-                        AccountMenuButton(isPresented: $isAccountMenuOpen)
+                        AccountMenuButton(isPresented: $isAccountMenuOpen, avatarURL: accountAvatarURL)
                     }
                 }
                 .sheet(isPresented: $isAccountMenuOpen) {
@@ -463,7 +490,9 @@ struct SignedInView: View {
             // what was set on that stack's root. The pet page lists its posts
             // as cards and did not have it, so opening a pet with a video
             // post crashed the app (SwiftUI's missing-environment trap).
+            // The saved posts go the same way, for the same cards.
             .environment(video)
+            .environment(bookmarks)
             .suspendedBanner(isSuspended)
             .toolbar(Self.showsTabBar(on: route) ? .visible : .hidden, for: .tabBar)
     }
@@ -487,7 +516,7 @@ struct SignedInView: View {
     private func destinationContent(_ route: Route, stack: Binding<[Route]>) -> some View {
         switch route {
         case .feed:
-            FeedView(model: feedModel, path: stack).environment(video)
+            FeedView(model: feedModel, path: stack).environment(video).environment(bookmarks)
         case .postDetail(let postID):
             PostDetailView(
                 model: PostDetailViewModel(
@@ -506,6 +535,7 @@ struct SignedInView: View {
                 reloadToken: postsEdited
             )
             .environment(video)
+            .environment(bookmarks)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     PostDetailActions(
@@ -779,6 +809,24 @@ struct SignedInView: View {
         // the task for the account now signed in will set it.
         guard boundAccountID == account else { return }
         needsOnboarding = profile.map { !$0.onboardingComplete } ?? false
+        accountAvatarURL = profile.flatMap { Self.drawableAvatar($0.avatarURL) }
+    }
+
+    /// The picture again, after the person may have changed it. A failed
+    /// read keeps the one already shown.
+    private func refreshAccountAvatar() async {
+        let account = user.uid
+        guard let profile = try? await repositories.users.profile(uid: account),
+              boundAccountID == account else { return }
+        accountAvatarURL = Self.drawableAvatar(profile.avatarURL)
+    }
+
+    /// Only a picture this app can draw: SocialAvatar's rule (no SVG, no
+    /// DiceBear), so the entry shows the placeholder rather than a blank.
+    static func drawableAvatar(_ string: String) -> URL? {
+        let url = URL(string: string.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard let url, url.scheme?.hasPrefix("http") == true, SocialAvatar.isDrawable(url) else { return nil }
+        return url
     }
 }
 

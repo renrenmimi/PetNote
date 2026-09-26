@@ -8,6 +8,7 @@ import SwiftUI
 /// somebody came for was the fourth thing down the page.
 struct PetProfileView: View {
     @Bindable var model: PetProfileViewModel
+    @Environment(PostBookmarks.self) private var bookmarks: PostBookmarks?
 
     /// What to do when the pet is gone, or when Edit is pressed. Closures
     /// rather than `Route` cases because `Core/Navigation/Route.swift` is the
@@ -263,15 +264,24 @@ struct PetProfileView: View {
                 identifier: "pet.postsEmpty"
             )
         default:
-            ForEach(model.posts) { post in
-                PostCard(
-                    post: post,
-                    isLiked: false,
-                    onLike: {},
-                    onOpenComments: { onOpenPost?(post.id) },
-                    onOpenPost: { onOpenPost?(post.id) }
-                )
-                .task { await model.loadMorePostsIfNeeded(currentItem: post) }
+            // The feed's cards, as the web client's pet page uses its PostCard.
+            VStack(spacing: Spacing.l) {
+                ForEach(model.posts) { post in
+                    PostCard(
+                        post: post,
+                        isLiked: false,
+                        onLike: {},
+                        onOpenComments: { onOpenPost?(post.id) },
+                        onOpenPost: { onOpenPost?(post.id) },
+                        chrome: .card
+                    )
+                    .task { await model.loadMorePostsIfNeeded(currentItem: post) }
+                }
+            }
+            .padding(.horizontal, Layout.pageInset)
+            // A page's saved state in one read, as the feed does.
+            .task(id: model.posts.map(\.id)) {
+                await bookmarks?.load(model.posts.map(\.id))
             }
         }
     }

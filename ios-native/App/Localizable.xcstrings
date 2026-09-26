@@ -1751,6 +1751,16 @@
         }
       }
     },
+    "Couldn't update saved posts": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收藏没有更新"
+          }
+        }
+      }
+    },
     "Create account": {
       "localizations": {
         "zh-Hans": {
@@ -7779,6 +7789,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Share"
+          }
+        }
+      }
+    },
+    "login.heading": {
+      "comment": "Sign-in screen title",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Log in to your account"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录你的账号"
+          }
+        }
+      }
+    },
+    "login.tagline": {
+      "comment": "Sign-in screen line under the title",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share your pet's everyday moments"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "记录宠物的日常瞬间"
           }
         }
       }

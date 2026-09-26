@@ -46,7 +46,7 @@ struct LoginView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            ScrollView {
+            AuthShell {
                 VStack(alignment: .leading, spacing: Spacing.l) {
                     header
                     sessionEndedNotice
@@ -58,12 +58,8 @@ struct LoginView: View {
                     LegalLinks()
                     footer
                 }
-                .padding(.horizontal, Layout.pageInset)
-                .padding(.vertical, Spacing.xl)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .scrollDismissesKeyboard(.interactively)
-            .background(Palette.background)
             .onSubmit(submit)
             // No bar on the sign-in screen itself: this is the root of the
             // stack and an empty navigation bar above the logo is a strip of
@@ -127,14 +123,18 @@ struct LoginView: View {
         .disabled(isSubmitting)
     }
 
+    /// The web client's heading and line (`login.heading`, `login.tagline`).
+    /// The paw and the name are the shell's, above this.
     private var header: some View {
         VStack(alignment: .leading, spacing: Spacing.s) {
-            BrandMark(size: 40)
-            Text("PetNote")
-                .font(Typography.pageTitle)
+            Text(String(localized: "login.heading", defaultValue: "Log in to your account",
+                        comment: "Sign-in screen title"))
+                .font(.title2.weight(.semibold))
                 .foregroundStyle(Palette.primaryText)
+                .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("login.title")
-            Text("Sign in to continue")
+            Text(String(localized: "login.tagline", defaultValue: "Share your pet's everyday moments",
+                        comment: "Sign-in screen line under the title"))
                 .font(Typography.body)
                 .foregroundStyle(Palette.secondaryText)
         }

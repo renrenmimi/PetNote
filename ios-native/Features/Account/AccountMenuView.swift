@@ -26,6 +26,9 @@ import SwiftUI
 /// not a feature but the answer to "whose session am I about to end".
 struct AccountMenuButton: View {
     @Binding var isPresented: Bool
+    /// The person's own picture, as the web client's navbar shows it. Nil, or
+    /// a picture that does not load, shows the placeholder.
+    var avatarURL: URL?
 
     var body: some View {
         Button {
@@ -33,9 +36,7 @@ struct AccountMenuButton: View {
             // separate tap on a separate control — see AccountMenuView.
             isPresented = true
         } label: {
-            // The bar's resting grey, like search and the bell beside it.
-            Image(systemName: "person.crop.circle")
-                .foregroundStyle(Palette.iconInactive)
+            AccountAvatar(url: avatarURL)
         }
         // On the Button, not on a container around it. `root.signedIn` on a
         // container once overwrote the identifier of every element beneath it,
@@ -170,5 +171,52 @@ struct AccountMenuView: View {
             .contentShape(.rect)
         }
         .accessibilityIdentifier("session.signOut")
+    }
+}
+
+/// The picture in the account entry: the person's own when it is there and
+/// loads, the placeholder symbol — in the bar's resting grey, like search and
+/// the bell beside it — while it loads, when there is none and when it fails.
+///
+/// Its own small loader rather than `RemoteImage`: that one offers "Tap to
+/// retry" when a picture fails, and a button inside the bar's button is not a
+/// thing a person can use. 28pt, inside the entry's own 44pt target.
+struct AccountAvatar: View {
+    let url: URL?
+    @State private var image: UIImage?
+    @Environment(\.displayScale) private var displayScale
+
+    private static let size: CGFloat = 28
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: Self.size, height: Self.size)
+                    .clipShape(Circle())
+            } else {
+                Image(systemName: "person.crop.circle")
+                    .foregroundStyle(Palette.iconInactive)
+            }
+        }
+        .accessibilityHidden(true)
+        .task(id: url) { await load() }
+    }
+
+    private func load() async {
+        guard let url else {
+            image = nil
+            return
+        }
+        let optimized = CloudinaryURL.optimized(url, size: .avatar)
+        do {
+            image = try await ImageLoader.shared.image(for: optimized, maxPixelSize: Self.size * displayScale)
+        } catch {
+            // Cancelled or failed alike: the placeholder stays. A failure is
+            // not announced — the entry still opens the menu either way.
+            if !Task.isCancelled, !ImageLoader.isCancellation(error) { image = nil }
+        }
     }
 }

@@ -35,7 +35,7 @@ private struct RestoringView: View {
                 BrandMark(size: 64)
                 Text("PetNote")
                     .font(.title2.weight(.bold))
-                    .foregroundStyle(Palette.brandGradient)
+                    .foregroundStyle(Palette.brandAccentGradient)
                     .accessibilityHidden(true)
             }
             ProgressView()

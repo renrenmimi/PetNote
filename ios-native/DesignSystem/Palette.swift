@@ -21,6 +21,12 @@ enum Palette {
     /// Cards sit on the page rather than float: §5.2 says separate them with
     /// background colour, not shadow.
     static let cardBackground = Color(uiColor: .secondarySystemGroupedBackground)
+    /// What a card sits on: the web feed's slate-50 page under white cards.
+    /// Grouped, so the pair keeps its contrast in dark mode too, where
+    /// `secondaryBackground` and `cardBackground` are the same grey.
+    static let groupedBackground = Color(uiColor: .systemGroupedBackground)
+    /// A card's soft shadow (`PostCard.tsx`'s shadow-[0_18px_40px_-28px]).
+    static let cardShadow = Color.black.opacity(0.08)
     static let separator = Color(uiColor: .separator)
 
     // MARK: Text
@@ -62,6 +68,29 @@ enum Palette {
     /// not a text colour — 3.9:1 on white clears the 3:1 a graphic needs and
     /// not the 4.5:1 text does — so the count beside the heart stays grey.
     static let likeActive = Color("LikeActive", bundle: .main)
+
+    // MARK: Brand accent
+    /// The web client's `from-purple-500 to-pink-500` (Tailwind 4: #AD46FF,
+    /// #F6339A): the sign-in screens' background (`AuthShell.tsx`), the
+    /// Create button in the bottom bar (`BottomNav.tsx`) and the splash's
+    /// wordmark (`SplashScreen.tsx`). Lighter than `brandGradient`, which is
+    /// the 600s because white *text* sits on it; nothing on these two needs
+    /// that, and the web drew them in the 500s.
+    static let brandAccentStart = Color("BrandAccentStart", bundle: .main)
+    static let brandAccentEnd = Color("BrandAccentEnd", bundle: .main)
+
+    /// Left to right, for the Create circle and the wordmark (`to-r`).
+    static var brandAccentGradient: LinearGradient {
+        LinearGradient(colors: [brandAccentStart, brandAccentEnd], startPoint: .leading, endPoint: .trailing)
+    }
+
+    /// Corner to corner, for the sign-in screens' background (`to-br`).
+    static var authBackground: LinearGradient {
+        LinearGradient(colors: [brandAccentStart, brandAccentEnd], startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    /// The sign-in card's shadow (`shadow-2xl`).
+    static let panelShadow = Color.black.opacity(0.25)
 
     // MARK: Status
     /// Also measured. On a white page the system greens and oranges are 2.22:1

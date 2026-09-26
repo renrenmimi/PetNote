@@ -26,7 +26,7 @@ struct SignUpView: View {
     }
 
     var body: some View {
-        ScrollView {
+        AuthShell {
             VStack(alignment: .leading, spacing: Spacing.l) {
                 header
                 noticeBanner
@@ -37,21 +37,21 @@ struct SignUpView: View {
                 legalNote
                 GoogleSignInButton()
             }
-            .padding(.horizontal, Layout.pageInset)
-            .padding(.vertical, Spacing.xl)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .scrollDismissesKeyboard(.interactively)
-        .background(Palette.background)
         .navigationTitle("Create account")
         .navigationBarTitleDisplayMode(.inline)
+        // The card has the title; the bar keeps the way back, and the name
+        // for VoiceOver and the back button's history, without saying it twice.
+        .toolbar(removing: .title)
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: Spacing.s) {
             Text("Create your account")
-                .font(Typography.pageTitle)
+                .font(.title2.weight(.semibold))
                 .foregroundStyle(Palette.primaryText)
+                .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("signup.title")
             Text("You can browse PetNote without one. An account is for posting.")
                 .font(Typography.body)

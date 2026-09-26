@@ -18,8 +18,9 @@ enum CreateTabIcon {
         let side: CGFloat = 30
         let format = UIGraphicsImageRendererFormat.preferred()
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format)
-        let start = UIColor(named: "BrandGradientStart") ?? .systemPurple
-        let end = UIColor(named: "BrandGradientEnd") ?? .systemPink
+        // The web's purple-500 to pink-500 (`Palette.brandAccentGradient`).
+        let start = UIColor(named: "BrandAccentStart") ?? .systemPurple
+        let end = UIColor(named: "BrandAccentEnd") ?? .systemPink
         let white = UIColor(Palette.textOnBrand)
         let drawn = renderer.image { context in
             let rect = CGRect(x: 0, y: 0, width: side, height: side)

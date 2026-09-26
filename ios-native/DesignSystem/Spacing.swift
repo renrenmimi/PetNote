@@ -15,6 +15,8 @@ enum Spacing {
 enum Radius {
     static let card: CGFloat = 16
     static let control: CGFloat = 12
+    /// The sign-in card (`AuthShell.tsx`'s rounded-3xl).
+    static let panel: CGFloat = 24
 }
 
 enum Layout {

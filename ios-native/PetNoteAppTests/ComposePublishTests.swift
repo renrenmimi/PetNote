@@ -86,6 +86,10 @@ final class FakePostWrites: PostWriteRepository, @unchecked Sendable {
         lock.locked { failures[operation] = error }
     }
 
+    func stopFailing(_ operation: String) {
+        lock.locked { failures[operation] = nil }
+    }
+
     // MARK: PostWriteRepository
 
     func publish(_ request: PublishRequest) async throws -> PublishOutcome {
@@ -156,6 +160,16 @@ final class FakePostWrites: PostWriteRepository, @unchecked Sendable {
 
     func isBookmarked(postID: String) async throws -> Bool {
         lock.locked { bookmarks.contains(postID) }
+    }
+
+    private(set) var bookmarkStatusReads: [[String]] = []
+
+    func bookmarkedPostIDs(among postIDs: [String]) async throws -> Set<String> {
+        try lock.locked {
+            bookmarkStatusReads.append(postIDs)
+            if let error = failures["bookmarkStatus"] { throw error }
+            return bookmarks.intersection(postIDs)
+        }
     }
 }
 
