@@ -169,6 +169,18 @@ extension XCTestCase {
         app.buttons["session.signOut"].exists
     }
 
+    /// A card's share menu, by its first item. Since 09-26 the share button
+    /// sits beside the comments button, so a search for the comments
+    /// button's right edge taps it. Unrecognised, the menu stayed open, the
+    /// next probe's tap only closed it, and every probe after the first was
+    /// recorded as "nothing": the comments width read 44 where a direct tap
+    /// at each point showed the button answering out to the middle of the
+    /// gap (2026-09-26). The item has no identifier of ours — it is the
+    /// system menu's — so it is found by the English label the suite runs in.
+    func shareMenuIsUp(_ app: XCUIApplication) -> Bool {
+        app.buttons["Copy Link"].exists
+    }
+
     /// Closes the account menu with the menu's own Close button.
     ///
     /// Deliberately `account.close` and not the drag in `SessionFlow`: the
@@ -206,12 +218,20 @@ extension XCTestCase {
                 closeAccountMenuByItsOwnButton(app)
                 continue
             }
+            if shareMenuIsUp(app) {
+                // A tap outside closes a menu; the middle of the navigation
+                // bar is outside it and is nothing that acts on a tap.
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap()
+                becomesTrue(within: 6) { !shareMenuIsUp(app) }
+                continue
+            }
             return true
         }
-        let stillThere = fullImageCoverIsUp(app) || accountMenuIsUp(app)
+        let stillThere = fullImageCoverIsUp(app) || accountMenuIsUp(app) || shareMenuIsUp(app)
         if stillThere {
             print("MEASURED clearProbeOverlays gave up: cover=\(fullImageCoverIsUp(app)) "
-                  + "menu=\(accountMenuIsUp(app)); anything measured from here is measured through it")
+                  + "menu=\(accountMenuIsUp(app)) share=\(shareMenuIsUp(app)); "
+                  + "anything measured from here is measured through it")
         }
         return !stillThere
     }
@@ -516,7 +536,7 @@ extension XCTestCase {
             // same card: after a push, `post.like` firstMatch is the *other*
             // screen's button and its label has not changed either.
             if app.navigationBars["Post"].exists { return .somethingElse }
-            if accountMenuIsUp(app) || fullImageCoverIsUp(app) { return .somethingElse }
+            if accountMenuIsUp(app) || fullImageCoverIsUp(app) || shareMenuIsUp(app) { return .somethingElse }
             let now = app.buttons.matching(identifier: "post.like").firstMatch
             guard now.exists else { return nil }
             return now.label == before ? nil : .activated
@@ -600,7 +620,7 @@ extension XCTestCase {
 
         tapWindowPoint(app, target)
         let watch = watchForChange {
-            if fullImageCoverIsUp(app) || accountMenuIsUp(app) { return .somethingElse }
+            if fullImageCoverIsUp(app) || accountMenuIsUp(app) || shareMenuIsUp(app) { return .somethingElse }
             // Both bars are in the tree during the push, and so are both
             // screens' `post.text`. Reading the label before the feed's bar has
             // gone reads the feed's own first card, which is the same post
