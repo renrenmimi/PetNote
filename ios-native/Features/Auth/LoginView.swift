@@ -46,22 +46,20 @@ struct LoginView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            ScrollView {
+            AuthShell {
                 VStack(alignment: .leading, spacing: Spacing.l) {
                     header
                     sessionEndedNotice
                     fields
                     submitButton
                     errorMessage
+                    GoogleSignInButton()
                     alternatives
+                    LegalLinks()
                     footer
                 }
-                .padding(.horizontal, Layout.pageInset)
-                .padding(.vertical, Spacing.xl)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .scrollDismissesKeyboard(.interactively)
-            .background(Palette.background)
             .onSubmit(submit)
             // No bar on the sign-in screen itself: this is the root of the
             // stack and an empty navigation bar above the logo is a strip of
@@ -101,32 +99,42 @@ struct LoginView: View {
     /// no account.
     private var alternatives: some View {
         VStack(alignment: .leading, spacing: Spacing.m) {
-            Button("Forgot your password?") { path.append(.forgotPassword) }
-                .font(Typography.body)
-                .foregroundStyle(Palette.brandPrimary)
-                .frame(minHeight: Layout.minTouchTarget)
-                .accessibilityIdentifier("login.forgotPassword")
+            // The height goes on the label, inside the button. On the button
+            // it made the row taller and left the control — what a finger and
+            // VoiceOver get — at the text's own 17pt at the smallest type size.
+            Button { path.append(.forgotPassword) } label: {
+                Text("Forgot your password?")
+                    .frame(minHeight: Layout.minTouchTarget)
+                    .contentShape(.rect)
+            }
+            .font(Typography.body)
+            .foregroundStyle(Palette.brandPrimary)
+            .accessibilityIdentifier("login.forgotPassword")
 
-            Button("New here? Create an account") { path.append(.signUp) }
-                .font(Typography.body)
-                .foregroundStyle(Palette.brandPrimary)
-                .frame(minHeight: Layout.minTouchTarget)
-                .accessibilityIdentifier("login.signUp")
+            Button { path.append(.signUp) } label: {
+                Text("New here? Create an account")
+                    .frame(minHeight: Layout.minTouchTarget)
+                    .contentShape(.rect)
+            }
+            .font(Typography.body)
+            .foregroundStyle(Palette.brandPrimary)
+            .accessibilityIdentifier("login.signUp")
         }
         .disabled(isSubmitting)
     }
 
+    /// The web client's heading and line (`login.heading`, `login.tagline`).
+    /// The paw and the name are the shell's, above this.
     private var header: some View {
         VStack(alignment: .leading, spacing: Spacing.s) {
-            Image(systemName: "pawprint.fill")
-                .font(Typography.pageTitle)
-                .foregroundStyle(Palette.brandPrimary)
-                .accessibilityHidden(true)
-            Text("PetNote")
-                .font(Typography.pageTitle)
+            Text(String(localized: "login.heading", defaultValue: "Log in to your account",
+                        comment: "Sign-in screen title"))
+                .font(.title2.weight(.semibold))
                 .foregroundStyle(Palette.primaryText)
+                .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("login.title")
-            Text("Sign in to continue")
+            Text(String(localized: "login.tagline", defaultValue: "Share your pet's everyday moments",
+                        comment: "Sign-in screen line under the title"))
                 .font(Typography.body)
                 .foregroundStyle(Palette.secondaryText)
         }
@@ -139,6 +147,15 @@ struct LoginView: View {
     /// them. Only shown for an expiry: someone who tapped "sign out" knows.
     @ViewBuilder
     private var sessionEndedNotice: some View {
+        if session.endedReason == .accountDeleted {
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
+                Image(systemName: "checkmark.circle").accessibilityHidden(true)
+                Text("Your account has been deleted.")
+                    .accessibilityIdentifier("login.accountDeleted")
+            }
+            .font(Typography.caption)
+            .foregroundStyle(Palette.secondaryText)
+        }
         if session.endedReason == .expired {
             HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
                 Image(systemName: "clock.arrow.circlepath").accessibilityHidden(true)

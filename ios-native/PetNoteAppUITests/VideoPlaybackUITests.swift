@@ -177,6 +177,110 @@ final class VideoPlaybackUITests: XCTestCase {
         return last
     }
 
+    /// Brings the video that is playing wholly into the part of the screen
+    /// that is seen — below the navigation bar, above the tab bar — and
+    /// waits until the coordinator is playing that same video there.
+    ///
+    /// **Needed since the feed grew rows above its posts.** The "⭐ Popular
+    /// Pets" row, and the birthday banner on a day it is up, move every card
+    /// down, so the slow swipes that used to stop with the seed's first video
+    /// in view now stopped with it partly under the tab bar (full regression,
+    /// 2026-09-24). It was playing there, rightly: the coordinator plays a
+    /// row from 60% on screen (`VideoPlaybackCoordinator.visibilityThreshold`),
+    /// measured against the whole screen, tab bar included. But
+    /// `centreColour` photographs a row only when 80% of it is inside the
+    /// window, and even then the middle of a row reaching under the tab bar
+    /// is partly the tab bar: the first test got no photograph ("no
+    /// screenshot") and the wrap test none it could match to the clip in 45
+    /// seconds ("0 < 3"). The photograph and what it must show are
+    /// unchanged; what changes is that the row is put where a person would
+    /// be looking at it before anything is read off it.
+    ///
+    /// Moved the way `testThePosterIsReadWithTheVideoPartlyOffScreen` parks
+    /// a row: slow drags by a measured distance, held before release so the
+    /// list stops where it is put instead of coasting on. Each drag aims the
+    /// row's middle at the middle of what is seen. A row not yet wholly seen
+    /// is always far from there — a 503pt row in the 685pt between the bars
+    /// on an iPhone 17 is wholly seen within 91pt of the middle — so no drag
+    /// is short enough to count as a tap on the card, which opens the post.
+    /// The row only gains screen on the way to the middle, so it stays above
+    /// the threshold and keeps its player the whole time. Not
+    /// `SessionFlow.bringIntoReach`: that clears the tab bar only, and this
+    /// row has to clear the navigation bar too.
+    ///
+    /// "The same video" is the id the probe named before the move. A row
+    /// that is wholly seen and not playing, or playing some other video,
+    /// fails here, not as a missing photograph further down.
+    private func parkThePlayingVideoInFullView(
+        _ app: XCUIApplication,
+        timeout: TimeInterval = 20,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let chosen = Self.value(named: "playing", in: probe(app)).flatMap { $0 == "none" ? nil : $0 }
+        let window = app.windows.firstMatch.frame
+        let deadline = Date().addingTimeInterval(timeout)
+        var trail: [String] = []
+        var drags = 0
+        var last = "no row reported itself playing"
+        while Date() < deadline {
+            let seen = Self.uncoveredArea(in: app, window: window)
+            // State and frame read in one pass and kept as values: a held
+            // element read again later is the stale-snapshot trap.
+            let playing = app.otherElements.matching(identifier: "video.surface").allElementsBoundByIndex
+                .compactMap { element -> (state: String, frame: CGRect)? in
+                    guard element.exists else { return nil }
+                    let state = element.value as? String ?? ""
+                    guard state.contains("playing=true") else { return nil }
+                    return (state: state, frame: element.frame)
+                }
+                .first
+            if let playing {
+                let now = Self.value(named: "playing", in: probe(app))
+                last = "row at \(playing.frame) in \(seen), probe playing=\(now ?? "?"), \(playing.state)"
+                if seen.contains(playing.frame) {
+                    if chosen == nil || now == chosen {
+                        trail.append(String(format: "%.0f…%.0f", playing.frame.minY, playing.frame.maxY))
+                        print("MEASURED parked the playing video (\(now ?? "?")) wholly in view after "
+                              + "\(drags) drag(s): \(trail.joined(separator: " → ")) in \(seen)")
+                        return
+                    }
+                } else if drags < 6, abs(playing.frame.midY - seen.midY) >= 20 {
+                    // (A row taller than what is seen is never wholly seen,
+                    // and is not dragged by a few points to try: that would
+                    // be a tap on the card.)
+                    trail.append(String(format: "%.0f…%.0f", playing.frame.minY, playing.frame.maxY))
+                    dragList(app, by: playing.frame.midY - seen.midY, within: seen)
+                    drags += 1
+                    continue
+                }
+            }
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+        XCTFail(
+            """
+            the playing video (\(chosen ?? "unnamed")) could not be brought wholly into view and \
+            played there; drags: \(trail.joined(separator: " → ")); last: \(last)
+            """,
+            file: file, line: line
+        )
+    }
+
+    /// One slow drag of the list by `distance` points, up when positive,
+    /// held before release so it does not coast. It starts inside what is
+    /// seen, on the side the content is moving away from, so the finger is
+    /// on the list from start to end; and it moves at most 60% of what is
+    /// seen, so it ends there too.
+    private func dragList(_ app: XCUIApplication, by distance: CGFloat, within seen: CGRect) {
+        let limit = seen.height * 0.6
+        let travel = max(-limit, min(limit, distance))
+        let startY = travel > 0 ? seen.maxY - 30 : seen.minY + 30
+        let start = app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: seen.midX, dy: startY))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -travel)),
+                    withVelocity: .slow, thenHoldForDuration: 0.5)
+    }
+
     // MARK: - 1–4, separated
 
     func testAVideoIsChosenPlayedAdvancingAndActuallyDrawn() throws {
@@ -187,6 +291,10 @@ final class VideoPlaybackUITests: XCTestCase {
         // 1 and 2: chosen, and past the poster.
         print("MEASURED first playing state: \(state)")
         XCTAssertTrue(state.contains("playing=true"), state)
+        // Wholly in view, and still the one playing, before anything is read
+        // off it: the rest of this test is about the row a person is looking
+        // at, and 4 photographs it.
+        parkThePlayingVideoInFullView(app)
         let withPicture = waitForState(app, contains: "state=picture")
         XCTAssertTrue(withPicture.contains("state=picture"), "never got past opening: \(withPicture)")
         XCTAssertTrue(
@@ -252,6 +360,8 @@ final class VideoPlaybackUITests: XCTestCase {
     func testTheGlassKeepsChangingPastTheEndOfTheClip() throws {
         let app = launch()
         XCTAssertTrue(scrollToAPlayingVideo(app).contains("playing=true"))
+        // Wholly in view first: every sample below is a photograph of it.
+        parkThePlayingVideoInFullView(app)
         XCTAssertTrue(waitForState(app, contains: "state=picture").contains("state=picture"))
         let surface = try XCTUnwrap(playingSurface(app)?.element)
 
@@ -1118,18 +1228,7 @@ final class VideoPlaybackUITests: XCTestCase {
         // (testThePosterIsReadWithTheVideoPartlyOffScreen, 2026-09-23), and a
         // photograph there is partly of the tab bar. The square itself stays
         // the middle of the element, inside the picture under aspect-fit.
-        var uncovered = window
-        for bar in [app.navigationBars.firstMatch, app.tabBars.firstMatch] where bar.exists {
-            let edge = bar.frame
-            guard edge.intersects(uncovered) else { continue }
-            if edge.midY > window.midY {
-                uncovered.size.height = max(0, edge.minY - uncovered.minY)
-            } else {
-                let top = max(uncovered.minY, edge.maxY)
-                uncovered.size.height = max(0, uncovered.maxY - top)
-                uncovered.origin.y = top
-            }
-        }
+        let uncovered = uncoveredArea(in: app, window: window)
         let seen = middle.intersection(uncovered)
         guard !seen.isNull, seen.width > 0, seen.height >= frame.height * 0.15 else {
             print("MEASURED sample refused: frame=\(frame) uncovered=\(uncovered) seen=\(seen) "
@@ -1145,6 +1244,24 @@ final class VideoPlaybackUITests: XCTestCase {
         ).integral
         guard let cropped = full.cropping(to: pixels) else { return nil }
         return average(of: cropped)
+    }
+
+    /// The part of the window a person sees: the window less the navigation
+    /// bar drawn over its top and the tab bar drawn over its bottom.
+    private static func uncoveredArea(in app: XCUIApplication, window: CGRect) -> CGRect {
+        var uncovered = window
+        for bar in [app.navigationBars.firstMatch, app.tabBars.firstMatch] where bar.exists {
+            let edge = bar.frame
+            guard edge.intersects(uncovered) else { continue }
+            if edge.midY > window.midY {
+                uncovered.size.height = max(0, edge.minY - uncovered.minY)
+            } else {
+                let top = max(uncovered.minY, edge.maxY)
+                uncovered.size.height = max(0, uncovered.maxY - top)
+                uncovered.origin.y = top
+            }
+        }
+        return uncovered
     }
 
     private static func average(of image: CGImage) -> Sample? {

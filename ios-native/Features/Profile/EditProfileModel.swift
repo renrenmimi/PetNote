@@ -149,7 +149,7 @@ final class EditProfileModel {
             outcome = result.authMirrored
                 ? .saved
                 : .savedWithWarning(
-                    "Saved. Your name may take until the next sign-in to update everywhere."
+                    String(localized: "Saved. Your name may take until the next sign-in to update everywhere.")
                 )
         } catch {
             // See (3). An unknown outcome keeps the orphan; a refusal reclaims

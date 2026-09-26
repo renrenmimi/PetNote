@@ -196,7 +196,7 @@ actor FirestorePetRepository: PetRepository {
         // spending a round trip and a rate-limit slot to be told that is
         // waste.
         guard payload.count > 1 else {
-            throw PetError.rejected("Nothing was changed.")
+            throw PetError.rejected(String(localized: "Nothing was changed."))
         }
         _ = try await call(Callables.updatePet, payload, as: .update)
     }
@@ -343,7 +343,17 @@ actor FirestorePetRepository: PetRepository {
             return .notAnOwner
 
         case .failedPrecondition:
-            if message.contains("account has been deleted") { return .accountDeleted }
+            // Both halves of `assertCallerAccountActive` refuse with this code
+            // before any pet-specific check runs (functions/src/
+            // notifications.ts:112-156): `assertActorNotDeleting` while a
+            // deletion is in progress — which `deleteUserAccount` leaves set,
+            // Auth intact, when a cleanup step fails — and the tombstone after
+            // it. Both have to be recognised here, or a deleting account is
+            // told it already has five pets.
+            if message.contains("account has been deleted")
+                || message.contains("account deletion is in progress") {
+                return .accountDeleted
+            }
             switch operation {
             case .create:
                 return .petLimitReached
@@ -377,7 +387,7 @@ actor FirestorePetRepository: PetRepository {
     /// One wording for every content refusal, because the server's own message
     /// is not written for a person and is not ours to show.
     private static let refusalWording =
-        "That was not accepted. Check the name, breed and bio and try again."
+        String(localized: "That was not accepted. Check the name, breed and bio and try again.")
 
     // MARK: - Birthday
 

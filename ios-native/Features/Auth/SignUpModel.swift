@@ -22,7 +22,7 @@ final class SignUpModel {
         var text: String {
             switch self {
             case .emailAlreadyInUse:
-                "That email already has an account. Sign in instead."
+                String(localized: "That email already has an account. Sign in instead.")
             case .message(let text):
                 text
             }

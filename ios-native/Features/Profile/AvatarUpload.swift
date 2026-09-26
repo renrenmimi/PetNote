@@ -23,17 +23,17 @@ enum AvatarUploadError: Error, Sendable, Equatable {
     var message: String {
         switch self {
         case .tooLarge(let limit):
-            "That photo is larger than \(limit / (1024 * 1024))MB. Choose a smaller one."
+            String(localized: "That photo is larger than \(limit / (1024 * 1024))MB. Choose a smaller one.")
         case .notAnImage:
-            "That file is not an image we can use."
+            String(localized: "That file is not an image we can use.")
         case .timedOut:
-            "The upload timed out. Check your connection and try again."
+            String(localized: "The upload timed out. Check your connection and try again.")
         case .offline:
-            "No connection. Check your network and try again."
+            String(localized: "No connection. Check your network and try again.")
         case .rejected(let reason):
             reason
         case .transport:
-            "The photo could not be uploaded. Try again."
+            String(localized: "The photo could not be uploaded. Try again.")
         }
     }
 }
@@ -107,9 +107,10 @@ struct CloudinaryAvatarUploader: AvatarUploading {
         }
 
         let boundary = "petnote-\(UUID().uuidString)"
-        var request = URLRequest(
-            url: URL(string: "https://api.cloudinary.com/v1_1/\(signature.cloudName)/image/upload")!
-        )
+        guard let endpoint = UploadSignature.endpoint(cloudName: signature.cloudName, resourceType: "image") else {
+            throw AvatarUploadError.transport("bad-cloud-name")
+        }
+        var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.timeoutInterval = Self.requestTimeout
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
@@ -251,11 +252,11 @@ struct CloudinaryAvatarUploader: AvatarUploading {
             // there is no ambiguity about an asset — only about this request.
             return .timedOut
         case .rateLimited:
-            return .rejected("Too many uploads just now. Wait a moment and try again.")
+            return .rejected(String(localized: "Too many uploads just now. Wait a moment and try again."))
         case .notSignedIn:
-            return .rejected("Sign in again to change your picture.")
+            return .rejected(String(localized: "Sign in again to change your picture."))
         case .banned:
-            return .rejected("This account cannot upload pictures.")
+            return .rejected(String(localized: "This account cannot upload pictures."))
         case .displayNameTaken:
             // Not reachable from this callable; mapped rather than crashed.
             return .transport("unexpected-status")

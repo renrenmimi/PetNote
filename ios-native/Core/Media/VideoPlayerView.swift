@@ -222,8 +222,8 @@ struct VideoPlayerView: View {
     /// somebody listening is concerned, and reading nine case names aloud is
     /// worse than reading three.
     private var accessibilityLabelText: String {
-        if case .stalled = phase { return "Video, stopped loading" }
-        return coordinator.playingID == id ? "Video" : "Video, not playing"
+        if case .stalled = phase { return String(localized: "Video, stopped loading") }
+        return coordinator.playingID == id ? String(localized: "Video") : String(localized: "Video, not playing")
     }
 
     /// What this row is doing, asked once per redraw and never decided here.

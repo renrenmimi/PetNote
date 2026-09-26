@@ -27,7 +27,9 @@ enum TouchOutcome: String {
     /// The tap landed and nothing observable happened, **confirmed** rather
     /// than assumed: see `watchForChange`.
     case nothing
-    /// Outside the window. A limit of the screen, not a measurement.
+    /// Outside the window, or under a bar that sits in front of the list. A
+    /// limit of the screen, not a measurement: a tap there is a probe of the
+    /// bar, and `findEdge` does not count it as the control's boundary.
     case offWindow
 }
 
@@ -167,6 +169,18 @@ extension XCTestCase {
         app.buttons["session.signOut"].exists
     }
 
+    /// A card's share menu, by its first item. Since 09-26 the share button
+    /// sits beside the comments button, so a search for the comments
+    /// button's right edge taps it. Unrecognised, the menu stayed open, the
+    /// next probe's tap only closed it, and every probe after the first was
+    /// recorded as "nothing": the comments width read 44 where a direct tap
+    /// at each point showed the button answering out to the middle of the
+    /// gap (2026-09-26). The item has no identifier of ours — it is the
+    /// system menu's — so it is found by the English label the suite runs in.
+    func shareMenuIsUp(_ app: XCUIApplication) -> Bool {
+        app.buttons["Copy Link"].exists
+    }
+
     /// Closes the account menu with the menu's own Close button.
     ///
     /// Deliberately `account.close` and not the drag in `SessionFlow`: the
@@ -204,12 +218,20 @@ extension XCTestCase {
                 closeAccountMenuByItsOwnButton(app)
                 continue
             }
+            if shareMenuIsUp(app) {
+                // A tap outside closes a menu; the middle of the navigation
+                // bar is outside it and is nothing that acts on a tap.
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap()
+                becomesTrue(within: 6) { !shareMenuIsUp(app) }
+                continue
+            }
             return true
         }
-        let stillThere = fullImageCoverIsUp(app) || accountMenuIsUp(app)
+        let stillThere = fullImageCoverIsUp(app) || accountMenuIsUp(app) || shareMenuIsUp(app)
         if stillThere {
             print("MEASURED clearProbeOverlays gave up: cover=\(fullImageCoverIsUp(app)) "
-                  + "menu=\(accountMenuIsUp(app)); anything measured from here is measured through it")
+                  + "menu=\(accountMenuIsUp(app)) share=\(shareMenuIsUp(app)); "
+                  + "anything measured from here is measured through it")
         }
         return !stillThere
     }
@@ -268,6 +290,17 @@ extension XCTestCase {
                 app.navigationBars["PetNote"].exists && !app.navigationBars["Post"].exists
             }
         }
+        // A probe beside the account entry can land on its neighbours in the
+        // bar, which push a screen of their own: search, and since the bell
+        // was added, notifications. Measured: the first probe 60pt left of
+        // the entry did exactly that, and every probe after it was recorded
+        // as "lost the feed", which made the width read 0. Back out.
+        for _ in 0..<3 where !app.navigationBars["PetNote"].exists {
+            let back = app.navigationBars.buttons["BackButton"].firstMatch
+            guard back.exists else { break }
+            back.tap()
+            becomesTrue(within: 10) { app.navigationBars["PetNote"].exists }
+        }
         return waitForExistence(of: app.navigationBars["PetNote"], in: app, timeout: 30)
             && !app.navigationBars["Post"].exists
     }
@@ -324,6 +357,95 @@ extension XCTestCase {
         let window = app.windows.firstMatch.frame
         return point.x > window.minX && point.x < window.maxX
             && point.y > window.minY && point.y < window.maxY
+    }
+
+    // MARK: What sits in front of the feed
+
+    /// How much list a feed control keeps above and below its centre, clear of
+    /// both bars, while it is probed: the calibration's vertical reach (40)
+    /// and a margin.
+    var feedProbeClearance: CGFloat { 44 }
+
+    /// The bar a tap at `point` would land on, if any.
+    ///
+    /// **This is why the control group went red again, and it is measured.**
+    /// The reference geometry in `HitRegionBoundaryUITests` was read at
+    /// `08c1105` (09-22 09:38), when the app had no tab bar; `0867749` added
+    /// one three hours later. On the iPhone 17 its top is at y 791, the first
+    /// card's like button spans 753–797, and the vertical search reaches 815.
+    /// The one calibration run since (the 44f8d99 regression, 09-23) put the
+    /// like button's bottom boundary in [790.625, 790.938) — the tab bar's
+    /// top, not the button's — and then failed the containment check on it.
+    /// A tap on a bar measures the bar, so it is refused rather than scored as
+    /// a miss. Above the feed's bar counts too: the status bar there scrolls
+    /// the list to the top.
+    func barInFront(of point: CGPoint, in app: XCUIApplication) -> String? {
+        let tabBar = app.tabBars.firstMatch
+        if tabBar.exists, point.y >= tabBar.frame.minY { return "tab bar" }
+        let feedBar = app.navigationBars["PetNote"]
+        if feedBar.exists, point.y <= feedBar.frame.maxY { return "navigation bar" }
+        return nil
+    }
+
+    /// Moves the feed until `element` has `feedProbeClearance` of list above
+    /// and below it, between the two bars, and says whether it got there.
+    ///
+    /// Needed before the anchor is read, and again before every probe,
+    /// because the feed does not stay where it was put. Coming back from a
+    /// post re-anchors the list on the post that was opened
+    /// (`FeedView.onChange(of: path.isEmpty)`, `anchor: .center`), and a card
+    /// taller than the space between the bars, centred, has its action row
+    /// against the tab bar. `probeTarget` translates a probe with the control,
+    /// which is only sound while everything within reach of the probe moves
+    /// with it: list content does, the bars do not. So the control is put
+    /// back where only list content is within reach, and what is left over is
+    /// translated as before.
+    ///
+    /// Slow drags with a hold, as `nudgeListUp` does, overshooting by a scroll
+    /// view's start-of-drag slop: the condition is a band rather than a
+    /// position, so landing a little further in is harmless. A drag *down*
+    /// happens only when the control is near the top bar, which for a card
+    /// near the head of the list means the list has scrolled most of a screen
+    /// — far more than the move — so it cannot become a pull to refresh.
+    ///
+    /// Not `@discardableResult`: a caller that ignores `false` measures
+    /// through a bar, which is the defect this exists to stop.
+    func bringClearOfBars(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
+        let slop: CGFloat = 12
+        // Six looks and at most five drags: the last look checks the last drag.
+        for attempt in 0..<6 {
+            dismissSavePasswordSheetIfPresent(app)
+            guard frameSettled(element) else { return false }
+            let frame = element.frame
+            let window = app.windows.firstMatch.frame
+            let tabBar = app.tabBars.firstMatch
+            let feedBar = app.navigationBars["PetNote"]
+            let listBottom = tabBar.exists ? tabBar.frame.minY : window.maxY
+            let listTop = feedBar.exists ? feedBar.frame.maxY : window.minY
+            let low = frame.midY - feedProbeClearance
+            let high = frame.midY + feedProbeClearance
+            guard high - low < listBottom - listTop else { return false }
+            // Negative moves the finger up, which carries the list up.
+            let move: CGFloat
+            if high >= listBottom {
+                move = -(high - listBottom + slop)
+            } else if low <= listTop {
+                move = listTop - low + slop
+            } else {
+                return true
+            }
+            guard attempt < 5 else { return false }
+            let start = app.windows.firstMatch
+                .coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: window.midX, dy: window.midY))
+            let end = start.withOffset(CGVector(dx: 0, dy: move))
+            start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .slow,
+                        thenHoldForDuration: 0.3)
+            print(String(format: "MEASURED     dragged the feed %.1fpt to keep %@ clear of the bars "
+                         + "(was y %.3f–%.3f, bars at %.3f and %.3f)",
+                         move, element.identifier, frame.minY, frame.maxY, listTop, listBottom))
+        }
+        return false
     }
 
     /// Where to actually tap, given that the control may have moved since the
@@ -390,6 +512,11 @@ extension XCTestCase {
             XCTFail("the like button never stopped moving before the probe at \(point)")
             return .nothing
         }
+        guard bringClearOfBars(like, in: app) else {
+            XCTFail("the like button could not be brought clear of the bars before the probe at "
+                    + "\(point); a tap within reach of it would land on a bar")
+            return .offWindow
+        }
         let frame = like.frame
         guard let target = probeTarget(point, anchor: anchor, live: frame) else {
             XCTFail("the like button changed size to \(frame.size) from \(anchor.size); "
@@ -398,6 +525,10 @@ extension XCTestCase {
         }
         let before = like.label
         guard isInsideWindow(app, target) else { return .offWindow }
+        if let bar = barInFront(of: target, in: app) {
+            print("MEASURED     like probe at \(target) would land on the \(bar); not taken")
+            return .offWindow
+        }
 
         tapWindowPoint(app, target)
         let watch = watchForChange {
@@ -405,12 +536,21 @@ extension XCTestCase {
             // same card: after a push, `post.like` firstMatch is the *other*
             // screen's button and its label has not changed either.
             if app.navigationBars["Post"].exists { return .somethingElse }
-            if accountMenuIsUp(app) || fullImageCoverIsUp(app) { return .somethingElse }
+            if accountMenuIsUp(app) || fullImageCoverIsUp(app) || shareMenuIsUp(app) { return .somethingElse }
             let now = app.buttons.matching(identifier: "post.like").firstMatch
             guard now.exists else { return nil }
             return now.label == before ? nil : .activated
         }
         print("MEASURED     like probe: \(watch.trace) (label was \"\(before)\")")
+        if watch.outcome == .nothing {
+            // The 09-23 run's second failure is this probe answering
+            // `nothing` for every point right of the button's own centre,
+            // 0.23pt inside its frame included. That is not a boundary, so
+            // each negative says where the button was and whether XCUITest
+            // could reach it, which is what the next run has to settle.
+            print("MEASURED     like probe saw nothing: live frame \(frame), tapped \(target), "
+                  + "hittable \(like.isHittable), label now \"\(like.label)\"")
+        }
         if watch.outcome == .activated {
             // Put the like back before the next probe.
             //
@@ -462,16 +602,25 @@ extension XCTestCase {
             XCTFail("the comments button never stopped moving before the probe at \(point)")
             return .nothing
         }
+        guard bringClearOfBars(comments, in: app) else {
+            XCTFail("the comments button could not be brought clear of the bars before the probe "
+                    + "at \(point); a tap within reach of it would land on a bar")
+            return .offWindow
+        }
         let frame = comments.frame
         guard let target = probeTarget(point, anchor: anchor, live: frame) else {
             XCTFail("the comments button changed size to \(frame.size) from \(anchor.size)")
             return .nothing
         }
         guard isInsideWindow(app, target) else { return .offWindow }
+        if let bar = barInFront(of: target, in: app) {
+            print("MEASURED     comments probe at \(target) would land on the \(bar); not taken")
+            return .offWindow
+        }
 
         tapWindowPoint(app, target)
         let watch = watchForChange {
-            if fullImageCoverIsUp(app) || accountMenuIsUp(app) { return .somethingElse }
+            if fullImageCoverIsUp(app) || accountMenuIsUp(app) || shareMenuIsUp(app) { return .somethingElse }
             // Both bars are in the tree during the push, and so are both
             // screens' `post.text`. Reading the label before the feed's bar has
             // gone reads the feed's own first card, which is the same post

@@ -22,9 +22,9 @@ enum PasswordPolicy {
 
         var label: String {
             switch self {
-            case .weak: "Weak"
-            case .medium: "Medium"
-            case .strong: "Strong"
+            case .weak: String(localized: "Weak", comment: "Password strength")
+            case .medium: String(localized: "Medium", comment: "Password strength")
+            case .strong: String(localized: "Strong", comment: "Password strength")
             }
         }
     }
@@ -46,32 +46,32 @@ enum PasswordPolicy {
         [
             Requirement(
                 id: "length",
-                text: "At least 8 characters",
+                text: String(localized: "At least 8 characters"),
                 isMet: password.count >= minLength
             ),
             Requirement(
                 id: "maxLength",
-                text: "Maximum 64 characters",
+                text: String(localized: "Maximum 64 characters"),
                 isMet: password.count <= maxLength
             ),
             Requirement(
                 id: "uppercase",
-                text: "At least one uppercase letter (A-Z)",
+                text: String(localized: "At least one uppercase letter (A-Z)"),
                 isMet: password.contains(where: { $0.isUppercase && $0.isASCII })
             ),
             Requirement(
                 id: "lowercase",
-                text: "At least one lowercase letter (a-z)",
+                text: String(localized: "At least one lowercase letter (a-z)"),
                 isMet: password.contains(where: { $0.isLowercase && $0.isASCII })
             ),
             Requirement(
                 id: "digit",
-                text: "At least one number (0-9)",
+                text: String(localized: "At least one number (0-9)"),
                 isMet: password.contains(where: { $0.isNumber && $0.isASCII })
             ),
             Requirement(
                 id: "special",
-                text: "At least one special character (!@#$%...)",
+                text: String(localized: "At least one special character (!@#$%...)"),
                 isMet: password.unicodeScalars.contains(where: specialCharacters.contains)
             ),
         ]

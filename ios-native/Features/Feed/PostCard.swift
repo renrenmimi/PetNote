@@ -29,21 +29,63 @@ struct PostCard: View {
     /// all, by a test or by a finger, and no like ever reached the emulator.
     /// Keeping the gesture off the actions row is what makes both work.
     var onOpenPost: (() -> Void)?
+    /// Where the post sits. The feed and a pet's page show the web client's
+    /// card (`PostCard.tsx`): a rounded panel on the grouped background, with
+    /// a hairline edge and a soft shadow. The detail screen is the post's own
+    /// page and stays edge to edge.
+    var chrome: Chrome = .page
+
+    enum Chrome {
+        case card
+        case page
+    }
+
+    /// The session's saved posts. Optional on purpose: a card drawn where no
+    /// session provides it (a preview) shows no save button, rather than
+    /// taking the app down the way a missing required environment value does
+    /// (`1a61171`).
+    @Environment(PostBookmarks.self) private var bookmarks: PostBookmarks?
 
     var body: some View {
+        switch chrome {
+        case .page:
+            stack
+                .padding(.vertical, Spacing.m)
+                .background(Palette.background)
+        case .card:
+            stack
+                .padding(.top, Spacing.xs)
+                .padding(.bottom, Spacing.l)
+                .background(Palette.cardBackground)
+                .clipShape(.rect(cornerRadius: Radius.card))
+                .overlay {
+                    RoundedRectangle(cornerRadius: Radius.card)
+                        .strokeBorder(Palette.separator, lineWidth: 0.5)
+                        .accessibilityHidden(true)
+                }
+                .shadow(color: Palette.cardShadow, radius: 12, y: 6)
+        }
+    }
+
+    /// The web client's order: who, the picture, what you can do, then the
+    /// words (`PostCard.tsx`). The text used to sit above the picture.
+    private var stack: some View {
         VStack(alignment: .leading, spacing: Spacing.m) {
             content
             actions
+            if !post.text.isEmpty {
+                text
+                    .contentShape(.rect)
+                    .onTapGesture { onOpenPost?() }
+            }
         }
-        .padding(.vertical, Spacing.m)
-        .background(Palette.background)
     }
 
     /// Everything that is not a control. Tappable as one piece in the feed.
     private var content: some View {
         VStack(alignment: .leading, spacing: Spacing.m) {
             // The card's own "tap to open" covers the identity row and the
-            // text — and stops there. It used to wrap the media too, and that
+            // text (drawn below the actions, in `stack`) — and stops there. It used to wrap the media too, and that
             // is the third time a gesture spread over a view has eaten the
             // controls inside it:
             //
@@ -63,11 +105,6 @@ struct PostCard: View {
             // `MediaView` was not enough on its own — measured, the tap still
             // navigated, because this outer one reached the speaker too.
             identity
-            if !post.text.isEmpty {
-                text
-                    .contentShape(.rect)
-                    .onTapGesture { onOpenPost?() }
-            }
 
             if let media = post.media.first {
                 if media.kind == .video {
@@ -168,9 +205,23 @@ struct PostCard: View {
                     .foregroundStyle(Palette.primaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text(post.createdAt, style: .relative)
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.secondaryText)
+                // The web client's second line (`PostIdentity.tsx`): the
+                // owner and the age when a pet leads, the age alone when the
+                // author already does.
+                HStack(spacing: Spacing.xs) {
+                    if post.petName != nil {
+                        Text(post.authorName)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Text(verbatim: "·")
+                            .accessibilityHidden(true)
+                    }
+                    Text(PostAge.short(post.createdAt))
+                        .fixedSize()
+                        .accessibilityLabel(PostAge.spoken(post.createdAt))
+                }
+                .font(Typography.caption)
+                .foregroundStyle(Palette.secondaryText)
             }
             Spacer(minLength: Spacing.s)
         }
@@ -227,15 +278,21 @@ struct PostCard: View {
 
     private var actions: some View {
         HStack(spacing: Spacing.xl) {
+            // The web client's row (`PostActions.tsx`): outline icons in one
+            // grey at the same size, and a like as a filled red heart. Only
+            // the heart turns red; the count beside it is text and stays grey
+            // (see `Palette.likeActive`).
             Button(action: onLike) {
                 Label {
                     Text("\(post.likeCount)")
                         .font(Typography.caption)
                         .monospacedDigit()
+                        .foregroundStyle(Palette.secondaryText)
                 } icon: {
                     Image(systemName: isLiked ? "heart.fill" : "heart")
+                        .imageScale(.large)
+                        .foregroundStyle(isLiked ? Palette.likeActive : Palette.iconInactive)
                 }
-                .foregroundStyle(isLiked ? Palette.brandPrimary : Palette.secondaryText)
                 .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget, alignment: .leading)
                 .contentShape(.rect)
             }
@@ -255,7 +312,10 @@ struct PostCard: View {
                         .font(Typography.caption)
                         .monospacedDigit()
                 } icon: {
-                    Image(systemName: "bubble.right")
+                    // Round, as the web's MessageCircle is.
+                    Image(systemName: "message")
+                        .imageScale(.large)
+                        .foregroundStyle(Palette.iconInactive)
                 }
                 .foregroundStyle(Palette.secondaryText)
                 .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget, alignment: .leading)
@@ -266,9 +326,41 @@ struct PostCard: View {
             .accessibilityLabel("Comments")
             .accessibilityValue("\(post.commentCount)")
 
+            // With the like and the comments, as the web's Send is; the save
+            // button takes the far end, as the web's Bookmark does.
+            PostShareMenu(post: post)
+
             Spacer(minLength: 0)
+
+            bookmarkButton
         }
         .padding(.horizontal, Layout.pageInset)
+    }
+
+    /// The web client's Bookmark (`PostActions.tsx`): outline at rest, filled
+    /// in the brand purple when saved. The state is the session's, shared with
+    /// the detail screen's menu, so the two never disagree.
+    ///
+    /// Not disabled while a save is out — a disabled button dims, and it
+    /// would flash on every tap. `PostBookmarks.toggle` ignores a second tap
+    /// on the same post until the first is answered instead.
+    @ViewBuilder
+    private var bookmarkButton: some View {
+        if let bookmarks {
+            let isSaved = bookmarks.isSaved(post.id)
+            Button {
+                Task { await bookmarks.toggle(post.id) }
+            } label: {
+                Image(systemName: isSaved ? "bookmark.fill" : "bookmark")
+                    .imageScale(.large)
+                    .foregroundStyle(isSaved ? Palette.brandPrimary : Palette.iconInactive)
+                    .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("post.bookmark")
+            .accessibilityLabel(isSaved ? String(localized: "Remove from saved") : String(localized: "Save"))
+        }
     }
 }
 

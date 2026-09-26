@@ -246,10 +246,13 @@ struct EditProfileView: View {
                 .font(Typography.body)
                 .foregroundStyle(Palette.danger)
                 .accessibilityIdentifier("editProfile.loadError")
-            Button("Try again") { Task { await model.load() } }
+            Button { Task { await model.load() } } label: {
+                Text("Try again")
+                    .frame(minHeight: Layout.minTouchTarget)
+                    .contentShape(.rect)
+            }
                 .font(Typography.body)
                 .foregroundStyle(Palette.brandPrimary)
-                .frame(minHeight: Layout.minTouchTarget)
                 .accessibilityIdentifier("editProfile.loadRetry")
         }
         .frame(maxWidth: .infinity)

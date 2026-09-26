@@ -47,6 +47,11 @@ final class PostDetailViewModel {
     private(set) var serverLikeCount = 0
     /// A like that could not be applied. Shown inline and cleared by the view.
     var likeFailureMessage: String?
+    /// Comments with a delete on its way: the row says so, and a second tap
+    /// does not send a second request.
+    private(set) var deletingCommentIDs: Set<String> = []
+    /// Why the last delete did not happen. Cleared when the next one starts.
+    private(set) var deleteFailure: String?
 
     /// The three facts that were previously squeezed into one counter, and
     /// each of which failed differently for it. Same structure as the feed's,
@@ -222,6 +227,27 @@ final class PostDetailViewModel {
             await loadComments(reset: true)
         } catch {
             state = .failed(Self.message(for: error))
+        }
+    }
+
+    /// Re-reads the post after its author edited it, keeping the screen up.
+    ///
+    /// Not `load()`: that starts from `.loading`, which blanks the screen,
+    /// throws away the comments and loses the scroll position — for an edit
+    /// made from this very screen, whose comments did not change. A read that
+    /// fails leaves what is on screen; the edit itself already succeeded, and
+    /// saying otherwise would be wrong.
+    func reloadPost() async {
+        let readSequence = writeSequence
+        do {
+            guard let post = try await feed.post(id: postID) else {
+                state = .deleted
+                return
+            }
+            state = .loaded(post)
+            adopt(post, readSequence: readSequence)
+        } catch {
+            // Keep the version on screen.
         }
     }
 
@@ -501,7 +527,7 @@ final class PostDetailViewModel {
         guard !text.isEmpty, !isSending else { return }
         guard text.count <= Self.maxCommentLength else {
             sendFailure = .init(
-                message: "Comments are limited to \(Self.maxCommentLength) characters.",
+                message: String(localized: "Comments are limited to \(Self.maxCommentLength) characters."),
                 canRetry: false
             )
             return
@@ -556,7 +582,7 @@ final class PostDetailViewModel {
         } catch {
             comments.removeAll { $0.id == pendingID }
             draft = text
-            sendFailure = .init(message: "Could not post that comment.", canRetry: true)
+            sendFailure = .init(message: String(localized: "Could not post that comment."), canRetry: true)
         }
     }
 
@@ -574,29 +600,29 @@ final class PostDetailViewModel {
             // app. The screen asks the session whether that is still true, and
             // §6.9 takes over from there if it is not.
             sendFailure = .init(
-                message: "Your session could not be verified. Checking…",
+                message: String(localized: "Your session could not be verified. Checking…"),
                 canRetry: false,
                 needsReauthentication: true
             )
         case .emailNotVerified:
             draft = text
-            sendFailure = .init(message: "Verify your email before commenting.", canRetry: false)
+            sendFailure = .init(message: String(localized: "Verify your email before commenting."), canRetry: false)
         case .banned:
             draft = text
-            sendFailure = .init(message: "This account cannot comment.", canRetry: false)
+            sendFailure = .init(message: String(localized: "This account cannot comment."), canRetry: false)
         case .blockedFromAuthor:
             draft = text
             // Neutral on purpose: which way the block runs is not ours to say.
-            sendFailure = .init(message: "You cannot comment on this post.", canRetry: false)
+            sendFailure = .init(message: String(localized: "You cannot comment on this post."), canRetry: false)
         case .postNotFound:
             state = .deleted
-            sendFailure = .init(message: "This post no longer exists.", canRetry: false)
+            sendFailure = .init(message: String(localized: "This post no longer exists."), canRetry: false)
         case .replyTargetNotFound:
             draft = text
-            sendFailure = .init(message: "The comment you replied to was deleted.", canRetry: false)
+            sendFailure = .init(message: String(localized: "The comment you replied to was deleted."), canRetry: false)
         case .rateLimited:
             draft = text
-            sendFailure = .init(message: "Too many comments just now. Wait a moment.", canRetry: true)
+            sendFailure = .init(message: String(localized: "Too many comments just now. Wait a moment."), canRetry: true)
         case .rejected(let reason):
             // The server refused the content itself. Retrying the same text
             // cannot succeed, so it is not offered.
@@ -605,7 +631,7 @@ final class PostDetailViewModel {
         case .outcomeUnknown:
             draft = text
             sendFailure = .init(
-                message: "We could not confirm that comment was posted. Checking…",
+                message: String(localized: "We could not confirm that comment was posted. Checking…"),
                 canRetry: false
             )
             settleTask = Task { [weak self] in
@@ -622,8 +648,7 @@ final class PostDetailViewModel {
             switch detail {
             case FirestoreCommentRepository.Transport.offline:
                 sendFailure = .init(
-                    message: "You appear to be offline. Your comment is still here — "
-                        + "send it again when you have a connection.",
+                    message: String(localized: "You appear to be offline. Your comment is still here — send it again when you have a connection."),
                     canRetry: true
                 )
             case FirestoreCommentRepository.Transport.unavailable:
@@ -633,13 +658,11 @@ final class PostDetailViewModel {
                 // signing in again, which is what `unauthenticated` used to
                 // suggest — cannot help.
                 sendFailure = .init(
-                    message: "This test build cannot post comments from a device. "
-                        + "It reaches the local server over plain HTTP, which the "
-                        + "Firebase SDK will not send credentials over. Your comment is still here.",
+                    message: String(localized: "This test build cannot post comments from a device. It reaches the local server over plain HTTP, which the Firebase SDK will not send credentials over. Your comment is still here."),
                     canRetry: false
                 )
             default:
-                sendFailure = .init(message: "Could not post that comment.", canRetry: true)
+                sendFailure = .init(message: String(localized: "Could not post that comment."), canRetry: true)
             }
         }
     }
@@ -670,8 +693,7 @@ final class PostDetailViewModel {
             // The check itself failed. We know no more than we did, and the
             // words must not pretend otherwise.
             sendFailure = .init(
-                message: "We could not confirm that comment was posted, and could not check either. "
-                    + "Refresh before sending it again.",
+                message: String(localized: "We could not confirm that comment was posted, and could not check either. Refresh before sending it again."),
                 canRetry: false
             )
             return
@@ -691,7 +713,7 @@ final class PostDetailViewModel {
             // only if it still holds what we put back.
             if draft == text { draft = "" }
             sendFailure = .init(
-                message: "That comment was posted after all.",
+                message: String(localized: "That comment was posted after all."),
                 canRetry: false,
                 tone: .resolved
             )
@@ -701,8 +723,7 @@ final class PostDetailViewModel {
             // ago has to be — but saying "it was not posted" would be claiming
             // more than one page can support.
             sendFailure = .init(
-                message: "We checked, and your comment is not in the list. "
-                    + "It is still here — send it again if you want to.",
+                message: String(localized: "We checked, and your comment is not in the list. It is still here — send it again if you want to."),
                 canRetry: true
             )
         }
@@ -824,14 +845,14 @@ final class PostDetailViewModel {
             case .postNotFound:
                 self.state = .deleted
                 likeState = nil
-                likeFailureMessage = "That post no longer exists."
+                likeFailureMessage = String(localized: "That post no longer exists.")
             }
 
         case .failed(let description):
             log.error("like write failed: \(description, privacy: .public)")
             // Nothing was written, so nothing is owed to the count.
             rollBackIntent(&state)
-            likeFailureMessage = "Could not update the like. Try again."
+            likeFailureMessage = String(localized: "Could not update the like. Try again.")
 
         case .timedOut:
             log.error("like request for \(postID, privacy: .public) was never answered")
@@ -839,7 +860,7 @@ final class PostDetailViewModel {
             // know whether the write landed, so the next read is allowed to be
             // the authority on both the heart and the count.
             rollBackIntent(&state)
-            likeFailureMessage = "Could not confirm that. Pull down to refresh."
+            likeFailureMessage = String(localized: "Could not confirm that. Pull down to refresh.")
         }
     }
 
@@ -853,6 +874,69 @@ final class PostDetailViewModel {
 
     func dismissFailure() { sendFailure = nil }
 
+    // MARK: - Deleting a comment
+
+    /// Who is offered the delete: the comment's author and the post's author —
+    /// the web client's rule (`CommentSection.tsx`) and the server's, less the
+    /// admin case this client has no notion of. A comment still being sent
+    /// has no id the server knows.
+    func canDelete(_ comment: Comment, viewerID: String?) -> Bool {
+        guard let viewerID, !comment.isPending, case .loaded(let post) = state else { return false }
+        return viewerID == comment.authorID || viewerID == post.authorID
+    }
+
+    /// Whether the person deleting it is the post's author and not the
+    /// comment's — the web says so in its confirmation.
+    func isDeletingAsPostAuthor(_ comment: Comment, viewerID: String?) -> Bool {
+        guard let viewerID, case .loaded(let post) = state else { return false }
+        return viewerID == post.authorID && viewerID != comment.authorID
+    }
+
+    /// Removes the comment once the server has said it is gone, not before —
+    /// as the web does, so a refused delete never leaves the list and the
+    /// count disagreeing with the server.
+    ///
+    /// The count comes down through the same offset a written comment goes
+    /// up by, so the feed hears about it too and a stale read of the post
+    /// cannot put the number back.
+    func deleteComment(id: String) async {
+        guard !deletingCommentIDs.contains(id),
+              comments.contains(where: { $0.id == id && !$0.isPending }) else { return }
+        deletingCommentIDs.insert(id)
+        deleteFailure = nil
+        defer { deletingCommentIDs.remove(id) }
+        do {
+            try await commentRepository.delete(postID: postID, commentID: id)
+            comments.removeAll { $0.id == id }
+            recordConfirmedComment(delta: -1)
+        } catch {
+            deleteFailure = Self.deleteMessage(for: error)
+        }
+    }
+
+    func dismissDeleteFailure() { deleteFailure = nil }
+
+    private static func deleteMessage(for error: Error) -> String {
+        switch error as? CommentDeleteError {
+        case .offline:
+            return String(localized: "You're offline, so the comment wasn't deleted.")
+        case .outcomeUnknown:
+            return String(localized: "Couldn't confirm the comment was deleted. Trying again is safe.")
+        case .notAllowed:
+            return String(localized: "You can't delete this comment.")
+        case .banned:
+            return String(localized: "Your account has been suspended.")
+        case .notSignedIn:
+            return String(localized: "Sign in again to delete this comment.")
+        case .rateLimited:
+            return String(localized: "Too many changes at once. Wait a moment and try again.")
+        case .unavailable:
+            return String(localized: "This build cannot reach the server.")
+        case .transport, nil:
+            return String(localized: "Could not delete the comment.")
+        }
+    }
+
     /// Waits for the work this model started on its own — the like write and
     /// the look-again after an unknown outcome. Test-facing, and the reason no
     /// test of those paths has to sleep for a duration it picked.
@@ -864,11 +948,11 @@ final class PostDetailViewModel {
     private static func message(for error: Error) -> String {
         let nsError = error as NSError
         if nsError.domain == NSURLErrorDomain || nsError.code == 14 {
-            return "You appear to be offline."
+            return String(localized: "You appear to be offline.")
         }
         // 7 is Firestore's permission-denied.
-        if nsError.code == 7 { return "You do not have access to this post." }
-        return "Could not load this post."
+        if nsError.code == 7 { return String(localized: "You do not have access to this post.") }
+        return String(localized: "Could not load this post.")
     }
 }
 

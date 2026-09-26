@@ -8,6 +8,7 @@ import SwiftUI
 /// somebody came for was the fourth thing down the page.
 struct PetProfileView: View {
     @Bindable var model: PetProfileViewModel
+    @Environment(PostBookmarks.self) private var bookmarks: PostBookmarks?
 
     /// What to do when the pet is gone, or when Edit is pressed. Closures
     /// rather than `Route` cases because `Core/Navigation/Route.swift` is the
@@ -16,12 +17,16 @@ struct PetProfileView: View {
     var onEdit: ((String) -> Void)?
     var onDeleted: (() -> Void)?
     var onOpenPost: ((String) -> Void)?
+    /// Follow, followers and the way into the family, supplied by the shell:
+    /// they belong to the social batch, and this screen does not need to know
+    /// its repositories to show them.
+    var socialRow: ((Pet, PetOwnership?) -> AnyView)?
 
     enum Tab: String, CaseIterable, Identifiable {
         case posts
         case checkins
         var id: String { rawValue }
-        var title: String { self == .posts ? "Posts" : "Check-ins" }
+        var title: String { self == .posts ? String(localized: "Posts") : String(localized: "Check-ins") }
     }
     @State private var tab: Tab = .posts
 
@@ -43,6 +48,7 @@ struct PetProfileView: View {
                     }
                 case .loaded(let pet):
                     header(pet)
+                    if let socialRow { socialRow(pet, model.ownership) }
                     owners
                     tabPicker
                     switch tab {
@@ -66,7 +72,7 @@ struct PetProfileView: View {
                 }
             }
         }
-        .alert("Delete \(loadedPet?.name ?? "this pet")?", isPresented: deleteConfirmation) {
+        .alert("Delete \(loadedPet?.name ?? String(localized: "this pet"))?", isPresented: deleteConfirmation) {
             Button("Cancel", role: .cancel) { model.cancelDelete() }
             Button("Delete", role: .destructive) {
                 Task { await model.confirmDelete() }
@@ -212,7 +218,7 @@ struct PetProfileView: View {
                     .accessibilityIdentifier("pet.ownerCount")
                 ForEach(model.family) { member in
                     HStack(spacing: Spacing.s) {
-                        Text(member.userName.isEmpty ? "PetNote user" : member.userName)
+                        Text(member.userName.isEmpty ? String(localized: "PetNote user") : member.userName)
                             .font(Typography.body)
                             .foregroundStyle(Palette.primaryText)
                         Text(PetDisplay.label(for: member.relationship, custom: member.customRelationship))
@@ -258,15 +264,24 @@ struct PetProfileView: View {
                 identifier: "pet.postsEmpty"
             )
         default:
-            ForEach(model.posts) { post in
-                PostCard(
-                    post: post,
-                    isLiked: false,
-                    onLike: {},
-                    onOpenComments: { onOpenPost?(post.id) },
-                    onOpenPost: { onOpenPost?(post.id) }
-                )
-                .task { await model.loadMorePostsIfNeeded(currentItem: post) }
+            // The feed's cards, as the web client's pet page uses its PostCard.
+            VStack(spacing: Spacing.l) {
+                ForEach(model.posts) { post in
+                    PostCard(
+                        post: post,
+                        isLiked: false,
+                        onLike: {},
+                        onOpenComments: { onOpenPost?(post.id) },
+                        onOpenPost: { onOpenPost?(post.id) },
+                        chrome: .card
+                    )
+                    .task { await model.loadMorePostsIfNeeded(currentItem: post) }
+                }
+            }
+            .padding(.horizontal, Layout.pageInset)
+            // A page's saved state in one read, as the feed does.
+            .task(id: model.posts.map(\.id)) {
+                await bookmarks?.load(model.posts.map(\.id))
             }
         }
     }
@@ -364,7 +379,7 @@ struct PetProfileView: View {
             .accessibilityIdentifier("pet.loading")
     }
 
-    private func notice(title: String, detail: String, identifier: String) -> some View {
+    private func notice(title: LocalizedStringKey, detail: LocalizedStringKey, identifier: String) -> some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             Text(title)
                 .font(Typography.sectionTitle)
@@ -388,10 +403,13 @@ struct PetProfileView: View {
             Text(message)
                 .font(Typography.body)
                 .foregroundStyle(Palette.primaryText)
-            Button("Try again") { Task { await retry() } }
+            Button { Task { await retry() } } label: {
+                Text("Try again")
+                    .frame(minHeight: Layout.minTouchTarget)
+                    .contentShape(.rect)
+            }
                 .font(Typography.body)
                 .foregroundStyle(Palette.brandPrimary)
-                .frame(minHeight: Layout.minTouchTarget)
                 .contentShape(.rect)
                 .accessibilityIdentifier("\(identifier).retry")
         }
@@ -399,6 +417,7 @@ struct PetProfileView: View {
         .padding(Spacing.l)
         .background(Palette.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: Radius.card))
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier(identifier)
     }
 }

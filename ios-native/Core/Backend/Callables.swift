@@ -22,6 +22,12 @@ import Foundation
 /// calling it would send people who already cannot sign in into a flow that
 /// cannot finish. The web client keeps using Firebase's own reset link and so
 /// does this one.
+///
+/// `recomputePetPostCountCallable`, `recomputePostInteractionCountsCallable`
+/// and `recomputeLocationReviewAggregatesCallable` are absent too. They are the
+/// three online recompute entries that were deliberately switched off; this
+/// registry listed them with no caller anywhere, which is one tidy-up away
+/// from someone wiring a "fix the count" button to them.
 enum Callables {
     // Account and profile
     static let ensureUserProfile = "ensureUserProfileCallable"
@@ -36,7 +42,6 @@ enum Callables {
     static let getPetCheckins = "getPetCheckinsCallable"
     static let followPet = "followPetCallable"
     static let unfollowPet = "unfollowPetCallable"
-    static let recomputePetPostCount = "recomputePetPostCountCallable"
 
     // Posts and comments
     static let createPost = "createPostCallable"
@@ -46,7 +51,6 @@ enum Callables {
     static let getPublishStatus = "getPublishStatusCallable"
     static let createComment = "createCommentCallable"
     static let deleteComment = "deleteCommentCallable"
-    static let recomputePostInteractionCounts = "recomputePostInteractionCountsCallable"
 
     // Media
     static let cloudinaryUploadSignature = "getCloudinaryUploadSignature"
@@ -66,7 +70,6 @@ enum Callables {
     static let addLocationPhotos = "addLocationPhotosCallable"
     static let checkIn = "checkInCallable"
     static let submitReview = "submitReviewCallable"
-    static let recomputeLocationReviewAggregates = "recomputeLocationReviewAggregatesCallable"
     static let reverseGeocode = "reverseGeocodeCallable"
     static let searchAddresses = "searchAddressesCallable"
 
@@ -86,14 +89,13 @@ enum Callables {
     static let all: [String] = [
         ensureUserProfile, updateUserProfile, checkDisplayNameAvailability, deleteUserAccount,
         createPet, updatePet, deletePet, getPetCheckins, followPet, unfollowPet,
-        recomputePetPostCount,
         createPost, updatePost, deletePost, setPinnedPost, getPublishStatus,
-        createComment, deleteComment, recomputePostInteractionCounts,
+        createComment, deleteComment,
         cloudinaryUploadSignature, deleteCloudinaryAssets,
         createInvitation, validateInvitation, redeemInvitation, revokeInvitation,
         getActiveInvitation, removeFamilyMember, transferPetPrimary,
         addPlace, addLocationPhotos, checkIn, submitReview,
-        recomputeLocationReviewAggregates, reverseGeocode, searchAddresses,
+        reverseGeocode, searchAddresses,
         createMeetup, updateMeetup, cancelMeetupCallable, joinMeetup, checkMeetupStatus,
         reportContent, markAllNotificationsAsRead, submitFeedback,
     ]

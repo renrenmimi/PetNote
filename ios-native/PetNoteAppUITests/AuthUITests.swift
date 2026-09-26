@@ -209,7 +209,12 @@ final class AuthUITests: XCTestCase {
         // route was pushed and something else emptied the stack afterwards",
         // and those have different owners and opposite fixes.
         let app = launchOnSignIn(extraArguments: ["-petnote-session-probe"])
-        signIn(app, email: email)
+        signIn(app, email: email, expectFeed: false)
+        // A fresh account: its profile is created on sign-in and it is offered
+        // onboarding over the feed, which hides the feed from VoiceOver — and
+        // so from this test — until it is closed.
+        dismissOnboardingIfShown(app)
+        XCTAssertTrue(reachedFeed(app), "did not reach the feed")
         openFirstPost(app)
         let postText = app.staticTexts["post.text"].firstMatch.label
         XCTAssertFalse(postText.isEmpty, "could not identify which post is open")
@@ -278,10 +283,18 @@ final class AuthUITests: XCTestCase {
         // accessibility tree, and a control that is off screen is not hittable
         // by definition — counting those would report a defect that is really
         // just scrolling.
+        //
+        // And not under the tab bar, for the same reason: a feed row passing
+        // behind the bar is a row that has not been scrolled to, and is no
+        // more hittable than one below the screen. The bar's own items are
+        // the system's, laid out like the navigation bar's.
         let window = app.windows.firstMatch.frame
+        let tabBar = app.tabBars.firstMatch
+        let underBar = tabBar.exists ? tabBar.frame : .null
         let ours = app.buttons.allElementsBoundByIndex.filter {
             $0.exists && $0.isEnabled && !$0.identifier.isEmpty
                 && !$0.frame.isEmpty && window.intersects($0.frame)
+                && !underBar.intersects($0.frame)
         }
         XCTAssertFalse(ours.isEmpty, "No identified controls found to check")
 

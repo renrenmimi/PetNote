@@ -8,9 +8,11 @@ import Foundation
 /// draft (src/pages/Create.tsx keeps the same thing in its `PostDraft`).
 ///
 /// `publicID` travels with the URL because it is what a delete would need.
-/// Nothing in this app deletes — see `AssetReclaim` — but the id is the only
-/// part that cannot be recovered afterwards, so it is kept rather than
-/// discarded on the strength of a policy that may one day change.
+/// Nothing on the posting path deletes — see `AssetReclaim` — but the id is
+/// the only part that cannot be recovered afterwards, so it is kept rather
+/// than discarded on the strength of a policy that may one day change. (The
+/// one place the app does delete is a profile picture whose save the server
+/// refused outright, the same as the web client: `CloudinaryAvatarUploader`.)
 struct UploadedAsset: Sendable, Equatable, Codable {
     /// Cloudinary's own split. It decides the upload endpoint, the preset the
     /// server signs, and the advisory size ceiling — so it is not the same

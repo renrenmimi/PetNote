@@ -113,6 +113,10 @@ protocol PostWriteRepository: Sendable {
     func bookmark(postID: String) async throws -> BookmarkResult
     func unbookmark(postID: String) async throws -> BookmarkResult
     func isBookmarked(postID: String) async throws -> Bool
+    /// Which of these posts the signed-in person has saved: one query per 30
+    /// posts, as `likedPostIDs(among:)` is for likes, so a page of cards with a
+    /// save button on each costs a query rather than a read per card.
+    func bookmarkedPostIDs(among postIDs: [String]) async throws -> Set<String>
 }
 
 /// A stable id for one publish attempt, reused across its retries.
@@ -204,7 +208,7 @@ actor FirestorePostWriteRepository: PostWriteRepository {
             // Caught here rather than at the server, where it arrives as a
             // generic invalid-argument that reads like the post's content was
             // the problem.
-            throw PostWriteError.rejected("This draft could not be identified. Start a new post.")
+            throw PostWriteError.rejected(String(localized: "This draft could not be identified. Start a new post."))
         }
         let payload: [String: Any] = [
             "text": request.text,
@@ -309,6 +313,28 @@ actor FirestorePostWriteRepository: PostWriteRepository {
         }
     }
 
+    /// `users/{uid}/bookmarks` by document id, 30 to a query — Firestore's
+    /// limit for `in`. The rules let only the owner read these.
+    func bookmarkedPostIDs(among postIDs: [String]) async throws -> Set<String> {
+        let valid = Array(Set(postIDs.compactMap(DeepLink.validDocumentID))).sorted()
+        guard !valid.isEmpty else { return [] }
+        let uid = try currentUID()
+        let limit = 30
+        var saved: Set<String> = []
+        do {
+            for start in stride(from: 0, to: valid.count, by: limit) {
+                let chunk = Array(valid[start..<min(start + limit, valid.count)])
+                let snapshot = try await db.collection("users").document(uid).collection("bookmarks")
+                    .whereField(FieldPath.documentID(), in: chunk)
+                    .getDocuments()
+                for document in snapshot.documents { saved.insert(document.documentID) }
+            }
+        } catch {
+            throw Self.map(error)
+        }
+        return saved
+    }
+
     static func isPermissionDenied(_ error: Error) -> Bool {
         let nsError = error as NSError
         return nsError.domain == FirestoreErrorDomain
@@ -352,9 +378,9 @@ actor FirestorePostWriteRepository: PostWriteRepository {
         case .resourceExhausted:
             return .rateLimited
         case .invalidArgument, .outOfRange:
-            return .rejected("That post was not accepted. Check the length and try different wording.")
+            return .rejected(String(localized: "That post was not accepted. Check the length and try different wording."))
         case .failedPrecondition:
-            return .rejected("That post was not accepted.")
+            return .rejected(String(localized: "That post was not accepted."))
         case .deadlineExceeded, .unavailable, .cancelled, .aborted, .`internal`:
             return .outcomeUnknown
         default:

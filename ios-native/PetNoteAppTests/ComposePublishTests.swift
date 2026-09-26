@@ -86,6 +86,10 @@ final class FakePostWrites: PostWriteRepository, @unchecked Sendable {
         lock.locked { failures[operation] = error }
     }
 
+    func stopFailing(_ operation: String) {
+        lock.locked { failures[operation] = nil }
+    }
+
     // MARK: PostWriteRepository
 
     func publish(_ request: PublishRequest) async throws -> PublishOutcome {
@@ -156,6 +160,16 @@ final class FakePostWrites: PostWriteRepository, @unchecked Sendable {
 
     func isBookmarked(postID: String) async throws -> Bool {
         lock.locked { bookmarks.contains(postID) }
+    }
+
+    private(set) var bookmarkStatusReads: [[String]] = []
+
+    func bookmarkedPostIDs(among postIDs: [String]) async throws -> Set<String> {
+        try lock.locked {
+            bookmarkStatusReads.append(postIDs)
+            if let error = failures["bookmarkStatus"] { throw error }
+            return bookmarks.intersection(postIDs)
+        }
     }
 }
 
@@ -588,6 +602,31 @@ struct ComposePublishTests {
 
         let full = (1...20).map { "tag\($0)" }
         #expect(normalize("overflow", full) == full, "the cap is 20")
+    }
+
+    /// `createPostCallable` validates tags with `validateIncomingTags`, not
+    /// with `normalizeTags` (functions/src/posts.ts:79-100): a tag that cannot
+    /// be a `hashtags/{tag}` document id — `.`, `*`, `~`, `/`, `[`, `]`, or the
+    /// reserved `__x__` — is **refused with invalid-argument**, and the length
+    /// is JavaScript's, which counts UTF-16 units.
+    ///
+    /// The fake publish accepts any tag, so before this nothing noticed that
+    /// "st.louis" sailed through the composer, came back as a generic "not
+    /// accepted", and invited a Share that could only be refused again.
+    @Test func aTagTheCallableWouldRefuseIsRefusedHereAndSaysWhy() {
+        let normalize = ComposeViewModel.normalized
+
+        #expect(normalize("st.louis dogs/cats a*b ~x [y] __init__ ok", []) == ["ok"])
+        // 21 dogs are 21 Characters and 42 UTF-16 units; the server says 42.
+        #expect(normalize(String(repeating: "🐶", count: 21), []) == [])
+        #expect(normalize(String(repeating: "🐶", count: 20), []).count == 1)
+
+        let model = Harness(photos: 0).model
+        model.tagInput = "st.louis walk"
+        model.commitTagInput()
+
+        #expect(model.tags == ["walk"])
+        #expect(model.notice == "Tags cannot contain . * ~ / [ ] characters.")
     }
 
     @Test func theCaptionCannotExceedTheServersLimit() {

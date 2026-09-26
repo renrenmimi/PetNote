@@ -258,6 +258,13 @@ struct ProfileEditTests {
         #expect(model.outcome == .failed(ProfileError.displayNameTaken.message))
     }
 
+    /// A second tap while the first save is still with the server writes
+    /// nothing. Arranged rather than hoped for: this used to start two saves
+    /// with `async let` against a fake that answers at once, and on a slow CI
+    /// runner the first had finished before the second began — two writes,
+    /// and correctly so, since they did not overlap (run 35933245850,
+    /// `updateCalls.count → 2`). The overlap the test is about was not being
+    /// made. Now the first save is held at the server until the second tap.
     @Test func twoTapsInTheSameTurnSaveOnce() async {
         let users = loadedRepository()
         let model = makeModel(users: users)
@@ -395,6 +402,25 @@ struct ProfileEditTests {
 
         #expect(uploader.discarded.isEmpty, "an image the profile may reference was deleted")
         #expect(model.outcome == .failed(ProfileError.outcomeUnknown.message))
+    }
+
+    /// The same danger reached through the real mapping rather than a
+    /// hand-picked `ProfileError`: a 503 from the callable is an answer that
+    /// came back, not a request that never left, so the image stays.
+    @Test func apictureIsNotReclaimedWhenTheCallableAnsweredUnavailable() async {
+        let users = loadedRepository()
+        users.updateResult = .failure(
+            FirestoreUserRepository.map(callableFailure(GRPCStatus.unavailable))
+        )
+        let uploader = FakeAvatarUploader()
+        let model = makeModel(users: users, uploader: uploader)
+        await model.load()
+        model.pickImage(data: Self.onePixelPNG)
+
+        await model.save()
+
+        #expect(users.updateCalls.count == 1, "the save never reached the callable")
+        #expect(uploader.discarded.isEmpty, "an image the profile may reference was deleted")
     }
 
     @Test func afailedUploadLeavesTheProfileAloneAndSaysWhy() async {

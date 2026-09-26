@@ -2,7 +2,7 @@
  * Stages the compiled functions for the test-project-only deploy entry.
  *
  * `functions-testcloud/` holds a package.json and an index.js that re-export
- * six functions. It cannot `require("../functions/lib/…")`, because a deploy
+ * the functions authorized for the test project. It cannot `require("../functions/lib/…")`, because a deploy
  * uploads only the source directory it was pointed at — the parent would not
  * travel with it and the functions would fail at runtime. So the compiled
  * output is copied in.
@@ -66,4 +66,11 @@ fs.cpSync(lib, stagedLib, { recursive: true });
 
 const files = fs.readdirSync(stagedLib).filter((f) => f.endsWith(".js")).length;
 console.log(`staged ${files} compiled modules into functions-testcloud/lib`);
-console.log("now: firebase deploy --config firebase.testcloud.json --project petnote-devtest --only functions");
+// Name each function. `--only functions` would deploy every export of the
+// codebase, and an approval is for named functions, not for whatever the
+// entry happens to export.
+console.log(
+  "now, naming each approved function:\n"
+  + "  firebase deploy --config firebase.testcloud.json --project petnote-devtest --non-interactive \\\n"
+  + "    --only functions:testcloud:<name>[,functions:testcloud:<name>...]"
+);

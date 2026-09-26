@@ -10,6 +10,7 @@ struct FeedView: View {
     @State private var model: FeedViewModel
     @Binding private var path: [Route]
     @Environment(VideoPlaybackCoordinator.self) private var video
+    @Environment(PostBookmarks.self) private var bookmarks: PostBookmarks?
     @Environment(SessionStore.self) private var session
     /// Read here rather than in the detail screen because the feed is the root
     /// of the signed-in stack: it stays in the hierarchy whatever is pushed on
@@ -63,9 +64,37 @@ struct FeedView: View {
         }
         .navigationTitle("PetNote")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .principal) { videoProbe } }
+        // The title is kept as the bar's identity and not drawn: the name is
+        // `FeedBrandLockup`'s, beside the paw, where the web client has it. A
+        // principal item takes the title's place, so it always holds
+        // something: an invisible point; the environment badge outside
+        // production; the video probe when a test asks for it.
+        //
+        // The badge is here rather than beside the lockup because the bar
+        // squeezes this item and not the buttons. Beside the lockup it left
+        // the principal item 26pt, and the bar dropped it - probe and all,
+        // which every video test reads (09-25: "the probe was never
+        // readable") — and at AX5 it sent the bell and the account into the
+        // bar's overflow menu.
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                ZStack {
+                    Color.clear
+                        .frame(width: 1, height: 1)
+                        .accessibilityHidden(true)
+                    environmentBadge
+                    videoProbe
+                }
+                // The bar measures this item at its ideal width and drops it
+                // if that does not fit: the badge alone asks for 150pt, and at
+                // the default size there are 77 between the lockup and the
+                // buttons. So it is held to 72 and truncates; the label and
+                // the probe's reading are whole either way.
+                .frame(maxWidth: 72)
+            }
+        }
         .overlay(alignment: .topLeading) { sessionProbe }
-        .background(Palette.background)
+        .background(Palette.groupedBackground)
         .task { await model.loadFirstPageIfNeeded() }
         .task { returnToWhereTheSessionEnded() }
         .refreshable { await model.reload() }
@@ -132,6 +161,29 @@ struct FeedView: View {
         #endif
     }
 
+    /// A screenshot from a device has to say for itself which backend
+    /// produced it. Without this, "verified on device" and "verified against
+    /// production by mistake" look identical in a photo. Hidden in production
+    /// builds, where it would just be clutter for a real user.
+    ///
+    /// Text, not a Button: it must not add a control to the bar, and the
+    /// touch-target audit enumerates app.buttons. Palette.secondaryText, not
+    /// SwiftUI's .secondary: measured from screenshot pixels, .secondary
+    /// renders this badge at 3.02:1 in light and 3.19:1 in dark, below the
+    /// 4.5:1 that text this size needs.
+    @ViewBuilder
+    private var environmentBadge: some View {
+        if AppEnvironment.current.backend != .production {
+            Text(EnvironmentGuard.displayLabel)
+                .font(.caption2)
+                .monospaced()
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .foregroundStyle(Palette.secondaryText)
+                .accessibilityIdentifier("env.badge")
+        }
+    }
+
     /// Publishes the coordinator's real state for UI tests: how many players
     /// exist, which one is playing, and that player's clock.
     ///
@@ -171,7 +223,7 @@ struct FeedView: View {
     private var loading: some View {
         ProgressView()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Palette.background)
+            .background(Palette.groupedBackground)
             .accessibilityIdentifier("feed.loading")
             .accessibilityLabel("Loading posts")
     }
@@ -180,10 +232,7 @@ struct FeedView: View {
     /// slogan, which read like a feature rather than an empty state.
     private var emptyState: some View {
         VStack(spacing: Spacing.m) {
-            Image(systemName: "pawprint")
-                .font(Typography.pageTitle)
-                .foregroundStyle(Palette.tertiaryText)
-                .accessibilityHidden(true)
+            BrandMark(size: 36)
             Text("No posts yet")
                 .font(Typography.sectionTitle)
                 .foregroundStyle(Palette.primaryText)
@@ -195,7 +244,7 @@ struct FeedView: View {
         }
         .padding(Layout.pageInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Palette.background)
+        .background(Palette.groupedBackground)
     }
 
     private var list: some View {
@@ -217,11 +266,17 @@ struct FeedView: View {
                     onOpenComments: { open(post) },
                     // The gesture is inside the card, on its content only. A
                     // row-level tap gesture swallowed every button in the card.
-                    onOpenPost: { open(post) }
+                    onOpenPost: { open(post) },
+                    chrome: .card
                 )
-                .listRowInsets(EdgeInsets())
+                // The web client's cards: inset from the edges, with room
+                // between them for the shadow, on the grouped background.
+                .listRowInsets(EdgeInsets(
+                    top: Spacing.s, leading: Layout.pageInset,
+                    bottom: Spacing.s, trailing: Layout.pageInset
+                ))
                 .listRowSeparator(.hidden)
-                .listRowBackground(Palette.background)
+                .listRowBackground(Color.clear)
                 .task { await model.loadMoreIfNeeded(currentItem: post) }
                 .id(post.id)
             }
@@ -238,11 +293,18 @@ struct FeedView: View {
                         Spacer()
                     }
                     .listRowSeparator(.hidden)
-                    .listRowBackground(Palette.background)
+                    .listRowBackground(Color.clear)
                 }
             }
             .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Palette.groupedBackground)
             .accessibilityIdentifier("feed.list")
+            // A page's saved state in one read, as it arrives: the save button
+            // is on every card. Ids already known are not read again.
+            .task(id: model.posts.map(\.id)) {
+                await bookmarks?.load(model.posts.map(\.id))
+            }
             .onChange(of: path.isEmpty) { _, isAtFeed in
                 // Popped back to the feed: put the row we left from back where
                 // it was. `anchor: .center` rather than .top because the row
@@ -294,7 +356,7 @@ struct FeedView: View {
         }
         .padding(.vertical, Spacing.m)
         .listRowSeparator(.hidden)
-        .listRowBackground(Palette.background)
+        .listRowBackground(Color.clear)
     }
 
     /// A reload that failed over a feed that still has something on it.
@@ -398,7 +460,7 @@ struct FeedErrorView: View {
         }
         .padding(Layout.pageInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Palette.background)
+        .background(Palette.groupedBackground)
         // No identifier on this container: it would overwrite feed.retry on the
         // button inside it, the way root.signedIn once overwrote every element
         // on that screen.

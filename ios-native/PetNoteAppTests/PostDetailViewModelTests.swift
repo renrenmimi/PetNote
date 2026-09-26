@@ -89,6 +89,30 @@ struct PostDetailViewModelTests {
             return createdID
         }
 
+        var deleteError: Error?
+        var deleteCalls: [String] = []
+        private var deleteGate: AsyncStream<Void>?
+        private var deleteOpener: AsyncStream<Void>.Continuation?
+
+        /// Holds every delete until `releaseDelete()`.
+        func holdDelete() {
+            let (stream, continuation) = AsyncStream<Void>.makeStream()
+            deleteGate = stream
+            deleteOpener = continuation
+        }
+
+        func releaseDelete() {
+            deleteOpener?.finish()
+            deleteGate = nil
+            deleteOpener = nil
+        }
+
+        func delete(postID: String, commentID: String) async throws {
+            deleteCalls.append(commentID)
+            if let deleteGate { for await _ in deleteGate { break } }
+            if let deleteError { throw deleteError }
+        }
+
         /// Makes the *next* read return `pages` as if the write had landed.
         ///
         /// This is the shape of the case that matters: the callable's response
@@ -125,6 +149,51 @@ struct PostDetailViewModelTests {
         let model = PostDetailViewModel(postID: "p1", feed: f, comments: comments)
         await model.load()
         return model
+    }
+
+    // MARK: - After the author edits the post
+
+    /// The edit was made from this screen, so the screen has to show it — and
+    /// must not blank itself or drop the comments to do so.
+    @Test func anEditedPostIsReReadWithoutBlankingTheScreen() async {
+        let comments = FakeComments()
+        comments.pages = [[Self.comment("c1")]]
+        let feed = FakeFeed()
+        feed.post = Self.post()
+        let model = await loaded(comments: comments, feed: feed)
+        let readsBefore = comments.cursorsRequested.count
+
+        feed.post = Post(
+            id: "p1", authorID: "uid", authorName: "A", authorAvatarURL: nil,
+            text: "TEST CONTENT edited", media: [], petID: nil, petName: nil,
+            petAvatarURL: nil, createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            likeCount: 0, commentCount: 1, tags: []
+        )
+        await model.reloadPost()
+
+        guard case .loaded(let post) = model.state else {
+            Issue.record("expected the edited post on screen, got \(model.state)")
+            return
+        }
+        #expect(post.text == "TEST CONTENT edited")
+        #expect(model.comments.map(\.id) == ["c1"], "the comments stay")
+        #expect(comments.cursorsRequested.count == readsBefore, "the comments are not re-read")
+    }
+
+    /// A failed re-read is not a failed edit. The version on screen stays.
+    @Test func aFailedReReadKeepsWhatIsOnScreen() async {
+        let feed = FakeFeed()
+        feed.post = Self.post()
+        let model = await loaded(feed: feed)
+
+        feed.error = URLError(.notConnectedToInternet)
+        await model.reloadPost()
+
+        guard case .loaded(let post) = model.state else {
+            Issue.record("a failed re-read replaced the post with \(model.state)")
+            return
+        }
+        #expect(post.text == "TEST CONTENT")
     }
 
     // MARK: - Each gate, in the server's order
@@ -471,7 +540,10 @@ struct PostDetailViewModelTests {
 
         model.draft = "TEST CONTENT hello"
         await model.send(authorID: "uid", authorName: "A")
-        await settle()
+        // Until the check has looked, by the clock rather than a fixed half
+        // second: under a parallel run these four took 21 s and the half
+        // second ran out first (2026-09-24).
+        #expect(await eventuallyTrue { model.sendFailure?.tone == .resolved }, "the check never reported it posted")
 
         #expect(comments.createCalls.count == 1, "never sent a second time")
         #expect(model.sendFailure?.tone == .resolved)
@@ -491,7 +563,7 @@ struct PostDetailViewModelTests {
         await model.send(authorID: "uid", authorName: "A")
         #expect(model.sendFailure?.canRetry == false, "not before we have looked")
 
-        await settle()
+        #expect(await eventuallyTrue { model.sendFailure?.canRetry == true }, "the check never offered a retry")
 
         #expect(comments.createCalls.count == 1, "looking is a read; it never resends")
         #expect(model.sendFailure?.canRetry == true, "we looked, it is not there, so it is safe")
@@ -508,7 +580,8 @@ struct PostDetailViewModelTests {
 
         model.draft = "TEST CONTENT hello"
         await model.send(authorID: "uid", authorName: "A")
-        await settle()
+        #expect(await eventuallyTrue { (model.sendFailure?.message ?? "").contains("could not check") },
+                "the failed check never said so")
 
         #expect(comments.createCalls.count == 1)
         #expect(model.sendFailure?.canRetry == false, "we still do not know")
@@ -535,7 +608,7 @@ struct PostDetailViewModelTests {
 
         model.draft = "TEST CONTENT hello"
         await model.send(authorID: "uid", authorName: "A")
-        await settle()
+        #expect(await eventuallyTrue { model.sendFailure?.canRetry == true }, "the check never finished")
 
         #expect(model.sendFailure?.tone == .problem, "the old comment is not evidence this one landed")
         #expect(model.sendFailure?.canRetry == true)

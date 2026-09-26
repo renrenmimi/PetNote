@@ -317,6 +317,88 @@ final class CommentUITests: XCTestCase {
                        "the comment is on screen twice")
     }
 
+    /// Written, then deleted by its author through the screen: gone from the
+    /// list, from the server, and from the count on both the detail screen
+    /// and the feed. And the control is offered only where the rule allows —
+    /// the comment's author and the post's author (`deleteCommentCallable`).
+    func testDeletingYourOwnCommentRemovesItFromTheListTheServerAndTheCount() throws {
+        let app = launchOnSignIn()
+        signIn(app, email: "accept-a@example.com")
+        let postID = try XCTUnwrap(firstPostID(in: app), "could not tell which post the first row is")
+        let backendBefore = serverPostCommentCount(postID: postID) ?? 0
+        openFirstPost(app)
+
+        let text = uniqueText("delete")
+        type(text, into: app)
+        app.buttons["composer.send"].tap()
+        let row = app.staticTexts.matching(identifier: "comment.row")
+            .containing(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
+        XCTAssertTrue(waitForExistence(of: row, in: app, timeout: 40), "the comment never appeared")
+        assertServerCommentCount(text, equals: 1)
+        let name = try XCTUnwrap(try EmulatorAdmin.commentDocumentIDs(withExactText: text).first)
+        let commentID = try XCTUnwrap(name.split(separator: "/").last.map(String.init))
+
+        // Who is offered it. If the post is someone else's, this comment is
+        // the only one on screen with a delete; if it is ours, every one is.
+        let me = try XCTUnwrap(stringField("authorId", in: try EmulatorAdmin.get(
+            "\(EmulatorAdmin.firestore)/v1/\(name)", owner: true)))
+        let postAuthor = stringField("authorId", in: try EmulatorAdmin.get(
+            "\(EmulatorAdmin.firestore)/v1/projects/\(EmulatorAdmin.projectID)/databases/(default)/documents/posts/\(postID)",
+            owner: true))
+        let rows = app.staticTexts.matching(identifier: "comment.row").count
+        let deletes = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'comment.delete.'")).count
+        if postAuthor == me {
+            XCTAssertEqual(deletes, rows, "the post's author is not offered every comment on it")
+        } else {
+            XCTAssertEqual(deletes, 1, "\(deletes) delete controls on someone else's post; only our comment may have one")
+        }
+
+        let delete = app.buttons["comment.delete.\(commentID)"]
+        // The keyboard stays up after a send and the new comment is below it
+        // (y 880 on an 874pt screen, measured). A swipe on the list scrolls it
+        // up and, by `scrollDismissesKeyboard`, puts the keyboard away.
+        for _ in 0..<4 where !(delete.exists && delete.isHittable) { app.swipeUp() }
+        XCTAssertTrue(waitUntilHittable(delete, in: app, timeout: 20),
+                      "no delete on our own comment (\(deletes) of \(rows) rows offer one)\n\(app.debugDescription)")
+        delete.tap()
+        let confirm = app.sheets.buttons["Delete"].exists
+            ? app.sheets.buttons["Delete"]
+            : app.buttons.matching(NSPredicate(format: "label == 'Delete'")).firstMatch
+        XCTAssertTrue(waitUntilHittable(confirm, in: app, timeout: 10), "no delete confirmation")
+        confirm.tap()
+
+        XCTAssertTrue(waitForDisappearance(of: row, timeout: 30), "the comment is still in the list")
+        XCTAssertFalse(app.staticTexts["detail.commentDeleteError"].exists,
+                       "a delete that worked reported a failure")
+        assertServerCommentCount(text, equals: 0)
+
+        // The aggregate comes down by the trigger; the screens follow it.
+        var backendAfter = backendBefore + 1
+        let settled = Date().addingTimeInterval(20)
+        while Date() < settled {
+            backendAfter = serverPostCommentCount(postID: postID) ?? backendAfter
+            if backendAfter == backendBefore { break }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        XCTAssertEqual(backendAfter, backendBefore, "commentCount did not come back down")
+        XCTAssertEqual(shownCommentCount(app), backendBefore, "the detail screen's count did not come down")
+
+        popToFeed(app)
+        pullToRefreshFeed(app)
+        var shown: Int?
+        let agree = Date().addingTimeInterval(20)
+        while Date() < agree {
+            shown = shownCommentCount(app)
+            if shown == backendBefore { break }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        XCTAssertEqual(shown, backendBefore, "the feed still counts the deleted comment")
+    }
+
+    private func stringField(_ field: String, in document: [String: Any]) -> String? {
+        ((document["fields"] as? [String: Any])?[field] as? [String: Any])?["stringValue"] as? String
+    }
+
     /// Leaving the screen and coming back must not lose a draft the person has
     /// not sent — and must not silently send it either.
     func testLeavingWithAnUnsentDraftDoesNotSendIt() {

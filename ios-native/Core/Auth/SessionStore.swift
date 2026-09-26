@@ -1,5 +1,6 @@
 import FirebaseAuth
 import Foundation
+import GoogleSignIn
 import OSLog
 import Observation
 
@@ -27,6 +28,8 @@ final class SessionStore {
     enum EndReason: Equatable {
         case signedOut
         case expired
+        /// The person deleted their account; the sign-in screen says so.
+        case accountDeleted
     }
 
     /// Where the person was when a session ended, and whose session it was.
@@ -67,6 +70,8 @@ final class SessionStore {
     /// already be false by the time the listener asks, and every deliberate
     /// sign-out would be reported as an expiry.
     private var signOutWasDeliberate = false
+    /// What a deliberate sign-out is reported as.
+    private var deliberateReason: EndReason = .signedOut
 
     func start() {
         guard listener == nil else { return }
@@ -99,7 +104,8 @@ final class SessionStore {
                 // That arrives here as a plain sign-out and is indistinguishable
                 // from a deliberate one unless we say which we asked for.
                 if signOutWasDeliberate {
-                    endedReason = .signedOut
+                    endedReason = deliberateReason
+                    deliberateReason = .signedOut
                     pendingResume = nil
                 } else {
                     endedReason = .expired
@@ -142,6 +148,60 @@ final class SessionStore {
         }
     }
 
+    /// "Continue with Google": Google's page for the tokens, then Firebase.
+    ///
+    /// Here rather than in a model owned by the sign-in screen: the moment
+    /// Firebase signs in, the session listener swaps the whole tree to the
+    /// signed-in one, and a screen-owned model would be torn down mid-call.
+    ///
+    /// - Returns: false when the person backed out of Google's page.
+    func signInWithGoogle(using google: any GoogleTokenProviding) async throws(AuthError) -> Bool {
+        guard let tokens = try await google.tokens() else { return false }
+        let credential = GoogleAuthProvider.credential(
+            withIDToken: tokens.idToken, accessToken: tokens.accessToken
+        )
+        do {
+            _ = try await Auth.auth().signIn(with: credential)
+            return true
+        } catch {
+            let mapped = AuthError(error)
+            log.error("google sign-in failed at Firebase: \(String(describing: mapped), privacy: .public)")
+            throw mapped
+        }
+    }
+
+    /// The name the sign-in provider holds for this account — Google's
+    /// account name, for a Google account. Nil for any other uid.
+    func providerDisplayName(for uid: String) -> String? {
+        guard let user = Auth.auth().currentUser, user.uid == uid else { return nil }
+        return user.displayName
+    }
+
+    /// The server has deleted the account. Ends the session as deliberate —
+    /// no "your session ended" and no place to go back to — and says why.
+    ///
+    /// If the SDK noticed first (the Auth user is gone, so a token refresh
+    /// fails) the session has already ended as an expiry; that is corrected
+    /// here rather than left telling the person to sign back in.
+    func accountDeleted() {
+        pendingResume = nil
+        guard case .signedIn = state else {
+            endedReason = .accountDeleted
+            return
+        }
+        deliberateReason = .accountDeleted
+        do {
+            try signOut()
+        } catch {
+            // Firebase could not sign out locally; the server has already
+            // deleted the account, so the screen must not stay signed in.
+            deliberateReason = .signedOut
+            resetScope()
+            state = .signedOut
+            endedReason = .accountDeleted
+        }
+    }
+
     func signOut() throws {
         signOutWasDeliberate = true
         do {
@@ -150,6 +210,11 @@ final class SessionStore {
             signOutWasDeliberate = false
             throw error
         }
+        // Google keeps its own signed-in user in the Keychain. Firebase has
+        // its own session, so this is not needed to sign out of PetNote — but
+        // left behind, the next "Continue with Google" would go straight
+        // through as the previous person. Safe when Google was never used.
+        GIDSignIn.sharedInstance.signOut()
         resetScope()
     }
 
@@ -226,6 +291,7 @@ final class SessionStore {
         pendingResume = Resume(route: currentRoute, uid: uid)
         endedReason = .expired
         try? Auth.auth().signOut()
+        GIDSignIn.sharedInstance.signOut()
         // Not relying on the listener alone: it is what normally drives this,
         // but if the SDK already had no user the listener will not fire again
         // and the app would stay on a screen it cannot use.
@@ -233,6 +299,28 @@ final class SessionStore {
             resetScope()
             state = .signedOut
         }
+    }
+
+    // MARK: - Links
+
+    /// A place a link asked for, waiting for the signed-in shell to open it.
+    /// Only places to look: the link rules never produce an editor or a
+    /// management screen, and one that names nothing known opens nothing.
+    private(set) var pendingLink: Route?
+
+    func openLink(_ url: URL) {
+        let route = DeepLink.route(for: url)
+        guard route != .feed else {
+            log.info("link names nothing this app opens; ignored")
+            return
+        }
+        pendingLink = route
+    }
+
+    /// Hands the link's place to the shell, once.
+    func consumeLink() -> Route? {
+        defer { pendingLink = nil }
+        return pendingLink
     }
 
     // MARK: - Where the person was

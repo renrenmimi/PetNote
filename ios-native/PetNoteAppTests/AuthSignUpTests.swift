@@ -111,6 +111,14 @@ struct AuthSignUpTests {
         await model.submit()
         _ = await service.awaitSetup()
         #expect(users.generateCalls == 1)
+        // Generating a name proves nothing unless it is the name sent. The
+        // avatar is the server's own default (`getDefaultAvatar`), a host
+        // `ensureUserProfileCallable` accepts.
+        #expect(users.ensureRequests.count == 1)
+        #expect(users.ensureRequests.first?.displayName == "SparklyHedgehog77")
+        #expect(users.ensureRequests.first?.avatarURL
+            == "https://api.dicebear.com/7.x/thumbs/svg?seed=new-uid")
+        #expect(users.ensureRequests.first?.onboardingComplete == false)
     }
 
     // MARK: The two failures that are not failed sign-ups
@@ -185,8 +193,25 @@ struct AuthSignUpTests {
         await model.submit()
         _ = await service.awaitSetup()
 
-        #expect(service.consumeNotice() != nil)
-        #expect(service.consumeNotice() == nil)
+        #expect(service.consumeNotice(for: "new-uid") != nil)
+        #expect(service.consumeNotice(for: "new-uid") == nil)
+    }
+
+    /// The service outlives the account. A notice about one sign-up must not
+    /// be handed to whoever signs in next on the same device.
+    @Test func theNoticeIsOnlyHandedToTheAccountItIsAbout() async {
+        let (service, auth, _) = makeService()
+        auth.verificationSendError = .unknown
+        let model = SignUpModel(setup: service)
+        model.email = "someone@example.com"
+        model.password = "Passw0rd!"
+        model.confirmPassword = "Passw0rd!"
+        await model.submit()
+        _ = await service.awaitSetup()
+
+        #expect(service.consumeNotice(for: "someone-else") == nil)
+        // Not spent by the refusal: the account it is about still gets it.
+        #expect(service.consumeNotice(for: "new-uid") == .verificationEmailNotSent(email: "someone@example.com"))
     }
 
     // MARK: The failure that does mean there is no account

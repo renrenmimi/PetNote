@@ -145,6 +145,18 @@ const Timestamp = admin.firestore.Timestamp;
 const RUN_ID = `r${Date.now().toString(36)}`;
 const POST_ID_PREFIX = `ios-${RUN_ID}-post-`;
 const postID = (index) => `${POST_ID_PREFIX}${String(index).padStart(3, "0")}`;
+// Places and meetups get the same per-run namespace as posts, for the same
+// reason: an event from a previous run addresses a document this run never
+// wrote.
+const PLACE_ID_PREFIX = `ios-${RUN_ID}-place-`;
+const MEETUP_ID_PREFIX = `ios-${RUN_ID}-meetup-`;
+/** What every write of this run's register entry carries, so a later run can clean all of it. */
+const RUN_RECORD = {
+  runId: RUN_ID,
+  postIdPrefix: POST_ID_PREFIX,
+  placeIdPrefix: PLACE_ID_PREFIX,
+  meetupIdPrefix: MEETUP_ID_PREFIX,
+};
 
 /** Where a run records what it created, so cleanup never has to guess. */
 const RUN_REGISTRY = "seedRuns";
@@ -318,10 +330,30 @@ async function clearRecordedRuns() {
   let removedRuns = 0;
 
   const prefixes = [];
+  const gatheringPrefixes = [];
   for (const run of runs.docs) {
     if (run.id === "current" || run.id === RUN_ID) continue;
     const prefix = run.data()?.postIdPrefix;
     if (typeof prefix === "string" && prefix.startsWith("ios-")) prefixes.push({ run, prefix });
+    for (const [collection, key, subs] of [
+      ["locations", "placeIdPrefix", ["reviews", "checkins", "photoEntries"]],
+      ["meetups", "meetupIdPrefix", ["participants", "private"]],
+    ]) {
+      const recorded = run.data()?.[key];
+      if (typeof recorded === "string" && recorded.startsWith("ios-")) {
+        gatheringPrefixes.push({ collection, prefix: recorded, subs });
+      }
+    }
+  }
+  for (const { collection, prefix, subs } of gatheringPrefixes) {
+    const all = await db.collection(collection).get();
+    for (const doc of all.docs.filter((d) => d.id.startsWith(prefix))) {
+      for (const sub of subs) {
+        const kids = await doc.ref.collection(sub).get();
+        for (const kid of kids.docs) await kid.ref.delete();
+      }
+      await doc.ref.delete();
+    }
   }
 
   // One-off: data from before this script kept a register at all. Named
@@ -473,6 +505,196 @@ function textFor(index) {
   return `${base} [#${String(index).padStart(3, "0")}]`;
 }
 
+/**
+ * Three places and five meetups, each shaped for one thing the screens do.
+ *
+ * The place aggregates (rating, review and check-in counts) are left to the
+ * review and check-in triggers, like the post counts. The meetup participant
+ * counts are not a trigger's: the join callable increments them in the same
+ * transaction as the entry, and marks the entry `counted`. The seed writes
+ * both halves the same way, so leaving takes the count down exactly once.
+ */
+async function seedGatherings({ uidA, uidB, now }) {
+  const hour = 60 * 60 * 1000;
+  const day = 24 * hour;
+  const avatar = (uid) => `https://api.dicebear.com/7.x/thumbs/svg?seed=${uid}`;
+  const place = (key) => `${PLACE_ID_PREFIX}${key}`;
+  const meetup = (key) => `${MEETUP_ID_PREFIX}${key}`;
+
+  const places = {
+    reviewed: place("park"),
+    quiet: place("cafe"),
+    trail: place("trail"),
+  };
+  const common = { source: "user", verified: false, addedBy: uidA, addedByName: "Accept A", tags: [], totalPhotos: 0 };
+  await db.doc(`locations/${places.reviewed}`).set({
+    ...common,
+    name: "TEST CONTENT Riverside Dog Park",
+    category: "dog_park",
+    description: "TEST CONTENT A fenced park by the river.",
+    address: "1 River St, Cambridge, MA",
+    city: "Cambridge", state: "MA", lat: 42.3601, lng: -71.0942,
+    features: ["off_leash", "fenced", "water_access", "parking"],
+    photos: [plainImage("sample.jpg")],
+    averageRating: 0, totalRatings: 0, totalCheckins: 0,
+    createdAt: Timestamp.fromMillis(now - 3 * day),
+  });
+  await db.doc(`locations/${places.quiet}`).set({
+    ...common,
+    name: "TEST CONTENT Harbor Café",
+    category: "cafe",
+    description: "",
+    address: "2 Harbor Way, Boston, MA",
+    city: "Boston", state: "MA", lat: 42.3551, lng: -71.0489,
+    features: [], photos: [],
+    averageRating: 0, totalRatings: 0, totalCheckins: 0,
+    createdAt: Timestamp.fromMillis(now - 1 * day),
+  });
+  await db.doc(`locations/${places.trail}`).set({
+    ...common,
+    name: "TEST CONTENT Hilltop Trail",
+    category: "hiking_trail",
+    description: "TEST CONTENT Steep in places.",
+    address: "3 Hill Rd, Newton, MA",
+    city: "Newton", state: "MA", lat: 42.337, lng: -71.2092,
+    features: ["trails", "shade"], photos: [],
+    averageRating: 0, totalRatings: 0, totalCheckins: 0,
+    createdAt: Timestamp.fromMillis(now - 2 * day),
+  });
+
+  // Reviews and check-ins as the callables write them; the triggers count them.
+  const review = (uid, name, rating, comment, tags, ago) => ({
+    userId: uid, userName: name, userAvatar: avatar(uid), rating, comment, photos: [], tags,
+    petFriendly: { space: rating, safety: rating, cleanliness: rating },
+    createdAt: Timestamp.fromMillis(now - ago),
+  });
+  await db.doc(`locations/${places.reviewed}/reviews/${uidA}`).set(
+    review(uidA, "Accept A", 5, "TEST CONTENT Mochi loved the water.", ["shady", "friendly"], 2 * hour));
+  await db.doc(`locations/${places.reviewed}/reviews/${uidB}`).set(
+    review(uidB, "Accept B", 4, "TEST CONTENT Busy on weekends.", ["busy"], 5 * hour));
+  // Five stars from one review, where the park has 4.5 from two: the trail is
+  // top rated, the park most reviewed and the café newest, so each of the
+  // three sorts puts the places in a different order. With three stars here
+  // Top Rated and Most Reviewed agreed, and a test could not tell them apart
+  // (PlacesMeetupsUITests.testEachSortOrdersThePlacesByTheServersNumbers).
+  await db.doc(`locations/${places.trail}/reviews/${uidA}`).set(
+    review(uidA, "Accept A", 5, "TEST CONTENT Worth the climb.", [], 8 * hour));
+  const dayKey = new Date(now).toISOString().slice(0, 10);
+  const checkin = (uid, name, pet, caption, ago) => ({
+    locationId: places.reviewed, userId: uid, userName: name, userAvatar: avatar(uid),
+    photoUrl: ratioImage("1:1", 800, "sample.jpg"), caption, ...pet,
+    createdAt: Timestamp.fromMillis(now - ago),
+  });
+  await db.doc(`locations/${places.reviewed}/checkins/${uidA}_${dayKey}`).set(
+    checkin(uidA, "Accept A", { petId: "ios-pet-latin", petName: "Mochi" }, "TEST CONTENT First visit!", 1 * hour));
+  await db.doc(`locations/${places.reviewed}/checkins/${uidB}_${dayKey}`).set(
+    checkin(uidB, "Accept B", {}, "TEST CONTENT Quick walk.", 3 * hour));
+
+  const meetups = {
+    soon: meetup("soon"),
+    later: meetup("later"),
+    cancelled: meetup("cancelled"),
+    private: meetup("private"),
+    full: meetup("full"),
+    past: meetup("past"),
+  };
+  const organizerB = { organizerId: uidB, organizerName: "Accept B", organizerAvatar: avatar(uidB) };
+  const requirements = (petType, maxPets) => ({
+    dogSize: "any", petType, maxPets, mustHavePosts: false, mustHavePetProfile: false,
+    minFollowers: 0, additionalNotes: "",
+  });
+  const publicPark = {
+    name: "TEST CONTENT Riverside Dog Park", address: "1 River St, Cambridge, MA",
+    lat: 42.3601, lng: -71.0942, city: "Cambridge", state: "MA",
+  };
+  const shape = (fields) => ({
+    ...organizerB,
+    description: "TEST CONTENT Bring water.",
+    duration: 60,
+    isRatingOpen: false,
+    participantCount: 1,
+    createdAt: Timestamp.fromMillis(now - day),
+    updatedAt: Timestamp.fromMillis(now - day),
+    ...fields,
+  });
+  await db.doc(`meetups/${meetups.soon}`).set(shape({
+    title: "TEST CONTENT Sunday splash", date: Timestamp.fromMillis(now + 2 * day),
+    location: publicPark, locationId: places.reviewed, locationVisibility: "everyone",
+    requirements: requirements("any", 5), status: "upcoming",
+  }));
+  await db.doc(`meetups/${meetups.later}`).set(shape({
+    ...{ organizerId: uidA, organizerName: "Accept A", organizerAvatar: avatar(uidA) },
+    title: "TEST CONTENT Dogs on the trail", date: Timestamp.fromMillis(now + 10 * day),
+    location: { name: "TEST CONTENT Hilltop Trail", address: "3 Hill Rd, Newton, MA", lat: 42.337, lng: -71.2092, city: "Newton", state: "MA" },
+    locationId: places.trail, locationVisibility: "everyone",
+    requirements: requirements("dog", 0), status: "upcoming",
+  }));
+  await db.doc(`meetups/${meetups.cancelled}`).set(shape({
+    title: "TEST CONTENT Called off", date: Timestamp.fromMillis(now + 3 * day),
+    location: publicPark, locationId: places.reviewed, locationVisibility: "everyone",
+    requirements: requirements("any", 0), status: "cancelled",
+  }));
+  await db.doc(`meetups/${meetups.private}`).set(shape({
+    title: "TEST CONTENT Backyard playdate", date: Timestamp.fromMillis(now + 3 * day),
+    // The server's public copy of a participants-only meetup: no street, no
+    // coordinates, and a name that says only where roughly.
+    location: { name: "Meetup near Somerville, MA", address: "", lat: 0, lng: 0, city: "Somerville", state: "MA" },
+    locationVisibility: "participants_only",
+    requirements: requirements("any", 6), status: "upcoming",
+  }));
+  await db.doc(`meetups/${meetups.private}/private/address`).set({
+    name: "TEST CONTENT 12 Elm St backyard", address: "12 Elm St, Somerville, MA",
+    lat: 42.3876, lng: -71.0995, city: "Somerville", state: "MA",
+  });
+  // Over, and open for rating: the server sets both when a meetup completes.
+  await db.doc(`meetups/${meetups.past}`).set(shape({
+    title: "TEST CONTENT Last week's walk", date: Timestamp.fromMillis(now - 2 * day),
+    location: publicPark, locationId: places.reviewed, locationVisibility: "everyone",
+    requirements: requirements("any", 0), status: "completed", isRatingOpen: true,
+  }));
+  await db.doc(`meetups/${meetups.full}`).set(shape({
+    title: "TEST CONTENT One-pet walk", date: Timestamp.fromMillis(now + 4 * day),
+    location: publicPark, locationId: places.reviewed, locationVisibility: "everyone",
+    requirements: requirements("any", 1), status: "upcoming",
+  }));
+  // Every meetup has its organiser as its first participant, as the create
+  // callable writes it — and the count of 1 above is that entry.
+  for (const id of Object.values(meetups)) {
+    const organiser = id === meetups.later
+      ? { uid: uidA, name: "Accept A", pet: { id: "ios-pet-latin", name: "Mochi" } }
+      : { uid: uidB, name: "Accept B", pet: { id: "ios-pet-cjk", name: "麻薯团子小豆泥花生酱" } };
+    await db.doc(`meetups/${id}/participants/${organiser.uid}`).set({
+      meetupId: id, userId: organiser.uid, userName: organiser.name, userAvatar: avatar(organiser.uid),
+      petId: organiser.pet.id, petName: organiser.pet.name, petAvatar: ratioImage("1:1", 200, "sample.jpg"),
+      joinedAt: Timestamp.fromMillis(now - day), status: "confirmed", counted: true,
+    });
+  }
+  return { places, meetups };
+}
+
+/** The review and check-in triggers counted the seeded places, within a minute. */
+async function gatheringChecks({ places }) {
+  let data = {};
+  let trail = {};
+  // The trail is waited for too: its review is its own trigger event, and
+  // nothing says it lands before the park's.
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    data = (await db.doc(`locations/${places.reviewed}`).get()).data() ?? {};
+    trail = (await db.doc(`locations/${places.trail}`).get()).data() ?? {};
+    if (data.totalRatings === 2 && data.totalCheckins === 2 && trail.totalRatings === 1) break;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  return [
+    [`the review trigger counted the park's 2 reviews`, data.totalRatings === 2, `${data.totalRatings} reviews, average ${data.averageRating}`],
+    [`the park's average is 4.5`, data.averageRating === 4.5, data.averageRating],
+    [`the check-in trigger counted 2 check-ins`, data.totalCheckins === 2, data.totalCheckins],
+    [`the trail's one review counted`, trail.totalRatings === 1, trail.totalRatings],
+    // Above the park's 4.5, with fewer reviews: what makes Top Rated and
+    // Most Reviewed give different orders.
+    [`the trail's average is 5`, trail.averageRating === 5, trail.averageRating],
+  ];
+}
+
 async function main() {
   console.log(
     `Seeding ${PROJECT} via ${process.env.FIRESTORE_EMULATOR_HOST || "the real backend"}`
@@ -501,8 +723,7 @@ async function main() {
   // leaves a record of what to clean up. A crash used to leave orphans that
   // only a wildcard sweep could find, and that sweep was the original defect.
   await db.doc(`${RUN_REGISTRY}/${RUN_ID}`).set({
-    runId: RUN_ID,
-    postIdPrefix: POST_ID_PREFIX,
+    ...RUN_RECORD,
     startedAt: Timestamp.now(),
     complete: false,
   });
@@ -609,6 +830,10 @@ async function main() {
   console.log(`    no pet at              ${NO_PET_INDEX}`);
   console.log(`    CJK pet name at        ${CJK_PET_INDEX}`);
   console.log(`    ${MANY_COMMENTS_COUNT} comments on         ${postID(MANY_COMMENTS_INDEX)}`);
+  const gatherings = await seedGatherings({ uidA, uidB, now });
+  console.log(`  places: ${Object.values(gatherings.places).join(", ")}`);
+  console.log(`  meetups: ${Object.values(gatherings.meetups).join(", ")}`);
+
   // The triggers own every aggregate. Nothing below writes one.
   const settle = await waitForAggregates(Array.from({ length: POST_COUNT }, (_, i) => postID(i)));
   console.log(
@@ -663,6 +888,9 @@ async function main() {
     [`a CJK pet name`, seeded.some((d) => /[\u4e00-\u9fff]/.test(d.data().petName || "")), "yes"],
     [`>=3 image aspect ratios`, new Set(seeded.flatMap((d) => (d.data().media || []).map((m) => (m.url.match(/ar_[0-9:]+/) || ["none"])[0]))).size >= 3, [...new Set(seeded.flatMap((d) => (d.data().media || []).map((m) => (m.url.match(/ar_[0-9:]+/) || ["none"])[0])))].join(",")],
     [`a 404 media url`, seeded.some((d) => (d.data().media || []).some((m) => m.url.includes("missing"))), "yes"],
+    // The review and check-in triggers ran on the seeded place: the numbers
+    // the Places screens show are theirs, not the seed's.
+    ...(await gatheringChecks(gatherings)),
   ];
   console.log("\n  self-check:");
   let failed = 0;
@@ -676,8 +904,7 @@ async function main() {
     // dataset from becoming the baseline; it must not also make the leftovers
     // untraceable, which would be the worse of the two failures.
     await db.doc(`${RUN_REGISTRY}/${RUN_ID}`).set({
-      runId: RUN_ID,
-      postIdPrefix: POST_ID_PREFIX,
+      ...RUN_RECORD,
       failedAt: Timestamp.now(),
       failedChecks: checks.filter(([, ok]) => !ok).map(([label]) => label),
       complete: false,
@@ -695,8 +922,7 @@ async function main() {
   // cannot survive per-run namespaces, and more to the point it is what let
   // tests keep passing against data left behind by a run nobody remembers.
   const manifest = {
-    runId: RUN_ID,
-    postIdPrefix: POST_ID_PREFIX,
+    ...RUN_RECORD,
     postCount: POST_COUNT,
     likedPostLimit: LIKED_POST_LIMIT,
     accounts: {
@@ -715,6 +941,9 @@ async function main() {
       noPet: postID(NO_PET_INDEX),
       cjkPetName: postID(CJK_PET_INDEX),
       videos: VIDEO_INDEXES.map(postID),
+      // Flat, as strings: the tests' manifest reader takes string landmarks.
+      ...Object.fromEntries(Object.entries(gatherings.places).map(([k, v]) => [`place_${k}`, v])),
+      ...Object.fromEntries(Object.entries(gatherings.meetups).map(([k, v]) => [`meetup_${k}`, v])),
     },
     completedAt: Timestamp.now(),
     complete: true,
@@ -735,8 +964,7 @@ main()
     // ones. Best effort — if this write also fails there is nothing further
     // to be done, and the legacy sweep remains as a backstop.
     await db.doc(`${RUN_REGISTRY}/${RUN_ID}`).set({
-      runId: RUN_ID,
-      postIdPrefix: POST_ID_PREFIX,
+      ...RUN_RECORD,
       crashedAt: Timestamp.now(),
       error: String(error?.message ?? error).slice(0, 500),
       complete: false,

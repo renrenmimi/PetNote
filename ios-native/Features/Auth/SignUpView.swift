@@ -26,7 +26,7 @@ struct SignUpView: View {
     }
 
     var body: some View {
-        ScrollView {
+        AuthShell {
             VStack(alignment: .leading, spacing: Spacing.l) {
                 header
                 noticeBanner
@@ -35,22 +35,23 @@ struct SignUpView: View {
                 mismatchWarning
                 submitButton
                 legalNote
+                GoogleSignInButton()
             }
-            .padding(.horizontal, Layout.pageInset)
-            .padding(.vertical, Spacing.xl)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .scrollDismissesKeyboard(.interactively)
-        .background(Palette.background)
         .navigationTitle("Create account")
         .navigationBarTitleDisplayMode(.inline)
+        // The card has the title; the bar keeps the way back, and the name
+        // for VoiceOver and the back button's history, without saying it twice.
+        .toolbar(removing: .title)
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: Spacing.s) {
             Text("Create your account")
-                .font(Typography.pageTitle)
+                .font(.title2.weight(.semibold))
                 .foregroundStyle(Palette.primaryText)
+                .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("signup.title")
             Text("You can browse PetNote without one. An account is for posting.")
                 .font(Typography.body)
@@ -74,10 +75,13 @@ struct SignUpView: View {
                 // it, carrying the address across so it does not have to be
                 // typed again.
                 if case .emailAlreadyInUse(let email) = notice {
-                    Button("Sign in instead") { onUseExistingAccount(email) }
+                    Button { onUseExistingAccount(email) } label: {
+                        Text("Sign in instead")
+                            .frame(minHeight: Layout.minTouchTarget)
+                            .contentShape(.rect)
+                    }
                         .font(Typography.body)
                         .foregroundStyle(Palette.brandPrimary)
-                        .frame(minHeight: Layout.minTouchTarget)
                         .accessibilityIdentifier("signup.useExistingAccount")
                 }
             }
@@ -190,11 +194,16 @@ struct SignUpView: View {
         .accessibilityLabel(model.isSubmitting ? "Creating account" : "Create account")
     }
 
+    /// The agreement, and the two documents it refers to, one tap away —
+    /// the line used to be plain text with nothing to open.
     private var legalNote: some View {
-        Text("By creating an account you agree to the Terms and the Privacy Policy.")
-            .font(Typography.caption)
-            .foregroundStyle(Palette.tertiaryText)
-            .accessibilityIdentifier("signup.legal")
+        VStack(alignment: .leading, spacing: 0) {
+            Text("By creating an account you agree to the Terms and the Privacy Policy.")
+                .font(Typography.caption)
+                .foregroundStyle(Palette.tertiaryText)
+                .accessibilityIdentifier("signup.legal")
+            LegalLinks()
+        }
     }
 
     /// Return moves to the next empty field rather than submitting a form that

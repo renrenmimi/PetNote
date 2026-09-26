@@ -58,6 +58,28 @@ struct ProfileOnboardingTests {
         #expect(model.canContinue, "the generated name could not be continued from")
     }
 
+    /// The case above, followed one step further. A generated name is **not**
+    /// the account's name — the server has none, which is why one was
+    /// generated — so continuing with it has to write it.
+    ///
+    /// Without the write the account stays nameless for good: `finish()`
+    /// then creates `users/{uid}` holding only `onboardingComplete`
+    /// (firestore.rules:248-250), and `ensureUserProfileCallable` never
+    /// repairs a document that exists — it returns early without writing
+    /// (functions/src/users.ts:309-321).
+    @Test func aGeneratedNameIsSavedWhenThePersonContinuesWithIt() async {
+        let users = repository(withName: nil)
+        users.generatedName = "SparklyKoala19"
+        let model = makeModel(users: users)
+        await model.start()
+
+        await model.continueFromName()
+
+        #expect(users.updateCalls.count == 1, "the generated name was never written")
+        #expect(users.updateCalls.first?.displayName == "SparklyKoala19")
+        #expect(model.step == .finished)
+    }
+
     @Test func afailedReadSaysSoAndOffersNothingToContinueFrom() async {
         let users = repository(withName: nil)
         users.profileError = ProfileError.offline

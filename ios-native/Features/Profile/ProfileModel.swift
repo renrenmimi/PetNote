@@ -47,7 +47,7 @@ final class ProfileModel {
     /// A profile mid-repair legitimately has an empty name — the server fills
     /// it in — and an empty line looks like a broken screen.
     var displayedName: String {
-        guard let profile, !profile.displayName.isEmpty else { return "Your profile" }
+        guard let profile, !profile.displayName.isEmpty else { return String(localized: "Your profile") }
         return profile.displayName
     }
 

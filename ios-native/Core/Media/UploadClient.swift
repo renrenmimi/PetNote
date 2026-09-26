@@ -61,9 +61,11 @@ protocol MediaUploading: Sendable {
 ///      signature unmatchable and takes every upload down.
 ///   2. **The size check is advisory.** It buys a clear message before a doomed
 ///      upload; the enforceable ceiling is the account plan.
-///   3. **Nothing here ever deletes.** There is no call to
-///      `deleteCloudinaryAssetsCallable` in this client, and `AssetReclaim` is
-///      what keeps it that way.
+///   3. **Nothing here ever deletes.** This client — the composer's — has no
+///      call to `deleteCloudinaryAssetsCallable`, and `AssetReclaim` is what
+///      keeps it that way. The app's only call to it is elsewhere: a profile
+///      picture whose save the server refused outright
+///      (`CloudinaryAvatarUploader.discard`), as the web client does.
 actor CloudinaryUploadClient: MediaUploading {
     private let functions: Functions
     private let session: URLSession

@@ -511,7 +511,8 @@ final class LikeUITests: XCTestCase {
         temporaryLikes.append((post: postID, uid: otherUID))
     }
 
-    /// Scrolls until a post's text and its own action row are both on screen.
+    /// Scrolls until a post's text and its own action row are both on screen —
+    /// the whole of the heart, not one point of it.
     @discardableResult
     private func scrollToPost(_ app: XCUIApplication, withText text: String) -> Bool {
         let target = app.staticTexts.matching(identifier: "post.text")
@@ -524,39 +525,104 @@ final class LikeUITests: XCTestCase {
         // count-only loop reports "the post went missing from the feed".
         let deadline = Date().addingTimeInterval(60)
         var swipes = 0
+        var nudges = 0
+        var nudgesDown = 0
         while swipes < 15, Date() < deadline {
             dismissSavePasswordSheetIfPresent(app)
-            if target.exists, target.isHittable,
-               let like = likeButton(app, forPostWithText: text), like.isHittable {
-                return true
-            }
             if target.exists {
-                // On screen but not settled: wait rather than scroll past it.
+                let like = likeButton(app, forPostWithText: text)
+                if target.isHittable, let like, like.isHittable, isWhollyReachable(like, in: app) {
+                    return true
+                }
+                // The heart sits above its text since the cards follow the
+                // web client (actions, then text). A text in the upper part
+                // of the screen can have its heart under the navigation bar or
+                // above the screen, which waiting does not fix: the list is
+                // moved down a little instead — slowly and not far, so from a
+                // row this far down it cannot become a pull to refresh.
+                let barBottom = app.navigationBars.firstMatch.exists
+                    ? app.navigationBars.firstMatch.frame.maxY : app.windows.firstMatch.frame.minY
+                if nudgesDown < 4, like.map({ $0.frame.minY < barBottom }) ?? (target.frame.minY < barBottom + 200) {
+                    nudgeFeedDown(app)
+                    nudgesDown += 1
+                    continue
+                }
+                // The card is in the tree and its heart is not somewhere a tap
+                // is delivered: hanging off the bottom, under the tab bar, not
+                // drawn yet because the list ends above the bar — or the text
+                // itself is under the bar and so not hittable. None of those is
+                // fixed by waiting, which is what this used to do for a text
+                // that existed but was not hittable, until the deadline. In the
+                // lower half of the screen the card is moved up; near the top
+                // it is a row still settling, and waiting is right.
+                let window = app.windows.firstMatch.frame
+                if target.frame.midY > window.midY, nudges < 6 {
+                    nudgeFeedUp(app)
+                    nudges += 1
+                    continue
+                }
                 Thread.sleep(forTimeInterval: 0.5)
                 continue
             }
             app.swipeUp()
             swipes += 1
         }
+        let like = likeButton(app, forPostWithText: text)
+        print("MEASURED scrollToPost gave up: text exists=\(target.exists) at \(target.frame), "
+              + "heart \(like.map { "at \($0.frame)" } ?? "not found"), swipes \(swipes), nudges \(nudges), "
+              + "window \(app.windows.firstMatch.frame)")
         return false
+    }
+
+    /// Whether *all* of a control is where a finger — or a synthesized tap —
+    /// actually reaches it: inside the window, and not under the tab bar.
+    ///
+    /// `isHittable` is a weaker question. It holds as long as the control's
+    /// hit point is on screen and answers an accessibility hit test, and that
+    /// is not the same as a tap arriving. Measured on 2026-09-21 (22:43, the
+    /// failing run of `testALikeRequestThatIsNeverAnsweredRecoversWithoutWritingTwice`
+    /// in that night's full run): `scrollToPost` stopped with the temporary
+    /// post's heart at y 848–892 on an 874pt screen, XCUITest called it
+    /// hittable and tapped it at (40, 870.3) — 3.7pt above the bottom edge —
+    /// and nothing reached the app. The simulator's log for that app process
+    /// has no like request at all, where a passing run of the same test logs
+    /// the write and, twelve seconds later, the deadline. The passing run that
+    /// evening had stopped with the same heart at y 833–877 and tapped it at
+    /// y 855, which did arrive. So the assertion that failed — "the heart did
+    /// not fill while the request was in flight" — was about a request that
+    /// had never been made.
+    ///
+    /// Wholly inside the window puts a 44pt control's hit point at least 22pt
+    /// clear of the edge, which is further than the tap that arrived; clear of
+    /// the tab bar is the same question for the bar the feed now sits in.
+    private func isWhollyReachable(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
+        let frame = element.frame
+        let window = app.windows.firstMatch.frame
+        guard !frame.isEmpty, !window.isEmpty, window.contains(frame) else { return false }
+        let tabBar = app.tabBars.firstMatch
+        if tabBar.exists, tabBar.frame.intersects(frame) { return false }
+        return true
     }
 
     /// The like button belonging to one particular card.
     ///
     /// By geometry, because the cards are siblings in the tree and nothing
-    /// links a button to the text above it: the first `post.like` below this
-    /// card's text is this card's, since the next card's text comes after its
-    /// own action row. Indexing into the visible buttons instead is what
-    /// previously moved an assertion onto whatever card happened to be on
-    /// screen.
+    /// links a button to the text beside it. Since 09-26 a card is the web
+    /// client's — header, picture, actions, then the text — so this card's
+    /// like is the nearest `post.like` *above* its text; the next card's is
+    /// below it. (It was the first one below while the text sat above the
+    /// picture, and after the change that rule answered with the next card's
+    /// button: four LikeUITests read another post's state.) Indexing into the
+    /// visible buttons instead is what previously moved an assertion onto
+    /// whatever card happened to be on screen.
     private func likeButton(_ app: XCUIApplication, forPostWithText text: String) -> XCUIElement? {
         let target = app.staticTexts.matching(identifier: "post.text")
             .containing(NSPredicate(format: "label == %@", text)).firstMatch
         guard target.exists else { return nil }
         let top = target.frame.minY
         return app.buttons.matching(identifier: "post.like").allElementsBoundByIndex
-            .filter { $0.exists && !$0.frame.isEmpty && $0.frame.minY > top }
-            .min { $0.frame.minY < $1.frame.minY }
+            .filter { $0.exists && !$0.frame.isEmpty && $0.frame.maxY <= top }
+            .max { $0.frame.minY < $1.frame.minY }
     }
 
     private func shownCount(of button: XCUIElement) -> Int? {
@@ -750,16 +816,38 @@ final class LikeUITests: XCTestCase {
         let tappedAt = Date()
         XCTAssertTrue(waitUntilHittable(heart, in: app, timeout: 30),
                       "the like button is not tappable")
+        let heartFrameAtTap = heart.frame
         heart.tap()
         // Registered before anything is asserted: from here on the server may
         // be holding a like, and a run that fails halfway must still not leave
         // one behind in the shared emulator.
         temporaryLikes.append((post: temporary.id, uid: uid))
 
-        // (1) Optimistic while the request is outstanding — a heart that did
-        //     not fill would mean the tap never reached the model.
-        XCTAssertTrue(waitForLabel("Unlike", ofPostWithText: temporary.text, in: app, timeout: 10),
-                      "the heart did not fill while the request was in flight")
+        // (1) Optimistic while the request is outstanding.
+        //
+        //     **Observable from out here, and that was checked rather than
+        //     assumed** — two other tests in this project were rewritten
+        //     because XCUITest waits for the app to go idle before every query,
+        //     which hides states that last only while the main thread is busy.
+        //     This one is not of that kind: the request is an async network
+        //     call that parks for the whole twelve-second deadline with the
+        //     main thread idle. In the failing run of 2026-09-21 22:43 the app
+        //     went idle 0.4s after the tap and the label was read every ~0.85s
+        //     for the full ten seconds.
+        //
+        //     A heart that does not fill has two readings, and they are told
+        //     apart by the server: the fault writes the like before it
+        //     swallows the answer, so a request that really is in flight leaves
+        //     a document behind. No document means the tap never started one.
+        if !waitForLabel("Unlike", ofPostWithText: temporary.text, in: app, timeout: 10) {
+            let written = backendLikeExists(postID: temporary.id, uid: uid)
+            XCTFail(written
+                ? "the heart did not fill while the request was in flight: the like was written "
+                    + "and the screen still says Like"
+                : "the tap at \(heartFrameAtTap) never started a like: the heart did not fill and "
+                    + "nothing was written, so no request was ever in flight — that is the tap not "
+                    + "arriving, not a statement about the in-flight state")
+        }
 
         // (1) And the write really happened. If the fault had swallowed the
         //     write as well, everything below would pass by being vacuous.

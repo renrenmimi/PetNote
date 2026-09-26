@@ -25,6 +25,12 @@ DEAD_CODE_STRIPPING = YES
 // screenshot can be tied to the source that produced it (spec §15.5).
 PETNOTE_BUILD_STAMP = local
 
+// The URL scheme Google's sign-in page returns through: the reversed iOS
+// OAuth client ID of the Firebase project. A value that can never match by
+// default, so no build offers Google sign-in unless its own project has a
+// client and this names it — GoogleSignInAvailability checks the two agree.
+PETNOTE_GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.not-configured
+
 // Empty for emulator builds, where the project id is whatever the emulator was
 // started with. Set by Debug-TestCloud and (later) by production.
 PETNOTE_EXPECTED_PROJECT =
@@ -33,7 +39,7 @@ MARKETING_VERSION = 0.1
 CURRENT_PROJECT_VERSION = 1
 
 INFOPLIST_FILE = Config/Info.plist
-INFOPLIST_KEY_UILaunchScreen_Generation = YES
+INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen
 INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait
 
 // The icon is the Capacitor app's, byte for byte. Not redrawn, not
