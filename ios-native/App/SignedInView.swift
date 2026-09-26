@@ -15,6 +15,8 @@ struct SignedInView: View {
 
     @Environment(SessionStore.self) private var session
     @Environment(\.scenePhase) private var scenePhase
+    /// The person's type size, read here because a bar item sees a capped one.
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var path: [Route] = []
     @State private var profilePath: [Route] = []
     @State private var placesPath: [Route] = []
@@ -277,37 +279,23 @@ struct SignedInView: View {
                     // and the name at the leading edge, first in the bar. Not
                     // on glass: iOS 26 puts bar items on a shared glass
                     // background, and a logo inside a button-shaped capsule
-                    // reads as a button.
+                    // reads as a button. The environment badge that used to
+                    // sit here is in the principal item now (FeedView), where
+                    // the bar can squeeze it instead of the buttons.
+                    //
+                    // Whether the name is drawn is decided here, outside the
+                    // bar: inside a bar item the type size is capped below
+                    // the accessibility sizes, so a lockup asking for itself
+                    // never saw AX5 (09-25: the name stayed, and the bell and
+                    // the account went into the bar's overflow menu).
                     if #available(iOS 26.0, *) {
                         ToolbarItem(placement: .topBarLeading) {
-                            FeedBrandLockup()
+                            FeedBrandLockup(showsName: !typeSize.isAccessibilitySize)
                         }
                         .sharedBackgroundVisibility(.hidden)
                     } else {
                         ToolbarItem(placement: .topBarLeading) {
-                            FeedBrandLockup()
-                        }
-                    }
-                    // A screenshot from a device has to say for itself which
-                    // backend produced it. Without this, "verified on device"
-                    // and "verified against production by mistake" look
-                    // identical in a photo. Hidden in production builds, where
-                    // it would just be clutter for a real user.
-                    if AppEnvironment.current.backend != .production {
-                        ToolbarItem(placement: .topBarLeading) {
-                            // Text, not a Button: it must not add a control to
-                            // the bar, and the touch-target audit enumerates
-                            // app.buttons.
-                            Text(EnvironmentGuard.displayLabel)
-                                .font(.caption2)
-                                .monospaced()
-                                // Palette.secondaryText, not SwiftUI's
-                                // .secondary. Measured from screenshot pixels,
-                                // .secondary renders this badge at 3.02:1 in
-                                // light and 3.19:1 in dark — below the 4.5:1
-                                // that text this size needs.
-                                .foregroundStyle(Palette.secondaryText)
-                                .accessibilityIdentifier("env.badge")
+                            FeedBrandLockup(showsName: !typeSize.isAccessibilitySize)
                         }
                     }
                     // Search, then the bell, then the account: the web

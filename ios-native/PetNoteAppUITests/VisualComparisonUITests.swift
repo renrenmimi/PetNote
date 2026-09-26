@@ -44,4 +44,26 @@ final class VisualComparisonUITests: XCTestCase {
         _ = waitForQuietUI(app, quietFor: 1, timeout: 10)
         shoot("04-detail")
     }
+
+    /// The feed bar at the default size and at the largest accessibility
+    /// size, with the video probe on, written out item by item: which items
+    /// the bar kept, where, and whether the principal item (where the probe
+    /// lives) and the account button survived. The lockup, the environment
+    /// badge, the principal item and three buttons share 402pt.
+    func testTheFeedBarAtTheDefaultSizeAndAtAX5() {
+        for (tag, size) in [("default", "UICTContentSizeCategoryL"),
+                            ("ax5", "UICTContentSizeCategoryAccessibilityXXXL")] {
+            let app = launchOnSignIn(extraArguments: [
+                "-UIPreferredContentSizeCategoryName", size, "-petnote-video-probe",
+            ])
+            signIn(app, email: "accept-a@example.com")
+            waitForQuietUI(app)
+            shoot("05-feed-bar-\(tag)")
+            let bar = app.navigationBars.firstMatch
+            print("VISUAL [\(tag)] probe in bar: \(bar.staticTexts.matching(identifier: "video.probe").firstMatch.exists)")
+            print("VISUAL [\(tag)] account in bar: \(app.buttons["account.menu"].exists)")
+            print("VISUAL [\(tag)] bar:\n\(bar.debugDescription)")
+            app.terminate()
+        }
+    }
 }

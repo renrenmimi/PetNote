@@ -38,17 +38,18 @@ struct BrandMark: View {
 ///
 /// At the accessibility sizes the name is not drawn — only the paw, which
 /// is a fixed 28 — and a long press shows the name large, as a system bar
-/// title does instead of growing. Drawn at AX5 it took its own width
-/// (`fixedSize`, needed so the default size is not squeezed to an ellipsis)
-/// and pushed the account button out of the bar: 09-25's full regression,
-/// `testTheAccountMenuIsUsableAtAX5`. VoiceOver reads the name either way.
+/// title does instead of growing. The caller says which, because a bar item
+/// is given a type size capped below the accessibility sizes and cannot tell
+/// for itself: drawn at AX5, the name pushed the bell and the account into
+/// the bar's overflow menu (09-25, `testTheAccountMenuIsUsableAtAX5`).
+/// VoiceOver reads the name either way.
 struct FeedBrandLockup: View {
-    @Environment(\.dynamicTypeSize) private var typeSize
+    let showsName: Bool
 
     var body: some View {
         HStack(spacing: Spacing.s) {
             BrandMark(size: 28)
-            if !typeSize.isAccessibilitySize {
+            if showsName {
                 Text("PetNote")
                     .font(Typography.sectionTitle)
                     .foregroundStyle(Palette.primaryText)
