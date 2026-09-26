@@ -123,6 +123,31 @@ extension XCTestCase {
         from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.3)
     }
 
+    /// `nudgeListUp` for the feed and the pet page: the same slow drag, begun
+    /// in the strip beside the cards rather than in the middle of one.
+    ///
+    /// The middle of the screen can be a card's Share button, and a slow drag
+    /// that starts on it does not move the list. Measured on 2026-09-26 on
+    /// the iPhone 17 simulator, the same 200pt slow drag moved the feed 0pt
+    /// from `post.share` (twice), 190pt from `post.like` and 190pt from the
+    /// margin; a fast flick from `post.share` moved it 528pt. After the cards
+    /// put the action row where the text used to be, three LikeUITests
+    /// pressed exactly there and reported "the post never appeared". The
+    /// strip holds no control, and on the right there is no edge gesture.
+    func nudgeFeedUp(_ app: XCUIApplication) {
+        let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.65))
+        let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.4))
+        from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.3)
+    }
+
+    /// The other way, by about a fifth of the screen. Only for a list that is
+    /// well down from its top: from the top this is a pull to refresh.
+    func nudgeFeedDown(_ app: XCUIApplication) {
+        let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.4))
+        let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.6))
+        from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.3)
+    }
+
     func openFirstPost(_ app: XCUIApplication) {
         let comments = app.buttons.matching(identifier: "post.comments").firstMatch
         XCTAssertTrue(waitForExistence(of: comments, in: app, timeout: 60), "the feed has no posts")
@@ -136,7 +161,7 @@ extension XCTestCase {
             // full swipe from there carried that card off the top of the
             // screen, and the next card's row landed under the bar again.
             if comments.exists, comments.frame.midY > app.windows.firstMatch.frame.midY {
-                nudgeListUp(app)
+                nudgeFeedUp(app)
             } else {
                 app.swipeUp()
             }

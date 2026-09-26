@@ -136,7 +136,7 @@ final class VisualComparisonUITests: XCTestCase {
 
         // The long name: the seed's CJK pet, whose name runs past the card.
         let longName = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "麻薯团子")).firstMatch
-        for _ in 0..<6 where !(longName.exists && longName.isHittable) { nudgeListUp(app) }
+        for _ in 0..<6 where !(longName.exists && longName.isHittable) { nudgeFeedUp(app) }
         _ = waitForQuietUI(app, quietFor: 1, timeout: 10)
         shoot("09-long-name")
 
