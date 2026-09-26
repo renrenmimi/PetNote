@@ -1,0 +1,23 @@
+// Performance measurement build (acceptance stage 7). Writes nothing.
+#include "Base.xcconfig"
+
+PETNOTE_BACKEND = production
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = PETNOTE_READ_ONLY
+ONLY_ACTIVE_ARCH = NO
+SWIFT_OPTIMIZATION_LEVEL = -O
+GCC_OPTIMIZATION_LEVEL = s
+ENABLE_TESTABILITY = NO
+VALIDATE_PRODUCT = YES
+
+// Support/ is a synchronised group, so everything in it is copied into every
+// configuration's bundle — including the emulator's Firebase configuration.
+// A shipping build was carrying GoogleService-Info-Emulator.plist with
+// PROJECT_ID = petnote-test inside it.
+//
+// Not a secret; it is the local emulator. But it is the file a build falls
+// back to when its own is missing, and a candidate package has no business
+// carrying the configuration of a backend it must never talk to.
+// Both of them. The emulator's plist was excluded when this was written and
+// the test project's one did not exist yet; the moment it arrived the
+// candidate package started carrying it again. Same trap, same file, twice.
+EXCLUDED_SOURCE_FILE_NAMES = GoogleService-Info-Emulator.plist GoogleService-Info-Test.plist

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>PetNoteBuildStamp</key>
+	<string>$(PETNOTE_BUILD_STAMP)</string>
+	<key>PetNoteExpectedProject</key>
+	<string>$(PETNOTE_EXPECTED_PROJECT)</string>
+	<key>PetNoteBackend</key>
+	<string>$(PETNOTE_BACKEND)</string>
+	<key>PetNoteEmulatorHost</key>
+	<string>$(PETNOTE_EMULATOR_HOST)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>google-sign-in</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>$(PETNOTE_GOOGLE_REVERSED_CLIENT_ID)</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>dev.local.petnote.native.links</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>petnote</string>
+			</array>
+		</dict>
+	</array>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+</dict>
+</plist>

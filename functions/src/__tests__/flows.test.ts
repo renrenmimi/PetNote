@@ -1,6 +1,6 @@
 import "./setup";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { CLOUDINARY_CLOUD_NAME, admin, db } from "../platform";
+import { PRODUCTION_CLOUDINARY, admin, db } from "../platform";
 import { ensureUserProfileCallable, deleteUserAccount } from "../users";
 import { createPostCallable, createCommentCallable } from "../posts";
 import { createPetCallable } from "../pets";
@@ -324,7 +324,8 @@ describe("cloudinary upload signature", () => {
       .digest("hex");
 
     expect(res.signature).toBe(expected);
-    expect(res.cloudName).toBe(CLOUDINARY_CLOUD_NAME);
+    // The emulator project uses production's account values (platform.ts).
+    expect(res.cloudName).toBe(PRODUCTION_CLOUDINARY.cloudName);
     expect(res.apiKey).toBe(process.env.CLOUDINARY_API_KEY);
   });
 

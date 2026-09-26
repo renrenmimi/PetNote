@@ -1,0 +1,13 @@
+diff --git a/ios-native/Features/Feed/FeedViewModel.swift b/ios-native/Features/Feed/FeedViewModel.swift
+index 0b69a7d..99d3eb5 100644
+--- a/ios-native/Features/Feed/FeedViewModel.swift
++++ b/ios-native/Features/Feed/FeedViewModel.swift
+@@ -606,7 +606,7 @@ final class FeedViewModel {
+         }
+         let timer = Task { [sleeper, likeDeadline] in
+             try? await sleeper(likeDeadline)
+-            send.yield(.timedOut)
++            // TEMPORARY MUTATION - DO NOT COMMIT (mutation-2-3.patch): the deadline passes and the model is never told: send.yield(.timedOut)
+         }
+         defer {
+             work.cancel()

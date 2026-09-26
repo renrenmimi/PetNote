@@ -1,0 +1,8371 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "#%@": {
+      "shouldTranslate": false
+    },
+    "#%@ · %@": {
+      "shouldTranslate": false
+    },
+    "%@  %@": {
+      "shouldTranslate": false
+    },
+    "%@ %@": {
+      "shouldTranslate": false
+    },
+    "%@ (%lld reviews)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@（%lld 条评价）"
+          }
+        }
+      }
+    },
+    "%@ (you)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@（你）"
+          }
+        }
+      }
+    },
+    "%@ Press Share again — it won't post twice.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 再点一次「发布」即可，不会重复发布。"
+          }
+        }
+      }
+    },
+    "%@ becomes %@'s primary owner. You stay an owner and can still edit and post — but they, not you, will be the one who can remove other owners.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 将成为 %@ 的主要主人。你仍然是主人，可以继续编辑和发帖——但之后能移除其他主人的将是对方，而不是你。"
+          }
+        }
+      }
+    },
+    "%@ is no longer an owner.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 已不再是主人。"
+          }
+        }
+      }
+    },
+    "%@ is now %@'s primary owner.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 现在是 %@ 的主要主人。"
+          }
+        }
+      }
+    },
+    "%@ no longer exists.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 已不存在。"
+          }
+        }
+      }
+    },
+    "%@ was already no longer an owner.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 此前就已不再是主人。"
+          }
+        }
+      }
+    },
+    "%@ will lose access to %@. Anything they already posted stays. They can only come back through a new invitation.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 将无法再访问 %@。对方已发布的内容会保留，之后只能通过新的邀请重新加入。"
+          }
+        }
+      }
+    },
+    "%@ · %@": {
+      "shouldTranslate": false
+    },
+    "%@ · %lld min": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · %lld 分钟"
+          }
+        }
+      }
+    },
+    "%@'s owners": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 的主人"
+          }
+        }
+      }
+    },
+    "%lld": {
+      "shouldTranslate": false
+    },
+    "%lld characters left": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还可输入 %lld 个字符"
+          }
+        }
+      }
+    },
+    "%lld characters remaining": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还可输入 %lld 个字符"
+          }
+        }
+      }
+    },
+    "%lld characters too many": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超出 %lld 个字符"
+          }
+        }
+      }
+    },
+    "%lld check-ins": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 次打卡"
+          }
+        }
+      }
+    },
+    "%lld followers": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 位粉丝"
+          }
+        }
+      }
+    },
+    "%lld going": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 人参加"
+          }
+        }
+      }
+    },
+    "%lld likes": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个赞"
+          }
+        }
+      }
+    },
+    "%lld of %lld characters": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已输入 %lld 个字符，上限 %lld 个"
+          }
+        }
+      }
+    },
+    "%lld out of 5": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 分（满分 5 分）"
+          }
+        }
+      }
+    },
+    "%lld owners": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 位主人"
+          }
+        }
+      }
+    },
+    "%lld pets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 只宠物"
+          }
+        }
+      }
+    },
+    "%lld photos": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 张照片"
+          }
+        }
+      }
+    },
+    "%lld posts": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 条帖子"
+          }
+        }
+      }
+    },
+    "%lld unread": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 条未读"
+          }
+        }
+      }
+    },
+    "%lld/%lld": {
+      "shouldTranslate": false
+    },
+    "%lld/%lld files": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld/%lld 个文件"
+          }
+        }
+      }
+    },
+    "%lld/%lld pets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld/%lld 只宠物"
+          }
+        }
+      }
+    },
+    "1 follower": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 位粉丝"
+          }
+        }
+      }
+    },
+    "1 owner": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 位主人"
+          }
+        }
+      }
+    },
+    "1 pet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 只宠物"
+          }
+        }
+      }
+    },
+    "1 post": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 条帖子"
+          }
+        }
+      }
+    },
+    "2–30 characters. Letters, numbers and spaces are fine, and it has to be unique.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2–30 个字符，可以使用字母、数字和空格，且不能与他人重名。"
+          }
+        }
+      }
+    },
+    "@%@": {
+      "shouldTranslate": false
+    },
+    "A label for the family list. It does not decide what you can do.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这只是在主人列表中显示的称呼，不影响你能做什么。"
+          }
+        }
+      }
+    },
+    "ABCD EFGH": {
+      "shouldTranslate": false
+    },
+    "About": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关于"
+          }
+        }
+      }
+    },
+    "Account": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号"
+          }
+        }
+      }
+    },
+    "Account created, but we could not send the verification email to %@. Use Resend below.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号已创建，但验证邮件没能发送到 %@。请使用下方的「重新发送」。"
+          }
+        }
+      }
+    },
+    "Account created. We are still finishing your profile setup.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号已创建，我们还在完成你的资料设置。"
+          }
+        }
+      }
+    },
+    "Add a birthday": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加生日"
+          }
+        }
+      }
+    },
+    "Add a comment": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加评论"
+          }
+        }
+      }
+    },
+    "Add a pet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加宠物"
+          }
+        }
+      }
+    },
+    "Add pet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加宠物"
+          }
+        }
+      }
+    },
+    "Add photo or video": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加照片或视频"
+          }
+        }
+      }
+    },
+    "Add tags (e.g. cat, cute)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加标签（例如：猫、可爱）"
+          }
+        }
+      }
+    },
+    "Add your pet profile first, then come back here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先添加宠物资料，再回到这里。"
+          }
+        }
+      }
+    },
+    "All": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部"
+          }
+        }
+      }
+    },
+    "Already uploaded": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已上传"
+          }
+        }
+      }
+    },
+    "An invitation code is %lld letters and numbers.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邀请码由 %lld 位字母和数字组成。"
+          }
+        }
+      }
+    },
+    "Animal abuse 🐾": {
+      "comment": "Report reason",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "虐待动物 🐾"
+          }
+        }
+      }
+    },
+    "Anything posted about this pet shows up here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关于这只宠物的帖子都会显示在这里。"
+          }
+        }
+      }
+    },
+    "Are you sure you want to sign out?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确定要退出登录吗？"
+          }
+        }
+      }
+    },
+    "Ask one of the pet's owners for the %lld-character code on their Owners screen.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向宠物的任意一位主人索取 %lld 位邀请码，它显示在对方的「主人」页面上。"
+          }
+        }
+      }
+    },
+    "At least 8 characters": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "至少 8 个字符"
+          }
+        }
+      }
+    },
+    "At least one lowercase letter (a-z)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "至少包含一个小写字母 (a-z)"
+          }
+        }
+      }
+    },
+    "At least one number (0-9)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "至少包含一个数字 (0-9)"
+          }
+        }
+      }
+    },
+    "At least one special character (!@#$%...)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "至少包含一个特殊字符 (!@#$%...)"
+          }
+        }
+      }
+    },
+    "At least one uppercase letter (A-Z)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "至少包含一个大写字母 (A-Z)"
+          }
+        }
+      }
+    },
+    "Auntie": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "阿姨"
+          }
+        }
+      }
+    },
+    "Be the first to organize one!": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来发起第一场吧！"
+          }
+        }
+      }
+    },
+    "Be the first to recommend one!": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来推荐第一个吧！"
+          }
+        }
+      }
+    },
+    "Beach": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "海滩"
+          }
+        }
+      }
+    },
+    "Beach access": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可下海滩"
+          }
+        }
+      }
+    },
+    "Beaches": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "海滩"
+          }
+        }
+      }
+    },
+    "Best Friend": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "好朋友"
+          }
+        }
+      }
+    },
+    "Bio": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "简介"
+          }
+        }
+      }
+    },
+    "Bird": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "鸟"
+          }
+        }
+      }
+    },
+    "Birthday": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生日"
+          }
+        }
+      }
+    },
+    "Block": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "屏蔽"
+          }
+        }
+      }
+    },
+    "Block %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "屏蔽 %@"
+          }
+        }
+      }
+    },
+    "Block @%@?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要屏蔽 @%@ 吗？"
+          }
+        }
+      }
+    },
+    "Blocked people": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已屏蔽用户"
+          }
+        }
+      }
+    },
+    "Body copy that wraps onto a second line so line height is part of the snapshot.": {
+      "shouldTranslate": false
+    },
+    "Bookmark posts you love to find them later": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "把喜欢的帖子收藏起来，之后更容易找到"
+          }
+        }
+      }
+    },
+    "Born: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生日：%@"
+          }
+        }
+      }
+    },
+    "Brand": {
+      "shouldTranslate": false
+    },
+    "Breed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "品种"
+          }
+        }
+      }
+    },
+    "Brief description of your feedback": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "简要描述你的反馈"
+          }
+        }
+      }
+    },
+    "Brother": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "哥哥"
+          }
+        }
+      }
+    },
+    "Bug Report": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "问题报告"
+          }
+        }
+      }
+    },
+    "By creating an account you agree to the Terms and the Privacy Policy.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建账号即表示你同意《服务条款》和《隐私政策》。"
+          }
+        }
+      }
+    },
+    "Café": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "咖啡馆"
+          }
+        }
+      }
+    },
+    "Cafés": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "咖啡馆"
+          }
+        }
+      }
+    },
+    "Cancel": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消"
+          }
+        }
+      }
+    },
+    "Cancel Meetup": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消聚会"
+          }
+        }
+      }
+    },
+    "Cancel this meetup?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消这场聚会？"
+          }
+        }
+      }
+    },
+    "Cancelled": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已取消"
+          }
+        }
+      }
+    },
+    "Cancelling…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在取消…"
+          }
+        }
+      }
+    },
+    "Caption": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配文"
+          }
+        }
+      }
+    },
+    "Card": {
+      "shouldTranslate": false
+    },
+    "Cards use background colour, not shadow.": {
+      "shouldTranslate": false
+    },
+    "Caretaker": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照护者"
+          }
+        }
+      }
+    },
+    "Cat": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "猫"
+          }
+        }
+      }
+    },
+    "Cats": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "猫"
+          }
+        }
+      }
+    },
+    "Cats only.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅限猫。"
+          }
+        }
+      }
+    },
+    "Change Password": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修改密码"
+          }
+        }
+      }
+    },
+    "Change photo": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更换照片"
+          }
+        }
+      }
+    },
+    "Check code": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "验证邀请码"
+          }
+        }
+      }
+    },
+    "Check out this cute pet on PetNote!": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来 PetNote 看看这只可爱的宠物！"
+          }
+        }
+      }
+    },
+    "Check your inbox for a verification link from PetNote.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在收件箱中查找 PetNote 发来的验证链接。"
+          }
+        }
+      }
+    },
+    "Check-ins": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打卡"
+          }
+        }
+      }
+    },
+    "Checking name…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在检查名字…"
+          }
+        }
+      }
+    },
+    "Checking whether you follow %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在确认你是否关注了 %@"
+          }
+        }
+      }
+    },
+    "Checking…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "验证中…"
+          }
+        }
+      }
+    },
+    "Choose a longer password.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请换一个更长的密码。"
+          }
+        }
+      }
+    },
+    "Choose a photo": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择照片"
+          }
+        }
+      }
+    },
+    "Choose a species.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请选择种类。"
+          }
+        }
+      }
+    },
+    "Choose one": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请选择"
+          }
+        }
+      }
+    },
+    "City hidden": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "城市未公开"
+          }
+        }
+      }
+    },
+    "Close": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭"
+          }
+        }
+      }
+    },
+    "Closes the account menu without signing out": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭账号菜单，不退出登录"
+          }
+        }
+      }
+    },
+    "Code accepted for %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已验证 %@ 的邀请码。"
+          }
+        }
+      }
+    },
+    "Code copied.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邀请码已复制。"
+          }
+        }
+      }
+    },
+    "Comments": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "评论"
+          }
+        }
+      }
+    },
+    "Comments are limited to %lld characters.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "评论最多 %lld 个字符。"
+          }
+        }
+      }
+    },
+    "Community Park": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "社区公园"
+          }
+        }
+      }
+    },
+    "Complaint": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "投诉"
+          }
+        }
+      }
+    },
+    "Completed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已结束"
+          }
+        }
+      }
+    },
+    "Confirm it's you": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认是你本人"
+          }
+        }
+      }
+    },
+    "Confirm new password": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认新密码"
+          }
+        }
+      }
+    },
+    "Confirm password": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认密码"
+          }
+        }
+      }
+    },
+    "Connecting to Google": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在连接 Google"
+          }
+        }
+      }
+    },
+    "Contact Us & Feedback": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "联系我们与反馈"
+          }
+        }
+      }
+    },
+    "Contact us": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "联系我们"
+          }
+        }
+      }
+    },
+    "Continue": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续"
+          }
+        }
+      }
+    },
+    "Continue with Google": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 Google 继续"
+          }
+        }
+      }
+    },
+    "Copy Link": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制链接"
+          }
+        }
+      }
+    },
+    "Copy code": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制邀请码"
+          }
+        }
+      }
+    },
+    "Could not check just now. Try again in a moment.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂时无法检查，请稍后再试。"
+          }
+        }
+      }
+    },
+    "Could not check the code. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法验证邀请码，请重试。"
+          }
+        }
+      }
+    },
+    "Could not confirm that. Pull down to refresh.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法确认操作结果，请下拉刷新。"
+          }
+        }
+      }
+    },
+    "Could not delete the comment.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "评论删除失败。"
+          }
+        }
+      }
+    },
+    "Could not delete this pet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法删除这只宠物。"
+          }
+        }
+      }
+    },
+    "Could not follow %@. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关注 %@ 失败，请重试。"
+          }
+        }
+      }
+    },
+    "Could not load %@'s owners.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载 %@ 的主人。"
+          }
+        }
+      }
+    },
+    "Could not load active pets.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载活跃宠物。"
+          }
+        }
+      }
+    },
+    "Could not load check-ins.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载打卡。"
+          }
+        }
+      }
+    },
+    "Could not load meetups.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聚会加载失败。"
+          }
+        }
+      }
+    },
+    "Could not load more followers.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载更多粉丝。"
+          }
+        }
+      }
+    },
+    "Could not load pet suggestions.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载推荐宠物。"
+          }
+        }
+      }
+    },
+    "Could not load reviews.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "评价加载失败。"
+          }
+        }
+      }
+    },
+    "Could not load tags.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载标签。"
+          }
+        }
+      }
+    },
+    "Could not load that post.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载这条帖子。"
+          }
+        }
+      }
+    },
+    "Could not load the feed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载动态。"
+          }
+        }
+      }
+    },
+    "Could not load the invitation code.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载邀请码。"
+          }
+        }
+      }
+    },
+    "Could not load the pets you follow.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载你关注的宠物。"
+          }
+        }
+      }
+    },
+    "Could not load their pets.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载对方的宠物。"
+          }
+        }
+      }
+    },
+    "Could not load this meetup.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这场聚会加载失败。"
+          }
+        }
+      }
+    },
+    "Could not load this pet's followers.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载这只宠物的粉丝。"
+          }
+        }
+      }
+    },
+    "Could not load this pet's owners.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载这只宠物的主人。"
+          }
+        }
+      }
+    },
+    "Could not load this pet's posts.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载这只宠物的帖子。"
+          }
+        }
+      }
+    },
+    "Could not load this pet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载这只宠物。"
+          }
+        }
+      }
+    },
+    "Could not load this post.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载这条帖子。"
+          }
+        }
+      }
+    },
+    "Could not load this profile.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载这个个人主页。"
+          }
+        }
+      }
+    },
+    "Could not load trending posts.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载热门帖子。"
+          }
+        }
+      }
+    },
+    "Could not load who is going.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "参加名单加载失败。"
+          }
+        }
+      }
+    },
+    "Could not make a code just now. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂时无法生成邀请码，请重试。"
+          }
+        }
+      }
+    },
+    "Could not post that comment.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "评论发送失败。"
+          }
+        }
+      }
+    },
+    "Could not save this pet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存这只宠物的资料。"
+          }
+        }
+      }
+    },
+    "Could not save those changes.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存这些修改。"
+          }
+        }
+      }
+    },
+    "Could not unblock this person. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消屏蔽失败，请重试。"
+          }
+        }
+      }
+    },
+    "Could not unfollow %@. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消关注 %@ 失败，请重试。"
+          }
+        }
+      }
+    },
+    "Could not update the like. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点赞状态更新失败，请重试。"
+          }
+        }
+      }
+    },
+    "Couldn't block": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "屏蔽失败"
+          }
+        }
+      }
+    },
+    "Couldn't cancel this meetup.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法取消这场聚会。"
+          }
+        }
+      }
+    },
+    "Couldn't complete that": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "操作未完成"
+          }
+        }
+      }
+    },
+    "Couldn't confirm it's you. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法确认你的身份，请重试。"
+          }
+        }
+      }
+    },
+    "Couldn't confirm the comment was deleted. Trying again is safe.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法确认评论是否已删除。可以放心重试。"
+          }
+        }
+      }
+    },
+    "Couldn't join this meetup.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法报名这场聚会。"
+          }
+        }
+      }
+    },
+    "Couldn't leave this meetup.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法退出这场聚会。"
+          }
+        }
+      }
+    },
+    "Couldn't load notifications.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知加载失败。"
+          }
+        }
+      }
+    },
+    "Couldn't load the people you've blocked.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载你屏蔽的用户。"
+          }
+        }
+      }
+    },
+    "Couldn't load your check-ins.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载你的打卡。"
+          }
+        }
+      }
+    },
+    "Couldn't load your saved posts.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载你收藏的帖子。"
+          }
+        }
+      }
+    },
+    "Couldn't refresh. Pull down to try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刷新失败，下拉重试。"
+          }
+        }
+      }
+    },
+    "Couldn't send the report.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "举报发送失败。"
+          }
+        }
+      }
+    },
+    "Couldn't unblock. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消屏蔽失败，请重试。"
+          }
+        }
+      }
+    },
+    "Couldn't update saved posts": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收藏没有更新"
+          }
+        }
+      }
+    },
+    "Create account": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建账号"
+          }
+        }
+      }
+    },
+    "Create your account": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建你的账号"
+          }
+        }
+      }
+    },
+    "Creating account": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建账号中"
+          }
+        }
+      }
+    },
+    "Creating an account with an email address is unavailable right now.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目前暂时无法用邮箱注册账号。"
+          }
+        }
+      }
+    },
+    "Current password": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前密码"
+          }
+        }
+      }
+    },
+    "Current password is incorrect.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前密码不正确。"
+          }
+        }
+      }
+    },
+    "DELETE": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DELETE"
+          }
+        }
+      }
+    },
+    "Dad": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "爸爸"
+          }
+        }
+      }
+    },
+    "Danger Zone": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "风险操作"
+          }
+        }
+      }
+    },
+    "Delete": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除"
+          }
+        }
+      }
+    },
+    "Delete %@?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要删除 %@ 吗？"
+          }
+        }
+      }
+    },
+    "Delete Account": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除账号"
+          }
+        }
+      }
+    },
+    "Delete comment": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除评论"
+          }
+        }
+      }
+    },
+    "Delete this comment?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要删除这条评论吗？"
+          }
+        }
+      }
+    },
+    "Delete this post?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要删除这条帖子吗？"
+          }
+        }
+      }
+    },
+    "Deleting comment": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在删除评论"
+          }
+        }
+      }
+    },
+    "Deleting your account didn't finish.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号删除未完成。"
+          }
+        }
+      }
+    },
+    "Deleting your account didn't finish. Some of it may already be gone. Try again to finish.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号删除未完成，部分数据可能已被删除。请重试以完成删除。"
+          }
+        }
+      }
+    },
+    "Deleting...": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除中..."
+          }
+        }
+      }
+    },
+    "Describe it": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "描述一下"
+          }
+        }
+      }
+    },
+    "Describe it (optional)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "描述一下（选填）"
+          }
+        }
+      }
+    },
+    "Details: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "详情：%@"
+          }
+        }
+      }
+    },
+    "Directions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "路线"
+          }
+        }
+      }
+    },
+    "Discard": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "丢弃"
+          }
+        }
+      }
+    },
+    "Discover pets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发现宠物"
+          }
+        }
+      }
+    },
+    "Dismiss": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭"
+          }
+        }
+      }
+    },
+    "Display name": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "昵称"
+          }
+        }
+      }
+    },
+    "Dog": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "狗"
+          }
+        }
+      }
+    },
+    "Dog Park": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "狗狗公园"
+          }
+        }
+      }
+    },
+    "Dog Parks": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "狗狗公园"
+          }
+        }
+      }
+    },
+    "Dogs": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "狗"
+          }
+        }
+      }
+    },
+    "Dogs only.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅限狗。"
+          }
+        }
+      }
+    },
+    "Done": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成"
+          }
+        }
+      }
+    },
+    "Double-tap to unfollow.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连按两次以取消关注。"
+          }
+        }
+      }
+    },
+    "Duplicate file skipped": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已跳过重复的文件"
+          }
+        }
+      }
+    },
+    "Edit": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑"
+          }
+        }
+      }
+    },
+    "Edit Post": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑帖子"
+          }
+        }
+      }
+    },
+    "Edit pet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑宠物"
+          }
+        }
+      }
+    },
+    "Edit profile": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑资料"
+          }
+        }
+      }
+    },
+    "Email": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邮箱"
+          }
+        }
+      }
+    },
+    "Enter your email and we will send you a reset link.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入你的邮箱，我们会发送重置链接给你。"
+          }
+        }
+      }
+    },
+    "Every owner can edit %@, post, and invite. The primary owner is the one who can remove someone.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每位主人都可以编辑 %@ 的资料、发帖和邀请他人。只有主要主人可以移除成员。"
+          }
+        }
+      }
+    },
+    "Everyone who joined will see it as cancelled.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已报名的人都会看到它被取消。"
+          }
+        }
+      }
+    },
+    "Expires in %lldh %lldm": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 小时 %lld 分钟后过期"
+          }
+        }
+      }
+    },
+    "Failed to delete account.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除账号失败。"
+          }
+        }
+      }
+    },
+    "Failed to load location details.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点详情加载失败。"
+          }
+        }
+      }
+    },
+    "Failed to load settings.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载设置失败。"
+          }
+        }
+      }
+    },
+    "Failed to save settings.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存设置失败。"
+          }
+        }
+      }
+    },
+    "Failed to submit review.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "评价提交失败。"
+          }
+        }
+      }
+    },
+    "Failed to update password": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新密码失败"
+          }
+        }
+      }
+    },
+    "Family": {
+      "comment": "Relationship to a pet when no other label was given",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家人"
+          }
+        }
+      }
+    },
+    "Feature Request": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "功能建议"
+          }
+        }
+      }
+    },
+    "Features & Amenities": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设施与特色"
+          }
+        }
+      }
+    },
+    "Feedback isn't available in this build.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此版本暂不支持发送反馈。"
+          }
+        }
+      }
+    },
+    "Female": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "母"
+          }
+        }
+      }
+    },
+    "Fenced": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有围栏"
+          }
+        }
+      }
+    },
+    "File too large. Images: max 10MB, Videos: max 80MB": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件过大。图片最大 10MB，视频最大 80MB"
+          }
+        }
+      }
+    },
+    "Finish deleting": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成删除"
+          }
+        }
+      }
+    },
+    "Fish": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "鱼"
+          }
+        }
+      }
+    },
+    "Follow": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关注"
+          }
+        }
+      }
+    },
+    "Follow %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关注 %@"
+          }
+        }
+      }
+    },
+    "Followers": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粉丝"
+          }
+        }
+      }
+    },
+    "Following": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关注中"
+          }
+        }
+      }
+    },
+    "Following %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在关注 %@"
+          }
+        }
+      }
+    },
+    "Follows": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关注"
+          }
+        }
+      }
+    },
+    "Food nearby": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "附近有餐饮"
+          }
+        }
+      }
+    },
+    "Forgot your password?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "忘记密码？"
+          }
+        }
+      }
+    },
+    "Found a bug, have a feature idea, or just want to say hi? Send us a message.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发现了问题、有功能建议，或者只是想打个招呼？给我们留言吧。"
+          }
+        }
+      }
+    },
+    "Gender": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "性别"
+          }
+        }
+      }
+    },
+    "Generate invitation code": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成邀请码"
+          }
+        }
+      }
+    },
+    "Generating…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成中…"
+          }
+        }
+      }
+    },
+    "Give your pet a name.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "给你的宠物起个名字。"
+          }
+        }
+      }
+    },
+    "Going (%@)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "参加（%@）"
+          }
+        }
+      }
+    },
+    "Grandma": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "奶奶"
+          }
+        }
+      }
+    },
+    "Grandpa": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "爷爷"
+          }
+        }
+      }
+    },
+    "Green Space": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "绿地"
+          }
+        }
+      }
+    },
+    "Green Spaces": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "绿地"
+          }
+        }
+      }
+    },
+    "Hamster": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仓鼠"
+          }
+        }
+      }
+    },
+    "Harassment": {
+      "comment": "Report reason",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "骚扰"
+          }
+        }
+      }
+    },
+    "Hiking Trail": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "徒步步道"
+          }
+        }
+      }
+    },
+    "Hiking Trails": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "徒步步道"
+          }
+        }
+      }
+    },
+    "Home": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "首页"
+          }
+        }
+      }
+    },
+    "I have checked": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我已确认"
+          }
+        }
+      }
+    },
+    "I verified my email": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我已验证邮箱"
+          }
+        }
+      }
+    },
+    "If an account exists with this email, we have sent a reset link. If you signed up with Google, use Google Sign-In instead.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如果这个邮箱注册过账号，我们已发送重置链接。如果你是用 Google 注册的，请改用 Google 登录。"
+          }
+        }
+      }
+    },
+    "Image failed to load. Tap to retry.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图片加载失败，点按重试。"
+          }
+        }
+      }
+    },
+    "Inappropriate content": {
+      "comment": "Report reason",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不当内容"
+          }
+        }
+      }
+    },
+    "Invitation code": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邀请码"
+          }
+        }
+      }
+    },
+    "Invitation code %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邀请码 %@"
+          }
+        }
+      }
+    },
+    "Invitation code ready.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邀请码已生成。"
+          }
+        }
+      }
+    },
+    "Invitation code revoked.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邀请码已撤销。"
+          }
+        }
+      }
+    },
+    "Invite someone": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邀请他人"
+          }
+        }
+      }
+    },
+    "It is only a label. Every owner can do the same things.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这只是一个称呼，每位主人的权限都一样。"
+          }
+        }
+      }
+    },
+    "It may be private, or the account may no longer be active.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方可能设为了私密，或者账号已不再使用。"
+          }
+        }
+      }
+    },
+    "It may have been deleted by its last owner.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它可能已被最后一位主人删除。"
+          }
+        }
+      }
+    },
+    "It may have been deleted by one of its owners.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它可能已被某位主人删除。"
+          }
+        }
+      }
+    },
+    "It may have been deleted.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可能已被删除。"
+          }
+        }
+      }
+    },
+    "Join": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "报名"
+          }
+        }
+      }
+    },
+    "Join %@'s family": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加入 %@ 的家庭"
+          }
+        }
+      }
+    },
+    "Join %@'s family on PetNote with this invitation code: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用这个邀请码在 PetNote 加入 %@ 的家庭：%@"
+          }
+        }
+      }
+    },
+    "Join a family": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加入家庭"
+          }
+        }
+      }
+    },
+    "Join a pet's family": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加入宠物的家庭"
+          }
+        }
+      }
+    },
+    "Join with which pet?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "带哪只宠物报名？"
+          }
+        }
+      }
+    },
+    "Join your pet's family with an invitation code": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用邀请码加入宠物的家庭"
+          }
+        }
+      }
+    },
+    "Joined %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加入于 %@"
+          }
+        }
+      }
+    },
+    "Joined: unknown": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加入时间：未知"
+          }
+        }
+      }
+    },
+    "Joining…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加入中…"
+          }
+        }
+      }
+    },
+    "Keep it": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留"
+          }
+        }
+      }
+    },
+    "Language": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语言"
+          }
+        }
+      }
+    },
+    "Leave": {
+      "comment": "Confirms leaving the pet's family",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出"
+          }
+        }
+      }
+    },
+    "Leave %@'s family": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出 %@ 的家庭"
+          }
+        }
+      }
+    },
+    "Leave %@'s family?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要退出 %@ 的家庭吗？"
+          }
+        }
+      }
+    },
+    "Leave this meetup?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出这场聚会？"
+          }
+        }
+      }
+    },
+    "Leaving…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在退出…"
+          }
+        }
+      }
+    },
+    "Lighting": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有照明"
+          }
+        }
+      }
+    },
+    "Like": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点赞"
+          }
+        }
+      }
+    },
+    "Likes": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点赞"
+          }
+        }
+      }
+    },
+    "Link copied!": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "链接已复制！"
+          }
+        }
+      }
+    },
+    "Loading comments": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载评论"
+          }
+        }
+      }
+    },
+    "Loading invitation…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载邀请码…"
+          }
+        }
+      }
+    },
+    "Loading more comments": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载更多评论"
+          }
+        }
+      }
+    },
+    "Loading more posts": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载更多帖子"
+          }
+        }
+      }
+    },
+    "Loading owners…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载主人…"
+          }
+        }
+      }
+    },
+    "Loading posts": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载帖子"
+          }
+        }
+      }
+    },
+    "Loading settings...": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载设置..."
+          }
+        }
+      }
+    },
+    "Loading your pets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载你的宠物"
+          }
+        }
+      }
+    },
+    "Location": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点"
+          }
+        }
+      }
+    },
+    "Make %@ primary owner": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将 %@ 设为主要主人"
+          }
+        }
+      }
+    },
+    "Make %@ primary owner?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要将 %@ 设为主要主人吗？"
+          }
+        }
+      }
+    },
+    "Make primary": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设为主要主人"
+          }
+        }
+      }
+    },
+    "Male": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公"
+          }
+        }
+      }
+    },
+    "Mark all as read": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部标为已读"
+          }
+        }
+      }
+    },
+    "Maximum %lld files allowed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多只能添加 %lld 个文件"
+          }
+        }
+      }
+    },
+    "Maximum 64 characters": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多 64 个字符"
+          }
+        }
+      }
+    },
+    "Media cannot be changed after posting": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发布后无法更改照片和视频"
+          }
+        }
+      }
+    },
+    "Medium": {
+      "comment": "Password strength",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中"
+          }
+        }
+      }
+    },
+    "Meetup": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聚会"
+          }
+        }
+      }
+    },
+    "Meetups": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聚会"
+          }
+        }
+      }
+    },
+    "Meetups at this place": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在这里举办的聚会"
+          }
+        }
+      }
+    },
+    "Message": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "留言"
+          }
+        }
+      }
+    },
+    "Met: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已满足：%@"
+          }
+        }
+      }
+    },
+    "Misinformation": {
+      "comment": "Report reason",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "虚假信息"
+          }
+        }
+      }
+    },
+    "Mom": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "妈妈"
+          }
+        }
+      }
+    },
+    "Most Reviewed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "评价最多"
+          }
+        }
+      }
+    },
+    "Most posts": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发帖最多"
+          }
+        }
+      }
+    },
+    "Must have a pet profile.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要有宠物主页。"
+          }
+        }
+      }
+    },
+    "Must have posted at least once.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要至少发过一条帖子。"
+          }
+        }
+      }
+    },
+    "Mute video": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "静音"
+          }
+        }
+      }
+    },
+    "My Meetups": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我的聚会"
+          }
+        }
+      }
+    },
+    "Name": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名字"
+          }
+        }
+      }
+    },
+    "Name must be 30 characters or fewer.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名字不能超过 30 个字符。"
+          }
+        }
+      }
+    },
+    "Name must be at least 2 characters.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名字至少需要 2 个字符。"
+          }
+        }
+      }
+    },
+    "New Post": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发布帖子"
+          }
+        }
+      }
+    },
+    "New here? Create an account": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第一次来？创建账号"
+          }
+        }
+      }
+    },
+    "New password": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新密码"
+          }
+        }
+      }
+    },
+    "Newest": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最新"
+          }
+        }
+      }
+    },
+    "No active invitation code.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前没有有效的邀请码。"
+          }
+        }
+      }
+    },
+    "No check-ins yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有打卡"
+          }
+        }
+      }
+    },
+    "No check-ins yet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有打卡。"
+          }
+        }
+      }
+    },
+    "No comments yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有评论"
+          }
+        }
+      }
+    },
+    "No connection. Check your network and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络不可用。检查网络后重试。"
+          }
+        }
+      }
+    },
+    "No connection. Nothing was changed. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络不可用，没有做任何更改。请重试。"
+          }
+        }
+      }
+    },
+    "No followed pets yet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有关注任何宠物。"
+          }
+        }
+      }
+    },
+    "No followers yet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有粉丝。"
+          }
+        }
+      }
+    },
+    "No meetups of yours yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你还没有聚会"
+          }
+        }
+      }
+    },
+    "No meetups this week": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本周没有聚会"
+          }
+        }
+      }
+    },
+    "No meetups yet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有聚会。"
+          }
+        }
+      }
+    },
+    "No notifications": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有通知"
+          }
+        }
+      }
+    },
+    "No pets yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有宠物"
+          }
+        }
+      }
+    },
+    "No photos yet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有照片。"
+          }
+        }
+      }
+    },
+    "No places found": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有找到地点"
+          }
+        }
+      }
+    },
+    "No posts yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有帖子"
+          }
+        }
+      }
+    },
+    "No posts yet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有帖子。"
+          }
+        }
+      }
+    },
+    "No results for “%@”": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有找到“%@”的相关结果"
+          }
+        }
+      }
+    },
+    "No reviews yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有评价"
+          }
+        }
+      }
+    },
+    "No reviews yet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有评价。"
+          }
+        }
+      }
+    },
+    "No saved posts": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有收藏帖子"
+          }
+        }
+      }
+    },
+    "No upcoming meetups": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有即将举行的聚会"
+          }
+        }
+      }
+    },
+    "Nobody has joined yet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有人报名。"
+          }
+        }
+      }
+    },
+    "Not met yet: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未满足：%@"
+          }
+        }
+      }
+    },
+    "Not saved yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未保存"
+          }
+        }
+      }
+    },
+    "Not there after a minute? Check your spam or junk folder.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一分钟还没收到？看一下垃圾邮件文件夹。"
+          }
+        }
+      }
+    },
+    "Nothing was changed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有做任何更改。"
+          }
+        }
+      }
+    },
+    "Notifications": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知"
+          }
+        }
+      }
+    },
+    "OK": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "好"
+          }
+        }
+      }
+    },
+    "Off-leash": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可解绳"
+          }
+        }
+      }
+    },
+    "On brand": {
+      "shouldTranslate": false
+    },
+    "Only %@'s owners can invite people.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只有 %@ 的主人才能邀请他人。"
+          }
+        }
+      }
+    },
+    "Only its owners can invite people or change who owns it.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只有它的主人才能邀请他人或变更主人。"
+          }
+        }
+      }
+    },
+    "Only the primary owner can do that. The roles may have changed — the list has been refreshed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只有主要主人可以这样做。角色可能已经变化——列表已刷新。"
+          }
+        }
+      }
+    },
+    "Only this pet's owners can change its profile.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只有这只宠物的主人才能修改它的资料。"
+          }
+        }
+      }
+    },
+    "Open %@'s page": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开 %@ 的主页"
+          }
+        }
+      }
+    },
+    "Open the verification link we emailed you, then come back here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开我们发到你邮箱的验证链接，然后回到这里。"
+          }
+        }
+      }
+    },
+    "Opens %@'s page": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开 %@ 的主页"
+          }
+        }
+      }
+    },
+    "Opens %@'s page.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开 %@ 的主页。"
+          }
+        }
+      }
+    },
+    "Opens the account menu": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开账号菜单"
+          }
+        }
+      }
+    },
+    "Opens the photo full screen": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全屏查看照片"
+          }
+        }
+      }
+    },
+    "Opens the post": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开帖子"
+          }
+        }
+      }
+    },
+    "Opens the whole photo": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看完整照片"
+          }
+        }
+      }
+    },
+    "Opens their profile.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开对方的个人主页。"
+          }
+        }
+      }
+    },
+    "Organized by %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发起人：%@"
+          }
+        }
+      }
+    },
+    "Other": {
+      "comment": "Feedback type / Meetups for pets other than dogs and cats / Pet species / Place category / Report reason",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他"
+          }
+        }
+      }
+    },
+    "Other pets only.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅限猫狗以外的宠物。"
+          }
+        }
+      }
+    },
+    "Owners": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主人"
+          }
+        }
+      }
+    },
+    "Owners & invites": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主人与邀请"
+          }
+        }
+      }
+    },
+    "Page title": {
+      "shouldTranslate": false
+    },
+    "Parking": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停车场"
+          }
+        }
+      }
+    },
+    "Parks": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公园"
+          }
+        }
+      }
+    },
+    "Password": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密码"
+          }
+        }
+      }
+    },
+    "Password strength: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密码强度：%@"
+          }
+        }
+      }
+    },
+    "Password updated": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密码已更新"
+          }
+        }
+      }
+    },
+    "Passwords don't match": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "两次输入的密码不一致"
+          }
+        }
+      }
+    },
+    "People": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用户"
+          }
+        }
+      }
+    },
+    "People who follow %@ show up here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关注 %@ 的人会显示在这里。"
+          }
+        }
+      }
+    },
+    "Pet": {
+      "comment": "Stand-in name for a pet whose name is missing",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "宠物"
+          }
+        }
+      }
+    },
+    "Pet Store": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "宠物店"
+          }
+        }
+      }
+    },
+    "Pet Stores": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "宠物店"
+          }
+        }
+      }
+    },
+    "Pet lover": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "爱宠人士"
+          }
+        }
+      }
+    },
+    "Pet options": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "宠物选项"
+          }
+        }
+      }
+    },
+    "Pet-friendly scores": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "宠物友好评分"
+          }
+        }
+      }
+    },
+    "PetNote": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PetNote"
+          }
+        }
+      }
+    },
+    "PetNote Team": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PetNote 团队"
+          }
+        }
+      }
+    },
+    "PetNote User": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PetNote 用户"
+          }
+        }
+      }
+    },
+    "PetNote user": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PetNote 用户"
+          }
+        }
+      }
+    },
+    "PetNote uses your iPhone's language. To change it for PetNote only, choose Language in the iPhone's Settings for this app.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PetNote 跟随 iPhone 的系统语言。如果只想更改 PetNote 的语言，请在 iPhone「设置」中找到本应用，选择「语言」。"
+          }
+        }
+      }
+    },
+    "Pets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "宠物"
+          }
+        }
+      }
+    },
+    "Pets you follow": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你关注的宠物"
+          }
+        }
+      }
+    },
+    "Pets you follow show up here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你关注的宠物会显示在这里。"
+          }
+        }
+      }
+    },
+    "Pets you share with someone else stay with them — the longest-standing remaining owner becomes the primary owner. Pets only you own are deleted, along with your posts.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与他人共同拥有的宠物会留给对方——加入最久的那位主人将成为主要主人。只属于你一个人的宠物会被删除，你的帖子也会一并删除。"
+          }
+        }
+      }
+    },
+    "Photo": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片"
+          }
+        }
+      }
+    },
+    "Photo, cropped to fit": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片，已裁切"
+          }
+        }
+      }
+    },
+    "Photo, full size": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片，完整尺寸"
+          }
+        }
+      }
+    },
+    "Photos (%lld)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片（%lld）"
+          }
+        }
+      }
+    },
+    "Pick a name": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取个名字"
+          }
+        }
+      }
+    },
+    "Pin to profile": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "置顶到个人主页"
+          }
+        }
+      }
+    },
+    "Pinch to zoom": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "双指捏合以缩放"
+          }
+        }
+      }
+    },
+    "Pinned to your profile.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已置顶到你的个人主页。"
+          }
+        }
+      }
+    },
+    "Place": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点"
+          }
+        }
+      }
+    },
+    "Places": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点"
+          }
+        }
+      }
+    },
+    "Places this pet has visited show up here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这只宠物去过的地方会显示在这里。"
+          }
+        }
+      }
+    },
+    "Playback stopped. Tap to try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "播放已停止，点按重试。"
+          }
+        }
+      }
+    },
+    "Please enter a valid email address.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入有效的邮箱地址。"
+          }
+        }
+      }
+    },
+    "Please sign in again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请重新登录。"
+          }
+        }
+      }
+    },
+    "Please verify your email before posting": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发帖前请先验证邮箱"
+          }
+        }
+      }
+    },
+    "Popular Tags": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "热门标签"
+          }
+        }
+      }
+    },
+    "Post": {
+      "comment": "Noun: a post with no picture, read by VoiceOver",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "帖子"
+          }
+        }
+      }
+    },
+    "Post actions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "帖子操作"
+          }
+        }
+      }
+    },
+    "Posted": {
+      "comment": "Share button label once the post is published",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已发布"
+          }
+        }
+      }
+    },
+    "Posted.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已发布。"
+          }
+        }
+      }
+    },
+    "Posts": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "帖子"
+          }
+        }
+      }
+    },
+    "Posts from pets you follow will appear here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你关注的宠物发布的帖子会显示在这里。"
+          }
+        }
+      }
+    },
+    "Preparing %lld/%lld…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在准备 %lld/%lld…"
+          }
+        }
+      }
+    },
+    "Primary": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主要主人"
+          }
+        }
+      }
+    },
+    "Primary owner · %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主要主人 · %@"
+          }
+        }
+      }
+    },
+    "Privacy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐私"
+          }
+        }
+      }
+    },
+    "Privacy Policy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐私政策"
+          }
+        }
+      }
+    },
+    "Profile": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "个人主页"
+          }
+        }
+      }
+    },
+    "Profile picture": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "头像"
+          }
+        }
+      }
+    },
+    "Publishing…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发布中…"
+          }
+        }
+      }
+    },
+    "Rabbit": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "兔子"
+          }
+        }
+      }
+    },
+    "Rate this place": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "给这个地点打分"
+          }
+        }
+      }
+    },
+    "Recent Check-ins (%lld)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近打卡（%lld）"
+          }
+        }
+      }
+    },
+    "Relationship": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关系"
+          }
+        }
+      }
+    },
+    "Remove": {
+      "comment": "Confirms taking an owner off the pet",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除"
+          }
+        }
+      }
+    },
+    "Remove %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除 %@"
+          }
+        }
+      }
+    },
+    "Remove %@?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要移除 %@ 吗？"
+          }
+        }
+      }
+    },
+    "Remove birthday": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除生日"
+          }
+        }
+      }
+    },
+    "Remove file": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除文件"
+          }
+        }
+      }
+    },
+    "Remove from saved": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消收藏"
+          }
+        }
+      }
+    },
+    "Remove tag %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除标签 %@"
+          }
+        }
+      }
+    },
+    "Remove the chosen photo": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除所选照片"
+          }
+        }
+      }
+    },
+    "Report": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "举报"
+          }
+        }
+      }
+    },
+    "Report post": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "举报帖子"
+          }
+        }
+      }
+    },
+    "Reporting isn't available in this build.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此版本暂不支持举报。"
+          }
+        }
+      }
+    },
+    "Reptile": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "爬行动物"
+          }
+        }
+      }
+    },
+    "Requirements": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "参加要求"
+          }
+        }
+      }
+    },
+    "Requires at least %lld followed pets.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要至少关注 %lld 只宠物。"
+          }
+        }
+      }
+    },
+    "Resend email": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新发送邮件"
+          }
+        }
+      }
+    },
+    "Resend in %llds": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 秒后可重新发送"
+          }
+        }
+      }
+    },
+    "Reset link sent. Check your email.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重置链接已发送，请查收邮件。"
+          }
+        }
+      }
+    },
+    "Reset password": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重置密码"
+          }
+        }
+      }
+    },
+    "Restore": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复"
+          }
+        }
+      }
+    },
+    "Restrooms": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "洗手间"
+          }
+        }
+      }
+    },
+    "Retry": {
+      "comment": "Share button label after publishing failed",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重试"
+          }
+        }
+      }
+    },
+    "Review": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "评价"
+          }
+        }
+      }
+    },
+    "Reviews (%lld)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "评价（%lld）"
+          }
+        }
+      }
+    },
+    "Revoke code": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撤销邀请码"
+          }
+        }
+      }
+    },
+    "Revoking…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撤销中…"
+          }
+        }
+      }
+    },
+    "Save": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存"
+          }
+        }
+      }
+    },
+    "Saved posts": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收藏的帖子"
+          }
+        }
+      }
+    },
+    "Saved. Your name may take until the next sign-in to update everywhere.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存。新名字可能要到下次登录后才会在所有地方更新。"
+          }
+        }
+      }
+    },
+    "Saving": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存中"
+          }
+        }
+      }
+    },
+    "Saving...": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存中..."
+          }
+        }
+      }
+    },
+    "Saving…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存中…"
+          }
+        }
+      }
+    },
+    "Say how you are related to this pet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请说明你和这只宠物的关系。"
+          }
+        }
+      }
+    },
+    "Search": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索"
+          }
+        }
+      }
+    },
+    "Search could not run. Check your connection and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索失败，请检查网络后重试。"
+          }
+        }
+      }
+    },
+    "Search people, pets, tags": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索用户、宠物、标签"
+          }
+        }
+      }
+    },
+    "Search places": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索地点"
+          }
+        }
+      }
+    },
+    "Searching": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在搜索"
+          }
+        }
+      }
+    },
+    "Seating": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "座位"
+          }
+        }
+      }
+    },
+    "Section": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分区"
+          }
+        }
+      }
+    },
+    "See all people": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看全部用户"
+          }
+        }
+      }
+    },
+    "See all pets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看全部宠物"
+          }
+        }
+      }
+    },
+    "Send": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送"
+          }
+        }
+      }
+    },
+    "Send again": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再次发送"
+          }
+        }
+      }
+    },
+    "Send comment": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送评论"
+          }
+        }
+      }
+    },
+    "Send reset link": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送重置链接"
+          }
+        }
+      }
+    },
+    "Send the link again": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新发送链接"
+          }
+        }
+      }
+    },
+    "Send the link again in %llds": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 秒后可重新发送链接"
+          }
+        }
+      }
+    },
+    "Sending": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送中"
+          }
+        }
+      }
+    },
+    "Sending report": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在发送举报"
+          }
+        }
+      }
+    },
+    "Sending…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送中…"
+          }
+        }
+      }
+    },
+    "Sent. It can take a minute to arrive.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已发送，可能需要一分钟左右才能收到。"
+          }
+        }
+      }
+    },
+    "Settings": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置"
+          }
+        }
+      }
+    },
+    "Shade": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有遮阴"
+          }
+        }
+      }
+    },
+    "Share": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享"
+          }
+        }
+      }
+    },
+    "Share a code so someone can join %@'s family. Each code works once, for 48 hours, and stops working if it is revoked or if the person who made it leaves.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享邀请码，让别人加入 %@ 的家庭。每个邀请码只能使用一次，48 小时内有效；如果被撤销，或者生成它的人退出了家庭，邀请码也会失效。"
+          }
+        }
+      }
+    },
+    "Share as Image": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享为图片"
+          }
+        }
+      }
+    },
+    "Share to…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享到…"
+          }
+        }
+      }
+    },
+    "Share your experience about this location...": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "说说你在这里的体验..."
+          }
+        }
+      }
+    },
+    "Show less": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收起"
+          }
+        }
+      }
+    },
+    "Shows the pets you follow.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看你关注的宠物。"
+          }
+        }
+      }
+    },
+    "Shows who follows %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看关注 %@ 的人。"
+          }
+        }
+      }
+    },
+    "Sign Out": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出登录"
+          }
+        }
+      }
+    },
+    "Sign in": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录"
+          }
+        }
+      }
+    },
+    "Sign in again to add a photo.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请重新登录后再添加照片。"
+          }
+        }
+      }
+    },
+    "Sign in again to change your picture.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请重新登录后再更换头像。"
+          }
+        }
+      }
+    },
+    "Sign in again to delete this comment.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请重新登录后再删除这条评论。"
+          }
+        }
+      }
+    },
+    "Sign in again to delete your account.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请重新登录后再删除账号。"
+          }
+        }
+      }
+    },
+    "Sign in again to do that.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请重新登录后再操作。"
+          }
+        }
+      }
+    },
+    "Sign in again to send a report.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请重新登录后再举报。"
+          }
+        }
+      }
+    },
+    "Sign in again to send feedback.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请重新登录后再发送反馈。"
+          }
+        }
+      }
+    },
+    "Sign in instead": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "去登录"
+          }
+        }
+      }
+    },
+    "Sign in to change your profile.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请登录后再修改个人资料。"
+          }
+        }
+      }
+    },
+    "Sign in to continue": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录以继续"
+          }
+        }
+      }
+    },
+    "Sign out": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出登录"
+          }
+        }
+      }
+    },
+    "Signing in": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录中"
+          }
+        }
+      }
+    },
+    "Signing you in": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在登录"
+          }
+        }
+      }
+    },
+    "Sister": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "姐姐"
+          }
+        }
+      }
+    },
+    "Skip": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跳过"
+          }
+        }
+      }
+    },
+    "Some of it may already be gone, and it can't be changed until the deletion finishes.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "部分数据可能已被删除，在删除完成之前无法再做更改。"
+          }
+        }
+      }
+    },
+    "Something went wrong reaching PetNote. Check your connection and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接 PetNote 时出了问题。请检查网络后重试。"
+          }
+        }
+      }
+    },
+    "Something went wrong reaching PetNote. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接 PetNote 时出了问题。请重试。"
+          }
+        }
+      }
+    },
+    "Something went wrong saving your profile. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存个人资料时出了问题，请重试。"
+          }
+        }
+      }
+    },
+    "Something went wrong signing in. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录时出了点问题，请重试。"
+          }
+        }
+      }
+    },
+    "Something went wrong.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出错了。"
+          }
+        }
+      }
+    },
+    "Sort by": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "排序"
+          }
+        }
+      }
+    },
+    "Spam": {
+      "comment": "Report reason",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "垃圾信息"
+          }
+        }
+      }
+    },
+    "Species": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "种类"
+          }
+        }
+      }
+    },
+    "Start exploring": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始探索"
+          }
+        }
+      }
+    },
+    "Still not verified. Open the link in the email first — if it has expired, resend it below.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有验证。请先打开邮件里的链接——如果链接已过期，可以在下方重新发送。"
+          }
+        }
+      }
+    },
+    "Strong": {
+      "comment": "Password strength",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "强"
+          }
+        }
+      }
+    },
+    "Subject": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主题"
+          }
+        }
+      }
+    },
+    "Submit Review": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提交评价"
+          }
+        }
+      }
+    },
+    "Submitting...": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提交中..."
+          }
+        }
+      }
+    },
+    "Tag %@, %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签 %@，%@"
+          }
+        }
+      }
+    },
+    "Tag a pet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标记宠物"
+          }
+        }
+      }
+    },
+    "Tags": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签"
+          }
+        }
+      }
+    },
+    "Tags cannot contain . * ~ / [ ] characters.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签不能包含 . * ~ / [ ] 这些字符。"
+          }
+        }
+      }
+    },
+    "Tags in use": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在使用的标签"
+          }
+        }
+      }
+    },
+    "Tags must be %lld characters or fewer.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个标签不能超过 %lld 个字符。"
+          }
+        }
+      }
+    },
+    "Tap photo to see all of it": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点按照片查看完整画面"
+          }
+        }
+      }
+    },
+    "Tap to retry": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点按重试"
+          }
+        }
+      }
+    },
+    "Tell us more (optional)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "补充说明（选填）"
+          }
+        }
+      }
+    },
+    "Terms of Service": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务条款"
+          }
+        }
+      }
+    },
+    "Tertiary": {
+      "shouldTranslate": false
+    },
+    "Test build: links open this app, not the website": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "测试版：链接只会打开这个 App，不会打开网站"
+          }
+        }
+      }
+    },
+    "Thank you for reporting. We'll review this shortly.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "感谢你的举报，我们会尽快审核。"
+          }
+        }
+      }
+    },
+    "Thanks for your feedback!": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "感谢你的反馈！"
+          }
+        }
+      }
+    },
+    "That Google account is not the one signed in.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个 Google 账号不是当前登录的账号。"
+          }
+        }
+      }
+    },
+    "That account id is not usable.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个账号 ID 无法使用。"
+          }
+        }
+      }
+    },
+    "That code is not valid, or it has expired. Ask one of the pet's owners for a new one.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个邀请码无效或已过期。请向宠物的任意一位主人索取新的邀请码。"
+          }
+        }
+      }
+    },
+    "That code no longer works.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个邀请码已失效。"
+          }
+        }
+      }
+    },
+    "That code no longer works. It may have been used already, or it expired.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个邀请码已失效，可能已被使用或已过期。"
+          }
+        }
+      }
+    },
+    "That comment was not accepted. Check the length and try different wording.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这条评论未被接受。请检查长度，或换个说法再试。"
+          }
+        }
+      }
+    },
+    "That comment was posted after all.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "那条评论其实已经发出了。"
+          }
+        }
+      }
+    },
+    "That did not go through.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "操作没有成功。"
+          }
+        }
+      }
+    },
+    "That did not work. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "操作失败，请重试。"
+          }
+        }
+      }
+    },
+    "That does not look like an email address.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这看起来不是一个邮箱地址。"
+          }
+        }
+      }
+    },
+    "That email already has an account. Sign in instead.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个邮箱已经注册过账号，请直接登录。"
+          }
+        }
+      }
+    },
+    "That email and password do not match an account.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邮箱和密码不匹配任何账号。"
+          }
+        }
+      }
+    },
+    "That file is not an image we can use.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个文件不是可用的图片。"
+          }
+        }
+      }
+    },
+    "That file is over the %lldMB limit.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件超过了 %lldMB 的上限。"
+          }
+        }
+      }
+    },
+    "That file was not accepted.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个文件未被接受。"
+          }
+        }
+      }
+    },
+    "That name is already taken.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个名字已被使用。"
+          }
+        }
+      }
+    },
+    "That name is available.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个名字可以使用。"
+          }
+        }
+      }
+    },
+    "That password is not correct.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密码不正确。"
+          }
+        }
+      }
+    },
+    "That person is no longer one of %@'s owners.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方已不再是 %@ 的主人。"
+          }
+        }
+      }
+    },
+    "That photo could not be prepared for upload.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法处理这张照片以便上传。"
+          }
+        }
+      }
+    },
+    "That photo could not be prepared. Try another one.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法处理这张照片，请换一张。"
+          }
+        }
+      }
+    },
+    "That photo could not be read.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取这张照片。"
+          }
+        }
+      }
+    },
+    "That photo could not be read. Try another one.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取这张照片，请换一张。"
+          }
+        }
+      }
+    },
+    "That photo is bigger than %lldMB. Choose a smaller one.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这张照片超过了 %lldMB，请选择小一点的。"
+          }
+        }
+      }
+    },
+    "That photo is larger than %lldMB. Choose a smaller one.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这张照片超过了 %lldMB，请选择小一点的。"
+          }
+        }
+      }
+    },
+    "That photo is over the %lldMB limit.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片超过了 %lldMB 的上限。"
+          }
+        }
+      }
+    },
+    "That photo is too large to process.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这张照片太大，无法处理。"
+          }
+        }
+      }
+    },
+    "That photo was not accepted. Try a different one.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这张照片未被接受，请换一张。"
+          }
+        }
+      }
+    },
+    "That post no longer exists.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这条帖子已不存在。"
+          }
+        }
+      }
+    },
+    "That post was already published.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这条帖子已经发布过了。"
+          }
+        }
+      }
+    },
+    "That post was not accepted.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这条帖子未被接受。"
+          }
+        }
+      }
+    },
+    "That post was not accepted. Check the length and try different wording.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这条帖子未被接受。请检查长度，或换个说法再试。"
+          }
+        }
+      }
+    },
+    "That relationship label is too long.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个关系称呼太长了。"
+          }
+        }
+      }
+    },
+    "That relationship was not accepted. Choose another, or shorten it.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个关系称呼未被接受。请换一个，或者改短一些。"
+          }
+        }
+      }
+    },
+    "That was not accepted. Check the name, breed and bio and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提交未被接受。请检查名字、品种和简介后重试。"
+          }
+        }
+      }
+    },
+    "That was not allowed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有权限进行此操作。"
+          }
+        }
+      }
+    },
+    "The address is shared with people who join.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地址只对报名的人公开。"
+          }
+        }
+      }
+    },
+    "The bio is over %lld characters.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "简介超过了 %lld 个字符。"
+          }
+        }
+      }
+    },
+    "The breed is too long.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "品种名称太长了。"
+          }
+        }
+      }
+    },
+    "The comment you replied to was deleted.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你回复的评论已被删除。"
+          }
+        }
+      }
+    },
+    "The draft can't be restored once photos are picked or a post has started.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已经选了照片或开始发布之后，就不能再恢复草稿了。"
+          }
+        }
+      }
+    },
+    "The last Share may already have posted this photo, so its filter can't be changed now.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上一次「发布」可能已经把这张照片发出去了，所以现在不能更换滤镜。"
+          }
+        }
+      }
+    },
+    "The name has to be %lld–%lld characters.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名字需要 %lld–%lld 个字符。"
+          }
+        }
+      }
+    },
+    "The person who sent this code is no longer one of the pet's owners, so it no longer works. Ask a current owner for a new one.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送这个邀请码的人已不再是宠物的主人，所以邀请码已失效。请向现在的主人索取新的邀请码。"
+          }
+        }
+      }
+    },
+    "The pet this code was for no longer exists.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个邀请码对应的宠物已不存在。"
+          }
+        }
+      }
+    },
+    "The pet's profile, its list of owners and its followers are removed. Posts are not deleted — they stay in the feed, but they stop being about this pet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "宠物的资料、主人列表和粉丝都会被移除。帖子不会被删除——它们会留在动态中，但不再关联这只宠物。"
+          }
+        }
+      }
+    },
+    "The photo could not be prepared for upload. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片处理失败，请重试。"
+          }
+        }
+      }
+    },
+    "The photo could not be uploaded. The pet was not changed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片上传失败，宠物资料没有改动。"
+          }
+        }
+      }
+    },
+    "The photo could not be uploaded. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片上传失败，请重试。"
+          }
+        }
+      }
+    },
+    "The photo upload did not complete. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片上传未完成，请重试。"
+          }
+        }
+      }
+    },
+    "The photo upload timed out. The pet was not changed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片上传超时，宠物资料没有改动。"
+          }
+        }
+      }
+    },
+    "The post, its comments and its likes are removed. This cannot be undone.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "帖子及其评论和点赞都会被删除，此操作无法撤销。"
+          }
+        }
+      }
+    },
+    "The report wasn't accepted.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "举报未被受理。"
+          }
+        }
+      }
+    },
+    "The request could not be completed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请求未能完成。"
+          }
+        }
+      }
+    },
+    "The upload could not be completed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上传未能完成。"
+          }
+        }
+      }
+    },
+    "The upload finished but could not be confirmed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上传已完成，但无法确认结果。"
+          }
+        }
+      }
+    },
+    "The upload timed out. Check your connection and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上传超时，请检查网络后重试。"
+          }
+        }
+      }
+    },
+    "The upload timed out. Check your connection.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上传超时，请检查网络。"
+          }
+        }
+      }
+    },
+    "There is no one to hand %@ to. Invite someone before you leave, or delete %@ from its page.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有人可以接手 %@。请在退出前先邀请其他人，或者在 %@ 的页面中删除它。"
+          }
+        }
+      }
+    },
+    "There is nothing to save.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有需要保存的内容。"
+          }
+        }
+      }
+    },
+    "They hold the primary owner role. It has to be handed to someone else before they can be removed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方是主要主人，需要先把这个身份转给其他人，才能移除对方。"
+          }
+        }
+      }
+    },
+    "They won't be able to comment on your posts or join your meetups, and you won't see their posts. Your posts stay public, so they can still be viewed by anyone.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方将无法评论你的帖子或加入你的聚会，你也不会再看到对方的帖子。你的帖子仍然公开，任何人都可以查看。"
+          }
+        }
+      }
+    },
+    "This Week": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本周"
+          }
+        }
+      }
+    },
+    "This account can't send feedback.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个账号无法发送反馈。"
+          }
+        }
+      }
+    },
+    "This account can't send reports.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个账号无法举报。"
+          }
+        }
+      }
+    },
+    "This account cannot change its profile.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个账号无法修改个人资料。"
+          }
+        }
+      }
+    },
+    "This account cannot comment.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个账号无法评论。"
+          }
+        }
+      }
+    },
+    "This account cannot create invitations.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个账号无法创建邀请。"
+          }
+        }
+      }
+    },
+    "This account cannot follow pets.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个账号无法关注宠物。"
+          }
+        }
+      }
+    },
+    "This account cannot join a pet's family.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个账号无法加入宠物的家庭。"
+          }
+        }
+      }
+    },
+    "This account cannot make changes.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个账号无法进行更改。"
+          }
+        }
+      }
+    },
+    "This account cannot upload photos.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个账号无法上传照片。"
+          }
+        }
+      }
+    },
+    "This account cannot upload pictures.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个账号无法上传图片。"
+          }
+        }
+      }
+    },
+    "This account has been deleted.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个账号已被删除。"
+          }
+        }
+      }
+    },
+    "This account has been disabled.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个账号已被停用。"
+          }
+        }
+      }
+    },
+    "This account is not available.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个账号不可用。"
+          }
+        }
+      }
+    },
+    "This build can't confirm a Google account. Delete it from the web app, or from a build with Google sign-in.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此版本无法验证 Google 账号。请在网页版或支持 Google 登录的版本中删除账号。"
+          }
+        }
+      }
+    },
+    "This build cannot reach PetNote's server.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此版本无法连接 PetNote 的服务器。"
+          }
+        }
+      }
+    },
+    "This build cannot reach the server.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此版本无法连接服务器。"
+          }
+        }
+      }
+    },
+    "This cannot be undone.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此操作无法撤销。"
+          }
+        }
+      }
+    },
+    "This draft could not be identified. Start a new post.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法识别这份草稿，请重新发帖。"
+          }
+        }
+      }
+    },
+    "This email is set up with another sign-in method. Use that one, or reset your password.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个邮箱使用的是另一种登录方式。请用那种方式登录，或者重置密码。"
+          }
+        }
+      }
+    },
+    "This invitation was revoked. Ask one of the pet's owners for a new one.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个邀请已被撤销。请向宠物的任意一位主人索取新的邀请码。"
+          }
+        }
+      }
+    },
+    "This list is not visible to you.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你无法查看这个列表。"
+          }
+        }
+      }
+    },
+    "This meetup has ended.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这场聚会已结束。"
+          }
+        }
+      }
+    },
+    "This meetup is no longer on PetNote.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这场聚会已不在 PetNote 上。"
+          }
+        }
+      }
+    },
+    "This meetup was cancelled.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这场聚会已取消。"
+          }
+        }
+      }
+    },
+    "This pet has other owners, so it cannot be deleted. Ask the other owners to leave first.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这只宠物还有其他主人，所以无法删除。请先让其他主人退出。"
+          }
+        }
+      }
+    },
+    "This pet no longer exists.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这只宠物已不存在。"
+          }
+        }
+      }
+    },
+    "This place is no longer on PetNote.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个地点已不在 PetNote 上。"
+          }
+        }
+      }
+    },
+    "This post has been deleted": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这条帖子已被删除"
+          }
+        }
+      }
+    },
+    "This post no longer exists.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这条帖子已不存在。"
+          }
+        }
+      }
+    },
+    "This profile is not visible to you.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你无法查看这个个人主页。"
+          }
+        }
+      }
+    },
+    "This test build cannot post comments from a device. It reaches the local server over plain HTTP, which the Firebase SDK will not send credentials over. Your comment is still here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个测试版本无法在真机上发表评论：它通过明文 HTTP 连接本地服务器，而 Firebase SDK 不会通过这种连接发送凭据。你的评论内容还在这里。"
+          }
+        }
+      }
+    },
+    "Those two passwords do not match.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "两次输入的密码不一致。"
+          }
+        }
+      }
+    },
+    "Too many attempts from this device. Wait a minute and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台设备尝试次数过多，请一分钟后再试。"
+          }
+        }
+      }
+    },
+    "Too many attempts. Please try again later.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尝试次数过多，请稍后再试。"
+          }
+        }
+      }
+    },
+    "Too many attempts. Wait a moment before trying again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尝试次数过多，请稍等片刻再试。"
+          }
+        }
+      }
+    },
+    "Too many attempts. Wait an hour and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尝试次数过多，请一小时后再试。"
+          }
+        }
+      }
+    },
+    "Too many changes at once. Wait a moment and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "操作过于频繁，请稍等片刻再试。"
+          }
+        }
+      }
+    },
+    "Too many changes just now. Wait a moment and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刚才修改次数过多，请稍等片刻再试。"
+          }
+        }
+      }
+    },
+    "Too many comments just now. Wait a moment.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刚才评论次数过多，请稍等片刻。"
+          }
+        }
+      }
+    },
+    "Too many posts just now. Wait a moment.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刚才发帖次数过多，请稍等片刻。"
+          }
+        }
+      }
+    },
+    "Too many reports in a short time. Try again in a little while.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "短时间内举报次数过多，请稍后再试。"
+          }
+        }
+      }
+    },
+    "Too many requests just now. Wait a moment and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刚才请求次数过多，请稍等片刻再试。"
+          }
+        }
+      }
+    },
+    "Too many uploads just now. Wait a moment and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刚才上传次数过多，请稍等片刻再试。"
+          }
+        }
+      }
+    },
+    "Too many uploads just now. Wait a moment.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刚才上传次数过多，请稍等片刻。"
+          }
+        }
+      }
+    },
+    "Top Rated": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "评分最高"
+          }
+        }
+      }
+    },
+    "Trails": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "步道"
+          }
+        }
+      }
+    },
+    "Trending Posts": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "热门帖子"
+          }
+        }
+      }
+    },
+    "Try again": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重试"
+          }
+        }
+      }
+    },
+    "Try different keywords.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "换个关键词试试。"
+          }
+        }
+      }
+    },
+    "Type": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "类型"
+          }
+        }
+      }
+    },
+    "Type DELETE to confirm": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入 DELETE 进行确认"
+          }
+        }
+      }
+    },
+    "Type DELETE to confirm. This action cannot be undone.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入 DELETE 进行确认，此操作无法撤销。"
+          }
+        }
+      }
+    },
+    "Unblock": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消屏蔽"
+          }
+        }
+      }
+    },
+    "Unblock %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消屏蔽 %@"
+          }
+        }
+      }
+    },
+    "Unblock to view their profile and pets again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消屏蔽后即可重新查看对方的个人主页和宠物。"
+          }
+        }
+      }
+    },
+    "Unblocking…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在取消屏蔽…"
+          }
+        }
+      }
+    },
+    "Uncle": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "叔叔"
+          }
+        }
+      }
+    },
+    "Unknown location": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未知地点"
+          }
+        }
+      }
+    },
+    "Unlike": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消点赞"
+          }
+        }
+      }
+    },
+    "Unmute video": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消静音"
+          }
+        }
+      }
+    },
+    "Unpin from profile": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消置顶"
+          }
+        }
+      }
+    },
+    "Unpinned.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已取消置顶。"
+          }
+        }
+      }
+    },
+    "Unread": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未读"
+          }
+        }
+      }
+    },
+    "Unsaved draft, with %lld files already uploaded": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未保存的草稿，已上传 %lld 个文件"
+          }
+        }
+      }
+    },
+    "Unsaved draft, with 1 file already uploaded": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未保存的草稿，已上传 1 个文件"
+          }
+        }
+      }
+    },
+    "Unspecified": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未设置"
+          }
+        }
+      }
+    },
+    "Up to %lld pets.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多 %lld 只宠物。"
+          }
+        }
+      }
+    },
+    "Upcoming": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "即将举行"
+          }
+        }
+      }
+    },
+    "Uploading %lld/%lld…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在上传 %lld/%lld…"
+          }
+        }
+      }
+    },
+    "Uploads are unavailable in this build.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此版本暂不支持上传。"
+          }
+        }
+      }
+    },
+    "Use a different code": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "换一个邀请码"
+          }
+        }
+      }
+    },
+    "Use a different email": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "换一个邮箱"
+          }
+        }
+      }
+    },
+    "Use an invitation code from one of its owners": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用宠物主人给你的邀请码"
+          }
+        }
+      }
+    },
+    "Verify your email before commenting.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先验证邮箱再评论。"
+          }
+        }
+      }
+    },
+    "Verify your email before posting.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先验证邮箱再发帖。"
+          }
+        }
+      }
+    },
+    "Verify your email to start posting and commenting": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "验证邮箱后即可发帖和评论"
+          }
+        }
+      }
+    },
+    "Version": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "版本"
+          }
+        }
+      }
+    },
+    "Vet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "宠物医院"
+          }
+        }
+      }
+    },
+    "Vets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "宠物医院"
+          }
+        }
+      }
+    },
+    "Video": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "视频"
+          }
+        }
+      }
+    },
+    "Video failed to load. Tap to retry.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "视频加载失败，点按重试。"
+          }
+        }
+      }
+    },
+    "Video must be under 60 seconds": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "视频不能超过 60 秒"
+          }
+        }
+      }
+    },
+    "Video, not playing": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "视频，未播放"
+          }
+        }
+      }
+    },
+    "Video, stopped loading": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "视频，加载已中断"
+          }
+        }
+      }
+    },
+    "View place": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看地点"
+          }
+        }
+      }
+    },
+    "Visit a pet-friendly place and check in": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "去一个宠物友好的地方打卡吧"
+          }
+        }
+      }
+    },
+    "Waste bags": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拾便袋"
+          }
+        }
+      }
+    },
+    "Water access": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可以玩水"
+          }
+        }
+      }
+    },
+    "We checked, and your comment is not in the list. It is still here — send it again if you want to.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我们确认过了，你的评论不在列表中。评论内容还在这里——需要的话可以再次发送。"
+          }
+        }
+      }
+    },
+    "We could not check that name. You can still save.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂时无法检查这个名字，你仍然可以保存。"
+          }
+        }
+      }
+    },
+    "We could not confirm that comment was posted, and could not check either. Refresh before sending it again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法确认评论是否已发出，也无法核实。再次发送前请先刷新。"
+          }
+        }
+      }
+    },
+    "We could not confirm that comment was posted. Checking…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法确认评论是否已发出，正在核实…"
+          }
+        }
+      }
+    },
+    "We could not confirm whether that saved. Reopen this screen to check.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法确认是否已保存。请重新打开此页面查看。"
+          }
+        }
+      }
+    },
+    "We could not reach PetNote. Check your connection and try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法连接 PetNote。请检查网络后重试。"
+          }
+        }
+      }
+    },
+    "We could not tell whether a code was made. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法确定邀请码是否已生成，请重试。"
+          }
+        }
+      }
+    },
+    "We could not tell whether that finished. Reload to check.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法确定操作是否完成。请刷新后确认。"
+          }
+        }
+      }
+    },
+    "We could not tell whether that was saved. Open the pet to check before trying again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法确定是否已保存。请先打开这只宠物的页面确认，再重试。"
+          }
+        }
+      }
+    },
+    "We could not tell whether that went through.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法确定操作是否成功。"
+          }
+        }
+      }
+    },
+    "We could not tell whether that went through. Reload to check.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法确定操作是否成功。请刷新后确认。"
+          }
+        }
+      }
+    },
+    "We could not tell whether that went through. The list below is what is true now.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法确定操作是否成功。下方列表就是当前的实际情况。"
+          }
+        }
+      }
+    },
+    "We could not tell whether the code was revoked. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法确定邀请码是否已撤销，请重试。"
+          }
+        }
+      }
+    },
+    "We could not tell whether the pet was created. Check your pets before trying again — sending this twice would make two.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法确定宠物是否已创建。重试前请先查看你的宠物列表——重复提交会创建两只。"
+          }
+        }
+      }
+    },
+    "We could not tell whether you joined. Check your pets, or try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法确定你是否已加入。请查看你的宠物列表，或者重试。"
+          }
+        }
+      }
+    },
+    "We could not tell whether you joined. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法确定你是否已加入，请重试。"
+          }
+        }
+      }
+    },
+    "We couldn't confirm the report arrived. Sending it again won't file it twice.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法确认举报是否已送达。再次发送不会重复提交。"
+          }
+        }
+      }
+    },
+    "We couldn't confirm your message arrived. If you send it again, we may get it twice.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法确认你的留言是否已送达。如果再次发送，我们可能会收到两份。"
+          }
+        }
+      }
+    },
+    "We picked one for you. Change it if you would rather have your own.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我们先帮你取了一个。想用自己的名字的话可以改。"
+          }
+        }
+      }
+    },
+    "We sent a link to %@. Open it, then come back here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我们已向 %@ 发送了链接。打开链接后再回到这里。"
+          }
+        }
+      }
+    },
+    "Weak": {
+      "comment": "Password strength",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "弱"
+          }
+        }
+      }
+    },
+    "Welcome": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "欢迎"
+          }
+        }
+      }
+    },
+    "Welcome to %@'s family!": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "欢迎加入 %@ 的家庭！"
+          }
+        }
+      }
+    },
+    "What's your relationship to %@?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你和 %@ 是什么关系？"
+          }
+        }
+      }
+    },
+    "When someone likes or comments, you'll see it here": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有人点赞或评论时，你会在这里看到"
+          }
+        }
+      }
+    },
+    "Which pet is this about?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这条帖子是关于哪只宠物的？"
+          }
+        }
+      }
+    },
+    "Why are you reporting this post?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你为什么要举报这条帖子？"
+          }
+        }
+      }
+    },
+    "Without a pet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不带宠物"
+          }
+        }
+      }
+    },
+    "Working…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "处理中…"
+          }
+        }
+      }
+    },
+    "Write a review": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写评价"
+          }
+        }
+      }
+    },
+    "You": {
+      "comment": "Marks the signed-in person's own row in search results",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你"
+          }
+        }
+      }
+    },
+    "You already have %lld pets.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你已经有 %lld 只宠物了。"
+          }
+        }
+      }
+    },
+    "You appear to be offline.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你似乎处于离线状态。"
+          }
+        }
+      }
+    },
+    "You appear to be offline. Your comment is still here — send it again when you have a connection.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你似乎处于离线状态。评论内容还在这里——联网后可以再次发送。"
+          }
+        }
+      }
+    },
+    "You are %@'s only owner.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你是 %@ 唯一的主人。"
+          }
+        }
+      }
+    },
+    "You are %@'s only owner. Invite someone else first, or delete %@ from its page.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你是 %@ 唯一的主人。请先邀请其他人，或者在 %@ 的页面中删除它。"
+          }
+        }
+      }
+    },
+    "You are already one of %@'s owners.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你已经是 %@ 的主人了。"
+          }
+        }
+      }
+    },
+    "You are no longer one of %@'s owners.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你已不再是 %@ 的主人。"
+          }
+        }
+      }
+    },
+    "You are not allowed to change that.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你无权修改这项内容。"
+          }
+        }
+      }
+    },
+    "You are not one of %@'s owners.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你不是 %@ 的主人。"
+          }
+        }
+      }
+    },
+    "You are not one of this pet's owners.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你不是这只宠物的主人。"
+          }
+        }
+      }
+    },
+    "You are one of this pet's owners, so you cannot follow it.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你是这只宠物的主人，所以无法关注它。"
+          }
+        }
+      }
+    },
+    "You are set": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一切就绪"
+          }
+        }
+      }
+    },
+    "You are the post owner. This cannot be undone.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你是这条帖子的作者。此操作无法撤销。"
+          }
+        }
+      }
+    },
+    "You can browse PetNote without one. An account is for posting.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不注册也可以浏览 PetNote，发帖才需要账号。"
+          }
+        }
+      }
+    },
+    "You can browse and follow straight away. Adding a pet is only needed to post, and can wait.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你现在就可以浏览和关注。只有发帖才需要添加宠物，可以晚点再加。"
+          }
+        }
+      }
+    },
+    "You can edit %@, post about them, and invite others.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你可以编辑 %@ 的资料、为它发帖，并邀请其他人。"
+          }
+        }
+      }
+    },
+    "You can only change your own posts.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你只能修改自己的帖子。"
+          }
+        }
+      }
+    },
+    "You can only edit your own posts.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你只能编辑自己的帖子。"
+          }
+        }
+      }
+    },
+    "You can't delete this comment.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你无法删除这条评论。"
+          }
+        }
+      }
+    },
+    "You cannot comment on this post.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你无法评论这条帖子。"
+          }
+        }
+      }
+    },
+    "You do not have access to that pet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你没有这只宠物的权限。"
+          }
+        }
+      }
+    },
+    "You do not have access to this post.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你无权查看这条帖子。"
+          }
+        }
+      }
+    },
+    "You have an unsaved draft (text, tags and pet — photos need picking again)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你有一份未保存的草稿（文字、标签和宠物已保留，照片需要重新选择）"
+          }
+        }
+      }
+    },
+    "You have blocked this user": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你已屏蔽这位用户"
+          }
+        }
+      }
+    },
+    "You haven't added a pet yet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你还没有添加宠物。"
+          }
+        }
+      }
+    },
+    "You haven't blocked anyone.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你还没有屏蔽任何人。"
+          }
+        }
+      }
+    },
+    "You need to add a pet before posting": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发帖前需要先添加宠物"
+          }
+        }
+      }
+    },
+    "You rated this meetup's place": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你已给这次聚会的地点打过分"
+          }
+        }
+      }
+    },
+    "You will lose access to %@. Your posts about %@ stay, and you can only come back through a new invitation.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你将无法再访问 %@。你发布的关于 %@ 的帖子会保留，之后只能通过新的邀请重新加入。"
+          }
+        }
+      }
+    },
+    "You will lose access to %@. Your posts about %@ stay, and you can only come back through a new invitation. The primary owner role passes to whoever has been an owner the longest.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你将无法再访问 %@。你发布的关于 %@ 的帖子会保留，之后只能通过新的邀请重新加入。主要主人身份将交给加入最久的那位主人。"
+          }
+        }
+      }
+    },
+    "You'll sign in with Google again to confirm it's you.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你需要再次使用 Google 登录，以确认是你本人。"
+          }
+        }
+      }
+    },
+    "You're going": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你已报名"
+          }
+        }
+      }
+    },
+    "You're offline, so nothing was deleted.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你处于离线状态，没有删除任何内容。"
+          }
+        }
+      }
+    },
+    "You're offline, so the comment wasn't deleted.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你处于离线状态，评论未删除。"
+          }
+        }
+      }
+    },
+    "You're offline, so the report wasn't sent.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你处于离线状态，举报未发送。"
+          }
+        }
+      }
+    },
+    "You're offline, so your message wasn't sent.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你处于离线状态，留言未发送。"
+          }
+        }
+      }
+    },
+    "You've already reported this post.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你已经举报过这条帖子了。"
+          }
+        }
+      }
+    },
+    "You've already reported this post. We'll review it.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你已经举报过这条帖子了，我们会进行审核。"
+          }
+        }
+      }
+    },
+    "You've sent several messages recently. Try again in a little while.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你最近发送的留言较多，请稍后再试。"
+          }
+        }
+      }
+    },
+    "Your account has been deleted.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的账号已删除。"
+          }
+        }
+      }
+    },
+    "Your account has been suspended.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的账号已被暂停使用。"
+          }
+        }
+      }
+    },
+    "Your earlier post did go through — those photos are still in use.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你之前的帖子其实已经发布了——那些照片仍在使用中。"
+          }
+        }
+      }
+    },
+    "Your message": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的留言"
+          }
+        }
+      }
+    },
+    "Your message wasn't accepted.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的留言未被受理。"
+          }
+        }
+      }
+    },
+    "Your message wasn't sent.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的留言未发送。"
+          }
+        }
+      }
+    },
+    "Your profile": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的个人主页"
+          }
+        }
+      }
+    },
+    "Your relationship": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你与它的关系"
+          }
+        }
+      }
+    },
+    "Your session could not be verified. Checking…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法验证你的登录状态，正在核实…"
+          }
+        }
+      }
+    },
+    "Your session ended. Sign in again to pick up where you left off.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录状态已失效。重新登录后即可从上次离开的地方继续。"
+          }
+        }
+      }
+    },
+    "by %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自 %@"
+          }
+        }
+      }
+    },
+    "compose.publish": {
+      "comment": "Button that publishes the new post",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发布"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share"
+          }
+        }
+      }
+    },
+    "login.heading": {
+      "comment": "Sign-in screen title",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Log in to your account"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录你的账号"
+          }
+        }
+      }
+    },
+    "login.tagline": {
+      "comment": "Sign-in screen line under the title",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share your pet's everyday moments"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "记录宠物的日常瞬间"
+          }
+        }
+      }
+    },
+    "menu.bookmark": {
+      "comment": "Bookmark this post",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收藏"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save"
+          }
+        }
+      }
+    },
+    "petEditor.about": {
+      "comment": "The pet editor's section for name, species and the rest",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "基本信息"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "About"
+          }
+        }
+      }
+    },
+    "photoFilter.bright": {
+      "comment": "Photo filter name",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "明亮"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bright"
+          }
+        }
+      }
+    },
+    "photoFilter.bw": {
+      "comment": "Photo filter name: black and white",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "黑白"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "B&W"
+          }
+        }
+      }
+    },
+    "photoFilter.contrast": {
+      "comment": "Photo filter name: stronger contrast",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高对比"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contrast"
+          }
+        }
+      }
+    },
+    "photoFilter.cool": {
+      "comment": "Photo filter name",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "冷色"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cool"
+          }
+        }
+      }
+    },
+    "photoFilter.normal": {
+      "comment": "Photo filter: the photo as it was taken",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原图"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Normal"
+          }
+        }
+      }
+    },
+    "photoFilter.rose": {
+      "comment": "Photo filter name: a pink tint",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "玫瑰"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rose"
+          }
+        }
+      }
+    },
+    "photoFilter.soft": {
+      "comment": "Photo filter name",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "柔和"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Soft"
+          }
+        }
+      }
+    },
+    "photoFilter.vintage": {
+      "comment": "Photo filter name",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复古"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vintage"
+          }
+        }
+      }
+    },
+    "photoFilter.vivid": {
+      "comment": "Photo filter name",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "鲜艳"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vivid"
+          }
+        }
+      }
+    },
+    "photoFilter.warm": {
+      "comment": "Photo filter name",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暖色"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Warm"
+          }
+        }
+      }
+    },
+    "post.age.days": {
+      "comment": "A post's age in days, short: 3d",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lldd"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld天前"
+          }
+        }
+      }
+    },
+    "post.age.hours": {
+      "comment": "A post's age in hours, short: 5h",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lldh"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld小时前"
+          }
+        }
+      }
+    },
+    "post.age.minutes": {
+      "comment": "A post's age in minutes, short: 30m",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lldm"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld分钟前"
+          }
+        }
+      }
+    },
+    "post.age.now": {
+      "comment": "A post's age under five seconds",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "just now"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刚刚"
+          }
+        }
+      }
+    },
+    "post.age.seconds": {
+      "comment": "A post's age in seconds, short: 42s",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%llds"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld秒前"
+          }
+        }
+      }
+    },
+    "post.age.weeks": {
+      "comment": "A post's age in weeks, short: 2w",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lldw"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld周前"
+          }
+        }
+      }
+    },
+    "resume=%@ path=%lld": {
+      "shouldTranslate": false
+    },
+    "tab.create": {
+      "comment": "Tab that opens the composer",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发布"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create"
+          }
+        }
+      }
+    },
+    "tab.profile": {
+      "comment": "Tab for your own profile",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我的"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Profile"
+          }
+        }
+      }
+    },
+    "this pet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这只宠物"
+          }
+        }
+      }
+    },
+    "• %@": {
+      "shouldTranslate": false
+    },
+    "☕ Café nearby": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "☕ 附近有咖啡馆"
+          }
+        }
+      }
+    },
+    "✓ Verified": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "✓ 已验证"
+          }
+        }
+      }
+    },
+    "✨ Cleanliness": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "✨ 清洁度"
+          }
+        }
+      }
+    },
+    "⭐ %@": {
+      "shouldTranslate": false
+    },
+    "🅿️ Easy parking": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🅿️ 停车方便"
+          }
+        }
+      }
+    },
+    "🌙 Well-lit": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🌙 照明良好"
+          }
+        }
+      }
+    },
+    "🌳 Spacious": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🌳 宽敞"
+          }
+        }
+      }
+    },
+    "🎂 Birthday today": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🎂 今天生日"
+          }
+        }
+      }
+    },
+    "🏃 Trails available": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🏃 有步道"
+          }
+        }
+      }
+    },
+    "🏖️ Beach access": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🏖️ 可下海滩"
+          }
+        }
+      }
+    },
+    "🐕 Off-leash area": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🐕 可解绳区域"
+          }
+        }
+      }
+    },
+    "🐕‍🦺 Dog-friendly": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🐕‍🦺 对狗友好"
+          }
+        }
+      }
+    },
+    "🐱 Cat-friendly": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🐱 对猫友好"
+          }
+        }
+      }
+    },
+    "🐾 Shared from PetNote": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🐾 分享自 PetNote"
+          }
+        }
+      }
+    },
+    "🐾 Space for pets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🐾 宠物活动空间"
+          }
+        }
+      }
+    },
+    "💧 Water access": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "💧 可以玩水"
+          }
+        }
+      }
+    },
+    "🚽 Restrooms nearby": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🚽 附近有洗手间"
+          }
+        }
+      }
+    },
+    "🛡️ Safety": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🛡️ 安全"
+          }
+        }
+      }
+    },
+    "🪑 Seating available": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🪑 有座位"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

@@ -1,0 +1,14 @@
+// Copy to Config/Local.xcconfig and fill in. That file is gitignored: it holds a
+// personal signing identity and a machine-specific LAN address, neither of which
+// belongs in the repository.
+DEVELOPMENT_TEAM = YOUR_TEAM_ID
+PETNOTE_EMULATOR_HOST = 192.168.x.x
+
+// The independent test Firebase project, once it exists. Kept out of the
+// repository until it is approved and created.
+PETNOTE_TEST_PROJECT_ID = petnote-test-xxxxx
+
+// REVERSED_CLIENT_ID from Support/GoogleService-Info-Test.plist, once Google
+// sign-in is enabled for the test project. Leave it out until then: the
+// button stays hidden.
+// PETNOTE_TEST_GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.xxxxxxxx

@@ -1,0 +1,232 @@
+diff --git a/ios-native/PetNoteAppTests/TEMP_ReproCI35924362700Tests.swift b/ios-native/PetNoteAppTests/TEMP_ReproCI35924362700Tests.swift
+new file mode 100644
+index 0000000..a50d0eb
+--- /dev/null
++++ b/ios-native/PetNoteAppTests/TEMP_ReproCI35924362700Tests.swift
+@@ -0,0 +1,226 @@
++// TEMPORARY - DO NOT COMMIT. Evidence for the owner (2026-09-23), not a test
++// of the app. Remove with `git apply -R repro-2.patch` or by deleting this file.
++//
++// Deterministic reproduction of CI run 35924362700 (3b4f497, Apple M1 (Virtual),
++// 3 vCPU, 7 GiB):
++//
++//   ✘ Test aPostStillWorksAfterARequestIsAbandoned() recorded an issue at
++//     LikeConvergenceRegressionTests.swift:562:26: Issue recorded
++//   ↳ never reached: the first request was not given up on
++//   [feed] like write failed: ... (Swift.CancellationError error 1.)
++//   ✘ Test aPostStillWorksAfterARequestIsAbandoned() failed after 0.852 seconds with 1 issue.
++//
++// The claim under test: ManualDeadline.pass() releases only timers already
++// parked, and on the slow runner the model's timer parked *after* the test
++// passed. `LateTimerDeadline` below is ManualDeadline as it is at HEAD with one
++// change - the timer parks late, and the lateness is ordered against the test
++// on the main actor rather than left to the scheduler - so the ordering the
++// runner produced by chance happens here every time. No product code changes.
++//
++// Run: -only-testing:PetNoteAppTests/ReproCI35924362700Tests
++// Expected: reproduce_CI_35924362700 FAILS with exactly one issue,
++// "never reached: the first request was not given up on" (the CI message),
++// followed in the log by "[feed] like write failed: ... CancellationError";
++// the two fixedTest... cases PASS.
++
++import Foundation
++import Testing
++
++@testable import PetNote
++
++@MainActor
++struct ReproCI35924362700Tests {
++    typealias Base = LikeConvergenceRegressionTests
++
++    /// The body of aPostStillWorksAfterARequestIsAbandoned exactly as it was at
++    /// 3b4f497 (`deadline.pass()` the moment the request reaches the
++    /// repository). Only the deadline object differs: its timer parks late.
++    @Test func reproduce_CI_35924362700() async {
++        let feed = Base.Feed()
++        feed.page = [Base.post(likeCount: 10)]
++        let likes = Base.Likes()
++        let deadline = LateTimerDeadline(.parks, after: { likes.calls.count >= 1 })
++        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: deadline.sleeper)
++        await model.loadFirstPageIfNeeded()
++
++        likes.neverAnswer = true
++        model.toggleLike(model.posts[0])
++        await Base.settle(until: { likes.calls.count == 1 }, "the like request went out")
++        let armedAtPass = deadline.armed // instrumentation, not in the 3b4f497 body
++        deadline.pass()
++        await Base.settle(until: { model.likeFailureMessage != nil }, "the first request was not given up on")
++        likes.stopNeverAnswering()
++        await model.waitForPendingLikes()
++
++        likes.liked = ["p"]
++        model.toggleLike(model.posts[0])
++        await Base.settle(until: { likes.calls.count == 2 }, "the second tap never reached the repository")
++        await model.waitForPendingLikes()
++
++        #expect(deadline.durations.count == 2, "each request starts its own deadline: \(deadline.durations)")
++        #expect(model.isLiked(Base.post(likeCount: 10)))
++        #expect(model.displayLikeCount(for: model.posts[0]) == 11)
++        // Instrumentation: shows the injection did what it says. Passes.
++        #expect(armedAtPass == 0, "the injection did not take: the timer was already parked at pass()")
++    }
++
++    /// The body as it is at HEAD (24d6e4a: `passOnceArmed()`), with the same
++    /// late-parking timer. Expected: passes.
++    @Test func fixedTestUnderTheSameLateTimer() async {
++        let feed = Base.Feed()
++        feed.page = [Base.post(likeCount: 10)]
++        let likes = Base.Likes()
++        let deadline = LateTimerDeadline(.parks, after: { likes.calls.count >= 1 })
++        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: deadline.sleeper)
++        await model.loadFirstPageIfNeeded()
++
++        likes.neverAnswer = true
++        model.toggleLike(model.posts[0])
++        await Base.settle(until: { likes.calls.count == 1 }, "the like request went out")
++        await deadline.passOnceArmed()
++        await Base.settle(until: { model.likeFailureMessage != nil }, "the first request was not given up on")
++        likes.stopNeverAnswering()
++        await model.waitForPendingLikes()
++
++        likes.liked = ["p"]
++        model.toggleLike(model.posts[0])
++        await Base.settle(until: { likes.calls.count == 2 }, "the second tap never reached the repository")
++        await model.waitForPendingLikes()
++
++        #expect(deadline.durations.count == 2, "each request starts its own deadline: \(deadline.durations)")
++        #expect(model.isLiked(Base.post(likeCount: 10)))
++        #expect(model.displayLikeCount(for: model.posts[0]) == 11)
++    }
++
++    /// The HEAD body again, with the timer also *starting* late (the gap run
++    /// 35929225283 found). Expected: passes.
++    @Test func fixedTestWhenTheTimerAlsoStartsLate() async {
++        let feed = Base.Feed()
++        feed.page = [Base.post(likeCount: 10)]
++        let likes = Base.Likes()
++        let deadline = LateTimerDeadline(.starts, after: { likes.calls.count >= 1 })
++        let model = FeedViewModel(feed: feed, likes: likes, pageSize: 1, sleeper: deadline.sleeper)
++        await model.loadFirstPageIfNeeded()
++
++        likes.neverAnswer = true
++        model.toggleLike(model.posts[0])
++        await Base.settle(until: { likes.calls.count == 1 }, "the like request went out")
++        await deadline.passOnceArmed()
++        await Base.settle(until: { model.likeFailureMessage != nil }, "the first request was not given up on")
++        likes.stopNeverAnswering()
++        await model.waitForPendingLikes()
++
++        likes.liked = ["p"]
++        model.toggleLike(model.posts[0])
++        await Base.settle(until: { likes.calls.count == 2 }, "the second tap never reached the repository")
++        await model.waitForPendingLikes()
++
++        // Not asserted here: with a late *start*, the second (answered and
++        // cancelled) request's deadline may be recorded after this line runs -
++        // the same latent gap the HEAD test's final count has, made wider.
++        #expect(model.isLiked(Base.post(likeCount: 10)))
++        #expect(model.displayLikeCount(for: model.posts[0]) == 11)
++    }
++}
++
++/// ManualDeadline as it is at HEAD, copied, with one change: the timer is late.
++///
++/// `.parks`: the deadline is recorded when the model starts it (as
++/// ManualDeadline does) but parks - becomes reachable by `pass()` - only late.
++/// `.starts`: it is also recorded late.
++///
++/// "Late" is made certain rather than likely. The lateness runs on the main
++/// actor, where the test runs too: it waits until `after()` holds (the request
++/// has reached the repository), then gives the main actor away `turns` more
++/// times. The test is polling on the main actor all that while, so whatever it
++/// does in the turn it first sees the request - count the deadlines, or pass
++/// them - happens before the timer starts or parks.
++private final class LateTimerDeadline: @unchecked Sendable {
++    enum Lateness: Sendable { case parks, starts }
++
++    private let lock = NSLock()
++    private var started: [Duration] = []
++    private var waiting: [Int: CheckedContinuation<Void, Never>] = [:]
++    private var cancelledEarly: Set<Int> = []
++    private var nextID = 0
++
++    private let lateness: Lateness
++    private let after: @MainActor @Sendable () -> Bool
++    private let turns: Int
++
++    init(_ lateness: Lateness, after: @escaping @MainActor @Sendable () -> Bool, turns: Int = 50) {
++        self.lateness = lateness
++        self.after = after
++        self.turns = turns
++    }
++
++    var sleeper: @Sendable (Duration) async throws -> Void {
++        { [self] duration in try await self.wait(duration) }
++    }
++
++    var durations: [Duration] { lock.withLock { started } }
++
++    var armed: Int { lock.withLock { waiting.count } }
++
++    func waitUntilArmed(_ count: Int = 1) async -> Bool {
++        for _ in 0..<20_000 {
++            if armed >= count { return true }
++            await Task.yield()
++        }
++        return false
++    }
++
++    func passOnceArmed(_ count: Int = 1, sourceLocation: SourceLocation = #_sourceLocation) async {
++        guard await waitUntilArmed(count) else {
++            Issue.record("no deadline parked to pass (armed \(armed), started \(durations.count))",
++                         sourceLocation: sourceLocation)
++            return
++        }
++        pass()
++    }
++
++    func pass() {
++        let due = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
++            defer { waiting.removeAll() }
++            return Array(waiting.values)
++        }
++        for continuation in due { continuation.resume() }
++    }
++
++    /// The injected lateness. See the type's note.
++    @MainActor private func beLate() async {
++        for _ in 0..<20_000 {
++            if after() { break }
++            await Task.yield()
++        }
++        for _ in 0..<turns { await Task.yield() }
++    }
++
++    private func wait(_ duration: Duration) async throws {
++        if lateness == .starts { await beLate() }
++        let id = lock.withLock { () -> Int in
++            started.append(duration)
++            nextID += 1
++            return nextID
++        }
++        if lateness == .parks { await beLate() }
++        await withTaskCancellationHandler {
++            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
++                let resumeNow = lock.withLock { () -> Bool in
++                    if cancelledEarly.remove(id) != nil { return true }
++                    waiting[id] = continuation
++                    return false
++                }
++                if resumeNow { continuation.resume() }
++            }
++        } onCancel: {
++            let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
++                if let stored = waiting.removeValue(forKey: id) { return stored }
++                cancelledEarly.insert(id)
++                return nil
++            }
++            continuation?.resume()
++        }
++        try Task.checkCancellation()
++    }
++}

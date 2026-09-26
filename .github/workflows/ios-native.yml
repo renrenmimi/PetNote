@@ -1,0 +1,354 @@
+# Builds and unit-tests the native iOS client.
+#
+# Path-filtered on purpose: the Swift project shares a repository with the web
+# client so the backend contract and its client evolve in one history, and the
+# cost of that is that every web change would otherwise start a macOS runner
+# (billed at 10x). XCUITest is deliberately absent — it needs a booted
+# simulator and is slow, so it runs locally and at acceptance time instead
+# (engineering spec §15.4).
+name: ios-native
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ios-native/**"
+      - ".github/workflows/ios-native.yml"
+  pull_request:
+    paths:
+      - "ios-native/**"
+      - ".github/workflows/ios-native.yml"
+
+concurrency:
+  group: ios-native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: build + unit tests
+    runs-on: macos-latest
+    # A run takes about ten minutes. Without a ceiling a hung test holds the
+    # runner for the six-hour default; forty is room for a slow runner and
+    # nothing more.
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: ios-native
+    steps:
+      - uses: actions/checkout@v7
+
+      # The runner's Xcode is not this machine's Xcode 27.0, so record what it
+      # actually is: a CI failure caused by a toolchain gap should be readable
+      # as that and not mistaken for a code problem.
+      - name: Record toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          xcodebuild -showsdks | sed -n '/iOS SDKs/,/^$/p'
+
+      # What this machine is, so a statement about it is a reading and not a
+      # guess. "The runner is slow" was said about timing failures on the
+      # strength of test durations alone; this records the cores, memory and
+      # GPU it actually has.
+      - name: Record the machine
+        run: |
+          echo "cores: $(sysctl -n hw.ncpu) logical, $(sysctl -n hw.physicalcpu) physical"
+          echo "memory: $(( $(sysctl -n hw.memsize) / 1073741824 )) GiB"
+          echo "cpu: $(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo unknown)"
+          echo "model: $(sysctl -n hw.model 2>/dev/null || echo unknown)"
+          system_profiler SPDisplaysDataType 2>/dev/null | grep -E "Chipset Model|Metal|Vendor|Cores" || echo "no display/GPU report"
+          sw_vers
+
+      # firebase-ios-sdk pulls 13 transitive packages; resolving them from
+      # scratch is the slowest step in this job.
+      - name: Cache SwiftPM checkouts
+        uses: actions/cache@v4
+        with:
+          path: ios-native/build/spm
+          key: spm-${{ runner.os }}-${{ hashFiles('ios-native/PetNoteApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Resolve dependencies
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project PetNoteApp.xcodeproj \
+            -scheme PetNote-Emulator \
+            -clonedSourcePackagesDirPath build/spm
+
+      # Signing is a personal credential and is not in the repository, so CI
+      # builds unsigned. That covers L1 (compiles) and L4 (asserted logic);
+      # L2 (installs) and L5 (looks and behaves right) need the device and
+      # stay local by design.
+      - name: Build for device (unsigned)
+        run: |
+          xcodebuild build \
+            -project PetNoteApp.xcodeproj \
+            -scheme PetNote-Emulator \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/dd \
+            -clonedSourcePackagesDirPath build/spm \
+            CODE_SIGNING_ALLOWED=NO \
+            -quiet
+
+      # The simulator model list differs between runner images, so pick whatever
+      # iPhone the runner has rather than pinning a name that may not exist.
+      - name: Pick a simulator
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys
+          data=json.load(sys.stdin)['devices']
+          for runtime, devices in sorted(data.items()):
+              for d in devices:
+                  if 'iPhone' in d['name'] and d.get('isAvailable'):
+                      print(d['udid']); raise SystemExit
+          raise SystemExit('no available iPhone simulator')
+          ")
+          # Empty here means the python above printed nothing and the job
+          # would go on to hand xcodebuild a blank destination. Fail where the
+          # cause is, not three steps later.
+          if [ -z "$UDID" ]; then
+            echo "::error::No available iPhone simulator on this runner."
+            exit 1
+          fi
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl list devices available | grep -m1 iPhone
+
+      # **The stream-break tests need a server, and until now there was none.**
+      #
+      # They are `.enabled(if: MediaServer.isAnswering)`, nothing here started
+      # one, and `.enabled(if:)` disables quietly — so
+      # `automaticRecoveryIsBoundedAndThenOffersAWayOut` and its two siblings
+      # appeared zero times in this log for every run up to c4d9089 while the
+      # job reported success. A disabled test and a test with nothing to say
+      # look identical from outside.
+      - name: Start the media server
+        run: |
+          mkdir -p "$RUNNER_TEMP/media"
+          # Fixtures first and in the foreground: generating them inside the
+          # server's own startup would make "not answering yet" and "still
+          # rendering a 16-second clip" the same observation.
+          swift scripts/a2-make-test-media.swift "$RUNNER_TEMP/media"
+          nohup python3 scripts/a2-media-server.py "$RUNNER_TEMP/media" 8123 \
+            > "$RUNNER_TEMP/media-server.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/media-server.pid"
+
+      # A health check that fails the job, not a sleep that hopes. The tests
+      # below are required here, so a server that never came up has to be a red
+      # step with its own name rather than twenty quiet skips.
+      - name: Wait for the media server
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS -o /dev/null --max-time 3 http://127.0.0.1:8123/a2-long.mp4; then
+              echo "media server answering after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::The media server never answered on 127.0.0.1:8123."
+          echo "--- media-server.log ---"
+          cat "$RUNNER_TEMP/media-server.log" || true
+          exit 1
+
+      # Not -quiet, and the count is asserted: a green job must not be able to
+      # mean "zero tests ran". A scheme misconfiguration does exactly that.
+      - name: Unit tests
+        env:
+          # Turns "the server is not up" from a silent skip into a failure, in
+          # this environment only. See `MediaServer.isRequired`.
+          #
+          # With the TEST_RUNNER_ prefix, which xcodebuild strips as it hands
+          # the variable to the test process. It was set bare, so the test
+          # process never saw it and `theMediaServerIsUpWhereItIsRequired`
+          # passed in 0.001s on a run whose probe had failed (35850459362).
+          TEST_RUNNER_PETNOTE_REQUIRE_MEDIA_SERVER: "1"
+        run: |
+          # **The result of the tests decides this step.** It used to end
+          # `| grep … || true`, which discarded xcodebuild's exit status: the
+          # only way the job could go red was too few tests running. On
+          # c955449 the run really did fail — `Test run with 280 tests in 22
+          # suites failed … with 1 issue`, `Suite ImageLoaderBehaviourTests
+          # failed` — and the job reported success. Every "ios-native CI is
+          # green" before this commit means "it compiled and enough tests ran".
+          TEST_STATUS=0
+          # **One test at a time.** In parallel, every suite starts at once on
+          # this runner's three cores with no GPU, and for the first forty
+          # seconds or so nothing gets the main thread: the fastest decoder
+          # suite reports 40s here and 0.03s on a Mac. Every test that waits
+          # on a clock then fails for a reason that is not its own — a render
+          # that polled once in 27s (run 35836743626), a like deadline that
+          # passed mid-test, a 0.5s settle, a media-server probe that timed
+          # out and disabled the stream-break tests. Serial on a Mac is 153s
+          # against 131s in parallel, and the same 745 tests pass.
+          xcodebuild test \
+            -project PetNoteApp.xcodeproj \
+            -scheme PetNote-Emulator \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -only-testing:PetNoteAppTests \
+            -parallel-testing-enabled NO \
+            -derivedDataPath build/dd \
+            -clonedSourcePackagesDirPath build/spm \
+            > test.log 2>&1 || TEST_STATUS=$?
+          grep -E '^(✔|✘)|Test run with|TEST (SUCCEEDED|FAILED)' test.log || true
+
+          # **When the build breaks, that summary shows nothing.** It matches
+          # test results, and a compile error is not one — so the step said
+          # `** TEST FAILED **` and `tests executed: 0` with no cause, and the
+          # cause was only in the uploaded artifact. Someone reading a red job
+          # should not have to download a zip to find out that a file did not
+          # compile.
+          if ! grep -q 'Test run with' test.log; then
+            echo "--- no test run was reported; first errors from test.log ---"
+            grep -E 'error:' test.log | head -20 || true
+            echo "--- last 30 lines ---"
+            tail -30 test.log || true
+          fi
+
+          COUNT=$(grep -oE 'Test run with ([0-9]+) tests' test.log | grep -oE '[0-9]+' | head -1)
+          echo "tests executed: ${COUNT:-0}"
+          if [ "${COUNT:-0}" -lt 1 ]; then
+            echo "::error::No tests were executed; the suite did not run."
+            exit 1
+          fi
+          # A floor as well as "more than none". `-lt 1` only catches the suite
+          # disappearing entirely; a filter or scheme change that ran three of
+          # two hundred would still be green, and this project has already lost
+          # 25 minutes to a filter that matched nothing while reporting success.
+          #
+          # Deliberately a floor and not the exact count: it must not fail
+          # because somebody added a test. Raise it when the suite grows by a
+          # meaningful amount, the same way TestHygieneTests.census is raised.
+          FLOOR=240
+          if [ "$COUNT" -lt "$FLOOR" ]; then
+            echo "::error::Only $COUNT unit tests ran; the floor is $FLOOR. Either the suite shrank or a filter is dropping tests."
+            exit 1
+          fi
+
+          # A total is not coverage. 280 tests could all come from the guard
+          # suites while every behaviour suite silently stopped being built, so
+          # the ones that carry the product are named and checked by name.
+          MISSING=""
+          for suite in FeedViewModelTests PostDetailViewModelTests \
+                       ImageLoaderBehaviourTests VideoPlaybackTests \
+                       CommentCountSyncTests LikeConvergenceRegressionTests \
+                       SessionLifecycleTests DeepLinkTests \
+                       ReleaseHygieneTests ClaimGuardTests; do
+            # Any line naming the suite. The app's own log lines land in the
+            # middle of the runner's, and "✔ Suite ImageLoaderBehaviourTests
+            # pa2026-09-23 10:28:10…" once made a suite that ran count as one
+            # that did not (run 35846524818). A suite that never started
+            # leaves no line with its name at all.
+            grep -qE "Suite $suite( |$)" test.log || MISSING="$MISSING $suite"
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::These suites did not run at all:$MISSING"
+            exit 1
+          fi
+
+          # **These three by name, because the suite check cannot see them.**
+          # `VideoPlaybackTests` appearing proves the suite ran; its
+          # media-dependent members can still be disabled inside it, which is
+          # exactly what was happening. Skipped and executed are different
+          # words here on purpose.
+          ABSENT=""
+          for t in automaticRecoveryIsBoundedAndThenOffersAWayOut \
+                   briefJitterShowsNothingAndARealStallShowsSomething \
+                   aStreamThatDiesMidPlaybackIsNoticedEvenThoughNothingFails; do
+            grep -qE "Test $t\(\) (passed|failed|recorded)" test.log || ABSENT="$ABSENT $t"
+          done
+          if [ -n "$ABSENT" ]; then
+            echo "::error::These stream-break tests did not execute:$ABSENT"
+            echo "They are .enabled(if: MediaServer.isAnswering); a skip here means the"
+            echo "server was not reachable from the test host even though the health"
+            echo "check passed."
+            exit 1
+          fi
+
+          if [ "$TEST_STATUS" -ne 0 ]; then
+            echo "::error::xcodebuild test exited $TEST_STATUS - a test failed. See the ✘ lines above."
+            exit "$TEST_STATUS"
+          fi
+
+      # **The guard, shown to fail here.** `theMediaServerIsUpWhereItIsRequired`
+      # is what turns "the server is not up" into a red job instead of a
+      # quietly skipped set of stream-break tests. For a long time it never had
+      # an opinion on CI, because the variable that arms it arrived without
+      # the TEST_RUNNER_ prefix; a check on a Mac cannot prove the variable
+      # reaches the test process on this runner. So the server is stopped and
+      # the guard is run on its own: it has to fail, and fail for that reason.
+      - name: "Control: the media-server guard fails without the server"
+        env:
+          TEST_RUNNER_PETNOTE_REQUIRE_MEDIA_SERVER: "1"
+        run: |
+          kill "$(cat "$RUNNER_TEMP/media-server.pid")" 2>/dev/null || true
+          for i in $(seq 1 20); do
+            curl -s -o /dev/null --max-time 1 http://127.0.0.1:8123/a2-long.mp4 || break
+            sleep 0.5
+          done
+          if curl -s -o /dev/null --max-time 1 http://127.0.0.1:8123/a2-long.mp4; then
+            echo "::error::the media server is still answering; the control cannot run"
+            exit 1
+          fi
+          set +e
+          xcodebuild test-without-building \
+            -project PetNoteApp.xcodeproj \
+            -scheme PetNote-Emulator \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            "-only-testing:PetNoteAppTests/VideoPlaybackTests/theMediaServerIsUpWhereItIsRequired()" \
+            -parallel-testing-enabled NO \
+            -derivedDataPath build/dd \
+            -clonedSourcePackagesDirPath build/spm \
+            > control.log 2>&1
+          CONTROL_STATUS=$?
+          set -e
+          grep -E 'theMediaServerIsUpWhereItIsRequired|Test run with|SKIPPING' control.log || true
+          if [ "$CONTROL_STATUS" -eq 0 ]; then
+            echo "::error::with the media server stopped the guard passed; it is not armed on this runner"
+            exit 1
+          fi
+          if ! grep -q 'Expectation failed: MediaServer.isAnswering' control.log; then
+            echo "::error::the control run failed, but not at the guard's expectation; see control.log"
+            tail -30 control.log
+            exit 1
+          fi
+          echo "the guard failed as it should with the server stopped"
+
+      # A crash of the test host is reported by xcodebuild as "Test crashed
+      # with signal segv" against every test that was in flight, and nothing
+      # more: diagnostics collection is off (it hangs for ten minutes after a
+      # failure), so the backtrace exists only as the simulator's crash report
+      # on this machine. Run 35836744989 lost one exactly that way.
+      - name: Collect crash reports
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/crash-reports"
+          find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 2 -name 'PetNote*' \
+            -exec cp {} "$RUNNER_TEMP/crash-reports/" \; 2>/dev/null || true
+          ls -l "$RUNNER_TEMP/crash-reports"
+
+      # `always()`, because the run that needs its log is the one that failed.
+      # Without this the only evidence of a red job is whatever fitted in the
+      # step's own output.
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-native-test-diagnostics-${{ github.run_id }}
+          path: |
+            ios-native/test.log
+            ios-native/control.log
+            ios-native/build/dd/Logs/Test/*.xcresult
+            ${{ runner.temp }}/media-server.log
+            ${{ runner.temp }}/crash-reports
+          retention-days: 14
+          if-no-files-found: warn
+
+      # By pid, and only the one this job started. `always()` because a job
+      # that failed halfway is exactly the one that would otherwise leave it
+      # running.
+      - name: Stop the media server
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/media-server.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/media-server.pid")" 2>/dev/null || true
+          fi

@@ -1,0 +1,59 @@
+// Settings shared by every configuration.
+//
+// Signing is deliberately NOT here. DEVELOPMENT_TEAM is a personal credential,
+// so it lives in Config/Local.xcconfig, which is gitignored. See ios-native/README.md.
+#include? "Local.xcconfig"
+
+PRODUCT_NAME = PetNote
+PRODUCT_BUNDLE_IDENTIFIER = dev.local.petnote.native
+
+// Coexists with the Capacitor app (dev.local.petnote) on the same device.
+IPHONEOS_DEPLOYMENT_TARGET = 18.0
+TARGETED_DEVICE_FAMILY = 1
+SDKROOT = iphoneos
+SUPPORTED_PLATFORMS = iphoneos iphonesimulator
+
+SWIFT_VERSION = 6.0
+SWIFT_STRICT_CONCURRENCY = complete
+SWIFT_TREAT_WARNINGS_AS_ERRORS = NO
+GCC_TREAT_WARNINGS_AS_ERRORS = NO
+CLANG_ENABLE_MODULES = YES
+ENABLE_USER_SCRIPT_SANDBOXING = YES
+DEAD_CODE_STRIPPING = YES
+
+// Overridden on the build command line with the commit and time, so a
+// screenshot can be tied to the source that produced it (spec §15.5).
+PETNOTE_BUILD_STAMP = local
+
+// The URL scheme Google's sign-in page returns through: the reversed iOS
+// OAuth client ID of the Firebase project. A value that can never match by
+// default, so no build offers Google sign-in unless its own project has a
+// client and this names it — GoogleSignInAvailability checks the two agree.
+PETNOTE_GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.not-configured
+
+// Empty for emulator builds, where the project id is whatever the emulator was
+// started with. Set by Debug-TestCloud and (later) by production.
+PETNOTE_EXPECTED_PROJECT =
+
+MARKETING_VERSION = 0.1
+CURRENT_PROJECT_VERSION = 1
+
+INFOPLIST_FILE = Config/Info.plist
+INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen
+INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait
+
+// The icon is the Capacitor app's, byte for byte. Not redrawn, not
+// regenerated, not re-exported: the source is
+// ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png in the web
+// repository, 1024x1024, and the copy here has the same md5. The two apps have
+// different bundle ids and coexist on a device, so sharing the artwork does not
+// overwrite anything.
+//
+// Single 1024 entry, which is what Xcode 14+ wants: it derives every other size
+// itself. The source is full-bleed with square corners and stays that way — iOS
+// applies the mask, and an icon with the rounding already baked in gets rounded
+// twice.
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
+
+CODE_SIGN_STYLE = Automatic
+ENABLE_PREVIEWS = YES

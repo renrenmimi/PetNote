@@ -12,8 +12,8 @@ process.env.GCLOUD_PROJECT ||= "petnote-test";
 // tests can supply values without a real Secret Manager. These are obviously
 // fake and exist only so the signing path can be exercised end to end.
 //
-// CLOUDINARY_CLOUD_NAME is deliberately NOT here. It is a plain constant in
-// platform.ts, not a secret, so tests read the same value production does —
+// The cloud name is deliberately NOT here. It is chosen per project in
+// platform.ts, not read from a secret, so tests read the same value production does —
 // which is the point: a test can no longer pass because the environment
 // happened to supply something the deployed function would not have.
 process.env.CLOUDINARY_API_KEY ||= "test-api-key";

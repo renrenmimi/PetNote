@@ -1,0 +1,28 @@
+// The independent test Firebase project, over HTTPS.
+//
+// This is the configuration that makes device testing possible at all: the
+// Functions SDK refuses to attach an auth token to plain HTTP bound for a
+// non-loopback host, which is why the emulator is unreachable for callables
+// from a phone. A real project is HTTPS, so that restriction does not apply.
+//
+// It is NOT production. PETNOTE_EXPECTED_PROJECT is checked against the
+// project id Firebase actually loaded, at launch, and the app refuses to run
+// if they disagree — see EnvironmentGuard. A missing plist can therefore never
+// silently fall back to petnote-a9dac.
+#include "Base.xcconfig"
+
+PETNOTE_BACKEND = testcloud
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG PETNOTE_TEST_CLOUD
+ONLY_ACTIVE_ARCH = YES
+SWIFT_OPTIMIZATION_LEVEL = -Onone
+GCC_OPTIMIZATION_LEVEL = 0
+ENABLE_TESTABILITY = YES
+
+// Filled in from Config/Local.xcconfig once the project exists, so the id is
+// not committed before it is real.
+PETNOTE_EXPECTED_PROJECT = $(PETNOTE_TEST_PROJECT_ID)
+
+// From Config/Local.xcconfig, like the project id: the test plist it has to
+// match is not committed either. Copy REVERSED_CLIENT_ID out of
+// Support/GoogleService-Info-Test.plist once Google sign-in is enabled there.
+PETNOTE_GOOGLE_REVERSED_CLIENT_ID = $(PETNOTE_TEST_GOOGLE_REVERSED_CLIENT_ID:default=com.googleusercontent.apps.not-configured)
