@@ -76,7 +76,7 @@ final class PhotoFilterUITests: XCTestCase {
 
     // MARK: - Steps
 
-    /// Post tab → pick the first photo → optionally choose a filter → caption →
+    /// Create tab → pick the first photo → optionally choose a filter → caption →
     /// Share. Returns what the stand-in recorded for the upload.
     private func publishTheFirstPhoto(
         _ app: XCUIApplication, caption: String, choosing filter: XCUIElement?
@@ -85,7 +85,7 @@ final class PhotoFilterUITests: XCTestCase {
 
         // Pushed screens have no tab bar; back to a tab's root first.
         popToTabRoot(app)
-        let postTab = app.tabBars.buttons["Post"]
+        let postTab = app.tabBars.buttons["Create"]
         XCTAssertTrue(waitUntilHittable(postTab, in: app, timeout: 15), "no tab bar to open the composer from")
         postTab.tap()
         let add = app.buttons["compose.addMedia"]

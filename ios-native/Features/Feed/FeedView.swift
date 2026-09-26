@@ -62,11 +62,24 @@ struct FeedView: View {
             }
         }
         .navigationTitle("PetNote")
-        // Kept as the bar's identity and hidden from view: the name is drawn
-        // by `FeedBrandLockup`, beside the paw, where the web client has it.
-        .toolbar(removing: .title)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .principal) { videoProbe } }
+        // The title is kept as the bar's identity and not drawn: the name is
+        // `FeedBrandLockup`'s, beside the paw, where the web client has it. A
+        // principal item takes the title's place, so it always holds
+        // something — an invisible point, and the video probe when a test
+        // asks for it. Not `.toolbar(removing: .title)`: that removed the
+        // principal item with the title, and with it the probe every video
+        // test reads (09-25's full run: "the probe was never readable").
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                ZStack {
+                    Color.clear
+                        .frame(width: 1, height: 1)
+                        .accessibilityHidden(true)
+                    videoProbe
+                }
+            }
+        }
         .overlay(alignment: .topLeading) { sessionProbe }
         .background(Palette.background)
         .task { await model.loadFirstPageIfNeeded() }

@@ -33,9 +33,13 @@ final class PetPageUITests: XCTestCase {
         XCTAssertTrue(waitUntilHittable(field, in: app, timeout: 20), "no search field\n\(app.debugDescription)")
         field.tap()
         field.typeText("Mochi\n")
-        // BEGINSWITH: the result's own Follow button is labelled "Follow Mochi".
-        let result = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Mochi")).firstMatch
-        XCTAssertTrue(waitUntilHittable(result, in: app, timeout: 30), "search did not find Mochi\n\(app.debugDescription)")
+        // By id, not by the first result called Mochi. The acceptance seed has
+        // a Mochi too (`accept-pet`, no posts), and search orders by name and
+        // then by id, so "the first Mochi" is that one. On 09-25's full run it
+        // was, and the test failed with "no video card" on a page that was
+        // correct for the pet it had opened.
+        let result = app.buttons["search.pet.ios-pet-latin"]
+        XCTAssertTrue(waitUntilHittable(result, in: app, timeout: 30), "search did not find the seeded Mochi\n\(app.debugDescription)")
         result.tap()
 
         let name = app.staticTexts["pet.name"]

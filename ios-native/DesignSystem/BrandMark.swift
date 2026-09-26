@@ -30,29 +30,37 @@ struct BrandMark: View {
 /// The feed bar's lockup, as the web client's navbar has it (`Navbar.tsx`):
 /// the paw at 28 and the name beside it, semibold, at the leading edge.
 ///
-/// It stands in for the bar's title, which the feed removes from view and
-/// keeps as the bar's identity: a system title is centred on iOS 26, and a
-/// centred name with a paw off to one side is not the lockup. So the name is
-/// ours, and it says for itself that it is the heading the title was.
+/// It stands in for the bar's title, which the feed keeps as the bar's
+/// identity and does not draw (FeedView's principal item takes its place):
+/// a system title is centred on iOS 26, and a centred name with a paw off to
+/// one side is not the lockup. So the name is ours, and it says for itself
+/// that it is the heading the title was.
 ///
-/// At the accessibility sizes the name shrinks to fit rather than pushing the
-/// bar's buttons off, and a long press shows it large, as the system title's
-/// would.
+/// At the accessibility sizes the name is not drawn — only the paw, which
+/// is a fixed 28 — and a long press shows the name large, as a system bar
+/// title does instead of growing. Drawn at AX5 it took its own width
+/// (`fixedSize`, needed so the default size is not squeezed to an ellipsis)
+/// and pushed the account button out of the bar: 09-25's full regression,
+/// `testTheAccountMenuIsUsableAtAX5`. VoiceOver reads the name either way.
 struct FeedBrandLockup: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
         HStack(spacing: Spacing.s) {
             BrandMark(size: 28)
-            Text("PetNote")
-                .font(Typography.sectionTitle)
-                .foregroundStyle(Palette.primaryText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
-                .accessibilityAddTraits(.isHeader)
+            if !typeSize.isAccessibilitySize {
+                Text("PetNote")
+                    .font(Typography.sectionTitle)
+                    .foregroundStyle(Palette.primaryText)
+                    .lineLimit(1)
+            }
         }
         // Its own width: a bar item is offered what is left after the others,
         // and on 09-25 that squeezed the name to an ellipsis beside the paw.
         .fixedSize()
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("PetNote"))
+        .accessibilityAddTraits(.isHeader)
         .accessibilityShowsLargeContentViewer {
             Label { Text("PetNote") } icon: { Image("BrandMark").renderingMode(.original) }
         }
