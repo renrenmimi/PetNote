@@ -204,12 +204,14 @@ final class PostRowAndAccountUITests: XCTestCase {
         XCTAssertLessThanOrEqual(lastText.frame.maxY, barTop, "the last post's text ends under the tab bar")
         XCTAssertTrue(lastText.isHittable, "the last post's text cannot be reached")
 
-        let mute = app.buttons.matching(identifier: "video.mute").allElementsBoundByIndex.last
-        let surface = app.otherElements.matching(identifier: "video.surface").allElementsBoundByIndex.last
-        XCTAssertNotNil(surface, "the last post's video is not on screen")
-        if let surface { print("MEASURED last video \(surface.frame)") }
-        if let surface { XCTAssertLessThanOrEqual(surface.frame.maxY, barTop, "the last video ends under the tab bar") }
-        if let mute {
+        // The page has one video, the last post's: firstMatch is it, and it
+        // is resolved when each property is read rather than collected first.
+        let surface = app.otherElements.matching(identifier: "video.surface").firstMatch
+        let mute = app.buttons.matching(identifier: "video.mute").firstMatch
+        XCTAssertTrue(surface.exists, "the last post's video is not on screen")
+        print("MEASURED last video \(surface.frame)")
+        XCTAssertLessThanOrEqual(surface.frame.maxY, barTop, "the last video ends under the tab bar")
+        if mute.exists {
             XCTAssertLessThanOrEqual(mute.frame.maxY, barTop, "the last video's control is under the tab bar")
             XCTAssertTrue(mute.isHittable, "the last video's control cannot be reached")
         }

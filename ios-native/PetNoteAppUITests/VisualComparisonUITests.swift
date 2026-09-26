@@ -151,7 +151,7 @@ final class VisualComparisonUITests: XCTestCase {
                 let result = app.buttons["search.pet.accept-pet"]
                 if waitUntilHittable(result, in: app, timeout: 20) {
                     result.tap()
-                    _ = app.staticTexts["pet.postsEmpty"].waitForExistence(timeout: 20)
+                    _ = app.staticTexts["pet.name"].waitForExistence(timeout: 20)
                     _ = waitForQuietUI(app, quietFor: 1, timeout: 10)
                     shoot("10-empty-pet")
                 }
