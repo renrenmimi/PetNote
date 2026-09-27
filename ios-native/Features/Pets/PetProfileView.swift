@@ -61,6 +61,9 @@ struct PetProfileView: View {
             .padding(.vertical, Spacing.l)
         }
         .background(Palette.background)
+        // At the top of the screen and not of the posts: a like fails where
+        // the heart is, which can be far down the page.
+        .safeAreaInset(edge: .top, spacing: 0) { likeFailureBanner }
         .navigationTitle("Pet")
         .navigationBarTitleDisplayMode(.inline)
         .task { await model.load() }
@@ -264,18 +267,31 @@ struct PetProfileView: View {
                 identifier: "pet.postsEmpty"
             )
         default:
-            // The feed's cards, as the web client's pet page uses its PostCard.
+            // The feed's cards, as the web client's pet page uses its PostCard,
+            // with the feed's hearts: the counts and the like state are the
+            // feed model's over this pet's posts (`PetProfileViewModel.postList`).
+            // The heart here used to be `onLike: {}`.
             VStack(spacing: Spacing.l) {
                 ForEach(model.posts) { post in
                     PostCard(
-                        post: post,
-                        isLiked: false,
-                        onLike: {},
+                        post: post
+                            .withLikeCount(model.postList.displayLikeCount(for: post))
+                            .withCommentCount(model.postList.displayCommentCount(for: post)),
+                        isLiked: model.postList.isLiked(post),
+                        onLike: { model.postList.toggleLike(post) },
                         onOpenComments: { onOpenPost?(post.id) },
                         onOpenPost: { onOpenPost?(post.id) },
                         chrome: .card
                     )
                     .task { await model.loadMorePostsIfNeeded(currentItem: post) }
+                }
+                if model.morePostsFailed {
+                    // What is already here stays; the failure is at the end,
+                    // where the next page would have been.
+                    retryNotice(message: String(localized: "Could not load this pet's posts."),
+                                identifier: "pet.morePostsFailed") {
+                        await model.retryMorePosts()
+                    }
                 }
             }
             .padding(.horizontal, Layout.pageInset)
@@ -394,6 +410,35 @@ struct PetProfileView: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.card))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier(identifier)
+    }
+
+    /// The feed's banner for a like that did not go through
+    /// (`FeedView.likeFailureBanner`), for the same model's message.
+    @ViewBuilder
+    private var likeFailureBanner: some View {
+        if let message = model.postList.likeFailureMessage {
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
+                Image(systemName: "exclamationmark.circle.fill").accessibilityHidden(true)
+                // The identifier on the text, not the row: on a container it
+                // would overwrite the Dismiss button's.
+                Text(message)
+                    .font(Typography.caption)
+                    .accessibilityIdentifier("pet.likeError")
+                Spacer(minLength: Spacing.s)
+                Button {
+                    model.postList.likeFailureMessage = nil
+                } label: {
+                    Text("Dismiss")
+                        .font(Typography.caption)
+                        .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget)
+                        .contentShape(.rect)
+                }
+                .accessibilityIdentifier("pet.likeErrorDismiss")
+            }
+            .foregroundStyle(Palette.danger)
+            .padding(.horizontal, Layout.pageInset)
+            .background(Palette.secondaryBackground)
+        }
     }
 
     private func retryNotice(

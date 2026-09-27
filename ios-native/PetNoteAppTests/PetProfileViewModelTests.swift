@@ -10,12 +10,14 @@ import Testing
 struct PetProfileViewModelTests {
     private func model(
         repository: FakePetRepository,
+        likes: FeedViewModelTests.FakeLikes = FeedViewModelTests.FakeLikes(),
         viewerID: String? = "alice",
         isAdmin: Bool = false,
         postPageSize: Int = 20
     ) -> PetProfileViewModel {
         PetProfileViewModel(
-            petID: "pet-1", repository: repository, viewerID: viewerID,
+            petID: "pet-1", repository: repository, likes: likes,
+            postLookup: FeedViewModelTests.FakeFeed(), viewerID: viewerID,
             viewerIsAdmin: isAdmin, postPageSize: postPageSize
         )
     }
@@ -278,5 +280,81 @@ struct PetProfileViewModelTests {
 
         #expect(repository.postCursors.count == 2, "asked \(repository.postCursors.count) times")
         #expect(model.posts.map(\.id) == ["p1", "p2"])
+    }
+
+    /// A later page that fails keeps what is already there and gets its own
+    /// retry at the end, as in the feed — the section does not turn into a
+    /// failure notice over posts that loaded.
+    @Test func aLaterPageThatFailsKeepsWhatIsThere() async {
+        let repository = loadedRepository()
+        repository.postPages = [[PetFixture.post("p1")], [PetFixture.post("p2")]]
+        let model = model(repository: repository, postPageSize: 1)
+        await model.load()
+
+        repository.postsError = PetError.rejected("offline")
+        await model.loadMorePostsIfNeeded(currentItem: model.posts.last)
+        #expect(model.posts.map(\.id) == ["p1"])
+        #expect(model.postsState == .loaded)
+        #expect(model.morePostsFailed)
+
+        repository.postsError = nil
+        await model.retryMorePosts()
+        #expect(model.posts.map(\.id) == ["p1", "p2"])
+        #expect(!model.morePostsFailed)
+    }
+
+    // MARK: - Likes
+
+    /// The heart used to be `onLike: {}`. It now likes the post, through the
+    /// feed's model over this pet's posts.
+    @Test func aHeartOnThePetPageLikesThePost() async throws {
+        let repository = loadedRepository()
+        repository.postPages = [[PetFixture.post("p1")]]
+        let likes = FeedViewModelTests.FakeLikes()
+        let model = model(repository: repository, likes: likes)
+        await model.load()
+        let post = try #require(model.posts.first)
+        let before = model.postList.displayLikeCount(for: post)
+
+        model.postList.toggleLike(post)
+        #expect(model.postList.isLiked(post), "the heart fills at once")
+        await model.postList.waitForPendingLikes()
+
+        #expect(likes.likeCalls == ["like:p1"])
+        #expect(model.postList.isLiked(post))
+        #expect(model.postList.displayLikeCount(for: post) == before + 1)
+        #expect(model.postList.likeFailureMessage == nil)
+    }
+
+    /// Which of the page's posts the viewer has liked is one read, as in the
+    /// feed — not a read per post.
+    @Test func whichPostsAreLikedIsOneReadForThePage() async {
+        let repository = loadedRepository()
+        repository.postPages = [[PetFixture.post("p1"), PetFixture.post("p2")]]
+        let likes = FeedViewModelTests.FakeLikes()
+        likes.alreadyLiked = ["p2"]
+        let model = model(repository: repository, likes: likes)
+        await model.load()
+
+        #expect(likes.batchCalls.count == 1)
+        #expect(Set(likes.batchCalls.first ?? []) == ["p1", "p2"])
+        #expect(!model.postList.isLiked(model.posts[0]))
+        #expect(model.postList.isLiked(model.posts[1]))
+    }
+
+    @Test func aLikeThatFailsGoesBackAndSaysSo() async throws {
+        let repository = loadedRepository()
+        repository.postPages = [[PetFixture.post("p1")]]
+        let likes = FeedViewModelTests.FakeLikes()
+        likes.likeError = URLError(.notConnectedToInternet)
+        let model = model(repository: repository, likes: likes)
+        await model.load()
+        let post = try #require(model.posts.first)
+
+        model.postList.toggleLike(post)
+        await model.postList.waitForPendingLikes()
+
+        #expect(!model.postList.isLiked(post))
+        #expect(model.postList.likeFailureMessage != nil)
     }
 }

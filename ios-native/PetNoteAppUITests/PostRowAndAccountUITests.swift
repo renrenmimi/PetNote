@@ -2,17 +2,22 @@ import XCTest
 
 /// The owner's 09-26 decisions, driven through the app: the save button on a
 /// post's own row, the person's picture in the feed bar, both ways out of a
-/// back swipe, the last post of a list clear of the tab bar, and Create.
+/// back swipe, the last post of a list clear of the tab bar, and Create —
+/// and the four defects the 09-26 acceptance found around them: the tab bar
+/// on a pet page opened from search, the pet page's heart, a slow drag on the
+/// share button, and the sign-in card moving under the keyboard.
 final class PostRowAndAccountUITests: XCTestCase {
     private let run = String(UUID().uuidString.prefix(8)).lowercased()
     private var createdUID: String?
     private var temporaryPosts: [String] = []
+    private var temporaryLikes: [(post: String, uid: String)] = []
 
     override func setUp() {
         continueAfterFailure = false
     }
 
     override func tearDown() {
+        for like in temporaryLikes { _ = Self.rest("DELETE", "posts/\(like.post)/likes/\(like.uid)") }
         for id in temporaryPosts { _ = Self.rest("DELETE", "posts/\(id)") }
         if let createdUID { JourneyAdmin.removeProfile(uid: createdUID) }
         EmulatorAdmin.cleanUpCreatedAccounts()
@@ -190,14 +195,15 @@ final class PostRowAndAccountUITests: XCTestCase {
         app.swipeUp()
         _ = waitForQuietUI(app, quietFor: 1, timeout: 10)
 
-        // Whatever is at the bottom: the tab bar if it is showing — the
-        // shell's rule says it is hidden on a pet's page, and the 09-26
-        // screenshots show it anyway, so this does not assume either — else
-        // the home indicator's strip.
+        // The shell's rule hides the tab bar on a pet's page. Opened from
+        // search it used to show anyway (fixed 09-26, see
+        // `testAPetPageHidesTheTabBarWhicheverWayItIsOpened`); the bottom is
+        // still measured against whichever is there.
         let window = app.windows.firstMatch.frame
         let tabBar = app.tabBars.firstMatch
-        let barShowing = tabBar.exists && tabBar.frame.minY < window.maxY && tabBar.frame.height > 0
+        let barShowing = Self.tabBarShown(app)
         print("MEASURED tab bar showing on the pet page: \(barShowing) \(barShowing ? "\(tabBar.frame)" : "")")
+        XCTAssertFalse(barShowing, "the tab bar is showing on a pet page opened from search")
         let barTop = barShowing ? tabBar.frame.minY : window.maxY - 34
         XCTAssertTrue(lastText.exists, "the last post's text is not in the tree")
         print("MEASURED last text \(lastText.frame) tab bar top \(barTop)")
@@ -217,6 +223,132 @@ final class PostRowAndAccountUITests: XCTestCase {
         }
     }
 
+    // MARK: - Found in the 09-26 acceptance
+
+    /// The shell hides the tab bar on a pet's page. Opened from search it
+    /// stayed up, because search asked for `.visible` and that held for the
+    /// screen pushed over it; opened from the profile it hid.
+    func testAPetPageHidesTheTabBarWhicheverWayItIsOpened() {
+        let app = launchOnSignIn()
+        signIn(app, email: "accept-a@example.com")
+        openTheAcceptanceMochiFromSearch(app)
+        XCTAssertFalse(Self.tabBarShown(app), "the tab bar is showing on a pet page opened from search")
+
+        // From the profile, in a fresh launch that keeps the session.
+        app.terminate()
+        app.launchArguments = []
+        app.launch()
+        XCTAssertTrue(reachedFeed(app), "the relaunch did not keep the session")
+        let profile = app.tabBars.buttons["Profile"]
+        XCTAssertTrue(waitUntilHittable(profile, in: app, timeout: 20))
+        profile.tap()
+        let pet = app.buttons["profile.pet.accept-pet"]
+        XCTAssertTrue(waitUntilHittable(pet, in: app, timeout: 30), "the acceptance Mochi is not on the profile")
+        pet.tap()
+        XCTAssertTrue(app.staticTexts["pet.name"].waitForExistence(timeout: 30))
+        _ = waitForQuietUI(app, quietFor: 1, timeout: 10)
+        XCTAssertFalse(Self.tabBarShown(app), "the tab bar is showing on a pet page opened from the profile")
+    }
+
+    /// The pet page's heart was `onLike: {}`: drawn, tappable, and doing
+    /// nothing. It now likes and unlikes, on screen and on the server.
+    func testTheHeartOnAPetPageLikesAndUnlikesThePost() throws {
+        let accountA = try XCTUnwrap(try JourneyAdmin.uid(forEmail: "accept-a@example.com"))
+        let id = "pet-like-\(run)"
+        let text = "TEST CONTENT pet page like \(run)"
+        // The newest post on the page, so it is the first card.
+        try Self.createPost(id: id, authorID: accountA, petID: "accept-pet", text: text,
+                            createdAt: Date(), video: false)
+        temporaryPosts.append(id)
+
+        let (app, uid) = try signInAsNewAccount("pet-like-\(run)@petnote.test")
+        createdUID = uid
+        temporaryLikes.append((post: id, uid: uid))
+        openTheAcceptanceMochiFromSearch(app)
+
+        let first = app.staticTexts.matching(identifier: "post.text").firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 30), "the pet page has no posts")
+        XCTAssertEqual(first.label, text, "the temporary post is not the first card")
+        let heart = app.buttons.matching(identifier: "post.like").firstMatch
+        for _ in 0..<4 where !(heart.exists && heart.isHittable) { nudgeFeedUp(app) }
+        XCTAssertTrue(waitUntilHittable(heart, in: app, timeout: 10), "the first card's heart cannot be reached")
+        XCTAssertEqual(heart.label, "Like")
+        XCTAssertEqual(heart.value as? String, "0 likes")
+
+        heart.tap()
+        XCTAssertTrue(waitForLabel(heart, "Unlike"), "the heart did not fill")
+        XCTAssertTrue(eventually { (heart.value as? String) == "1 likes" }, "the count did not move: \(String(describing: heart.value))")
+        XCTAssertTrue(eventually { Self.rest("GET", "posts/\(id)/likes/\(uid)") == 200 },
+                      "no like on the server")
+
+        heart.tap()
+        XCTAssertTrue(waitForLabel(heart, "Like"), "the heart did not empty")
+        XCTAssertTrue(eventually { (heart.value as? String) == "0 likes" }, "the count did not come back")
+        XCTAssertTrue(eventually { Self.rest("GET", "posts/\(id)/likes/\(uid)") == 404 },
+                      "the like is still on the server")
+    }
+
+    /// A slow drag that begins on a card's share button moves the feed, as
+    /// one from the heart beside it does. It was a `Menu` and moved 0pt.
+    func testASlowDragThatStartsOnTheShareButtonMovesTheFeed() {
+        let app = launchOnSignIn()
+        signIn(app, email: "accept-a@example.com")
+        let shares = app.buttons.matching(identifier: "post.share")
+        XCTAssertTrue(shares.firstMatch.waitForExistence(timeout: 30))
+        // A share button in the middle of the screen, brought there from the
+        // margin beside the cards.
+        var share = shares.firstMatch
+        for _ in 0..<8 {
+            share = shares.firstMatch
+            let frame = share.frame
+            if frame.midY > 350, frame.midY < 600 { break }
+            if frame.midY >= 600 { nudgeFeedUp(app) } else { app.swipeUp() }
+        }
+        let start = share.frame
+        XCTAssertTrue(start.midY > 350 && start.midY < 600, "no share button in the middle of the screen: \(start)")
+        let texts = app.staticTexts.matching(identifier: "post.text")
+        let reference = texts.element(matching: NSPredicate(format: "label == %@",
+                                                              texts.firstMatch.label))
+        let before = reference.frame.minY
+
+        let from = app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: start.midX, dy: start.midY))
+        from.press(forDuration: 0.1, thenDragTo: from.withOffset(CGVector(dx: 0, dy: -200)),
+                   withVelocity: .slow, thenHoldForDuration: 0.3)
+        _ = waitForQuietUI(app, quietFor: 1, timeout: 10)
+
+        let moved = before - reference.frame.minY
+        print("MEASURED slow drag from the share button moved the feed \(moved)pt")
+        XCTAssertGreaterThan(moved, 150, "the feed did not follow a slow drag from the share button")
+        XCTAssertFalse(app.buttons["Copy Link"].exists, "the drag opened the share choices")
+    }
+
+    /// The card is centred in the height without the keyboard, so the
+    /// keyboard coming up does not move it: the field about to be tapped is
+    /// where it was seen. It jumped 112pt, and on the phone the device
+    /// suite's taps landed where the password field had just been.
+    func testTheSignInCardStaysPutWhenTheKeyboardComesUp() {
+        let app = launchOnSignIn()
+        let email = app.textFields["login.email"]
+        let password = app.secureTextFields["login.password"]
+        let submit = app.buttons["login.submit"]
+        XCTAssertTrue(waitUntilHittable(email, in: app, timeout: 30))
+        let resting = password.frame
+
+        email.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "no keyboard came up")
+        _ = waitForQuietUI(app, quietFor: 1, timeout: 10)
+        XCTAssertEqual(password.frame.minY, resting.minY, accuracy: 1, "the card moved when the keyboard came up")
+
+        email.typeText("accept-a@example.com")
+        password.tap()
+        XCTAssertTrue(eventually { password.hasKeyboardFocusValue }, "the password field did not take the tap")
+        _ = waitForQuietUI(app, quietFor: 1, timeout: 10)
+        XCTAssertEqual(password.frame.minY, resting.minY, accuracy: 1, "the card moved when the password field took focus")
+        let keyboard = app.keyboards.firstMatch.frame
+        XCTAssertLessThanOrEqual(submit.frame.maxY, keyboard.minY, "Sign in is under the keyboard")
+    }
+
     // MARK: - Create
 
     /// The composer tab: named, tappable, and it opens the composer.
@@ -232,6 +364,28 @@ final class PostRowAndAccountUITests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    private func openTheAcceptanceMochiFromSearch(_ app: XCUIApplication) {
+        let search = app.buttons["feed.search"]
+        XCTAssertTrue(waitUntilHittable(search, in: app, timeout: 30))
+        search.tap()
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(waitUntilHittable(field, in: app, timeout: 20))
+        field.tap()
+        field.typeText("Mochi\n")
+        let result = app.buttons["search.pet.accept-pet"]
+        XCTAssertTrue(waitUntilHittable(result, in: app, timeout: 30), "search did not find the acceptance Mochi")
+        result.tap()
+        XCTAssertTrue(app.staticTexts["pet.name"].waitForExistence(timeout: 30))
+        _ = waitForQuietUI(app, quietFor: 1, timeout: 10)
+    }
+
+    private static func tabBarShown(_ app: XCUIApplication) -> Bool {
+        let bar = app.tabBars.firstMatch
+        guard bar.exists else { return false }
+        let frame = bar.frame
+        return !frame.isEmpty && frame.minY < app.windows.firstMatch.frame.maxY
+    }
 
     private func waitForLabel(_ element: XCUIElement, _ label: String, timeout: TimeInterval = 20) -> Bool {
         eventually(timeout: timeout) { element.exists && element.label == label }

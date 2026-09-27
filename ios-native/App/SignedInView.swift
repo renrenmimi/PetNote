@@ -89,11 +89,14 @@ struct SignedInView: View {
             )
         )
         _bookmarks = State(initialValue: PostBookmarks(writes: repositories.postWrites))
-        // Unselected tab items stay the system's colour. On iOS 26 the glass
-        // tab bar ignores both `unselectedItemTintColor` and the item
-        // appearance's normal colours — measured on 09-25, the labels and
-        // icons came out 14,14,14 either way — so the web's grey is kept for
-        // the icons we draw ourselves and not faked here.
+        // Unselected tab items stay the system's colour, as the owner decided
+        // on 09-26. On iOS 26 the glass tab bar ignores both
+        // `unselectedItemTintColor` and the item appearance's normal colours
+        // — measured on 09-25, the labels and icons came out 14,14,14 either
+        // way — and Apple's DTS answer on the developer forums is that
+        // customising unselected tab items is no longer supported from iOS 26
+        // (threads 793700 and 818449). The web's grey is kept for the icons we
+        // draw ourselves and not faked here.
     }
 
     /// After a block or an unblock: the next read filters by the new list.
@@ -494,7 +497,13 @@ struct SignedInView: View {
             .environment(video)
             .environment(bookmarks)
             .suspendedBanner(isSuspended)
-            .toolbar(Self.showsTabBar(on: route) ? .visible : .hidden, for: .tabBar)
+            // `.automatic`, not `.visible`, where the bar stays: a screen
+            // that asked for `.visible` kept the bar up on the screen pushed
+            // over it. Measured on 2026-09-26: a pet page opened from search
+            // showed the bar, and the same page opened from the profile did
+            // not; with search left to `.automatic` both hide it and search
+            // still shows it.
+            .toolbar(Self.showsTabBar(on: route) ? .automatic : .hidden, for: .tabBar)
     }
 
     /// The web client's rule (`App.tsx`, `showBottomNav`): the bottom bar is on
@@ -565,6 +574,8 @@ struct SignedInView: View {
             PetProfileHost(
                 petID: petID,
                 repository: repositories.pets,
+                likes: repositories.likes,
+                postLookup: repositories.feed,
                 viewerID: user.uid,
                 reloadToken: petsChanged,
                 onEdit: { editor = .editPet(petID: $0) },
