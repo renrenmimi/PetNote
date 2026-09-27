@@ -422,6 +422,14 @@ final class VideoPlaybackUITests: XCTestCase {
     func testVideoStartsMutedAndTheControlTogglesBothWays() throws {
         let app = launch()
         XCTAssertTrue(scrollToAPlayingVideo(app).contains("playing=true"))
+        // The control is tapped where a person sees it. Found by slow swipes
+        // alone, the row can stop with its sound control under the tab bar —
+        // measured on 2026-09-26: control at y 789–833, bar from 791 — and
+        // XCUITest still calls it hittable, sends the tap, and the video
+        // behind the bar takes it and opens the post. The swipes began
+        // stopping there once a card's share button stopped swallowing slow
+        // drags (0fe5b27), which moved every one of them further.
+        parkThePlayingVideoInFullView(app)
 
         let mute = app.buttons["video.mute"].firstMatch
         XCTAssertTrue(mute.waitForExistence(timeout: 15), "a playing video offered no sound control")
