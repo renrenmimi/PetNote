@@ -92,6 +92,10 @@ final class SharingUITests: XCTestCase {
         // card went over as one. Its actions are cells, not buttons.
         XCTAssertTrue(app.cells["Assign to Contact"].waitForExistence(timeout: 15),
                       "the sheet does not treat the card as a picture\n\(app.debugDescription)")
+        // iOS leaves Save Image out unless the app says why it adds to
+        // Photos (`NSPhotoLibraryAddUsageDescription`); without it the card
+        // could be shared but never kept (measured 2026-09-28).
+        XCTAssertTrue(app.cells["Save Image"].exists, "the sheet offers no Save Image\n\(app.debugDescription)")
         let sheetCopy = app.cells["Copy"]
         XCTAssertTrue(waitUntilHittable(sheetCopy, in: app, timeout: 15), "the sheet has no Copy\n\(app.debugDescription)")
         sheetCopy.tap()
@@ -124,6 +128,42 @@ final class SharingUITests: XCTestCase {
         XCTAssertTrue(waitForExistence(of: app.textFields["composer.field"], in: app, timeout: 40),
                       "a link from before sign-in was not opened after it\n\(app.debugDescription)")
         XCTAssertEqual(app.staticTexts.matching(identifier: "post.text").firstMatch.label, shownText)
+    }
+
+    /// Save Image keeps the card: iOS asks once to let PetNote add to Photos,
+    /// the sheet closes, and the app is still in front. Before the usage
+    /// description was added the sheet did not offer the action at all.
+    func testTheCardCanBeSavedToPhotos() throws {
+        let email = "share-save-\(run)@petnote.test"
+        let (app, me) = try signInAsNewAccount(email)
+        uid = me
+
+        let share = app.buttons.matching(identifier: "post.share").firstMatch
+        XCTAssertTrue(waitUntilHittable(share, in: app, timeout: 30), "no share button in the feed")
+        share.tap()
+        let asImage = app.buttons["Share as Image"]
+        XCTAssertTrue(waitUntilHittable(asImage, in: app, timeout: 10), "no Share as Image")
+        asImage.tap()
+        XCTAssertTrue(waitForShareSheet(app), "the share sheet did not open for the card")
+        let save = app.cells["Save Image"]
+        XCTAssertTrue(waitUntilHittable(save, in: app, timeout: 15), "the sheet offers no Save Image\n\(app.debugDescription)")
+        save.tap()
+
+        // The permission is asked once per install, so the alert may or may
+        // not come; when it does, it is the system's, not the app's.
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let alert = springboard.alerts.firstMatch
+        if alert.waitForExistence(timeout: 8) {
+            print("MEASURED photos permission alert: \(alert.label)")
+            let allow = alert.buttons.matching(NSPredicate(format: "NOT (label CONTAINS[c] %@)", "Don")).firstMatch
+            XCTAssertTrue(allow.exists, "the alert has no way to allow\n\(springboard.debugDescription)")
+            allow.tap()
+        }
+        let closed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.otherElements["ActivityListView"])
+        XCTAssertEqual(XCTWaiter().wait(for: [closed], timeout: 20), .completed,
+                       "the sheet stayed open after Save Image\n\(app.debugDescription)")
+        XCTAssertEqual(app.state, .runningForeground, "the app is not in front after Save Image")
+        XCTAssertTrue(share.exists, "the feed was not there after saving the card")
     }
 
     /// iOS may ask before handing a link to an app; answer yes if it does.
