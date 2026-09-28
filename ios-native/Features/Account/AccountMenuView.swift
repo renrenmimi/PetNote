@@ -33,7 +33,9 @@ struct AccountMenuButton: View {
             // separate tap on a separate control — see AccountMenuView.
             isPresented = true
         } label: {
+            // The bar's resting grey, like search and the bell beside it.
             Image(systemName: "person.crop.circle")
+                .foregroundStyle(Palette.iconInactive)
         }
         // On the Button, not on a container around it. `root.signedIn` on a
         // container once overwrote the identifier of every element beneath it,

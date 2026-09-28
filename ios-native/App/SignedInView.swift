@@ -15,6 +15,8 @@ struct SignedInView: View {
 
     @Environment(SessionStore.self) private var session
     @Environment(\.scenePhase) private var scenePhase
+    /// The person's type size, read here because a bar item sees a capped one.
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var path: [Route] = []
     @State private var profilePath: [Route] = []
     @State private var placesPath: [Route] = []
@@ -79,9 +81,20 @@ struct SignedInView: View {
                 feed: filtering, likes: repositories.likes, accountID: user.uid
             )
         )
+        // Unselected tab items stay the system's colour. On iOS 26 the glass
+        // tab bar ignores both `unselectedItemTintColor` and the item
+        // appearance's normal colours — measured on 09-25, the labels and
+        // icons came out 14,14,14 either way — so the web's grey is kept for
+        // the icons we draw ourselves and not faked here.
     }
 
     /// After a block or an unblock: the next read filters by the new list.
+    /// An outline SF Symbol for a tab item, as a UIKit image so the bar
+    /// cannot substitute the `.fill` variant (see the note on `body`).
+    private func tabSymbol(_ name: String) -> Image {
+        Image(uiImage: UIImage(systemName: name) ?? UIImage())
+    }
+
     private func refilterFeed() {
         Task {
             await filteringFeed.invalidate()
@@ -90,28 +103,49 @@ struct SignedInView: View {
     }
 
     var body: some View {
+        // One icon style for the whole bar, the web client's (`BottomNav.tsx`):
+        // outlines, brand purple when selected. A tab bar swaps each SF Symbol
+        // for its `.fill` variant, which on 09-25 put solid black glyphs next
+        // to the outline icons in the navigation bar and on every post.
+        // `symbolVariants(.none)` fixed that only after the first frame — a
+        // launch still flashed the filled set — so each item is handed a
+        // UIKit image of the outline symbol (`tabSymbol`), which the bar draws
+        // as given. The colour says which tab is current.
+        //
+        // The symbols are the nearest SF Symbols to the web's lucide icons:
+        // house for Home; a map for Places, because the pin symbols are either
+        // a hairline or a pin on an ellipse that reads as a joystick; people
+        // for Meetups, since SF Symbols has no handshake; a person for
+        // Profile. Create is the web's gradient circle, drawn by
+        // `CreateTabIcon`.
         TabView(selection: tabSelection) {
             homeTab
-                .tabItem { Label("Home", systemImage: "house") }
+                .tabItem { Label { Text("Home") } icon: { tabSymbol("house") } }
                 .tag(AppTab.home)
                 .accessibilityIdentifier("tab.home")
             placesTab
-                .tabItem { Label("Places", systemImage: "mappin.and.ellipse") }
+                .tabItem { Label { Text("Places") } icon: { tabSymbol("map") } }
                 .tag(AppTab.places)
                 .accessibilityIdentifier("tab.places")
             // Never shown: selecting it opens the composer and leaves the
             // selection where it was, which is how a "create" tab behaves in
             // the apps people already know.
             Color.clear
-                .tabItem { Label(String(localized: "tab.create", defaultValue: "Post", comment: "Tab that opens the composer"), systemImage: "plus.square") }
+                .tabItem {
+                    Label {
+                        Text(String(localized: "tab.create", defaultValue: "Create", comment: "Tab that opens the composer"))
+                    } icon: {
+                        Image(uiImage: CreateTabIcon.image).renderingMode(.original)
+                    }
+                }
                 .tag(AppTab.create)
                 .accessibilityIdentifier("tab.create")
             meetupsTab
-                .tabItem { Label("Meetups", systemImage: "person.3") }
+                .tabItem { Label { Text("Meetups") } icon: { tabSymbol("person.3") } }
                 .tag(AppTab.meetups)
                 .accessibilityIdentifier("tab.meetups")
             profileTab
-                .tabItem { Label(String(localized: "tab.profile", defaultValue: "Profile", comment: "Tab for your own profile"), systemImage: "person.crop.circle") }
+                .tabItem { Label { Text(String(localized: "tab.profile", defaultValue: "Profile", comment: "Tab for your own profile")) } icon: { tabSymbol("person") } }
                 .tag(AppTab.profile)
                 .accessibilityIdentifier("tab.profile")
         }
@@ -241,27 +275,45 @@ struct SignedInView: View {
                     #endif
                 }
                 .toolbar {
-                    // A screenshot from a device has to say for itself which
-                    // backend produced it. Without this, "verified on device"
-                    // and "verified against production by mistake" look
-                    // identical in a photo. Hidden in production builds, where
-                    // it would just be clutter for a real user.
-                    if AppEnvironment.current.backend != .production {
+                    // The web client's navbar lockup (`Navbar.tsx`): the paw
+                    // and the name at the leading edge, first in the bar. Not
+                    // on glass: iOS 26 puts bar items on a shared glass
+                    // background, and a logo inside a button-shaped capsule
+                    // reads as a button. The environment badge that used to
+                    // sit here is in the principal item now (FeedView), where
+                    // the bar can squeeze it instead of the buttons.
+                    //
+                    // Whether the name is drawn is decided here, outside the
+                    // bar: inside a bar item the type size is capped below
+                    // the accessibility sizes, so a lockup asking for itself
+                    // never saw AX5 (09-25: the name stayed, and the bell and
+                    // the account went into the bar's overflow menu).
+                    if #available(iOS 26.0, *) {
                         ToolbarItem(placement: .topBarLeading) {
-                            // Text, not a Button: it must not add a control to
-                            // the bar, and the touch-target audit enumerates
-                            // app.buttons.
-                            Text(EnvironmentGuard.displayLabel)
-                                .font(.caption2)
-                                .monospaced()
-                                // Palette.secondaryText, not SwiftUI's
-                                // .secondary. Measured from screenshot pixels,
-                                // .secondary renders this badge at 3.02:1 in
-                                // light and 3.19:1 in dark — below the 4.5:1
-                                // that text this size needs.
-                                .foregroundStyle(Palette.secondaryText)
-                                .accessibilityIdentifier("env.badge")
+                            FeedBrandLockup(showsName: !typeSize.isAccessibilitySize)
                         }
+                        .sharedBackgroundVisibility(.hidden)
+                    } else {
+                        ToolbarItem(placement: .topBarLeading) {
+                            FeedBrandLockup(showsName: !typeSize.isAccessibilitySize)
+                        }
+                    }
+                    // Search, then the bell, then the account: the web
+                    // client's order, in the one grey its bar icons used.
+                    ToolbarItem(placement: .topBarTrailing) {
+                        // The web client's navbar search, one tap from the
+                        // feed. Pushed on this stack so back returns to the
+                        // same place in the list.
+                        Button {
+                            path.append(.search(tag: nil))
+                        } label: {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundStyle(Palette.iconInactive)
+                                .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget)
+                                .contentShape(.rect)
+                        }
+                        .accessibilityLabel("Search")
+                        .accessibilityIdentifier("feed.search")
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         // The web client's navbar bell, with its red dot.
@@ -269,6 +321,7 @@ struct SignedInView: View {
                             path.append(.notifications)
                         } label: {
                             Image(systemName: "bell")
+                                .foregroundStyle(Palette.iconInactive)
                                 .overlay(alignment: .topTrailing) {
                                     if hasUnreadNotifications {
                                         Circle()
@@ -283,20 +336,6 @@ struct SignedInView: View {
                         .accessibilityLabel("Notifications")
                         .accessibilityValue(hasUnreadNotifications ? String(localized: "Unread") : "")
                         .accessibilityIdentifier("feed.notifications")
-                    }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        // The web client's navbar search, one tap from the
-                        // feed. Pushed on this stack so back returns to the
-                        // same place in the list.
-                        Button {
-                            path.append(.search(tag: nil))
-                        } label: {
-                            Image(systemName: "magnifyingglass")
-                                .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget)
-                                .contentShape(.rect)
-                        }
-                        .accessibilityLabel("Search")
-                        .accessibilityIdentifier("feed.search")
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         // The bar holds the *entry*, not the action: ending a

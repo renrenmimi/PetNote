@@ -39,7 +39,7 @@ MARKETING_VERSION = 0.1
 CURRENT_PROJECT_VERSION = 1
 
 INFOPLIST_FILE = Config/Info.plist
-INFOPLIST_KEY_UILaunchScreen_Generation = YES
+INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen
 INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait
 
 // The icon is the Capacitor app's, byte for byte. Not redrawn, not

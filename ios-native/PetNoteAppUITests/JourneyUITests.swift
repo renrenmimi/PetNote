@@ -206,7 +206,7 @@ final class JourneyUITests: XCTestCase {
         // One level deep, so one Back — and then wait for the bar rather than
         // looking again mid-transition, when the old navigation bar is still
         // in the tree and a second Back finds nothing to tap.
-        let postTab = app.tabBars.buttons["Post"]
+        let postTab = app.tabBars.buttons["Create"]
         if !(postTab.exists && postTab.isHittable) {
             let back = app.navigationBars.buttons["BackButton"].firstMatch
             if back.waitForExistence(timeout: 5) { back.tap() }

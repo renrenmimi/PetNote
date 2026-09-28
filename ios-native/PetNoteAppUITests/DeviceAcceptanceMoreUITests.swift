@@ -303,7 +303,7 @@ final class DeviceAcceptanceMoreUITests: XCTestCase {
         deviceSettleSavePasswordSheet(app)
 
         // The tabs, including the two whose English words mean something else
-        // elsewhere ("Post", "Profile").
+        // elsewhere ("Create", "Profile").
         for label in ["首页", "地点", "发布", "聚会", "我的"] {
             XCTAssertTrue(app.tabBars.buttons[label].exists,
                           "no tab \(label)\n\(app.tabBars.firstMatch.debugDescription)")

@@ -53,7 +53,7 @@ struct LocalizationTests {
         let bundle = try Self.chineseBundle()
         #expect(String(localized: "Couldn't load notifications.", bundle: bundle, locale: zh) == "通知加载失败。")
         // A key that is not its English text.
-        #expect(String(localized: "tab.create", defaultValue: "Post", bundle: bundle, locale: zh) == "发布")
+        #expect(String(localized: "tab.create", defaultValue: "Create", bundle: bundle, locale: zh) == "发布")
         // An argument, filled in.
         let count = 3
         #expect(String(localized: "\(count) unread", bundle: bundle, locale: zh) == "3 条未读")
@@ -62,11 +62,12 @@ struct LocalizationTests {
             == "至少包含一个特殊字符 (!@#$%...)")
     }
 
-    /// And in English nothing moved: the key that is not its own text still
-    /// reads as it did.
+    /// And in English: the key that is not its own text reads as the web
+    /// client's label for the same tab, `nav.create` = "Create" (it read
+    /// "Post" until 09-25, which was not the web's word).
     @Test func englishIsUnchanged() {
         let en = Locale(identifier: "en")
-        #expect(String(localized: "tab.create", defaultValue: "Post", locale: en) == "Post")
+        #expect(String(localized: "tab.create", defaultValue: "Create", locale: en) == "Create")
         #expect(PasswordPolicy.Strength.strong.label == "Strong")
         #expect(PasswordPolicy.requirements(for: "").first?.text == "At least 8 characters")
     }
