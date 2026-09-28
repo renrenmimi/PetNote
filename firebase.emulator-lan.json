@@ -1,0 +1,18 @@
+{
+  "//": "Emulator-only config that binds to every interface, so the test iPhone can reach the emulator over the LAN. The default firebase.json binds 127.0.0.1, which a device cannot route to. Used as `firebase emulators:start --config firebase.emulator-lan.json`. It has to live here rather than under ios-native/ because the CLI refuses paths outside the project directory. Never used for deploys: no hosting block, and the emulator is the only thing it configures.",
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "functions": {
+    "source": "functions"
+  },
+  "emulators": {
+    "auth": { "port": 9099, "host": "0.0.0.0" },
+    "functions": { "port": 5101, "host": "0.0.0.0" },
+    "firestore": { "port": 8088, "host": "0.0.0.0" },
+    "pubsub": { "port": 8085 },
+    "ui": { "enabled": false },
+    "singleProjectMode": true
+  }
+}

@@ -1,0 +1,10 @@
+// Read-only diagnosis against production. Never enabled by default, and stage 1
+// forbids any write from this configuration.
+#include "Base.xcconfig"
+
+PETNOTE_BACKEND = production
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG PETNOTE_READ_ONLY
+ONLY_ACTIVE_ARCH = YES
+SWIFT_OPTIMIZATION_LEVEL = -Onone
+GCC_OPTIMIZATION_LEVEL = 0
+ENABLE_TESTABILITY = YES

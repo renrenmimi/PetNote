@@ -1,0 +1,104 @@
+import Foundation
+import Testing
+
+@testable import PetNote
+
+/// Acceptance 3.2. The malicious cases are the point: a link is untrusted input,
+/// and "unknown shape lands on the feed" has to hold for inputs nobody
+/// anticipated, not just for typos.
+struct DeepLinkTests {
+    // MARK: - Shapes we do accept
+
+    @Test func customSchemeOpensAPost() {
+        #expect(DeepLink.route(for: URL(string: "petnote://post/ios-post-042")!) == .postDetail(postID: "ios-post-042"))
+    }
+
+    @Test func universalLinkOnOurHostOpensAPost() {
+        #expect(DeepLink.route(for: URL(string: "https://petnote.app/post/abc123")!) == .postDetail(postID: "abc123"))
+        #expect(DeepLink.route(for: URL(string: "https://www.petnote.app/post/abc123")!) == .postDetail(postID: "abc123"))
+    }
+
+    @Test func hostComparisonIsCaseInsensitive() {
+        #expect(DeepLink.route(for: URL(string: "https://PetNote.App/post/abc")!) == .postDetail(postID: "abc"))
+    }
+
+    @Test func internalPathsResolve() {
+        #expect(DeepLink.route(forPath: "/post/abc") == .postDetail(postID: "abc"))
+        #expect(DeepLink.route(forPath: "/feed") == .feed)
+        #expect(DeepLink.route(forPath: "/") == .feed)
+    }
+
+    // MARK: - Another origin must never be routed
+
+    @Test func anotherHostIsNotOurs() {
+        #expect(DeepLink.route(for: URL(string: "https://evil.example/post/abc")!) == .feed)
+        // A lookalike host: prefix matching would accept this, equality does not.
+        #expect(DeepLink.route(for: URL(string: "https://petnote.app.evil.example/post/abc")!) == .feed)
+    }
+
+    @Test func protocolRelativePathsAreRefused() {
+        // "//evil.example/post/abc" is another origin, not a path.
+        #expect(DeepLink.route(forPath: "//evil.example/post/abc") == .feed)
+    }
+
+    @Test func aPathCarryingASchemeIsRefused() {
+        #expect(DeepLink.route(forPath: "/post/abc:def") == .feed)
+        #expect(DeepLink.route(forPath: "javascript:alert(1)") == .feed)
+        #expect(DeepLink.route(forPath: "https://evil.example/post/abc") == .feed)
+    }
+
+    @Test func nonWebSchemesAreRefused() {
+        #expect(DeepLink.route(for: URL(string: "file:///etc/passwd")!) == .feed)
+        #expect(DeepLink.route(for: URL(string: "http://petnote.app/post/abc")!) == .feed)  // plaintext, not ours
+        #expect(DeepLink.route(for: URL(string: "data:text/html,<script>")!) == .feed)
+    }
+
+    // MARK: - Identifier validation happens after decoding
+
+    @Test func percentEncodedSeparatorsCannotSmuggleAPath() {
+        // %2F decodes to "/". Validating before decoding would let this through
+        // as the id "..%2F..%2Fusers".
+        #expect(DeepLink.route(for: URL(string: "petnote://post/..%2F..%2Fusers")!) == .feed)
+        #expect(DeepLink.route(forPath: "/post/a%2Fb") == .feed)
+    }
+
+    @Test func dotSegmentsAreRefused() {
+        #expect(DeepLink.validDocumentID(".") == nil)
+        #expect(DeepLink.validDocumentID("..") == nil)
+    }
+
+    @Test func firestoreReservedIdsAreRefused() {
+        #expect(DeepLink.validDocumentID("__name__") == nil)
+        #expect(DeepLink.validDocumentID("__id7__") == nil)
+    }
+
+    @Test func emptyAndOverlongIdsAreRefused() {
+        #expect(DeepLink.validDocumentID("") == nil)
+        #expect(DeepLink.validDocumentID(String(repeating: "a", count: 1501)) == nil)
+        #expect(DeepLink.validDocumentID(String(repeating: "a", count: 1500)) != nil)
+        // Length is in bytes, not characters: 500 three-byte characters is 1500.
+        #expect(DeepLink.validDocumentID(String(repeating: "字", count: 501)) == nil)
+    }
+
+    @Test func controlCharactersAreRefused() {
+        #expect(DeepLink.validDocumentID("abc\u{0}def") == nil)
+        #expect(DeepLink.validDocumentID("abc\ndef") == nil)
+    }
+
+    // MARK: - Unknown shapes land on the feed without erroring
+
+    @Test func unknownShapesFallToTheFeed() {
+        #expect(DeepLink.route(for: URL(string: "petnote://pet/mochi")!) == .feed)
+        #expect(DeepLink.route(for: URL(string: "https://petnote.app/admin")!) == .feed)
+        #expect(DeepLink.route(for: URL(string: "https://petnote.app/post/abc/extra")!) == .feed)
+        #expect(DeepLink.route(for: URL(string: "https://petnote.app/post")!) == .feed)
+        #expect(DeepLink.route(forPath: "/post/") == .feed)
+    }
+
+    @Test func aLinkNeverConveysPermission() {
+        // There is no route case that carries a role, a token or a capability;
+        // this test exists so adding one is a visible decision.
+        let route = DeepLink.route(for: URL(string: "https://petnote.app/post/abc?admin=1&token=xyz")!)
+        #expect(route == .postDetail(postID: "abc"))
+    }
+}

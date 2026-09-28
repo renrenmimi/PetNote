@@ -1,0 +1,36 @@
+// Settings shared by every configuration.
+//
+// Signing is deliberately NOT here. DEVELOPMENT_TEAM is a personal credential,
+// so it lives in Config/Local.xcconfig, which is gitignored. See ios-native/README.md.
+#include? "Local.xcconfig"
+
+PRODUCT_NAME = PetNote
+PRODUCT_BUNDLE_IDENTIFIER = dev.local.petnote.native
+
+// Coexists with the Capacitor app (dev.local.petnote) on the same device.
+IPHONEOS_DEPLOYMENT_TARGET = 18.0
+TARGETED_DEVICE_FAMILY = 1
+SDKROOT = iphoneos
+SUPPORTED_PLATFORMS = iphoneos iphonesimulator
+
+SWIFT_VERSION = 6.0
+SWIFT_STRICT_CONCURRENCY = complete
+SWIFT_TREAT_WARNINGS_AS_ERRORS = NO
+GCC_TREAT_WARNINGS_AS_ERRORS = NO
+CLANG_ENABLE_MODULES = YES
+ENABLE_USER_SCRIPT_SANDBOXING = YES
+DEAD_CODE_STRIPPING = YES
+
+// Overridden on the build command line with the commit and time, so a
+// screenshot can be tied to the source that produced it (spec §15.5).
+PETNOTE_BUILD_STAMP = local
+
+MARKETING_VERSION = 0.1
+CURRENT_PROJECT_VERSION = 1
+
+INFOPLIST_FILE = Config/Info.plist
+INFOPLIST_KEY_UILaunchScreen_Generation = YES
+INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait
+
+CODE_SIGN_STYLE = Automatic
+ENABLE_PREVIEWS = YES
