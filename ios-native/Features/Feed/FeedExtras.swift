@@ -4,7 +4,7 @@ import Observation
 import OSLog
 
 // The three things the web feed draws around its posts (src/pages/Feed.tsx):
-// the birthday banner (`BirthdayCelebration`), the "⭐ Popular Pets" row
+// the birthday banner (`BirthdayCelebration`), the "Popular Pets" row
 // (`PetSpotlight`), and the "🎂 Birthday!" pill on a card whose pet has its
 // birthday today (`batchCheckPetBirthdays` → `PostCard.initialBirthday`).
 //
@@ -175,9 +175,12 @@ struct BirthdayBanner: Equatable {
     let species: PetSpecies
 }
 
-/// The spotlight row's three states. The web client has the same three —
-/// skeleton, "Share your pet to get featured!", and the tiles — and draws a
-/// failure as the second, which is kept.
+/// The spotlight row's three states. A failure is drawn as the second, as
+/// both web versions draw it. What `empty` draws is the old iPhone app's
+/// choice (`feature/ios-polish-round2`): nothing at all — no heading, no
+/// line — rather than main's web card saying "Share your pet to get
+/// featured!", because above a feed that has posts the reader is not short of
+/// content, the decoration is.
 enum SpotlightPhase: Equatable {
     case loading
     case empty
@@ -233,6 +236,22 @@ enum FeedExtras {
         switch media.kind {
         case .image: return media.url
         case .video: return CloudinaryURL.videoPoster(media.url, size: .spotlight)
+        }
+    }
+
+    /// One tile per pet, the first of its posts in the order given — the old
+    /// iPhone app's `sortedPosts` (`feature/ios-polish-round2`,
+    /// src/components/PetSpotlight.tsx): "One entry per pet, because the
+    /// section is called 'Popular Pets'." A pet with four of the most liked
+    /// posts otherwise fills the row with its own name four times. A post
+    /// with no pet stands for its author, and one with neither is left out,
+    /// as `post.petId || post.authorId` leaves it out there.
+    static func onePerPet(_ posts: [Post]) -> [Post] {
+        var subjects: Set<String> = []
+        return posts.filter { post in
+            let subject = post.petID.flatMap { $0.isEmpty ? nil : $0 } ?? post.authorID
+            guard !subject.isEmpty else { return false }
+            return subjects.insert(subject).inserted
         }
     }
 
@@ -400,8 +419,9 @@ final class FeedExtrasModel {
     /// copy of the list to keep in step.
     var spotlight: SpotlightPhase {
         guard let spotlightPosts else { return .loading }
-        guard !spotlightPosts.isEmpty else { return .empty }
-        return .items(FeedExtras.seenLast(spotlightPosts, seen: Set(seenPostIDs)))
+        let tiles = FeedExtras.onePerPet(spotlightPosts)
+        guard !tiles.isEmpty else { return .empty }
+        return .items(FeedExtras.seenLast(tiles, seen: Set(seenPostIDs)))
     }
 
     /// Whether this pet's cards carry the birthday pill — and only for the

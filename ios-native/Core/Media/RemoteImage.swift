@@ -37,6 +37,11 @@ struct RemoteImage: View {
     var cornerRadius: CGFloat = 0
     var size: CloudinaryURL.Size = .medium
     var fit: Fit = .reservedFrame
+    /// False leaves the space clear when the picture fails, for a caller that
+    /// draws its own stand-in underneath: a spotlight tile is one button from
+    /// edge to edge, and a retry button inside it would take the tap meant for
+    /// the post.
+    var retriesOnFailure = true
 
     @State private var image: UIImage?
     @State private var failed = false
@@ -75,7 +80,7 @@ struct RemoteImage: View {
                 .aspectRatio(contentMode: fit == .whole ? .fit : .fill)
                 .accessibilityHidden(true)
         } else if failed {
-            retryable
+            if retriesOnFailure { retryable } else { Color.clear.accessibilityHidden(true) }
         } else {
             placeholder
                 // The width is part of the key, and that is a fix, not a

@@ -180,7 +180,7 @@ extension XCTestCase {
     /// there.
     ///
     /// **Needed since the feed grew rows above its posts.** The birthday
-    /// banner and "⭐ Popular Pets" sit above the first card, as the web
+    /// banner and "Popular Pets" sit above the first card, as the web
     /// draws them, and push its actions row from about y 776 to about y 844 on
     /// an iPhone 17 — under the tab bar, whose top is at about 791. Tests that
     /// found that row without scrolling were leaning on a layout, not on

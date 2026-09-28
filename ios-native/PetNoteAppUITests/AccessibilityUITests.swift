@@ -58,10 +58,10 @@ final class AccessibilityUITests: XCTestCase {
     /// bottom of the screen.
     ///
     /// **And so does a tile cut by the side of the screen in the feed's
-    /// "⭐ Popular Pets" row**, which scrolls sideways. At AX5 its heading
-    /// moves above the tiles and a sixth tile starts at x≈396 of 402: six
-    /// points of it are on screen, on purpose — that sliver is how the row
-    /// says there is more. It is the next tile not yet scrolled to, exactly as
+    /// "Popular Pets" row**, which scrolls sideways. The last tile on screen
+    /// is cut by the edge on purpose — that sliver is how the row says there
+    /// is more (at AX5 on 2026-09-24, six points of a sixth tile, from x≈396
+    /// of 402). It is the next tile not yet scrolled to, exactly as
     /// a card under the tab bar is the next card, and the tiles wholly on
     /// screen are still held to 44pt and hittable. Only that row: a control
     /// anywhere else cut by the side of the screen is still counted, because
@@ -122,10 +122,10 @@ final class AccessibilityUITests: XCTestCase {
         line: UInt = #line
     ) {
         let window = app.windows.firstMatch.frame
-        // The feed's "⭐ Popular Pets" row scrolls sideways, and the tile it
+        // The feed's "Popular Pets" row scrolls sideways, and the tile it
         // shows only a sliver of is cut by the side of the screen on purpose
-        // (see `visibleOwnControls`) — and so is the name under it: at AX5 the
-        // sixth tile's name starts at x≈396 and ends near 460. That is the
+        // (see `visibleOwnControls`) — and so is the name under it (at AX5 on
+        // 2026-09-24, from x≈396 to near 460). That is the
         // next tile, not text pushed off the screen, so only there, and only a
         // text the side of the screen cuts, is left out. Text anywhere else
         // is held to the edges as before, and so are texts in that row that

@@ -357,10 +357,14 @@ struct FeedView: View {
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                 }
-                PetSpotlightRow(phase: extras.spotlight, onOpen: { openFromSpotlight($0) })
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
+                // Left out, not drawn empty, when the read found nothing or
+                // failed: a row with nothing in it still holds a cell's height.
+                if extras.spotlight != .empty {
+                    PetSpotlightRow(phase: extras.spotlight, onOpen: { openFromSpotlight($0) })
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                }
 
                 if let placeholder {
                     placeholderRow(placeholder)

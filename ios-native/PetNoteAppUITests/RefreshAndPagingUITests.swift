@@ -210,7 +210,7 @@ final class RefreshAndPagingUITests: XCTestCase {
 
         // The first rows of page one, read with two of them on screen.
         //
-        // The feed's "⭐ Popular Pets" row — and the birthday banner, on a day
+        // The feed's "Popular Pets" row — and the birthday banner, on a day
         // it is up — sit above the first card now, and push the second card's
         // text past the bottom of the screen, where the list has not built its
         // row: the full regression of 2026-09-24 read one post here and

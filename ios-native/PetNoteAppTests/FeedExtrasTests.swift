@@ -3,7 +3,7 @@ import Testing
 
 @testable import PetNote
 
-/// The feed's birthday banner, its "⭐ Popular Pets" row and the cards'
+/// The feed's birthday banner, its "Popular Pets" row and the cards'
 /// birthday marks, against fakes — the web client's `BirthdayCelebration`,
 /// `PetSpotlight` and `batchCheckPetBirthdays`.
 ///
@@ -201,9 +201,12 @@ struct FeedExtrasTests {
         pet: String? = "Mochi",
         petID: String? = nil
     ) -> Post {
+        // A post that names a pet is that pet's own unless told otherwise, as
+        // a real one is: the spotlight keeps one tile per pet, and posts that
+        // all fell back to the same author would be one tile.
         Post(
             id: id, authorID: author, authorName: author.capitalized, authorAvatarURL: nil,
-            text: "TEST CONTENT \(id)", media: [], petID: petID, petName: pet,
+            text: "TEST CONTENT \(id)", media: [], petID: petID ?? pet.map { _ in "pet-\(id)" }, petName: pet,
             petAvatarURL: nil, createdAt: now.addingTimeInterval(-hoursAgo * 3600),
             likeCount: likes, commentCount: 0, tags: []
         )
@@ -340,9 +343,9 @@ struct FeedExtrasTests {
         #expect(model.spotlight == .empty)
     }
 
-    /// The web client's choice for a load that fails: the empty line. A
-    /// refresh that fails over tiles already drawn keeps them.
-    @Test func aSpotlightThatCannotBeReadShowsTheEmptyLine() async throws {
+    /// A load that fails is `.empty`, which the feed draws as no row at all.
+    /// A refresh that fails over tiles already drawn keeps them.
+    @Test func aSpotlightThatCannotBeReadIsLeftOut() async throws {
         let (now, calendar) = try Self.clock()
         let (defaults, name) = try Self.defaults()
         defer { defaults.removePersistentDomain(forName: name) }
@@ -363,6 +366,46 @@ struct FeedExtrasTests {
         popular.error = SocialFixture.readFailure
         await model.reload()
         #expect(Self.ids(model.spotlight) == ["a"], "a failed refresh took the tiles away")
+    }
+
+    /// One tile per pet, the first of its posts in the likes order: the old
+    /// iPhone app's rule. A post with no pet stands for its author; one with
+    /// neither is not featured.
+    @Test func eachPetIsFeaturedOnce() async throws {
+        let (now, calendar) = try Self.clock()
+        let (defaults, name) = try Self.defaults()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let popular = FakePopularPosts()
+        popular.stored = [
+            Self.post("mochi-best", likes: 9, hoursAgo: 1, from: now, petID: "mochi"),
+            Self.post("mochi-next", likes: 8, hoursAgo: 1, from: now, petID: "mochi"),
+            Self.post("biscuit", likes: 7, hoursAgo: 1, from: now, petID: "biscuit"),
+            Self.post("bob-first", likes: 6, hoursAgo: 1, from: now, author: "bob", pet: nil),
+            Self.post("bob-again", likes: 5, hoursAgo: 1, from: now, author: "bob", pet: nil),
+            Self.post("nobody", likes: 4, hoursAgo: 1, from: now, author: "", pet: nil),
+            Self.post("mochi-third", likes: 3, hoursAgo: 1, from: now, petID: "mochi"),
+        ]
+        let model = makeModel(
+            popular: popular, seen: UserDefaultsSpotlightSeenStore(defaults: defaults), now: now, calendar: calendar
+        )
+
+        await model.loadIfNeeded()
+        #expect(Self.ids(model.spotlight) == ["mochi-best", "biscuit", "bob-first"])
+    }
+
+    /// Nothing but posts nobody can be named for is nothing to feature.
+    @Test func postsWithNoPetAndNoAuthorLeaveTheRowOut() async throws {
+        let (now, calendar) = try Self.clock()
+        let (defaults, name) = try Self.defaults()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let popular = FakePopularPosts()
+        popular.stored = [Self.post("nobody", likes: 4, hoursAgo: 1, from: now, author: "", pet: nil)]
+        let model = makeModel(
+            popular: popular, seen: UserDefaultsSpotlightSeenStore(defaults: defaults), now: now, calendar: calendar
+        )
+
+        await model.loadIfNeeded()
+        #expect(model.spotlight == .empty)
     }
 
     // MARK: - Spotlight: seen
@@ -698,7 +741,7 @@ struct FeedExtrasTests {
             birthdays.byID[id] = PetFixture.pet(id: id, birthdayMonth: 9, birthdayDay: id == "pet-7" ? 23 : 1)
         }
         let posts = petIDs.flatMap { [Self.post("\($0)-a", petID: $0), Self.post("\($0)-b", petID: $0)] }
-            + [Self.post("no-pet", petID: nil)]
+            + [Self.post("no-pet", pet: nil, petID: nil)]
         let model = makeModel(
             birthdays: birthdays, seen: UserDefaultsSpotlightSeenStore(defaults: defaults), now: now, calendar: calendar
         )

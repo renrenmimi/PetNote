@@ -1,6 +1,6 @@
 import XCTest
 
-/// The feed's "⭐ Popular Pets" row and birthday banner, through the screens,
+/// The feed's "Popular Pets" row and birthday banner, through the screens,
 /// against the emulator.
 ///
 /// What the server holds is written straight into the emulator here — a post
@@ -58,7 +58,6 @@ final class FeedExtrasUITests: XCTestCase {
                       "the spotlight has no tiles\n\(app.debugDescription)")
         XCTAssertGreaterThanOrEqual(tiles.count, 1)
         XCTAssertTrue(app.descendants(matching: .any)["feed.spotlight"].exists, "no spotlight row")
-        XCTAssertFalse(app.staticTexts["spotlight.empty"].exists, "the spotlight says it is empty")
 
         let tile = app.buttons["spotlight.post.\(postID)"]
         XCTAssertTrue(waitUntilHittable(tile, in: app, timeout: 20),

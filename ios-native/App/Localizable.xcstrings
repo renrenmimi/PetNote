@@ -4215,6 +4215,16 @@
         }
       }
     },
+    "Popular Pets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人气萌宠"
+          }
+        }
+      }
+    },
     "Popular Tags": {
       "localizations": {
         "zh-Hans": {
@@ -5005,16 +5015,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "说说你在这里的体验..."
-          }
-        }
-      }
-    },
-    "Share your pet to get featured! 🐾": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "分享你的宠物，就有机会上榜！🐾"
           }
         }
       }
@@ -8285,16 +8285,6 @@
     },
     "⭐ %@": {
       "shouldTranslate": false
-    },
-    "⭐ Popular Pets": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "⭐ 人气萌宠"
-          }
-        }
-      }
     },
     "🅿️ Easy parking": {
       "localizations": {
