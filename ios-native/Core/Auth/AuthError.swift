@@ -16,6 +16,15 @@ enum AuthError: Error, Sendable, Equatable {
     case tooManyAttempts
     case accountDisabled
     case weakPassword
+    /// Sign-up only. Unlike the sign-in failures above this one is safe to be
+    /// specific about: the person is holding the address and asking to create
+    /// an account with it, so "there is already one" is an answer to their own
+    /// question rather than an oracle somebody else can query. The web client
+    /// makes the same call, and pairs it with a way through to sign-in.
+    case emailAlreadyInUse
+    /// Email/password sign-up is switched off in the Firebase console.
+    /// Nothing the person can do, and nothing a retry fixes.
+    case signUpNotAllowed
     case unknown
 
     init(_ error: Error) {
@@ -33,6 +42,10 @@ enum AuthError: Error, Sendable, Equatable {
             self = .accountDisabled
         case .weakPassword:
             self = .weakPassword
+        case .emailAlreadyInUse:
+            self = .emailAlreadyInUse
+        case .operationNotAllowed:
+            self = .signUpNotAllowed
         default:
             self = .unknown
         }
@@ -52,6 +65,10 @@ enum AuthError: Error, Sendable, Equatable {
             "This account has been disabled."
         case .weakPassword:
             "Choose a longer password."
+        case .emailAlreadyInUse:
+            "That email already has an account. Sign in instead."
+        case .signUpNotAllowed:
+            "Creating an account with an email address is unavailable right now."
         case .unknown:
             "Something went wrong signing in. Try again."
         }
@@ -61,7 +78,8 @@ enum AuthError: Error, Sendable, Equatable {
     var isRetryable: Bool {
         switch self {
         case .networkUnavailable, .tooManyAttempts, .unknown: true
-        case .invalidCredentials, .invalidEmailFormat, .accountDisabled, .weakPassword: false
+        case .invalidCredentials, .invalidEmailFormat, .accountDisabled, .weakPassword,
+             .emailAlreadyInUse, .signUpNotAllowed: false
         }
     }
 }
