@@ -1,0 +1,24 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSPhotoLibraryAddUsageDescription" : {
+      "comment" : "Shown when the share sheet's Save Image first asks to add a post's card to Photos.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "PetNote saves a post's share card to your photos when you choose Save Image."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当你选择“存储图像”时，PetNote 会把帖子的分享卡片存到你的照片里。"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}
