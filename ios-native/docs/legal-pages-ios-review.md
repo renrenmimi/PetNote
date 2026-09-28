@@ -2,7 +2,7 @@
 
 **这份只是对照和草案。我们没有改动、也没有发布任何法律文字**，网页上的正式文字还是 2026 年 2 月那一版。定稿和发布都由你决定。
 
-**先看这里：** 要你拍板的只有第 5 节的 7 个问题。其余都已经从代码里查清（第 3 节），或者要有控制台权限的人去看一眼（第 6 节）。
+**先看这里：** 要你拍板的只有第 5 节的 7 项。每一项都写了：网页上现在怎么写、产品实际怎么做、我推荐选哪个、用户会看到什么不同、要不要改代码。推荐只是建议，选哪个、什么时候发布，都由你定。其余都已经从代码里查清（第 3 节），或者要有控制台权限的人去看一眼（第 6 节）。
 
 ## 0. 这一版改了什么
 
@@ -10,6 +10,7 @@
 - 这一版按提交 `6057f8d` 核对，行号也都是这一版的。之后 iPhone 能写地点评价了（`1186220`，不带照片），P7、T2 两行和草稿里的两句已按它改过。之后又多了：发帖滤镜（滤过的照片重新编码、不带原图的元数据，和其他重新编码一样）、「我的打卡」列表（只读，不新增收集任何数据）。首页生日横幅和「人气萌宠」做过但没有放进这次候选（`0bd374b`），所以这里不写；放回来时要补一句：它会在手机上按账号记下点开过的帖子。2026-09-24 按 `be8bdac` 又核了一遍，改了这几处：滤镜（第 3 节第 5 条、问题 3、草稿里讲照片的两句）、打卡列表（P27、草稿「5. Your Rights」）、分享地点（第 3 节"外部服务"）、给聚会的地点打分（P7）。这几处和 P8、P41、T8 的行号是 `be8bdac` 的，其余还是 `6057f8d` 的。
 - 生产环境的几项设置（数据库在哪、有没有备份、日志留多久、服务器代码在哪）是 2026-09-23 用只读方式查的：只看了设置，没看任何用户数据。本文照抄结果，没有重查。
 - 网页原文是照仓库里的 `src/pages/PrivacyPolicy.tsx` 和 `src/pages/TermsOfService.tsx` 核对的（和 `main` 分支一样）。下面写的"`:51`"这种，就是这两个文件的行号。
+- 2026-09-25 重写了第 5 节：7 个问题改成逐项给出现有表述、实际行为、推荐、对用户的影响、要不要改代码。第 5 节的行号都按 `e0c1d65` 重新核对过（App 代码和 `931d911` 一样）。`src/`、`functions/src/`、`firestore.rules` 从 `6057f8d` 到现在没有改过，所以前面几节引用它们的行号现在也还对。`931d911` 在 `Core/Auth/FirebaseBootstrap.swift` 里加了两行注释，第 3、4 节引用这个文件的三处行号已经跟着改了。第 7 节草案没有动。
 
 ## 现在的做法
 
@@ -151,7 +152,7 @@ iOS App 在登录页（`Features/Auth/LoginView.swift:58`）、注册页（`Feat
 - **A1**：已修，见第 4 节。
 - **A4**：
   - App 里已经能注销账号（`SettingsView.swift:175-184`），满足 App Store 审核指南 5.1.1(v)。
-  - 项目里还没有 App 自己的 `PrivacyInfo.xcprivacy`。App 用到了 UserDefaults（草稿 `ComposeDraft.swift:80-121`，还有一个"旧缓存已清"的标记 `Core/Auth/FirebaseBootstrap.swift:127-143`），要在这个文件里声明用它的理由（`CA92.1`）。发布前要补上。
+  - 项目里还没有 App 自己的 `PrivacyInfo.xcprivacy`。App 用到了 UserDefaults（草稿 `ComposeDraft.swift:80-121`，还有一个"旧缓存已清"的标记 `Core/Auth/FirebaseBootstrap.swift:127-145`），要在这个文件里声明用它的理由（`CA92.1`）。发布前要补上。
   - Google 登录目前只在测试包里有。如果以后正式包也开，要先看审核指南 4.8 对第三方登录的要求。
   - App Store Connect 里的"App 隐私"问卷，可以照这一节的"谁能看到什么"和第 7 节草案的数据清单来填。
 
@@ -159,12 +160,12 @@ iOS App 在登录页（`Features/Auth/LoginView.swift:58`）、注册页（`Feat
 
 两个都在提交 `22c0246` 里，都是这次对照时读代码发现的，不涉及要你做决定的事。
 
-1. **A1：手机上会存一份数据库内容。** 以前连测试云和正式环境的包，会把 Firestore 查回来的内容（帖子、资料、通知）存到手机磁盘上，退出登录也还在。代码注释写的却是"和网页一样，不做离线存储"。现在所有的包都只放在内存里（`Core/Auth/FirebaseBootstrap.swift:85-92`、`:119-125`）。启动时，还会把旧版本留在磁盘上的那一份删掉一次（`:127-143`）。
+1. **A1：手机上会存一份数据库内容。** 以前连测试云和正式环境的包，会把 Firestore 查回来的内容（帖子、资料、通知）存到手机磁盘上，退出登录也还在。代码注释写的却是"和网页一样，不做离线存储"。现在所有的包都只放在内存里（`Core/Auth/FirebaseBootstrap.swift:85-92`、`:119-125`）。启动时，还会把旧版本留在磁盘上的那一份删掉一次（`:127-145`）。
 2. **注销后，手机上还留着这个账号的草稿和图片。** 草稿"24 小时过期"只在这个账号下次打开发帖页时才检查，账号注销了就永远等不到那一天，所以草稿的文字、标签、已上传文件的网址会一直留到 App 被删掉。现在在这台手机上注销，会马上删掉这个账号的草稿，并清空内存和磁盘上的图片缓存（`Features/Settings/AccountLocalData.swift:11-19`、`Core/Media/ImageLoader.swift:139-143`、`SettingsView.swift:71-75`）。
 
 **还没验证的：**
 
-- "删掉旧版本留在磁盘上的那一份"只有连云端的包才会执行，所以要等下一次装到真机上才能确认。如果删除失败，App 会记一条错误，下次启动再试（`FirebaseBootstrap.swift:133-142`）。
+- "删掉旧版本留在磁盘上的那一份"只有连云端的包才会执行，所以要等下一次装到真机上才能确认。如果删除失败，App 会记一条错误，下次启动再试（`FirebaseBootstrap.swift:135-144`）。
 - 提交说明里写着 811 个单元测试全部通过。这一轮我没有重新跑测试。
 
 **查到了、还没修的（也不需要你决定）：**
@@ -174,33 +175,133 @@ iOS App 在登录页（`Features/Auth/LoginView.swift:58`）、注册页（`Feat
 - 退出登录只清内存里的图片，磁盘上的图片缓存留着（`Core/Auth/SessionStore.swift:363-368`），草稿也留着。这是有意这么设计的：磁盘上缓存的都是公开图片，下一个人刷首页会快一些；草稿本来就按账号分开存。但就像上面第 2 条说的，一个再也不回来的账号，它的草稿要等到 App 被删掉才会消失。
 - 在网页上注销的账号，手机上的草稿和磁盘图片缓存不会被清掉（手机上的清理只从手机的设置页触发）。
 
-## 5. 只需要你决定的业务问题
+## 5. 要你决定的 7 项：现在怎么写、实际怎么做、我推荐什么
 
-1. **删掉的照片视频还能被打开。** 删帖、删宠物、注销账号以后，照片和视频还留在 Cloudinary 的公开网址上，知道网址的人照样能打开。三选一：
-   - (a) 政策里如实写"不会自动删除"；
-   - (b) 承诺收到请求后，若干天内手工删掉（天数和问题 5 一起定）；
-   - (c) 先把自动删除做出来，再发布政策。
-2. **注销以后，添加过的地点还带着原来的名字。** 两个 App 的页面都不显示这个名字，但任何人直接读数据库都能看到。二选一：
-   - (a) 接受，政策里写明；
-   - (b) 改服务器：注销时把名字换成"已注销用户"，并去掉账号 ID。
-3. **照片视频里可能带着拍摄地点。** iPhone 上没加滤镜、不超过 2 MB、不超过 1920 像素的 JPEG/PNG/WebP 照片，还有所有 GIF 和所有视频，都是原样上传的；网页上没加滤镜、不超过 2 MB 的照片也是原样上传。加了滤镜的帖子照片，两边都会重新编码，不带这些信息。二选一：
-   - (a) 先改 App，上传前统一去掉；
-   - (b) 政策里写明。
-4. **被封或登录不了的人联系不到我们。** "联系我们"要登录，被封的账号用不了，全站也没有任何联系邮箱。另外，App Store 对有用户内容的 App 有公开联系方式的要求（审核指南 1.2，原文这次没上网核对）。要不要放一个邮箱？放的话用哪个？
-5. **靠人手做的事，承诺多快。** 这几件事都没有自动处理，全靠人手：
-   - 帮用户整理数据副本；
-   - 删掉虐待动物的内容并封号（条款现在写的是"立即"）；
-   - 删掉未满 13 岁的账号（管理员没有删别人账号的功能，要用控制台手工删）；
-   - 问题 1 如果选 (b)，还有删照片视频。
+先说对 7 项都成立的三件事：
 
-   每件事写一个天数或小时数，还是只写"尽快"（promptly）？
-6. **政策修改了怎么通知用户。** 两边都没有公告功能，没有推送，也不记录谁同意过哪一版。三选一：
-   - (a) 只改页面上的"最后更新"日期；
-   - (b) 给注册邮箱群发（现在没有群发邮件的工具）；
-   - (c) 先在 App 里做一个公告，再发布。
-7. **备份留多久写进政策。** 现在没有定期备份，"按时间点恢复"也关着，只有 2026-09-07 手动导出的一份完整副本，大约 2026-12-06 自动删除。二选一：
-   - (a) 如实写现状；
-   - (b) 先打开定期备份或"按时间点恢复"（要花钱），再写一个保留天数。
+- **推荐的原则：只写今天真的做到的事。** 做不到的，先照实写，把要做的改动列成"后续"，改好了再改文字。不推荐任何现在做不到的承诺。
+- **改文字不用重新发 App。** iPhone 上的两个入口打开的就是网页（`Features/Legal/LegalPages.swift:21-26`），网页文字一改，两边同时生效。但不管选哪个，发布都要改 `src/pages/PrivacyPolicy.tsx`、`src/pages/TermsOfService.tsx` 这两个文件里的文字，再部署网页，这要你批准才做。下面"要改代码吗"说的是**这两份文字以外**还要不要改。
+- "现有表述"是网页上现在的英文原文，照抄，后面是文件和行号。"推荐"里提到的英文句子，大多已经写在第 7 节的草案里；草案里 【待定：问题 N】 的标记原样留着，等你定了再换。
+
+### 一览
+
+| # | 要定的事 | 推荐 | 文字以外要改代码吗 |
+| --- | --- | --- | --- |
+| 1 | 删掉的照片视频还能打开 | (a) 照实写"不会自动删除"；自动删除列为后续 | 现在不用；后续要改服务器 |
+| 2 | 注销后地点上还有名字 | (a) 照实写；把名字换成"已注销用户"列为后续 | 现在不用；后续要改服务器（小改） |
+| 3 | 照片视频里的拍摄地点 | (b) 照实写哪些会去掉、哪些不会；统一去掉列为后续 | 现在不用；后续要改 iPhone 和网页 |
+| 4 | 登录不了的人联系不到我们 | 加一个你们确实会看的邮箱（先建好再写） | 不用 |
+| 5 | 靠人手做的事多快 | 不写天数，写"由人处理、尽快"（promptly），去掉 "immediately" | 文字不用；要把未满 13 岁的账号删干净，后续要加功能 |
+| 6 | 修改后怎么通知 | (a) 只改"最后更新"日期，删掉"会在 App 里通知" | 不用 |
+| 7 | 备份留多久 | (a) 照实写现状 | 不用；12 月初要回来改这句 |
+
+### 问题 1：删掉的照片视频还能被打开
+
+- **现有表述**
+  - 隐私政策："Photos may take additional time to be removed from Cloudinary storage"（`PrivacyPolicy.tsx:149-150`）
+  - 服务条款："Deleted posts are removed from the app but may take time to be fully removed from our storage services."（`TermsOfService.tsx:63-64`）
+  - 两句的意思都是"会删，只是慢一点"。
+- **实际行为**（网页和 iPhone 一样，删除都在服务器上做）
+  - 删帖、删宠物、注销账号，服务器只删数据库里的记录，没有一步去删 Cloudinary 上的文件。删帖：`functions/src/posts.ts:764` → `functions/src/cleanup.ts:17-28`；删宠物：`functions/src/pets.ts:609` → `cleanup.ts:30-49`；注销：`functions/src/users.ts:485-684`。
+  - 管理员因为举报删掉的帖子也一样，走的是同一个删帖（`src/services/admin.ts:134`、`:212` → `src/services/posts.ts:432-435`），照片视频也还在。
+  - 唯一能删文件的接口（`functions/src/media.ts:144`）只在"刚传上去、保存却被拒绝"时由 App 自己调用，iPhone 上只有头像会这样做（`Features/Profile/AvatarUpload.swift:149-160`）。两边的发帖页都有意不删（`src/utils/mediaReclaim.ts:19-20`，`Features/Compose/ComposeDraft.swift:102-107`）。
+  - 文件放在公开网址上，有链接的人不用登录就能打开（`functions/src/media.ts:57-61`，见第 3 节）。
+- **推荐：(a) 照实写"不会自动删除"。** 第 7 节草案里隐私政策第 6 条 "Photos and videos are not deleted from Cloudinary…" 和条款第 3 条那句已经这么写了。(c) 自动删除列为后续工作，做好了再改文字。另一个选择是 (b) 承诺"收到请求后手工删"，这是要有人去 Cloudinary 控制台一个个删的人工承诺，你们愿意做才选。
+- **对用户的影响**：用户会被明确告知，删掉的帖子、宠物、注销的账号，照片视频在 PetNote 里不再出现，但拿着原链接的人还能打开。在做好自动删除以前，想彻底删掉的人没有办法。
+- **要改代码吗**：现在不用。后续要改服务器：删帖、删宠物、注销时顺带删 Cloudinary 上的文件。难点是得先知道一个文件是不是还被别处用着，比如评价里的照片会被复制进地点的公开照片列表（`functions/src/shared.ts:627-632`）。发帖页的说明也写了，要先记下"哪个文件被谁用着"，才能安全地删（`src/utils/mediaReclaim.ts:37-42`）。
+
+### 问题 2：注销以后，添加过的地点还带着原来的名字
+
+- **现有表述**
+  - "Your profile, pets, posts, comments, and likes are deleted from our database"（`PrivacyPolicy.tsx:147`）
+  - "Upon deletion, your data will be removed, though some data may persist in backups for a limited time."（`TermsOfService.tsx:133-134`）
+  - 两份都没提地点会留下来。
+- **实际行为**
+  - 网页上添加的地点、以及发起公开聚会时自动建的地点，记录里存着添加人的账号 ID 和当时的显示名（`functions/src/places.ts:527-528`、`:266-267`）。注销时服务器不碰地点（`functions/src/users.ts:485-684` 里没有这一步）。
+  - 两个 App 的页面都不显示这个名字，但地点记录谁都能直接从数据库读到（`firestore.rules:529-530`）。
+  - 地点照片的内部记录里也存着上传人的账号 ID，这部分只有服务器能读（`functions/src/places.ts:86-110`）。
+  - iPhone 不能添加地点，也不能发起聚会：在地点这块，iPhone 唯一会写的是评价（`Features/Places/Places.swift:361`）。所以只有在网页上加过地点的人（包括平时用 iPhone 的人）会遇到这件事。
+- **推荐：(a) 照实写。** 第 7 节草案里隐私政策第 6 条 "Places you added…" 那句已经写好。另一个选择是 (b) 先改服务器再发布。我建议把 (b) 排成后续的小改动，改好后删掉这句。
+- **对用户的影响**：注销前读政策的人会知道，自己加过的地点会留下，公开记录里还有当时的显示名和账号 ID，只是页面上看不到。等服务器改好，这些会变成"已注销用户"，不再和他本人挂钩。
+- **要改代码吗**：现在不用。后续在注销（`functions/src/users.ts` 的 `deleteUserAccount`）里加一步：把这个人加过的地点上的名字换掉、账号 ID 去掉，地点照片记录里的账号 ID 也一起去掉。地点上的账号 ID 还用来判断"谁能给这个地点加照片"（`functions/src/places.ts:582`），人已经注销了，去掉它不影响别人。
+
+### 问题 3：照片视频里可能带着拍摄地点
+
+- **现有表述**
+  - 政策里没有一句提到照片里的隐藏信息。讲位置的只有 "Your approximate location (city/state) if you choose to enable it"（`PrivacyPolicy.tsx:51`），意思是"你打开了才收集，而且只到城市"。照片里的拍摄地点是精确位置，也不用你打开什么。
+- **实际行为**
+  - iPhone 上会重新压缩、因此不带这些信息的：所有头像（`Features/Profile/AvatarUpload.swift:277-285`）；加了滤镜的帖子照片（`Core/Media/UploadPreparation.swift:134-154`）；所有 HEIC 照片，以及大于 2 MB 或长边超过 1920 像素的照片（`UploadPreparation.swift:156-184`）。
+  - iPhone 上原样上传的：没加滤镜、又没超过这两个尺寸的 JPEG/PNG/WebP 帖子照片；同样大小的宠物照片（宠物照片没有滤镜，`Features/Pets/PetEditorViewModel.swift:333`）；所有 GIF（`UploadPreparation.swift:161-174`）；所有视频（`Features/Compose/ComposeViewModel.swift:626-632`）。
+  - 网页：HEIC 会转换；加了滤镜的帖子照片（GIF 除外）会重画成 JPEG（`src/pages/Create.tsx:614-627`）；其余照片只要不超过 2 MB 就原样上传，GIF 全部原样上传（`src/utils/imageCompressor.ts:173-174`）。
+  - 原样上传的文件就放在公开网址上（见问题 1）。
+  - 没核对：选图时系统交给 App 的文件里是不是真带着拍摄地点，没在真机上看过。
+- **推荐：(b) 照实写。** 第 7 节草案里隐私政策第 1 条 "Photos and videos" 下的两句已经写好。另一个选择是 (a) 先改 App 再发布。我建议把"上传前统一去掉"排为后续，做好以后把那两句换成一句"上传前会去掉"。
+- **对用户的影响**：用户会被告知，有些照片、所有 GIF 和所有视频可能带着拍摄地点，而且有链接的人都能下载到。在意的人知道了这件事，可以自己决定传不传。
+- **要改代码吗**：现在不用。后续两边都要改：iPhone 上原样上传的照片改成只去掉隐藏信息、画面不动；网页上 2 MB 以下的照片也一样。视频更麻烦，要把视频重新导出一遍（iPhone 现在有意不在手机上处理视频，`ComposeViewModel.swift:627-628`），所以很可能先做照片，视频继续照实写。
+
+### 问题 4：被封或登录不了的人联系不到我们
+
+- **现有表述**
+  - "For privacy questions or data requests, contact us through the in-app feedback form."（`PrivacyPolicy.tsx:185-186`）
+  - "If you have questions about these terms, contact us through the in-app feedback form."（`TermsOfService.tsx:168-169`）
+- **实际行为**
+  - 表单确实有。iPhone 上是 个人页 → Contact us（`App/ProfileLinks.swift:73-78`），或者 设置 → Contact Us & Feedback（`Features/Settings/SettingsView.swift:188`）；网页的联系页要先登录（`src/App.tsx:296-302`）。
+  - 服务器只收登录用户的留言（`functions/src/moderation.ts:116`），被封的账号会被拒（`:119-121`）。没有账号的人、忘了密码的人、被封了想申诉的人，都联系不到。
+  - 网页、App、服务器代码里都找不到任何联系邮箱。
+  - 留言进来时不会通知任何人（服务器没有针对留言的自动处理），要有人打开网页的管理后台去看（`src/pages/AdminPanel.tsx`）。
+- **推荐：放一个邮箱**，写进隐私政策第 10 节和条款第 11 节，作为"用不了表单时"的联系方式，表单照旧。前提是这个邮箱先建好、确实有人看；用哪个地址由你定。另一个选择是不放邮箱，照实写"只能登录后用表单，被封的账号用不了"。
+  - 理由：App Store 对有用户内容的 App 要求有公开的联系方式（审核指南 1.2，原文这次没上网核对）；政策里写了"数据请求找我们"，被封的人也会有这个需要。
+  - 按推荐，草案第 10 节的 【待定：问题 4】 可以换成类似 "If you cannot sign in, or your account has been suspended, email us at 【邮箱】."，条款第 11 节同理。
+- **对用户的影响**：登录不了或被封的人，也能写邮件找到你们；已经登录的人照旧用表单。
+- **要改代码吗**：不用，邮箱只写在两份法律文字里。想在 App 的联系页也显示这个邮箱，是另外一处小改动，不是必须的。
+
+### 问题 5：靠人手做的事，承诺多快
+
+- **现有表述**
+  - 数据副本："Request a copy of your data by contacting us through the feedback form"（`PrivacyPolicy.tsx:136-138`），没说多快。
+  - 虐待动物的内容："Content depicting or promoting animal cruelty will be immediately removed and the account will be banned."（`TermsOfService.tsx:74-75`）
+  - 未满 13 岁："If we discover a child under 13 has created an account, we will delete it."（`PrivacyPolicy.tsx:160-161`）
+- **实际行为**
+  - 数据副本：没有导出功能（代码里搜不到），只能有人去后台手工查出来、整理好。
+  - 举报：只是存下来，标成"待处理"（`functions/src/moderation.ts:92`）。服务器不会自动做任何事，也不通知任何人（没有针对举报的自动处理）。删内容、封号都要管理员在网页的管理后台手工做（`src/services/admin.ts:120`、`:200`、`:230`）。iPhone 上没有管理功能。
+  - 未满 13 岁：注册时不问年龄。管理员能封号（`src/services/admin.ts:230`），但没有删别人账号的功能，注销只能本人删自己（`functions/src/users.ts:495-497`）。在 Firebase 控制台里手工删掉登录账号，也不会连带删掉他的数据（服务器没有这种清理），得照第 3 节"会删掉的"那张单子一样一样手工删。
+- **推荐：都不写天数或小时数，写清楚是人来处理，用 "promptly"（尽快）。** 另一个选择是每件事写一个具体期限，那只有在有人按那个频率去看管理后台和留言时才能写。按推荐：
+  - 条款第 4 条去掉 "immediately"，改成类似 "Content depicting or promoting animal cruelty will be removed, and the account banned, promptly after a moderator reviews the report."（草案里已经有 "Reports are reviewed by a person."）
+  - 隐私政策第 5 条的数据副本改成类似 "we prepare the copy by hand and send it to you promptly"。
+  - 隐私政策第 7 条改成类似 "we will promptly suspend the account and then delete it"。
+  - 问题 1 如果选了 (b)，删照片视频也照这个写法。
+- **对用户的影响**：用户不会再读到"立即删除"，而是知道举报由人来看、看过后尽快处理；要数据副本的人知道是人工整理，没有确切天数。
+- **要改代码吗**：文字不用。两项后续建议：一是给管理员加一个"删除这个账号"的功能，用和注销一样的清理步骤，否则未满 13 岁的账号很难删干净；二是（可选）新举报、新留言进来时提醒管理员，否则"尽快"全靠有人记得去看后台。
+
+### 问题 6：政策修改了怎么通知用户
+
+- **现有表述**
+  - "We may update this policy from time to time. We will notify users of significant changes through the app."（`PrivacyPolicy.tsx:177-178`）
+  - 条款："We may update these terms from time to time."（`TermsOfService.tsx:157`），"Continued use of PetNote after changes means you accept the updated terms."（`TermsOfService.tsx:159-160`）
+  - 两页最下面都是 "Last updated: February 2026"（`PrivacyPolicy.tsx:191`、`TermsOfService.tsx:174`）。
+- **实际行为**
+  - 两边都没有公告功能，也没有推送（见 P14）。
+  - App 内通知只有固定的几种（见 P14）。管理员能发的只有"警告"，一次只能发给一个人（`functions/src/notifications.ts:777-778`、`:792`），不能群发。
+  - 也不能群发邮件：Firebase 只发验证和重置密码的邮件；另一个发邮件的服务写好了但没启用，而且只用来发验证码（`functions/src/email.ts:1-35`）。
+  - 不记录谁同意过哪一版：注册页只显示"创建账号即表示同意"和两个链接（`Features/Auth/SignUpView.swift:199-205`），不存任何同意记录（代码里搜不到）。
+- **推荐：(a) 只改"最后更新"日期，并把"会在 App 里通知"改成如实的说法。** 比如草案第 9 节换成 "When we change this policy, we post the new version on this page and update the date below."，条款第 10 条同理。"继续使用即表示接受"那句不承诺我们做任何事，可以保留。另一个选择是 (c) 先在 App 里做公告再承诺通知；(b) 群发邮件现在没有工具。
+- **对用户的影响**：用户不会收到任何提醒，要自己回来看页面上的日期。
+- **要改代码吗**：不用。以后选 (c)，要网页和 iPhone 两边都做公告。
+
+### 问题 7：备份留多久
+
+- **现有表述**
+  - "Some anonymized data may remain in backups for up to 30 days"（`PrivacyPolicy.tsx:152`）
+  - "Upon deletion, your data will be removed, though some data may persist in backups for a limited time."（`TermsOfService.tsx:133-134`）
+- **实际行为**（这一项靠 2026-09-23 只读查到的正式环境设置，仓库里看不到，这一版没有重查）
+  - 没有定期备份，"按时间点恢复"关着；数据库自己只留 1 小时的历史版本。
+  - 只有 2026-09-07 手动导出的一份，是**完整**副本，没有匿名处理。它放在美国的存储桶里，设了 90 天自动删除，大约 2026-12-06 删掉。
+  - 登录账号（邮箱）不在数据库导出里（`functions/scripts/production-reset.md:56-60`），那次有没有另外导出，没核实（第 6 节第 4 项）。
+  - 仓库里没有任何开定期备份的设置（`firebase.json` 里没有）。
+  - 所以现在的"匿名"和"最多 30 天"都不对。
+- **推荐：(a) 照实写现状。** 第 7 节草案里隐私政策第 6 条 "Backups: …" 那句已经写好。那句写的是具体日期，12 月初那份副本删掉以后要回来改；以后再手动导出一次，也要改。另一个选择是 (b) 先打开定期备份或"按时间点恢复"（要花钱，是改正式环境的设置，要你另外批准），再写一个固定的保留天数。
+- **对用户的影响**：2026-09-07 以前就有账号的人会知道，即使注销，他的数据在那份完整副本里还会留到 12 月初；之后注册的人不受这份副本影响。
+- **要改代码吗**：不用。(b) 是改正式环境的设置，不是改代码。
 
 ## 6. 需要有控制台权限的人查一下
 
