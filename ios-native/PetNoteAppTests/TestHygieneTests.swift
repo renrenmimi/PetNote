@@ -275,7 +275,7 @@ struct TestHygieneTests {
         "DeviceAcceptanceUITests.swift": 4,
         "HitRegionBoundaryUITests.swift": 1,
         "LikeUITests.swift": 2,
-        "NavigationUITests.swift": 2,
+        "NavigationUITests.swift": 1,   // was 2; returning to the same row reads label and frame in one pass now
         "ScreenshotUITests.swift": 4,   // was 5; one was fixed while this round ran
         "VideoPlaybackUITests.swift": 1,
     ]

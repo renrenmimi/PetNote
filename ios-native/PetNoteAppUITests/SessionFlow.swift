@@ -149,6 +149,30 @@ extension XCTestCase {
         from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.3)
     }
 
+    /// Moves the feed a little way off the very top of its list, for a check
+    /// that is about to ask XCUITest whether the navigation bar's items are
+    /// hittable.
+    ///
+    /// **XCUITest's answer, not the app's.** With the birthday banner and
+    /// "Popular Pets" above the first card and the list at its very top,
+    /// XCUITest has called the bar's bell not hittable — not every time — and
+    /// after one `nudgeFeedUp` it called it hittable, at the same frame:
+    /// (268, 66, 58, 36) on an iPhone 17 simulator, measured on 2026-09-28
+    /// and before that on 2026-09-25 (`wip/navbar-hit-diagnosis`). In the
+    /// top-of-list state the app's own accessibility and touch hit tests at
+    /// the bell's centre both answered the bell, XCUITest's own visible frame
+    /// for it was whole, and a tap there opened Notifications. What inside
+    /// XCUITest decides otherwise, and when, is not found.
+    ///
+    /// So the question is split, not dropped: the bar's items are judged here,
+    /// where that judgement holds, and the top of the list is covered by a
+    /// real tap in `FeedExtrasUITests.testTheBellOpensNotificationsFromTheTopOfTheList`.
+    /// Whether VoiceOver finds the bell there is for a person on a device.
+    func leaveTheTopOfTheFeed(_ app: XCUIApplication) {
+        nudgeFeedUp(app)
+        waitForQuietUI(app, quietFor: 1, timeout: 10)
+    }
+
     /// The same, the other way. Only for a list that is not at its top — at
     /// the top a downward drag is the start of a pull to refresh.
     func nudgeListDown(_ app: XCUIApplication, by distance: CGFloat) {

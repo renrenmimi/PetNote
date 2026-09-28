@@ -150,9 +150,13 @@ final class AccessibilityUITests: XCTestCase {
         }
     }
 
+    /// `barOffTheTop` is for the feed: its content is checked where it is, at
+    /// the top of the list, and its bar's items after `leaveTheTopOfTheFeed`,
+    /// which says why.
     private func assertControlsAreStillReachable(
         _ app: XCUIApplication,
         _ context: String,
+        barOffTheTop: Bool = false,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
@@ -177,6 +181,7 @@ final class AccessibilityUITests: XCTestCase {
             .compactMap { $0.exists ? $0.frame : nil }
         let controls = visibleOwnControls(app)
         XCTAssertFalse(controls.isEmpty, "\(context): no identified controls found", file: file, line: line)
+        var barItemsForLater: [String] = []
         for control in controls {
             let frame = control.frame
             if barButtonIDs.contains(control.identifier) || barFrames.contains(where: { $0.contains(frame) }) {
@@ -184,6 +189,10 @@ final class AccessibilityUITests: XCTestCase {
                 // type size, so these are asserted reachable, not tall — the
                 // same split AuthUITests documents.
                 guard control.isEnabled else { continue }
+                if barOffTheTop {
+                    barItemsForLater.append(control.identifier)
+                    continue
+                }
                 XCTAssertTrue(
                     waitUntilHittable(control, in: app, timeout: 10),
                     "\(context): \(control.identifier) is not reachable\n\(app.debugDescription)", file: file, line: line
@@ -211,6 +220,18 @@ final class AccessibilityUITests: XCTestCase {
                 }
             }
         }
+
+        guard !barItemsForLater.isEmpty else { return }
+        leaveTheTopOfTheFeed(app)
+        // Found again by name: the drag moved the list, and an element picked
+        // by its index a moment ago now resolves to whatever holds that index.
+        for id in barItemsForLater {
+            XCTAssertTrue(
+                waitUntilHittable(app.buttons.matching(identifier: id).firstMatch, in: app, timeout: 10),
+                "\(context): \(id) is not reachable off the top of the list\n\(app.debugDescription)",
+                file: file, line: line
+            )
+        }
     }
 
     // MARK: - §6.2 The largest accessibility size
@@ -229,7 +250,7 @@ final class AccessibilityUITests: XCTestCase {
                                        in: app, timeout: 60),
                       "the feed never loaded at AX5")
         assertNothingRunsOffTheSide(app, "feed at AX5")
-        assertControlsAreStillReachable(app, "feed at AX5")
+        assertControlsAreStillReachable(app, "feed at AX5", barOffTheTop: true)
 
         openFirstPost(app)
         assertNothingRunsOffTheSide(app, "post detail at AX5")
@@ -253,7 +274,7 @@ final class AccessibilityUITests: XCTestCase {
         signIn(app, email: "accept-a@example.com")
         XCTAssertTrue(waitForExistence(of: app.staticTexts.matching(identifier: "post.text").firstMatch,
                                        in: app, timeout: 60))
-        assertControlsAreStillReachable(app, "feed at XS")
+        assertControlsAreStillReachable(app, "feed at XS", barOffTheTop: true)
 
         openFirstPost(app)
         assertControlsAreStillReachable(app, "post detail at XS")

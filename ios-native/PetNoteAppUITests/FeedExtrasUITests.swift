@@ -77,6 +77,66 @@ final class FeedExtrasUITests: XCTestCase {
         XCTAssertEqual(opened.label, text, "the tile opened a different post")
     }
 
+    // MARK: - The bar above them
+
+    /// With "Popular Pets" above the first card and the list at its very
+    /// top, a tap at the bell's centre opens Notifications.
+    ///
+    /// The other half of `leaveTheTopOfTheFeed`. The bar checks judge the bell
+    /// one small drag off the top, because at the top XCUITest has called it
+    /// not hittable; this covers the top with a tap by coordinate, which is
+    /// where a finger goes — `bell.tap()` goes wherever XCUITest puts its hit
+    /// point.
+    ///
+    /// **It covers the tap, not XCUITest's judgement**, which does not come on
+    /// demand. On 2026-09-28 the three bar checks and a diagnosis, as
+    /// accept-a, met "not hittable" here; this test, as a fresh account and
+    /// then as accept-a, met "hittable". What decides it is not found. The
+    /// judgement is printed rather than asserted, so a run that does meet it
+    /// keeps the record. As accept-a all the same, the account the bar checks
+    /// use.
+    ///
+    /// The post is written, not borrowed from the seed, so the row has a tile
+    /// in it whatever the seed holds. Nothing is opened but Notifications,
+    /// which only reads, so accept-a's seen list and notifications stay as
+    /// they were.
+    func testTheBellOpensNotificationsFromTheTopOfTheList() throws {
+        let postID = "ui-\(run)-bell"
+        cleanup.append("posts/\(postID)")
+        try PlacesMeetupsUITests.write(path: "posts/\(postID)", [
+            "authorId": "ui-\(run)-author", "authorName": "Bell \(run)", "authorAvatar": "",
+            "text": "TEST CONTENT bell \(run)", "createdAt": Date(), "likeCount": 1_000_000, "commentCount": 0,
+            "petName": "Bell \(run)",
+        ])
+        let app = launchOnSignIn()
+        signIn(app, email: "accept-a@example.com")
+
+        XCTAssertTrue(waitForExistence(of: app.buttons["spotlight.post.\(postID)"], in: app, timeout: 60),
+                      "the spotlight never showed the post\n\(app.debugDescription)")
+        XCTAssertTrue(waitForQuietUI(app), "the save-password sheet kept coming back")
+
+        // At the top: the first row starts below the bar only while the list
+        // has not moved. The banner is the first row when there is one.
+        let bar = app.navigationBars["PetNote"]
+        let banner = app.descendants(matching: .any)["feed.birthday"]
+        let row = banner.exists ? banner : app.descendants(matching: .any)["feed.spotlight"]
+        XCTAssertTrue(bar.exists && row.exists, "no feed bar or no first row\n\(app.debugDescription)")
+        XCTAssertGreaterThanOrEqual(row.frame.minY, bar.frame.maxY, "the list is not at its top")
+
+        let bell = app.buttons["feed.notifications"]
+        XCTAssertTrue(bell.exists, "no bell")
+        let frame = bell.frame
+        print("MEASURED at the top of the list: bell \(frame) value=\(String(describing: bell.value)), "
+              + "XCUITest says hittable=\(bell.isHittable), windows=\(app.windows.count)")
+        app.windows.firstMatch.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: frame.midX, dy: frame.midY))
+            .tap()
+        XCTAssertTrue(
+            waitForExistence(of: app.navigationBars["Notifications"], in: app, timeout: 20),
+            "a tap at the bell's centre with the list at its top did not open Notifications\n\(app.debugDescription)"
+        )
+    }
+
     // MARK: - Birthday banner
 
     func testABirthdayTodayIsCelebratedSharedAndDismissedForTheSession() throws {
