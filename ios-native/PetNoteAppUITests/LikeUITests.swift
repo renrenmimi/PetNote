@@ -526,13 +526,26 @@ final class LikeUITests: XCTestCase {
         let deadline = Date().addingTimeInterval(60)
         var swipes = 0
         var nudges = 0
+        var nudgesDown = 0
         while swipes < 15, Date() < deadline {
             dismissSavePasswordSheetIfPresent(app)
             if target.exists {
-                if target.isHittable,
-                   let like = likeButton(app, forPostWithText: text), like.isHittable,
-                   isWhollyReachable(like, in: app) {
+                let like = likeButton(app, forPostWithText: text)
+                if target.isHittable, let like, like.isHittable, isWhollyReachable(like, in: app) {
                     return true
+                }
+                // The heart sits above its text since the cards follow the
+                // web client (actions, then text). A text in the upper part
+                // of the screen can have its heart under the navigation bar or
+                // above the screen, which waiting does not fix: the list is
+                // moved down a little instead — slowly and not far, so from a
+                // row this far down it cannot become a pull to refresh.
+                let barBottom = app.navigationBars.firstMatch.exists
+                    ? app.navigationBars.firstMatch.frame.maxY : app.windows.firstMatch.frame.minY
+                if nudgesDown < 4, like.map({ $0.frame.minY < barBottom }) ?? (target.frame.minY < barBottom + 200) {
+                    nudgeFeedDown(app)
+                    nudgesDown += 1
+                    continue
                 }
                 // The card is in the tree and its heart is not somewhere a tap
                 // is delivered: hanging off the bottom, under the tab bar, not
@@ -544,7 +557,7 @@ final class LikeUITests: XCTestCase {
                 // it is a row still settling, and waiting is right.
                 let window = app.windows.firstMatch.frame
                 if target.frame.midY > window.midY, nudges < 6 {
-                    nudgeListUp(app)
+                    nudgeFeedUp(app)
                     nudges += 1
                     continue
                 }
@@ -594,19 +607,22 @@ final class LikeUITests: XCTestCase {
     /// The like button belonging to one particular card.
     ///
     /// By geometry, because the cards are siblings in the tree and nothing
-    /// links a button to the text above it: the first `post.like` below this
-    /// card's text is this card's, since the next card's text comes after its
-    /// own action row. Indexing into the visible buttons instead is what
-    /// previously moved an assertion onto whatever card happened to be on
-    /// screen.
+    /// links a button to the text beside it. Since 09-26 a card is the web
+    /// client's — header, picture, actions, then the text — so this card's
+    /// like is the nearest `post.like` *above* its text; the next card's is
+    /// below it. (It was the first one below while the text sat above the
+    /// picture, and after the change that rule answered with the next card's
+    /// button: four LikeUITests read another post's state.) Indexing into the
+    /// visible buttons instead is what previously moved an assertion onto
+    /// whatever card happened to be on screen.
     private func likeButton(_ app: XCUIApplication, forPostWithText text: String) -> XCUIElement? {
         let target = app.staticTexts.matching(identifier: "post.text")
             .containing(NSPredicate(format: "label == %@", text)).firstMatch
         guard target.exists else { return nil }
         let top = target.frame.minY
         return app.buttons.matching(identifier: "post.like").allElementsBoundByIndex
-            .filter { $0.exists && !$0.frame.isEmpty && $0.frame.minY > top }
-            .min { $0.frame.minY < $1.frame.minY }
+            .filter { $0.exists && !$0.frame.isEmpty && $0.frame.maxY <= top }
+            .max { $0.frame.minY < $1.frame.minY }
     }
 
     private func shownCount(of button: XCUIElement) -> Int? {

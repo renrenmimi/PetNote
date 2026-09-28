@@ -12,6 +12,7 @@ struct PostDetailView: View {
     /// The comment whose delete is waiting on the confirmation.
     @State private var commentToDelete: Comment?
     @Environment(SessionStore.self) private var session
+    @Environment(PostBookmarks.self) private var bookmarks: PostBookmarks?
 
     /// What the comment count scrolls to. A constant rather than a literal at
     /// two call sites, because a typo in either would fail silently — a
@@ -210,6 +211,7 @@ struct PostDetailView: View {
                             mediaSize: .large,
                             onOpenImage: { fullImageURL = $0 }
                         )
+                        .task(id: post.id) { await bookmarks?.load([post.id]) }
 
                         // Where the comment count scrolls to. On the divider
                         // rather than on `commentsSection`, which is a

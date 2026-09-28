@@ -167,11 +167,9 @@ final class DeviceAcceptanceUITests: XCTestCase {
     /// failure semantics is how a test that checks nothing gets read as one
     /// that does.
     private func typeCredentialsAndSubmit(_ app: XCUIApplication) {
-        let email = app.textFields["login.email"]
-        email.tap(); email.typeText("accept-a@example.com")
-        let password = app.secureTextFields["login.password"]
-        password.tap(); password.typeText("Passw0rd!x")
-        app.buttons["login.submit"].tap()
+        // The shared helper, which submits from the keyboard: see its note
+        // on the password prompt iOS draws over the form on the phone.
+        deviceTypeCredentialsAndSubmit(app)
     }
 
     private func waitForPredicate(

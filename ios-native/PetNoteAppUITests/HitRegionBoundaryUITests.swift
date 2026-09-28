@@ -628,9 +628,17 @@ final class HitRegionBoundaryUITests: XCTestCase {
         print("MEASURED first post text frame = \(postTextFrame) label=\"\(postLabel.prefix(48))\"")
 
         // The disambiguation the comments probe depends on only works if the
-        // post it expects to open has text of its own to be recognised by.
+        // post it expects to open has text of its own to be recognised by —
+        // this card's. Since 09-26 a card is the web client's (picture,
+        // actions, then text), so that text is the one just under the action
+        // row; the next card starts with its header, not its text. This
+        // asserted "above the row" while the text sat over the picture, and
+        // after the change that failed the calibration on the layout, not on
+        // the instrument (757 is not less than 658.7, 2026-09-26).
         XCTAssertFalse(postLabel.isEmpty, "the first post has no text to identify it by")
-        XCTAssertLessThan(postTextFrame.maxY, commentsFrame.minY,
+        XCTAssertGreaterThan(postTextFrame.minY, commentsFrame.maxY,
+                             "the text this probe identifies the post by is not under this card's action row")
+        XCTAssertLessThan(postTextFrame.minY - commentsFrame.maxY, 44,
                           "the text this probe identifies the post by belongs to another card")
         XCTAssertLessThan(likeFrame.minX, commentsFrame.minX, "these two are the wrong way round")
 

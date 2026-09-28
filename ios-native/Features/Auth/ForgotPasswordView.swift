@@ -21,13 +21,14 @@ struct ForgotPasswordView: View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             content(now: context.date)
         }
-        .background(Palette.background)
         .navigationTitle("Reset password")
         .navigationBarTitleDisplayMode(.inline)
+        // The card has the title; see SignUpView.
+        .toolbar(removing: .title)
     }
 
     private func content(now: Date) -> some View {
-        ScrollView {
+        AuthShell {
             VStack(alignment: .leading, spacing: Spacing.l) {
                 header
                 emailField
@@ -36,18 +37,16 @@ struct ForgotPasswordView: View {
                 spamHint
                 resendControls(now: now)
             }
-            .padding(.horizontal, Layout.pageInset)
-            .padding(.vertical, Spacing.xl)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .scrollDismissesKeyboard(.interactively)
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: Spacing.s) {
             Text("Reset password")
-                .font(Typography.pageTitle)
+                .font(.title2.weight(.semibold))
                 .foregroundStyle(Palette.primaryText)
+                .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("forgot.title")
             Text("Enter your email and we will send you a reset link.")
                 .font(Typography.body)

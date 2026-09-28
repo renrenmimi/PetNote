@@ -1,4 +1,5 @@
 import CoreTransferable
+import LinkPresentation
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -162,37 +163,22 @@ struct PostShareCardView: View {
 
 /// The share button on a post: copy the link, share it, or share the card.
 /// iOS's own sheet does the sending, so there is no list of apps to keep here.
+///
+/// A plain button that opens the system's action sheet — the web's share menu
+/// is a bottom action sheet too (`ShareMenu.tsx`) — whose choices hand over to
+/// iOS's share sheet. It was a `Menu`, and a `Menu` is a UIKit control: a slow
+/// drag that began on it did not move the list around it. Measured on
+/// 2026-09-26, the same 200pt drag moved the feed 0pt from the share button
+/// and 190pt from the like button beside it — and since the button moved next
+/// to the comments, it is where a thumb scrolling the feed comes down.
 struct PostShareMenu: View {
     let post: Post
     @State private var copied = false
+    @State private var choosing = false
+    @State private var sharing: ShareSheetRequest?
 
     var body: some View {
-        Menu {
-            if !PostShareContent.linksToTheSite {
-                // Said where the link is made, not left to be discovered.
-                Text("Test build: links open this app, not the website")
-            }
-            Button {
-                UIPasteboard.general.url = PostShareContent.link(to: post.id)
-                copied = true
-                AccessibilityNotification.Announcement(String(localized: "Link copied!")).post()
-            } label: {
-                Label("Copy Link", systemImage: "link")
-            }
-            ShareLink(
-                item: PostShareContent.link(to: post.id),
-                subject: Text(PostShareContent.title),
-                message: Text(PostShareContent.text(of: post))
-            ) {
-                Label("Share to…", systemImage: "square.and.arrow.up")
-            }
-            ShareLink(
-                item: PostShareCard(post: post),
-                preview: SharePreview(PostShareContent.title)
-            ) {
-                Label("Share as Image", systemImage: "photo")
-            }
-        } label: {
+        Button { choosing = true } label: {
             // The system's share symbol rather than the web's paper plane:
             // this opens iOS's own share sheet, and that is the symbol iOS
             // uses for it. Same size and grey as the rest of the row.
@@ -206,11 +192,135 @@ struct PostShareMenu: View {
         .accessibilityIdentifier("post.share")
         .accessibilityLabel("Share")
         .accessibilityValue(copied ? String(localized: "Link copied!") : "")
+        .confirmationDialog("Share", isPresented: $choosing, titleVisibility: .automatic) {
+            Button("Copy Link") {
+                UIPasteboard.general.url = PostShareContent.link(to: post.id)
+                copied = true
+                AccessibilityNotification.Announcement(String(localized: "Link copied!")).post()
+            }
+            Button("Share to…") { sharing = .link(post) }
+            Button("Share as Image") { sharing = .card(post) }
+        } message: {
+            if !PostShareContent.linksToTheSite {
+                // Said where the link is made, not left to be discovered.
+                Text("Test build: links open this app, not the website")
+            }
+        }
+        .background(ShareSheetPresenter(request: $sharing))
         // The tick goes back to the share arrow after a moment.
         .task(id: copied) {
             guard copied else { return }
             try? await Task.sleep(for: .seconds(2))
             copied = false
+        }
+    }
+}
+
+/// What iOS's share sheet is asked to send for a post.
+enum ShareSheetRequest: Equatable {
+    /// The link, with the web's title as the subject and the start of the
+    /// post as the message — what `shareLink` hands `navigator.share`.
+    case link(Post)
+    /// The post as a picture (`PostShareCard`), made now rather than when the
+    /// menu opened, so opening the menu costs nothing.
+    case card(Post)
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        switch (lhs, rhs) {
+        case let (.link(a), .link(b)), let (.card(a), .card(b)): a.id == b.id
+        default: false
+        }
+    }
+
+    @MainActor
+    func activityItems() async -> [Any]? {
+        switch self {
+        case .link(let post):
+            let link = ShareItemSource(item: PostShareContent.link(to: post.id), title: PostShareContent.title)
+            let message = PostShareContent.text(of: post)
+            return message.isEmpty ? [link] : [message, link]
+        case .card(let post):
+            // A card that cannot be drawn is not offered as an empty sheet.
+            guard let data = try? await PostShareCard(post: post).pngData(),
+                  let picture = UIImage(data: data) else { return nil }
+            return [ShareItemSource(item: picture, title: PostShareContent.title)]
+        }
+    }
+}
+
+/// One thing to share, with the title the sheet shows above it and mail uses
+/// as the subject.
+final class ShareItemSource: NSObject, UIActivityItemSource {
+    private let item: Any
+    private let title: String
+
+    init(item: Any, title: String) {
+        self.item = item
+        self.title = title
+    }
+
+    func activityViewControllerPlaceholderItem(_ controller: UIActivityViewController) -> Any { item }
+
+    func activityViewController(
+        _ controller: UIActivityViewController, itemForActivityType activityType: UIActivity.ActivityType?
+    ) -> Any? { item }
+
+    func activityViewController(
+        _ controller: UIActivityViewController, subjectForActivityType activityType: UIActivity.ActivityType?
+    ) -> String { title }
+
+    func activityViewControllerLinkMetadata(_ controller: UIActivityViewController) -> LPLinkMetadata? {
+        let metadata = LPLinkMetadata()
+        metadata.title = title
+        if let url = item as? URL {
+            metadata.originalURL = url
+            metadata.url = url
+        } else if let picture = item as? UIImage {
+            metadata.imageProvider = NSItemProvider(object: picture)
+        }
+        return metadata
+    }
+}
+
+/// Presents iOS's share sheet for a request, from a view controller behind the
+/// share button.
+///
+/// Needed because a `ShareLink` can only be tapped, and the choice of what to
+/// share is made in the action sheet. The share sheet waits for the action
+/// sheet to finish going away rather than for a fixed time: presenting while
+/// it is still leaving is refused by UIKit without an error.
+struct ShareSheetPresenter: UIViewControllerRepresentable {
+    @Binding var request: ShareSheetRequest?
+
+    func makeUIViewController(context: Context) -> UIViewController { UIViewController() }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator {
+        var isPreparing = false
+    }
+
+    func updateUIViewController(_ host: UIViewController, context: Context) {
+        let coordinator = context.coordinator
+        guard let request, !coordinator.isPreparing, host.presentedViewController == nil else { return }
+        coordinator.isPreparing = true
+        let binding = $request
+        Task { @MainActor in
+            defer { coordinator.isPreparing = false }
+            guard let items = await request.activityItems() else {
+                binding.wrappedValue = nil
+                return
+            }
+            let sheet = UIActivityViewController(activityItems: items, applicationActivities: nil)
+            sheet.completionWithItemsHandler = { _, _, _, _ in binding.wrappedValue = nil }
+            sheet.popoverPresentationController?.sourceView = host.view
+            let present = { host.present(sheet, animated: true) }
+            if let leaving = host.view.window?.rootViewController?.presentedViewController,
+               leaving.isBeingDismissed, let transition = leaving.transitionCoordinator {
+                transition.animate(alongsideTransition: nil) { _ in present() }
+            } else {
+                present()
+            }
         }
     }
 }

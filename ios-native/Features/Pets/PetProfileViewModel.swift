@@ -44,9 +44,6 @@ final class PetProfileViewModel {
     }
 
     private(set) var state: LoadState = .loading
-    private(set) var posts: [Post] = []
-    private(set) var postsState: SectionState = .loading
-    private(set) var hasMorePosts = true
     private(set) var checkins: [PetCheckin] = []
     private(set) var checkinsState: SectionState = .loading
     private(set) var family: [PetFamilyMember] = []
@@ -78,6 +75,10 @@ final class PetProfileViewModel {
     var permissions: PetOwnership { ownership ?? .none }
 
     let petID: String
+    /// The posts and their hearts: the feed's model over this pet's posts
+    /// (`PetPostsFeed`). The page reads the posts through the properties
+    /// below, and likes through this.
+    let postList: FeedViewModel
     private let repository: any PetRepository
     private let viewerID: String?
     private let viewerIsAdmin: Bool
@@ -85,14 +86,11 @@ final class PetProfileViewModel {
     private let checkinLimit: Int
     private let log = Logger(subsystem: "dev.local.petnote.native", category: "pet")
 
-    /// In-flight paging guard, the same rule as the feed: a flung list asks for
-    /// the same cursor several times and it must be fetched once.
-    private var loadingMore = false
-    private var nextPostCursor: PageCursor?
-
     init(
         petID: String,
         repository: any PetRepository,
+        likes: any LikeRepository,
+        postLookup: any FeedRepository,
         viewerID: String?,
         viewerIsAdmin: Bool = false,
         postPageSize: Int = 20,
@@ -103,6 +101,12 @@ final class PetProfileViewModel {
     ) {
         self.petID = petID
         self.repository = repository
+        self.postList = FeedViewModel(
+            feed: PetPostsFeed(petID: petID, pets: repository, lookup: postLookup),
+            likes: likes,
+            accountID: viewerID,
+            pageSize: postPageSize
+        )
         self.viewerID = viewerID
         self.viewerIsAdmin = viewerIsAdmin
         self.postPageSize = postPageSize
@@ -123,7 +127,7 @@ final class PetProfileViewModel {
     /// region-based isolation checker rejects the capture pattern outright.
     func load() async {
         async let petAndFamily: Void = loadPetAndFamily()
-        async let posts: Void = loadFirstPostPage()
+        async let posts: Void = postList.reload()
         async let checkins: Void = loadCheckins()
         _ = await (petAndFamily, posts, checkins)
     }
@@ -164,39 +168,34 @@ final class PetProfileViewModel {
         }
     }
 
-    private func loadFirstPostPage() async {
-        postsState = .loading
-        nextPostCursor = nil
-        do {
-            let page = try await repository.posts(petID: petID, after: nil, limit: postPageSize)
-            posts = page.items
-            nextPostCursor = page.next
-            hasMorePosts = page.hasMore
-            postsState = .loaded
-        } catch {
-            // The list is left as it was rather than emptied: an empty list is
-            // how "this pet has not posted" looks, and a failure must never
-            // borrow that appearance.
-            postsState = .failed(Self.wording(for: error, doing: .loadingPosts))
+    // MARK: - Posts
+
+    /// This pet's posts, as far as they have been read.
+    var posts: [Post] { postList.posts }
+
+    /// The section as a whole. A page that fails after the first is not
+    /// this: what is already on screen stays, with its own retry at the end
+    /// (`morePostsFailed`), as in the feed.
+    ///
+    /// On a failure the list is left as it was rather than emptied: an empty
+    /// list is how "this pet has not posted" looks, and a failure must never
+    /// borrow that appearance.
+    var postsState: SectionState {
+        switch postList.state {
+        case .idle, .loadingFirstPage: .loading
+        case .loaded: .loaded
+        case .failed: .failed(Self.generic(.loadingPosts))
         }
     }
 
+    var hasMorePosts: Bool { postList.hasMore }
+    var morePostsFailed: Bool { postList.pagingFailure != nil }
+
     func loadMorePostsIfNeeded(currentItem: Post?) async {
-        guard let currentItem, currentItem.id == posts.last?.id else { return }
-        guard let cursor = nextPostCursor, !loadingMore else { return }
-        loadingMore = true
-        defer { loadingMore = false }
-        do {
-            let page = try await repository.posts(
-                petID: petID, after: cursor, limit: postPageSize
-            )
-            posts += page.items
-            nextPostCursor = page.next
-            hasMorePosts = page.hasMore
-        } catch {
-            postsState = .failed(Self.wording(for: error, doing: .loadingPosts))
-        }
+        await postList.loadMoreIfNeeded(currentItem: currentItem)
     }
+
+    func retryMorePosts() async { await postList.retryPaging() }
 
     /// A tab, not the page. See the type's doc comment.
     private func loadCheckins() async {
@@ -209,7 +208,7 @@ final class PetProfileViewModel {
         }
     }
 
-    func retryPosts() async { await loadFirstPostPage() }
+    func retryPosts() async { await postList.reload() }
     func retryCheckins() async { await loadCheckins() }
     func retryPetAndFamily() async {
         state = .loading

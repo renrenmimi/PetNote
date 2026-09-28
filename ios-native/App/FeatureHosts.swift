@@ -27,6 +27,8 @@ struct PetProfileHost: View {
     init(
         petID: String,
         repository: any PetRepository,
+        likes: any LikeRepository,
+        postLookup: any FeedRepository,
         viewerID: String,
         reloadToken: Int,
         onEdit: @escaping (String) -> Void,
@@ -35,7 +37,7 @@ struct PetProfileHost: View {
         socialRow: ((Pet, PetOwnership?) -> AnyView)? = nil
     ) {
         _model = State(initialValue: PetProfileViewModel(
-            petID: petID, repository: repository, viewerID: viewerID
+            petID: petID, repository: repository, likes: likes, postLookup: postLookup, viewerID: viewerID
         ))
         self.reloadToken = reloadToken
         self.onEdit = onEdit

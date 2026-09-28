@@ -305,6 +305,26 @@ final class NavigationUITests: XCTestCase {
         )
         waitForQuietUI(app, quietFor: 1, timeout: 15)
 
+        // The second tap can land on the screen the first one opened — the
+        // question here is whether it pushed a second copy, not what it
+        // touched there. Measured on 2026-09-26: the first post's text sits
+        // where the detail screen's share button is, and the share choices
+        // (an action sheet since 0fe5b27) covered the back button. They are
+        // closed by their own Cancel before going back.
+        if app.buttons["Copy Link"].exists {
+            print("MEASURED the second tap opened the detail screen's share choices")
+            let cancel = app.buttons["Cancel"]
+            if cancel.exists { cancel.tap() } else {
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap()
+            }
+            XCTAssertTrue(
+                XCTWaiter().wait(for: [XCTNSPredicateExpectation(
+                    predicate: NSPredicate(format: "exists == false"), object: app.buttons["Copy Link"]
+                )], timeout: 10) == .completed,
+                "the share choices did not close"
+            )
+        }
+
         popToFeed(app)
         XCTAssertFalse(
             app.textFields["composer.field"].exists,

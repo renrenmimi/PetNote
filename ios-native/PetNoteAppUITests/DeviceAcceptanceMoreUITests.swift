@@ -471,19 +471,39 @@ extension XCTestCase {
     /// Types the credentials and submits, and notes when, for
     /// `deviceSettleSavePasswordSheet`. Checks only that the form could be
     /// typed into; whether the feed appeared is the caller's to assert.
+    ///
+    /// **From the keyboard, not by tapping the form.** On the phone iOS puts
+    /// its own password prompt over the form once there is an account in the
+    /// email field — the system offering to use or keep the credentials. It
+    /// is not in PetNote's accessibility tree, so the dump at a failure shows
+    /// an enabled, hittable "Sign in" and nothing over it; but a tap at its
+    /// centre lands on the prompt. The owner watched it happen on 2026-09-28
+    /// ("it covers most of the Sign in button") and signed in by tapping the
+    /// part left showing. Since the card was centred (de44ce5) the button,
+    /// and sometimes the password field, sit where the prompt comes up: of
+    /// twelve device tests, ten failed on 09-26 and most of them again on
+    /// 09-28 — "never reached the feed" with both fields filled, or "neither
+    /// element nor any descendant has keyboard focus" on the password.
+    ///
+    /// Return on the email field is "Next", and the sign-in screen moves the
+    /// focus itself (`LoginView.submit`); Return on the password field is
+    /// "Go", which submits. Keys go to the focused field, not to whatever is
+    /// drawn over it. The button's own tap is covered on the simulator, which
+    /// has no password prompt.
     func deviceTypeCredentialsAndSubmit(_ app: XCUIApplication) {
         let email = app.textFields["login.email"]
         XCTAssertTrue(waitUntilHittable(email, in: app, timeout: 30), "the email field never became usable")
         deviceFocus(email)
-        email.typeText(DeviceAccount.email)
+        email.typeText(DeviceAccount.email + "\n")
         let password = app.secureTextFields["login.password"]
-        // On the phone a tap while the keyboard is still settling from the
-        // email field can leave focus where it was, and typing then fails
-        // with "Neither element nor any descendant has keyboard focus"
-        // (2026-09-25). Tap until the field says it has focus, then type.
-        deviceFocus(password)
-        password.typeText(DeviceAccount.password)
-        app.buttons["login.submit"].tap()
+        let moved = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hasKeyboardFocus == true"), object: password
+        )
+        // A tap only if Next did not move the focus, and then until the
+        // field says it has it (a tap while the keyboard is still settling
+        // can leave focus where it was — 2026-09-25).
+        if XCTWaiter().wait(for: [moved], timeout: 3) != .completed { deviceFocus(password) }
+        password.typeText(DeviceAccount.password + "\n")
         SavePasswordPrompt.lastSubmitted = Date()
     }
 

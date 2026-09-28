@@ -35,7 +35,15 @@ final class PostActionsViewModel {
     /// Bookmarks are the client-direct-write exception. Three states for the
     /// same reason likes have three: a silent no-op is indistinguishable from
     /// success, and "already saved" is not "that post is gone".
-    private(set) var isBookmarked = false
+    /// With a session's `PostBookmarks`, the saved state is that one — the
+    /// same the post's own save button shows — and this menu's Save goes
+    /// through it. Without one (previews, tests of this model alone) it is
+    /// this model's own.
+    var isBookmarked: Bool {
+        if let bookmarks { return bookmarks.isSaved(post.id) }
+        return ownBookmarked
+    }
+    private var ownBookmarked = false
     private(set) var isPinned = false
     private(set) var isDeleted = false
     private(set) var isWorking = false
@@ -48,6 +56,7 @@ final class PostActionsViewModel {
     private let writes: any PostWriteRepository
     private let pins: any PinnedPostReading
     private let onDeleted: (@MainActor (String) -> Void)?
+    private let bookmarks: PostBookmarks?
     private let log = Logger(subsystem: "dev.local.petnote.native", category: "postmanage")
 
     init(
@@ -55,12 +64,14 @@ final class PostActionsViewModel {
         uid: String,
         writes: any PostWriteRepository,
         pins: any PinnedPostReading = FirestorePinnedPostSource(),
+        bookmarks: PostBookmarks? = nil,
         onDeleted: (@MainActor (String) -> Void)? = nil
     ) {
         self.post = post
         self.uid = uid
         self.writes = writes
         self.pins = pins
+        self.bookmarks = bookmarks
         self.onDeleted = onDeleted
     }
 
@@ -68,7 +79,11 @@ final class PostActionsViewModel {
     var isOwnPost: Bool { post.authorID == uid }
 
     func refresh() async {
-        isBookmarked = (try? await writes.isBookmarked(postID: post.id)) ?? false
+        if let bookmarks {
+            await bookmarks.load([post.id])
+        } else {
+            ownBookmarked = (try? await writes.isBookmarked(postID: post.id)) ?? false
+        }
         guard isOwnPost else { return }
         isPinned = (try? await pins.pinnedPostID(for: uid)) == post.id
     }
@@ -79,9 +94,14 @@ final class PostActionsViewModel {
         guard !isWorking else { return }
         isWorking = true
         defer { isWorking = false }
+        if let bookmarks {
+            // Its failure is shown where every save's failure is shown.
+            await bookmarks.toggle(post.id)
+            return
+        }
         let wanted = !isBookmarked
         // Optimistic, and rolled back by the answer rather than by a timer.
-        isBookmarked = wanted
+        ownBookmarked = wanted
         do {
             let result = wanted
                 ? try await writes.bookmark(postID: post.id)
@@ -94,11 +114,11 @@ final class PostActionsViewModel {
                 // optimistic value is right; nothing to undo.
                 break
             case .postNotFound:
-                isBookmarked = false
+                ownBookmarked = false
                 failureMessage = String(localized: "That post no longer exists.")
             }
         } catch {
-            isBookmarked = !wanted
+            ownBookmarked = !wanted
             failureMessage = describe(error)
         }
     }

@@ -21,6 +21,9 @@ struct PostDetailActions: View {
     let onBlocked: @MainActor (String) -> Void
 
     @State private var actions: PostActionsViewModel?
+    /// The session's saved posts, so this menu's Save and the post's own save
+    /// button are one state.
+    @Environment(PostBookmarks.self) private var bookmarks: PostBookmarks?
     @State private var isReporting = false
     @State private var blockFailure: String?
 
@@ -79,6 +82,7 @@ struct PostDetailActions: View {
             uid: user.uid,
             writes: repositories.postWrites,
             pins: repositories.pins,
+            bookmarks: bookmarks,
             onDeleted: onDeleted
         )
     }
