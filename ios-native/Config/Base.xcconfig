@@ -42,6 +42,18 @@ INFOPLIST_FILE = Config/Info.plist
 INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen
 INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait
 
+// Photos, only ever to add to them: the share sheet's Save Image for a post's
+// card. Without this key iOS leaves that action out of the sheet altogether.
+// Measured 2026-09-28, the card's sheet offered Copy, Assign to Contact, Print
+// and More, and no Save Image, so a card could be shared but never kept.
+// Nothing in the app reads the library; the picker needs no permission.
+// Translated in App/InfoPlist.xcstrings.
+INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = PetNote saves a post's share card to your photos when you choose Save Image.
+
+// Standard HTTPS only (Firebase, Cloudinary), which is exempt from export
+// documentation. Saying so here spares answering it for every upload.
+INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO
+
 // The icon is the Capacitor app's, byte for byte. Not redrawn, not
 // regenerated, not re-exported: the source is
 // ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png in the web
