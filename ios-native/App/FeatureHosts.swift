@@ -89,6 +89,7 @@ struct ComposeHost: View {
     init(
         user: UserSession,
         repositories: Repositories,
+        preferredPetID: String? = nil,
         onPublished: @escaping @MainActor (String) -> Void,
         onClose: @escaping () -> Void
     ) {
@@ -98,6 +99,7 @@ struct ComposeHost: View {
             uploader: repositories.media,
             writes: repositories.postWrites,
             pets: repositories.petChoices,
+            preferredPetID: preferredPetID,
             onPublished: onPublished
         ))
         self.onClose = onClose

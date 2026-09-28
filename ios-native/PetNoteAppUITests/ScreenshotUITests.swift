@@ -193,6 +193,10 @@ final class AccessibilityWalkUITests: XCTestCase {
         // --- Feed -> detail, by element ------------------------------------
         let comments = app.buttons.matching(identifier: "post.comments").firstMatch
         XCTAssertFalse(comments.label.isEmpty, "the way into a post has no label")
+        // Moved up first: below the banner and spotlight rows, the first
+        // card's actions start under the tab bar, where a tap lands on the
+        // bar. Recorded, not asserted — the walk records what it finds.
+        report.append("comments brought into reach=\(bringIntoReach(comments, in: app, timeout: 30))")
         comments.tap()
         XCTAssertTrue(waitForExistence(of: app.navigationBars["Post"], in: app, timeout: 30),
                       "could not reach the detail screen by activating a labelled element")
