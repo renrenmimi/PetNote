@@ -18,6 +18,7 @@
 		00000000000000000000000D /* PetNoteAppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = "wrapper.cfbundle"; includeInIndex = 0; path = PetNoteAppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		00000000000000000000000E /* Debug-Emulator.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug-Emulator.xcconfig; sourceTree = "<group>"; };
 		00000000000000000000000F /* Debug-Prod.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug-Prod.xcconfig; sourceTree = "<group>"; };
+		000000000000000000000040 /* Debug-TestCloud.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Debug-TestCloud.xcconfig"; sourceTree = "<group>"; };
 		000000000000000000000010 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		000000000000000000000011 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
 		000000000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -141,6 +142,7 @@
 				000000000000000000000011 /* Base.xcconfig */,
 				00000000000000000000000E /* Debug-Emulator.xcconfig */,
 				00000000000000000000000F /* Debug-Prod.xcconfig */,
+				000000000000000000000040 /* Debug-TestCloud.xcconfig */,
 				000000000000000000000010 /* Release.xcconfig */,
 				000000000000000000000013 /* Local.xcconfig.example */,
 				000000000000000000000012 /* Info.plist */,
@@ -427,6 +429,55 @@
 			};
 			name = "Debug-Prod";
 		};
+		00000000000000000000003C /* Debug-TestCloud */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 000000000000000000000040 /* Debug-TestCloud.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_NO_COMMON_BLOCKS = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf";
+			};
+			name = "Debug-TestCloud";
+		};
+		00000000000000000000003D /* Debug-TestCloud */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 000000000000000000000040 /* Debug-TestCloud.xcconfig */;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+			};
+			name = "Debug-TestCloud";
+		};
+		00000000000000000000003E /* Debug-TestCloud */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = dev.local.petnote.native.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "";
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PetNote.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PetNote";
+				CODE_SIGN_STYLE = Automatic;
+			};
+			name = "Debug-TestCloud";
+		};
+		00000000000000000000003F /* Debug-TestCloud */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = dev.local.petnote.native.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "";
+				TEST_TARGET_NAME = PetNoteApp;
+				CODE_SIGN_STYLE = Automatic;
+			};
+			name = "Debug-TestCloud";
+		};
 		000000000000000000000038 /* Release */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 000000000000000000000010 /* Release.xcconfig */;
@@ -484,6 +535,7 @@
 			buildConfigurations = (
 				000000000000000000000030 /* Debug-Emulator */,
 				000000000000000000000034 /* Debug-Prod */,
+				00000000000000000000003C /* Debug-TestCloud */,
 				000000000000000000000038 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
@@ -494,6 +546,7 @@
 			buildConfigurations = (
 				000000000000000000000031 /* Debug-Emulator */,
 				000000000000000000000035 /* Debug-Prod */,
+				00000000000000000000003D /* Debug-TestCloud */,
 				000000000000000000000039 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
@@ -504,6 +557,7 @@
 			buildConfigurations = (
 				000000000000000000000032 /* Debug-Emulator */,
 				000000000000000000000036 /* Debug-Prod */,
+				00000000000000000000003E /* Debug-TestCloud */,
 				00000000000000000000003A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
@@ -514,6 +568,7 @@
 			buildConfigurations = (
 				000000000000000000000033 /* Debug-Emulator */,
 				000000000000000000000037 /* Debug-Prod */,
+				00000000000000000000003F /* Debug-TestCloud */,
 				00000000000000000000003B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;

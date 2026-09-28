@@ -1,0 +1,4 @@
+# Build output copied in by scripts/prepare-testcloud-deploy.mjs. Never edited
+# here, never committed: the source of truth is functions/src.
+lib/
+node_modules/

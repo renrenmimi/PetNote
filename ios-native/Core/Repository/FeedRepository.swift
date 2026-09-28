@@ -60,6 +60,10 @@ enum CommentError: Error, Sendable, Equatable {
     case postNotFound
     case replyTargetNotFound
     case rateLimited
+    /// The server refused the content itself — too long, malformed, or failing
+    /// a precondition. Carries the words to show, and is never retryable:
+    /// the same text will be refused again.
+    case rejected(String)
 
     /// The request went out and no answer came back.
     ///

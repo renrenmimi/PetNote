@@ -12,6 +12,10 @@ final class LaunchUITests: XCTestCase {
 
     func testLaunchShowsSignIn() {
         let app = XCUIApplication()
+        // Signed out explicitly: the session survives in the simulator's
+        // keychain between tests, so without this the app restores whoever the
+        // previous test signed in and shows the feed instead.
+        app.launchArguments = ["-petnote-start-signed-out"]
         app.launch()
 
         XCTAssertTrue(
@@ -26,6 +30,7 @@ final class LaunchUITests: XCTestCase {
     /// The hit target rule from §5.5, checked where it is cheapest to check.
     func testSignInButtonMeetsMinimumTouchTarget() {
         let app = XCUIApplication()
+        app.launchArguments = ["-petnote-start-signed-out"]
         app.launch()
         XCTAssertTrue(app.buttons["login.submit"].waitForExistence(timeout: 10))
         let frame = app.buttons["login.submit"].frame

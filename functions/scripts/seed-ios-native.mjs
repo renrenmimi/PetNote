@@ -38,27 +38,85 @@ const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const functionsRoot = path.resolve(here, "..");
 
-if (!process.env.FIRESTORE_EMULATOR_HOST) {
-  process.env.FIRESTORE_EMULATOR_HOST = "127.0.0.1:8088";
-}
-if (!process.env.FIREBASE_AUTH_EMULATOR_HOST) {
-  process.env.FIREBASE_AUTH_EMULATOR_HOST = "127.0.0.1:9099";
+// Only defaulted for the emulator; the cloud branch below refuses to run with
+// these set at all.
+if (!process.env.PETNOTE_TEST_PROJECT || process.env.GCLOUD_PROJECT === "petnote-test") {
+  if (!process.env.FIRESTORE_EMULATOR_HOST) {
+    process.env.FIRESTORE_EMULATOR_HOST = "127.0.0.1:8088";
+  }
+  if (!process.env.FIREBASE_AUTH_EMULATOR_HOST) {
+    process.env.FIREBASE_AUTH_EMULATOR_HOST = "127.0.0.1:9099";
+  }
 }
 
-// The project id is checked exactly, not by prefix: an emulator host can be set
-// and still point at something real, and this script writes hundreds of docs.
-const PROJECT = process.env.GCLOUD_PROJECT || "petnote-test";
-if (PROJECT !== "petnote-test") {
+// Where this may write, and nowhere else.
+//
+// `petnote-test` is the local emulator. A second entry is allowed for the
+// independent test Firebase project, but only when it is named explicitly via
+// PETNOTE_TEST_PROJECT — there is no wildcard, and production is refused by
+// name as well as by omission, because a typo that happened to match a prefix
+// would be an expensive way to find out this check was loose.
+const PRODUCTION_PROJECT = "petnote-a9dac";
+const EMULATOR_PROJECT = "petnote-test";
+const TEST_CLOUD_PROJECT = process.env.PETNOTE_TEST_PROJECT || "";
+
+const PROJECT = process.env.GCLOUD_PROJECT || EMULATOR_PROJECT;
+
+if (PROJECT === PRODUCTION_PROJECT) {
   console.error(
-    `Refusing to seed project "${PROJECT}". This script is for the local ` +
-      `emulator only, and only for petnote-test.`
+    `Refusing to seed ${PRODUCTION_PROJECT}: that is production. This script ` +
+      `only ever writes to the emulator or to a named test project.`
   );
   process.exit(1);
 }
+
+const allowed = [EMULATOR_PROJECT, TEST_CLOUD_PROJECT].filter(Boolean);
+if (!allowed.includes(PROJECT)) {
+  console.error(
+    `Refusing to seed project "${PROJECT}". Allowed: ${allowed.join(", ")}.\n` +
+      `To seed the independent test project, set PETNOTE_TEST_PROJECT to its ` +
+      `id as well as GCLOUD_PROJECT.`
+  );
+  process.exit(1);
+}
+
+// Writing to a real project means no emulator hosts: if those are set the
+// Admin SDK will quietly send everything to the emulator instead, and the run
+// will look successful while the project stays empty.
+const targetingCloud = PROJECT !== EMULATOR_PROJECT;
+if (targetingCloud) {
+  for (const key of ["FIRESTORE_EMULATOR_HOST", "FIREBASE_AUTH_EMULATOR_HOST"]) {
+    if (process.env[key]) {
+      console.error(
+        `${key} is set while targeting ${PROJECT}. Unset it, or the writes go ` +
+          `to the emulator and this project stays empty.`
+      );
+      process.exit(1);
+    }
+  }
+  console.log(`Seeding the CLOUD project ${PROJECT} — not the emulator.`);
+}
+
 process.env.GCLOUD_PROJECT = PROJECT;
 
 const admin = require(path.join(functionsRoot, "node_modules", "firebase-admin"));
+/**
+ * Against the emulator the credential is irrelevant — the host variables
+ * redirect everything and any token is accepted. Against a real project it is
+ * not, and firebase-admin's Firestore client accepts exactly two things: a
+ * service account certificate, or application default credentials. A bare
+ * access token is refused, and so is a refresh-token credential passed
+ * directly; both come back as "Must initialize the SDK with a certificate
+ * credential or application default credentials".
+ *
+ * So point `GOOGLE_APPLICATION_CREDENTIALS` at an authorized-user ADC file
+ * before running this. Deliberately not a service account key: creating one
+ * would mint a new long-lived credential for a machine that only needs to run
+ * a seed, and an authorized-user file re-encodes a token the machine already
+ * has rather than adding one.
+ */
 if (admin.apps.length === 0) admin.initializeApp({ projectId: PROJECT });
+
 const auth = admin.auth();
 const db = admin.firestore();
 const FieldValue = admin.firestore.FieldValue;
@@ -68,6 +126,30 @@ const Timestamp = admin.firestore.Timestamp;
 // Shape of the dataset. Acceptance items that depend on each line are named so
 // a later change here is visibly a change to what the acceptance run covers.
 // ---------------------------------------------------------------------------
+/**
+ * A namespace for this run, and nothing outside it is ever touched.
+ *
+ * The previous design reused fixed ids — `ios-post-000` and so on — and
+ * deleted them before writing them again. That is what let a delete event
+ * from the *previous* run arrive after the *current* run had recreated the
+ * same document and decrement its count: one post ended up claiming minus ten
+ * comments, and 179 of 210 had aggregates that disagreed with the documents
+ * beneath them.
+ *
+ * Convergence polling was the first answer and it was not good enough. "Two
+ * consecutive reads agreed" is a heuristic; it cannot prove the queue is
+ * empty, and it cannot promise nothing arrives a second later. Disjoint ids
+ * can: an event addressed to a document in run A names a path that does not
+ * exist in run B, so the question of timing stops mattering.
+ */
+const RUN_ID = `r${Date.now().toString(36)}`;
+const POST_ID_PREFIX = `ios-${RUN_ID}-post-`;
+const postID = (index) => `${POST_ID_PREFIX}${String(index).padStart(3, "0")}`;
+
+/** Where a run records what it created, so cleanup never has to guess. */
+const RUN_REGISTRY = "seedRuns";
+
+const LIKED_POST_LIMIT = 60;         // real like documents on the first 60 only
 const POST_COUNT = 210;              // ≥200 for scroll/memory budget (5A.2, 7.3, 7.4)
 const VIDEO_INDEXES = [2, 26, 63, 117, 170, 203]; // 6 videos, spread apart (5D.1–5D.7)
 const BROKEN_MEDIA_INDEX = 8;        // image 404 → retryable failure state (5A.7)
@@ -218,26 +300,144 @@ async function upsertPet({ id, name, ownerId, ownerName, species, breed }) {
   );
 }
 
-/** Deletes everything this script created, so post count stays deterministic. */
-async function clearSeededPosts() {
-  const snap = await db.collection("posts").get();
-  const mine = snap.docs.filter((d) => d.id.startsWith("ios-"));
-  let removed = 0;
-  for (const doc of mine) {
-    for (const sub of ["comments", "likes"]) {
-      const kids = await doc.ref.collection(sub).get();
-      // 500 is the batch limit; these subcollections are far smaller, but the
-      // comment-heavy post has 60 docs, so chunk anyway.
-      for (let i = 0; i < kids.docs.length; i += 400) {
-        const batch = db.batch();
-        kids.docs.slice(i, i + 400).forEach((k) => batch.delete(k.ref));
-        await batch.commit();
+/**
+ * Deletes the runs that previous invocations recorded, and nothing else.
+ *
+ * "Everything starting with ios-" was the old rule. It worked, and it was
+ * also the reason a run could delete documents it was about to recreate. Now
+ * each run registers its own prefix, and cleanup walks that register — so a
+ * document is only ever deleted by the run that knows it wrote it.
+ *
+ * The delete events this still queues are harmless now: they name ids in an
+ * old namespace, and this run's ids are different, so there is nothing of
+ * ours for a late event to hit.
+ */
+async function clearRecordedRuns() {
+  const runs = await db.collection(RUN_REGISTRY).get();
+  let removedPosts = 0;
+  let removedRuns = 0;
+
+  const prefixes = [];
+  for (const run of runs.docs) {
+    if (run.id === "current" || run.id === RUN_ID) continue;
+    const prefix = run.data()?.postIdPrefix;
+    if (typeof prefix === "string" && prefix.startsWith("ios-")) prefixes.push({ run, prefix });
+  }
+
+  // One-off: data from before this script kept a register at all. Named
+  // explicitly rather than matched by a wildcard, so the rule stays "delete
+  // what is recorded" instead of drifting back to "delete what looks like
+  // ours".
+  const LEGACY_PREFIX = "ios-post-";
+  prefixes.push({ run: null, prefix: LEGACY_PREFIX });
+
+  for (const { run, prefix } of prefixes) {
+    // A scan rather than a __name__ range query: the Admin SDK wants a bare
+    // document id there, not a path, and a range over ids is not worth the
+    // subtlety when this collection is a test dataset of a few hundred.
+    const all = await db.collection("posts").get();
+    const snap = { docs: all.docs.filter((d) => d.id.startsWith(prefix)) };
+
+    for (const doc of snap.docs) {
+      for (const sub of ["comments", "likes"]) {
+        const kids = await doc.ref.collection(sub).get();
+        for (let i = 0; i < kids.docs.length; i += 400) {
+          const batch = db.batch();
+          kids.docs.slice(i, i + 400).forEach((k) => batch.delete(k.ref));
+          await batch.commit();
+        }
+      }
+      await doc.ref.delete();
+      removedPosts += 1;
+    }
+    if (run) {
+      await run.ref.delete();
+      removedRuns += 1;
+    }
+  }
+  return { removedPosts, removedRuns };
+}
+
+/**
+ * Waits for the triggers to bring every aggregate in line with the documents
+ * that exist, and reports what it saw. It writes nothing.
+ *
+ * The earlier version of this corrected the numbers itself when they
+ * disagreed, which made the result meaningless twice over: a dataset that
+ * "matches" because the script overwrote it says nothing about whether the
+ * triggers ran, and a deadline that auto-corrects on expiry turns "did not
+ * converge in time" into "passed".
+ */
+async function waitForAggregates(postIds, deadlineMs = 120_000) {
+  const startedAt = Date.now();
+  let unconverged = [];
+  let polls = 0;
+
+  while (Date.now() - startedAt < deadlineMs) {
+    polls += 1;
+    unconverged = [];
+    for (const id of postIds) {
+      const ref = db.doc(`posts/${id}`);
+      const [post, comments, likes] = await Promise.all([
+        ref.get(),
+        ref.collection("comments").get(),
+        ref.collection("likes").get(),
+      ]);
+      const data = post.data() || {};
+      if ((data.commentCount ?? 0) !== comments.size || (data.likeCount ?? 0) !== likes.size) {
+        unconverged.push(
+          `${id}: commentCount ${data.commentCount ?? 0}/${comments.size}, likeCount ${data.likeCount ?? 0}/${likes.size}`
+        );
       }
     }
-    await doc.ref.delete();
-    removed += 1;
+    if (unconverged.length === 0) {
+      return { converged: true, polls, elapsedMs: Date.now() - startedAt, unconverged: [] };
+    }
+    await new Promise((r) => setTimeout(r, 2000));
   }
-  return removed;
+  return { converged: false, polls, elapsedMs: Date.now() - startedAt, unconverged };
+}
+
+/**
+ * Writes one comment on one post, waits for the aggregate to move, removes it,
+ * waits for it to move back.
+ *
+ * Deliberately narrow, and the narrowness is the point. It proves the
+ * create-and-delete path responds *on the post it touched, right now*. It
+ * does not prove the bulk dataset is consistent — waitForAggregates does that
+ * — and it proves nothing at all about events left over from an earlier run,
+ * which is what the run namespace is for. Three separate claims, three
+ * separate pieces of evidence.
+ */
+async function proveTheCommentTriggerRuns() {
+  const postRef = db.doc(`posts/${postID(0)}`);
+  const before = (await postRef.get()).data()?.commentCount ?? 0;
+  const probe = await postRef.collection("comments").add({
+    authorId: "seed-trigger-probe",
+    authorName: "seed probe",
+    text: "TEST CONTENT seed trigger probe",
+    createdAt: Timestamp.now(),
+  });
+
+  let moved = before;
+  for (let i = 0; i < 40; i += 1) {
+    await new Promise((r) => setTimeout(r, 500));
+    moved = (await postRef.get()).data()?.commentCount ?? before;
+    if (moved === before + 1) break;
+  }
+  await probe.delete();
+
+  // Wait for the delete to land too, so the probe leaves the dataset exactly
+  // as it found it rather than one comment heavier.
+  let restored = false;
+  for (let i = 0; i < 40; i += 1) {
+    await new Promise((r) => setTimeout(r, 500));
+    if (((await postRef.get()).data()?.commentCount ?? -1) === before) { restored = true; break; }
+  }
+
+  return moved === before + 1 && restored
+    ? { ok: true, detail: `${before} -> ${moved} -> ${before} on ${postID(0)}` }
+    : { ok: false, detail: `no movement from ${before} on ${postID(0)}; is the functions emulator running?` };
 }
 
 function mediaFor(index) {
@@ -274,20 +474,41 @@ function textFor(index) {
 }
 
 async function main() {
-  console.log(`Seeding ${PROJECT} via ${process.env.FIRESTORE_EMULATOR_HOST}`);
+  console.log(
+    `Seeding ${PROJECT} via ${process.env.FIRESTORE_EMULATOR_HOST || "the real backend"}`
+  );
 
   const uidA = await upsertUser({ email: "accept-a@example.com", name: "Accept A", verified: true });
   const uidB = await upsertUser({ email: "accept-b@example.com", name: "Accept B", verified: true });
+  // An account whose email is not verified, because the server refusing a
+  // comment from one is an acceptance item and there is no way to exercise it
+  // without such an account. It was described in the plan and never actually
+  // created here — the emulator happened to have one left over from a UI test,
+  // so nothing noticed until a fresh cloud project had only two accounts.
+  const uidNew = await upsertUser({
+    email: "accept-new@example.com", name: "Accept New", verified: false,
+  });
   console.log(`  accept-a -> ${uidA}`);
   console.log(`  accept-b -> ${uidB}`);
+  console.log(`  accept-new -> ${uidNew} (email not verified, on purpose)`);
 
   await upsertPet({ id: "ios-pet-latin", name: "Mochi", ownerId: uidA, ownerName: "Accept A", species: "dog", breed: "Shiba" });
   // A deliberately long CJK name: it must truncate, not overflow the card.
   await upsertPet({ id: "ios-pet-cjk", name: "麻薯团子小豆泥花生酱", ownerId: uidB, ownerName: "Accept B", species: "cat", breed: "狸花猫" });
   console.log("  pets: ios-pet-latin (Mochi), ios-pet-cjk (麻薯团子小豆泥花生酱)");
 
-  const removed = await clearSeededPosts();
-  if (removed) console.log(`  removed ${removed} previously seeded ios- posts`);
+  // Registered before anything is written, so a run that dies halfway still
+  // leaves a record of what to clean up. A crash used to leave orphans that
+  // only a wildcard sweep could find, and that sweep was the original defect.
+  await db.doc(`${RUN_REGISTRY}/${RUN_ID}`).set({
+    runId: RUN_ID,
+    postIdPrefix: POST_ID_PREFIX,
+    startedAt: Timestamp.now(),
+    complete: false,
+  });
+
+  const removed = await clearRecordedRuns();
+  console.log(`  run ${RUN_ID}; removed ${removed.removedPosts} posts from ${removed.removedRuns} recorded run(s) + legacy`);
 
   const now = Date.now();
   const authors = [
@@ -299,7 +520,7 @@ async function main() {
   for (let i = 0; i < POST_COUNT; i += 1) {
     const author = i === CJK_PET_INDEX ? authors[1] : authors[i % authors.length];
     const media = mediaFor(i);
-    const id = `ios-post-${String(i).padStart(3, "0")}`;
+    const id = postID(i);
 
     const doc = {
       authorId: author.uid,
@@ -310,8 +531,16 @@ async function main() {
       // same order as the index in the text, which is what the scroll-position
       // checks compare against.
       createdAt: Timestamp.fromMillis(now - i * 60_000),
-      likeCount: i % 7,
-      commentCount: i === MANY_COMMENTS_INDEX ? MANY_COMMENTS_COUNT : i % 3,
+
+      // No aggregate is written here at all — not commentCount, not
+      // likeCount. Both are maintained by triggers, and a seed that sets them
+      // is a seed that can disagree with its own documents. It did: 179 of 210
+      // posts were wrong, and the fake `likeCount: i % 7` was wrong on every
+      // post that never received a like document.
+      //
+      // A post therefore starts with no counts, the triggers put them there,
+      // and waitForAggregates() below refuses to call the run successful until
+      // they match what is actually stored.
       tags: TAG_POOL[i % TAG_POOL.length],
     };
     if (media) {
@@ -343,16 +572,31 @@ async function main() {
       }
     }
 
-    // A few likes by accept-a, so "already liked" has a state to render.
-    // counted is true here because likeCount above already includes them; the
-    // client must still write counted:false on its own likes (firestore.rules).
-    if (i % 7 === 1) {
-      await db.doc(`posts/${id}/likes/${uidA}`).set({
-        userId: uidA,
-        postId: id,
-        createdAt: Timestamp.fromMillis(now - i * 60_000),
-        counted: true,
-      });
+    // Real like documents, written the way a client writes them —
+    // `counted: false`, so onLikeCreated counts them and stamps them. The
+    // previous seed wrote `counted: true` to make the trigger skip, because
+    // the fake likeCount above already included them. That is the pattern
+    // this whole rewrite is removing: the seed deciding what a trigger's
+    // output should be.
+    //
+    // Only the first 60 posts, which is what any test actually scrolls
+    // through. Every like is a trigger event, and 210 posts' worth buys
+    // nothing but a slower convergence deadline.
+    if (i < LIKED_POST_LIMIT) {
+      const likers = [];
+      for (let n = 0; n < i % 5; n += 1) likers.push(authors[n % authors.length].uid);
+      // accept-a on a regular cadence, so "already liked by me" is on screen
+      // early rather than somewhere past the first page.
+      if (i % 7 === 1) likers.push(uidA);
+
+      for (const liker of new Set(likers)) {
+        await db.doc(`posts/${id}/likes/${liker}`).set({
+          userId: liker,
+          postId: id,
+          createdAt: Timestamp.fromMillis(now - i * 60_000),
+          counted: false,
+        });
+      }
     }
   }
 
@@ -364,17 +608,53 @@ async function main() {
   console.log(`    long text (>600) at    ${LONG_TEXT_INDEX}`);
   console.log(`    no pet at              ${NO_PET_INDEX}`);
   console.log(`    CJK pet name at        ${CJK_PET_INDEX}`);
-  console.log(`    ${MANY_COMMENTS_COUNT} comments on         ios-post-${String(MANY_COMMENTS_INDEX).padStart(3, "0")}`);
+  console.log(`    ${MANY_COMMENTS_COUNT} comments on         ${postID(MANY_COMMENTS_INDEX)}`);
+  // The triggers own every aggregate. Nothing below writes one.
+  const settle = await waitForAggregates(Array.from({ length: POST_COUNT }, (_, i) => postID(i)));
+  console.log(
+    settle.converged
+      ? `  aggregates converged after ${(settle.elapsedMs / 1000).toFixed(1)}s (${settle.polls} polls)`
+      : `  aggregates DID NOT converge within the deadline (${settle.unconverged.length} posts)`
+  );
+  const triggerAlive = await proveTheCommentTriggerRuns();
+
   // Read back what was written and check it against the matrix, so "the seed
   // ran" and "the seed produced the dataset" are not the same claim.
   const readBack = await db.collection("posts").orderBy("createdAt", "desc").get();
-  const seeded = readBack.docs.filter((d) => d.id.startsWith("ios-"));
+  const seeded = readBack.docs.filter((d) => d.id.startsWith(POST_ID_PREFIX));
   const videoPosts = seeded.filter((d) => (d.data().media || []).some((m) => m.type === "video"));
   const commentsOnTarget = await db
-    .collection(`posts/ios-post-${String(MANY_COMMENTS_INDEX).padStart(3, "0")}/comments`)
+    .collection(`posts/${postID(MANY_COMMENTS_INDEX)}/comments`)
     .get();
+  // The aggregate is maintained by a trigger, so it arrives after the writes
+  // do. Waiting for it here is not politeness — it is the only evidence in
+  // this script that the comment trigger is deployed and actually running.
+  const targetPostRef = db.doc(`posts/${postID(MANY_COMMENTS_INDEX)}`);
+  let aggregate = -1;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    aggregate = (await targetPostRef.get()).data()?.commentCount ?? -1;
+    if (aggregate === commentsOnTarget.size) break;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+
   const checks = [
     [`>=200 posts`, seeded.length >= 200, seeded.length],
+    // Counting documents is not checking the count. The previous version of
+    // this script asserted only the former, which is how a commentCount of
+    // 120 on 60 comments survived.
+    [`commentCount matches the comments that exist`, aggregate === commentsOnTarget.size,
+      `${aggregate} vs ${commentsOnTarget.size} documents`],
+    // Not "settled by us". Converged on its own, or it did not, and the
+    // second case is a failure rather than something to correct and move past.
+    [`aggregates converged before the deadline`, settle.converged,
+      settle.converged
+        ? `${(settle.elapsedMs / 1000).toFixed(1)}s`
+        : `未在截止时间内收敛: ${settle.unconverged.slice(0, 5).join(" | ")}${settle.unconverged.length > 5 ? ` (+${settle.unconverged.length - 5})` : ""}`],
+    // A narrower claim than the line above, and it is worth keeping the two
+    // apart: this proves the create-and-delete path on one post responds.
+    // It does not stand in for the bulk convergence check, and it says
+    // nothing about late events from a previous run.
+    [`the comment trigger responds on the probed path`, triggerAlive.ok, triggerAlive.detail],
     [`>=5 video posts`, videoPosts.length >= 5, videoPosts.length],
     [`>50 comments on one post`, commentsOnTarget.size > 50, commentsOnTarget.size],
     [`one post with no media`, seeded.filter((d) => !d.data().media).length >= 1, seeded.filter((d) => !d.data().media).length],
@@ -391,16 +671,75 @@ async function main() {
     if (!ok) failed += 1;
   }
   if (failed) {
+    // The run stays in the register, with what it wrote, so the next run can
+    // remove exactly this namespace. Not publishing `current` keeps a bad
+    // dataset from becoming the baseline; it must not also make the leftovers
+    // untraceable, which would be the worse of the two failures.
+    await db.doc(`${RUN_REGISTRY}/${RUN_ID}`).set({
+      runId: RUN_ID,
+      postIdPrefix: POST_ID_PREFIX,
+      failedAt: Timestamp.now(),
+      failedChecks: checks.filter(([, ok]) => !ok).map(([label]) => label),
+      complete: false,
+    });
     console.error(`\n${failed} seed self-check(s) failed; the dataset does not match the acceptance matrix.`);
+    console.error(`Run ${RUN_ID} stays registered at ${RUN_REGISTRY}/${RUN_ID}; its ${POST_ID_PREFIX}* posts are cleanable.`);
     process.exit(1);
   }
 
+  // The manifest, written only once the checks have passed. A run that
+  // failed its own checks must not become the one tests read from — that is
+  // how a bad dataset gets treated as the baseline.
+  //
+  // Tests read this instead of hardcoding `ios-post-001`. A hardcoded id
+  // cannot survive per-run namespaces, and more to the point it is what let
+  // tests keep passing against data left behind by a run nobody remembers.
+  const manifest = {
+    runId: RUN_ID,
+    postIdPrefix: POST_ID_PREFIX,
+    postCount: POST_COUNT,
+    likedPostLimit: LIKED_POST_LIMIT,
+    accounts: {
+      verifiedA: "accept-a@example.com",
+      verifiedB: "accept-b@example.com",
+      unverified: "accept-new@example.com",
+    },
+    landmarks: {
+      firstPost: postID(0),
+      manyComments: postID(MANY_COMMENTS_INDEX),
+      manyCommentsCount: commentsOnTarget.size,
+      brokenImage: postID(BROKEN_MEDIA_INDEX),
+      brokenVideo: postID(BROKEN_VIDEO_INDEX),
+      textOnly: postID(TEXT_ONLY_INDEX),
+      longText: postID(LONG_TEXT_INDEX),
+      noPet: postID(NO_PET_INDEX),
+      cjkPetName: postID(CJK_PET_INDEX),
+      videos: VIDEO_INDEXES.map(postID),
+    },
+    completedAt: Timestamp.now(),
+    complete: true,
+  };
+  await db.doc(`${RUN_REGISTRY}/${RUN_ID}`).set(manifest);
+  await db.doc(`${RUN_REGISTRY}/current`).set(manifest);
+
+  console.log(`\n  manifest at ${RUN_REGISTRY}/current (run ${RUN_ID})`);
   console.log("\nAll content is prefixed TEST CONTENT. Accounts use Passw0rd!x.");
 }
 
 main()
   .then(() => process.exit(0))
-  .catch((error) => {
+  .catch(async (error) => {
     console.error("Seed failed:", error);
+    // Same reasoning as the self-check failure path: a run that died halfway
+    // has written documents, and the register is the only record of which
+    // ones. Best effort — if this write also fails there is nothing further
+    // to be done, and the legacy sweep remains as a backstop.
+    await db.doc(`${RUN_REGISTRY}/${RUN_ID}`).set({
+      runId: RUN_ID,
+      postIdPrefix: POST_ID_PREFIX,
+      crashedAt: Timestamp.now(),
+      error: String(error?.message ?? error).slice(0, 500),
+      complete: false,
+    }).catch(() => {});
     process.exit(1);
   });

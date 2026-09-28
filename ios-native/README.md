@@ -97,16 +97,36 @@ xcrun devicectl device install app --device <UDID> \
 ```
 App/            入口、根视图
 Core/Model/     值类型与解码（PostDecoder 对照 src/services/posts.ts 的 toPost）
-Core/…          Repository / Auth / Media / Platform（随阶段填充）
+Core/Auth/      Firebase 初始化、会话、错误映射
+Core/Repository/  数据访问协议与不透明游标
+Core/Navigation/  路由枚举与深链接校验
 Features/       Auth / Feed / PostDetail
-DesignSystem/   间距、圆角、排版、语义色
-Config/         三套 xcconfig + Info.plist
+DesignSystem/   间距、圆角、排版、语义色、令牌示例视图
+Support/        环境读取 + **会被打包的资源**（Firebase 配置）
+Config/         三套 xcconfig + Info.plist（**只被工程引用，不打包**）
 docs/           工程决策记录
+scripts/        真机截图与像素测量
 ```
 
-源码目录用 Xcode 16 起的 file-system synchronized group，所以**新增 Swift 文件
-不需要改 `project.pbxproj`**。这让工程文件的历史保持很小，也让签名设置不会
-在无关改动里被顺手带上。
+**`Support/` 与 `Config/` 的区别不是风格问题**：
+`App/ Core/ Features/ DesignSystem/ Support/` 是 Xcode 16 起的
+file-system synchronized group——放进去的文件自动成为 target 的一部分，
+资源会被打包。`Config/` 是普通分组，里面的文件在 Xcode 里看得见，
+**但不会进 App 包**。
+
+Firebase 的 `GoogleService-Info-*.plist` 一开始放在 `Config/` 下，
+结果 App 一启动就 `fatalError` 退出，因为运行时找不到它。
+所以**任何需要在运行时读取的文件必须放 `Support/`**。
+
+同步组的另一个好处：**新增 Swift 文件不需要改 `project.pbxproj`**，
+工程文件的历史保持很小，签名设置也不会在无关改动里被顺手带上。
+
+## Firebase 配置
+
+| 文件 | 在仓库里吗 | 说明 |
+| --- | --- | --- |
+| `Support/GoogleService-Info-Emulator.plist` | **在** | 全是占位值；emulator 不校验 App 身份 |
+| `Support/GoogleService-Info.plist` | **不在**（gitignore） | 生产配置，需要时本地放置 |
 
 ## 已知的工程约束
 

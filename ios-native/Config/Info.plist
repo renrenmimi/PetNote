@@ -4,6 +4,8 @@
 <dict>
 	<key>PetNoteBuildStamp</key>
 	<string>$(PETNOTE_BUILD_STAMP)</string>
+	<key>PetNoteExpectedProject</key>
+	<string>$(PETNOTE_EXPECTED_PROJECT)</string>
 	<key>PetNoteBackend</key>
 	<string>$(PETNOTE_BACKEND)</string>
 	<key>PetNoteEmulatorHost</key>
