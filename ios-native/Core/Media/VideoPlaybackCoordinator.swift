@@ -847,7 +847,7 @@ final class VideoPlaybackCoordinator {
     private func markFailed(id: String, reason: String) {
         guard failures[id] == nil else { return }
         // Our own words, not the framework's: this is shown to a person.
-        failures[id] = "Video failed to load. Tap to retry."
+        failures[id] = String(localized: "Video failed to load. Tap to retry.")
         log.error("video: \(id, privacy: .public) failed — \(reason, privacy: .public)")
         // Free the slot and let the next-best video have the screen.
         teardown(id: id)

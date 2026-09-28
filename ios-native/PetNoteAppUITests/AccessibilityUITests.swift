@@ -52,11 +52,18 @@ final class AccessibilityUITests: XCTestCase {
     /// test — the sign-in button is disabled until both fields have something
     /// in them, and excluding it left this check with nothing at all to look
     /// at on the sign-in screen, which is how it first failed.
+    ///
+    /// Behind the tab bar counts as below the fold: a feed row passing under
+    /// it is a row not yet scrolled to, and no more hittable than one past the
+    /// bottom of the screen.
     private func visibleOwnControls(_ app: XCUIApplication) -> [XCUIElement] {
         let window = app.windows.firstMatch.frame
+        let tabBar = app.tabBars.firstMatch
+        let underBar = tabBar.exists ? tabBar.frame : .null
         return app.buttons.allElementsBoundByIndex.filter {
             $0.exists && !$0.identifier.isEmpty
                 && !$0.frame.isEmpty && window.intersects($0.frame)
+                && !underBar.intersects($0.frame)
         }
     }
 
@@ -136,21 +143,34 @@ final class AccessibilityUITests: XCTestCase {
             app.navigationBars.buttons.allElementsBoundByIndex
                 .compactMap { $0.exists ? $0.identifier : nil }
         )
+        // And by where it is, not only by name: a bar item that appears after
+        // the names were read — the detail screen's post menu waits for the
+        // post — was otherwise judged as content and held to 44pt, which a
+        // navigation bar never lays anything out at.
+        let barFrames = app.navigationBars.allElementsBoundByIndex
+            .compactMap { $0.exists ? $0.frame : nil }
         let controls = visibleOwnControls(app)
         XCTAssertFalse(controls.isEmpty, "\(context): no identified controls found", file: file, line: line)
         for control in controls {
-            if barButtonIDs.contains(control.identifier) {
+            let frame = control.frame
+            if barButtonIDs.contains(control.identifier) || barFrames.contains(where: { $0.contains(frame) }) {
                 // A navigation bar lays its items out inside 44pt whatever the
                 // type size, so these are asserted reachable, not tall — the
                 // same split AuthUITests documents.
                 guard control.isEnabled else { continue }
                 XCTAssertTrue(
                     waitUntilHittable(control, in: app, timeout: 10),
-                    "\(context): \(control.identifier) is not reachable", file: file, line: line
+                    "\(context): \(control.identifier) is not reachable\n\(app.debugDescription)", file: file, line: line
                 )
             } else {
+                // Compared at a thousandth of a point. A frame is reported as
+                // the difference of two window coordinates, and a control that
+                // starts at a fractional y comes out a hair under its height:
+                // the legal links on the sign-in screen at XS measured
+                // 43.99999999999994pt. That is floating point, not a smaller
+                // target; anything a finger could notice is still refused.
                 XCTAssertGreaterThanOrEqual(
-                    control.frame.height, 44,
+                    (control.frame.height * 1000).rounded() / 1000, 44,
                     "\(context): \(control.identifier) is \(control.frame.height)pt tall",
                     file: file, line: line
                 )

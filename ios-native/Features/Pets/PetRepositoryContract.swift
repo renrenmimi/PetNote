@@ -111,7 +111,8 @@ struct PetDeletion: Sendable, Equatable {
 enum PetError: Error, Sendable, Equatable {
     case notSignedIn
     case banned
-    /// `assertCallerAccountActive`: the uid has a deletion tombstone.
+    /// `assertCallerAccountActive`: the account is mid-deletion
+    /// (`deletionPending`) or the uid has a deletion tombstone.
     case accountDeleted
     /// `createPetCallable`: five pets counted by `ownerId`.
     case petLimitReached

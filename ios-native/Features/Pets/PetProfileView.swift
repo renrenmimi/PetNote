@@ -16,12 +16,16 @@ struct PetProfileView: View {
     var onEdit: ((String) -> Void)?
     var onDeleted: (() -> Void)?
     var onOpenPost: ((String) -> Void)?
+    /// Follow, followers and the way into the family, supplied by the shell:
+    /// they belong to the social batch, and this screen does not need to know
+    /// its repositories to show them.
+    var socialRow: ((Pet, PetOwnership?) -> AnyView)?
 
     enum Tab: String, CaseIterable, Identifiable {
         case posts
         case checkins
         var id: String { rawValue }
-        var title: String { self == .posts ? "Posts" : "Check-ins" }
+        var title: String { self == .posts ? String(localized: "Posts") : String(localized: "Check-ins") }
     }
     @State private var tab: Tab = .posts
 
@@ -43,6 +47,7 @@ struct PetProfileView: View {
                     }
                 case .loaded(let pet):
                     header(pet)
+                    if let socialRow { socialRow(pet, model.ownership) }
                     owners
                     tabPicker
                     switch tab {
@@ -66,7 +71,7 @@ struct PetProfileView: View {
                 }
             }
         }
-        .alert("Delete \(loadedPet?.name ?? "this pet")?", isPresented: deleteConfirmation) {
+        .alert("Delete \(loadedPet?.name ?? String(localized: "this pet"))?", isPresented: deleteConfirmation) {
             Button("Cancel", role: .cancel) { model.cancelDelete() }
             Button("Delete", role: .destructive) {
                 Task { await model.confirmDelete() }
@@ -212,7 +217,7 @@ struct PetProfileView: View {
                     .accessibilityIdentifier("pet.ownerCount")
                 ForEach(model.family) { member in
                     HStack(spacing: Spacing.s) {
-                        Text(member.userName.isEmpty ? "PetNote user" : member.userName)
+                        Text(member.userName.isEmpty ? String(localized: "PetNote user") : member.userName)
                             .font(Typography.body)
                             .foregroundStyle(Palette.primaryText)
                         Text(PetDisplay.label(for: member.relationship, custom: member.customRelationship))
@@ -364,7 +369,7 @@ struct PetProfileView: View {
             .accessibilityIdentifier("pet.loading")
     }
 
-    private func notice(title: String, detail: String, identifier: String) -> some View {
+    private func notice(title: LocalizedStringKey, detail: LocalizedStringKey, identifier: String) -> some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             Text(title)
                 .font(Typography.sectionTitle)
@@ -388,10 +393,13 @@ struct PetProfileView: View {
             Text(message)
                 .font(Typography.body)
                 .foregroundStyle(Palette.primaryText)
-            Button("Try again") { Task { await retry() } }
+            Button { Task { await retry() } } label: {
+                Text("Try again")
+                    .frame(minHeight: Layout.minTouchTarget)
+                    .contentShape(.rect)
+            }
                 .font(Typography.body)
                 .foregroundStyle(Palette.brandPrimary)
-                .frame(minHeight: Layout.minTouchTarget)
                 .contentShape(.rect)
                 .accessibilityIdentifier("\(identifier).retry")
         }
@@ -399,6 +407,7 @@ struct PetProfileView: View {
         .padding(Spacing.l)
         .background(Palette.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: Radius.card))
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier(identifier)
     }
 }

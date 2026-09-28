@@ -24,7 +24,7 @@ struct PetEditorView: View {
                 ProgressView().accessibilityIdentifier("petEditor.loading")
             case .missing:
                 message(
-                    "This pet no longer exists.",
+                    String(localized: "This pet no longer exists."),
                     detail: "It may have been deleted by one of its owners.",
                     identifier: "petEditor.missing"
                 )
@@ -42,6 +42,7 @@ struct PetEditorView: View {
                     Button("Try again") { Task { await model.loadIfEditing() } }
                         .accessibilityIdentifier("petEditor.retry")
                 }
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("petEditor.loadFailed")
             case .ready:
                 photoSection
@@ -139,7 +140,7 @@ struct PetEditorView: View {
         photoProblem = nil
         do {
             guard let data = try await item.loadTransferable(type: Data.self) else {
-                photoProblem = "That photo could not be read. Try another one."
+                photoProblem = String(localized: "That photo could not be read. Try another one.")
                 return
             }
             model.choosePhoto(data, filename: "pet-avatar.jpg")
@@ -147,14 +148,14 @@ struct PetEditorView: View {
                 photoPreview = Image(uiImage: uiImage)
             }
         } catch {
-            photoProblem = "That photo could not be read. Try another one."
+            photoProblem = String(localized: "That photo could not be read. Try another one.")
         }
     }
 
     // MARK: - Details
 
     private var detailsSection: some View {
-        Section("About") {
+        Section(String(localized: "petEditor.about", defaultValue: "About", comment: "The pet editor's section for name, species and the rest")) {
             TextField("Name", text: $model.name)
                 .accessibilityIdentifier("petEditor.name")
             Picker("Species", selection: $model.species) {
@@ -260,6 +261,7 @@ struct PetEditorView: View {
                     Button("I have checked") { model.acknowledgeUncertainOutcome() }
                         .accessibilityIdentifier("petEditor.acknowledgeUncertain")
                 }
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("petEditor.uncertain")
             default:
                 Button(model.mode.isEdit ? "Save" : "Add pet") {
@@ -285,7 +287,7 @@ struct PetEditorView: View {
         }
     }
 
-    private func message(_ title: String, detail: String, identifier: String) -> some View {
+    private func message(_ title: String, detail: LocalizedStringKey, identifier: String) -> some View {
         Section {
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text(title)

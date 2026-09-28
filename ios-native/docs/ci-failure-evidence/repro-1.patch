@@ -1,0 +1,278 @@
+diff --git a/ios-native/PetNoteAppTests/TEMP_ReproCI35905119437Tests.swift b/ios-native/PetNoteAppTests/TEMP_ReproCI35905119437Tests.swift
+new file mode 100644
+index 0000000..67eed00
+--- /dev/null
++++ b/ios-native/PetNoteAppTests/TEMP_ReproCI35905119437Tests.swift
+@@ -0,0 +1,272 @@
++// TEMPORARY - DO NOT COMMIT. Evidence for the owner (2026-09-23), not a test
++// of the app. Remove with `git apply -R repro-1.patch` or by deleting this file.
++//
++// CI run 35905119437 (44f8d99): the unit-test process died with SIGSEGV
++// (EXC_BAD_ACCESS, KERN_INVALID_ADDRESS, "possible pointer authentication
++// failure") on a cooperative-pool thread in
++//   Array.append -> _reserveCapacityAssumingUniqueBuffer -> _consumeAndCreateNew
++//   -> swift_release -> _swift_release_dealloc
++// called from FakeSearchRepository.posts(since:limit:) at
++// SocialFixturesTests.swift:374 (`sinceQueries.append`), from
++// ExploreModel.load() -> loadTrending(). It died while
++// SocialRenderTests.thePetPagesSocialRowGrowsWithTheText was running, right
++// after discoveryGrowsWithTheText had passed.
++//
++// One load() appends to `sinceQueries` once, so a race on it needs two load()
++// calls in flight on the same fake. discoveryGrowsWithTheText's own load() had
++// returned before it passed; the only other callers of ExploreModel.load() are
++// SearchView's `.task` and `.refreshable`. Hypothesis: ImageRenderer starts
++// SearchView's `.task` (contrary to SocialRenderTests' note "runs no .task"),
++// the three renders start three loads together, and those outlive the test.
++//
++// Two suites, run separately:
++//
++// 1. -only-testing:PetNoteAppTests/ReproCI35905119437RenderTaskTests
++//    Deterministic yes/no on the hypothesis. PASSES if the renders start two or
++//    more explore loads at once (hypothesis holds); FAILS with the counts if
++//    not (then the second racer was something else). Prints a
++//    "REPRO-1 render:" line with the counts either way.
++//
++// 2. -only-testing:PetNoteAppTests/ReproCI35905119437StressTests
++//    NOT deterministic. The 44f8d99 fake, copied verbatim (no lock), under
++//    concurrent callers. Expected: the two unlocked cases either FAIL with
++//    "N of M rounds lost a recorded read" or the process CRASHES (xcodebuild:
++//    "Restarting after unexpected exit, crash, or test timeout"; the .ips in
++//    ~/Library/Logs/DiagnosticReports/PetNote-*.ips should show Array.append
++//    under Unlocked44f8d99SearchRepository.posts(since:limit:)). The locked
++//    control (HEAD's FakeSearchRepository) PASSES. A clean pass of an unlocked
++//    case does not disprove the race; it only means the window was not hit.
++
++import Foundation
++import SwiftUI
++import Testing
++import UIKit
++
++@testable import PetNote
++
++@MainActor
++struct ReproCI35905119437RenderTaskTests {
++    @Test func theRendersStartTheSearchScreensTask() async {
++        let search = CountingSearchRepository()
++        let social = FakeSocialRepository()
++        let blocks = BlockList(viewerID: "me", social: social)
++        let explore = ExploreModel(viewerID: "me", search: search, social: social, blockList: blocks)
++        let model = SearchModel(viewerID: "me", search: search, blockList: blocks)
++        // Deliberately no `await explore.load()`: every read counted below is
++        // one the view started. Rendered as SocialRenderTests.renders does.
++        let variants: [(ColorScheme, DynamicTypeSize)] = [(.light, .large), (.dark, .large), (.light, .accessibility5)]
++        for (scheme, size) in variants {
++            let renderer = ImageRenderer(
++                content: SearchView(
++                    search: model, explore: explore,
++                    onOpenPet: { _ in }, onOpenUser: { _ in }, onOpenPost: { _ in }
++                )
++                .environment(\.colorScheme, scheme)
++                .environment(\.dynamicTypeSize, size)
++                .frame(width: 402)
++                .background(Palette.background)
++            )
++            renderer.scale = 2
++            _ = renderer.uiImage
++        }
++        for _ in 0..<20_000 {
++            if search.trendingReads >= variants.count { break }
++            await Task.yield()
++        }
++        let reads = search.trendingReads
++        let atOnce = search.mostTrendingReadsAtOnce
++        print("REPRO-1 render: \(reads) trending reads started by \(variants.count) renders, at most \(atOnce) in flight at once")
++        #expect(reads >= 2, "the renders started \(reads) explore load(s); the CI race needs two on one fake")
++        #expect(atOnce >= 2, "at most \(atOnce) trending read(s) were in flight at once")
++    }
++}
++
++@Suite(.serialized)
++struct ReproCI35905119437StressTests {
++    /// The path the hypothesis gives the CI crash: three ExploreModel.load()
++    /// at once on one 44f8d99 fake (as three renders' `.task`s would), a fresh
++    /// fake - and so a fresh, small array - every round.
++    @MainActor @Test func threeLoadsAtOnceOnThe44f8d99Fake() async {
++        let rounds = 3_000
++        var lostRounds = 0
++        for _ in 0..<rounds {
++            let search = Unlocked44f8d99SearchRepository()
++            let social = FakeSocialRepository()
++            let blocks = BlockList(viewerID: "me", social: social)
++            let explore = ExploreModel(viewerID: "me", search: search, social: social, blockList: blocks)
++            async let a: Void = explore.load()
++            async let b: Void = explore.load()
++            async let c: Void = explore.load()
++            _ = await (a, b, c)
++            if search.sinceQueries.count != 3 { lostRounds += 1 }
++        }
++        #expect(lostRounds == 0, "\(lostRounds) of \(rounds) rounds lost a recorded read to the race")
++    }
++
++    /// The same unlocked append, amplified: four threads, 64 calls each.
++    @Test func fourThreadsOnThe44f8d99Fake() async {
++        let rounds = 500
++        var lostRounds = 0
++        for _ in 0..<rounds {
++            let search = Unlocked44f8d99SearchRepository()
++            await withTaskGroup(of: Void.self) { group in
++                for _ in 0..<4 {
++                    group.addTask {
++                        for _ in 0..<64 { _ = try? await search.posts(since: Date(), limit: 30) }
++                    }
++                }
++            }
++            if search.sinceQueries.count != 256 { lostRounds += 1 }
++        }
++        #expect(lostRounds == 0, "\(lostRounds) of \(rounds) rounds lost a recorded read to the race")
++    }
++
++    /// Control: HEAD's locked fake (8915ac2) under the same four threads.
++    /// Expected: passes, every round, and no crash.
++    @Test func fourThreadsOnTheLockedFake() async {
++        let rounds = 500
++        var lostRounds = 0
++        for _ in 0..<rounds {
++            let search = FakeSearchRepository()
++            await withTaskGroup(of: Void.self) { group in
++                for _ in 0..<4 {
++                    group.addTask {
++                        for _ in 0..<64 { _ = try? await search.posts(since: Date(), limit: 30) }
++                    }
++                }
++            }
++            if search.sinceQueries.count != 256 { lostRounds += 1 }
++        }
++        #expect(lostRounds == 0, "\(lostRounds) of \(rounds) rounds lost a recorded read with the lock in place")
++    }
++}
++
++/// Counts trending reads, under a lock (reads included), and holds each one
++/// in flight for a moment so that reads started together are seen together.
++private final class CountingSearchRepository: SearchRepository, @unchecked Sendable {
++    private let lock = NSLock()
++    private var reads = 0
++    private var inFlight = 0
++    private var mostAtOnce = 0
++
++    var trendingReads: Int { lock.withLock { reads } }
++    var mostTrendingReadsAtOnce: Int { lock.withLock { mostAtOnce } }
++
++    func posts(since date: Date, limit: Int) async throws -> [Post] {
++        lock.withLock {
++            reads += 1
++            inFlight += 1
++            mostAtOnce = max(mostAtOnce, inFlight)
++        }
++        for _ in 0..<200 { await Task.yield() }
++        lock.withLock { inFlight -= 1 }
++        return []
++    }
++
++    func people(prefix: String, limit: Int) async throws -> [PublicProfile] { [] }
++    func pets(prefix: String, limit: Int) async throws -> [Pet] { [] }
++    func tags(prefix: String, limit: Int) async throws -> [Hashtag] { [] }
++    func posts(taggedWith tag: String, limit: Int) async throws -> [Post] { [] }
++    func petCounts(forUsers userIDs: [String]) async throws -> [String: Int] { [:] }
++    func popularTags(limit: Int) async throws -> [Hashtag] { [] }
++    func petsByFollowers(limit: Int) async throws -> [Pet] { [] }
++    func petsByPostCount(limit: Int) async throws -> [Pet] { [] }
++    func latestPosts(limit: Int) async throws -> [Post] { [] }
++    func pets(ids: [String]) async throws -> [Pet] { [] }
++}
++
++/// FakeSearchRepository exactly as it was at 44f8d99 (no lock), renamed.
++private final class Unlocked44f8d99SearchRepository: SearchRepository, @unchecked Sendable {
++    var peopleResult: [PublicProfile] = []
++    var petResult: [Pet] = []
++    var tagResult: [Hashtag] = []
++    var postResult: [Post] = []
++    var searchError: Error?
++    /// When set, the people read waits on it, so a slow search can be
++    /// overtaken by a newer one.
++    var peopleGate: SocialGate?
++    var counts: [String: Int] = [:]
++    var countsError: Error?
++    var popularTagResult: [Hashtag] = []
++    var popularTagError: Error?
++    /// Holds the tags read open, so a test can make it answer *after* the
++    /// other modules — the only order in which "one failure empties the
++    /// others" is visible.
++    var popularTagGate: SocialGate?
++    var recentPosts: [Post] = []
++    var recentError: Error?
++    var byFollowers: [Pet] = []
++    var byFollowersError: Error?
++    var byPostCount: [Pet] = []
++    var byPostCountError: Error?
++    var latest: [Post] = []
++    var petsByID: [String: Pet] = [:]
++
++    private(set) var peopleQueries: [String] = []
++    private(set) var postQueries: [(tag: String, limit: Int)] = []
++    private(set) var countQueries: [[String]] = []
++    private(set) var sinceQueries: [(date: Date, limit: Int)] = []
++    private(set) var latestReads = 0
++
++    func people(prefix: String, limit: Int) async throws -> [PublicProfile] {
++        peopleQueries.append(prefix)
++        let gate = peopleGate
++        peopleGate = nil
++        if let gate { await gate.wait() }
++        if let searchError { throw searchError }
++        return peopleResult
++    }
++
++    func pets(prefix: String, limit: Int) async throws -> [Pet] {
++        if let searchError { throw searchError }
++        return petResult
++    }
++
++    func tags(prefix: String, limit: Int) async throws -> [Hashtag] {
++        if let searchError { throw searchError }
++        return tagResult
++    }
++
++    func posts(taggedWith tag: String, limit: Int) async throws -> [Post] {
++        postQueries.append((tag, limit))
++        if let searchError { throw searchError }
++        return postResult
++    }
++
++    func petCounts(forUsers userIDs: [String]) async throws -> [String: Int] {
++        countQueries.append(userIDs)
++        if let countsError { throw countsError }
++        return counts
++    }
++
++    func popularTags(limit: Int) async throws -> [Hashtag] {
++        if let popularTagGate { await popularTagGate.wait() }
++        if let popularTagError { throw popularTagError }
++        return popularTagResult
++    }
++
++    func posts(since date: Date, limit: Int) async throws -> [Post] {
++        sinceQueries.append((date, limit))
++        if let recentError { throw recentError }
++        return recentPosts
++    }
++
++    func petsByFollowers(limit: Int) async throws -> [Pet] {
++        if let byFollowersError { throw byFollowersError }
++        return byFollowers
++    }
++
++    func petsByPostCount(limit: Int) async throws -> [Pet] {
++        if let byPostCountError { throw byPostCountError }
++        return byPostCount
++    }
++
++    func latestPosts(limit: Int) async throws -> [Post] {
++        latestReads += 1
++        return latest
++    }
++
++    func pets(ids: [String]) async throws -> [Pet] {
++        ids.compactMap { petsByID[$0] }
++    }
++}

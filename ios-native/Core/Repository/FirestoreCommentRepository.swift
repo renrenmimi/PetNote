@@ -277,6 +277,36 @@ actor FirestoreCommentRepository: CommentRepository {
         }
     }
 
+    func delete(postID: String, commentID: String) async throws {
+        guard environment.supportsCallables else {
+            log.error("callables are unreachable from this build; refusing to delete")
+            throw CommentDeleteError.unavailable
+        }
+        do {
+            try await CallableClient.callIgnoringResult(
+                Callables.deleteComment, ["postId": postID, "commentId": commentID], functions: functions
+            )
+        } catch {
+            log.error("delete failed: \(String(describing: error), privacy: .public)")
+            throw Self.mapDelete(error)
+        }
+    }
+
+    static func mapDelete(_ error: Error) -> CommentDeleteError {
+        switch CallableFailure.classify(error) {
+        case .neverSent: return .offline
+        case .unavailable: return .unavailable
+        case .unknownOutcome: return .outcomeUnknown
+        case .server(let code, let message):
+            switch code {
+            case .unauthenticated: return .notSignedIn
+            case .permissionDenied: return message.contains("banned") ? .banned : .notAllowed
+            case .resourceExhausted: return .rateLimited
+            default: return .transport("functions/\(code.rawValue)")
+            }
+        }
+    }
+
     /// Detail strings carried by `CommentError.transport`.
     ///
     /// `transport` already exists to carry a machine-readable reason for logs;
@@ -382,7 +412,7 @@ actor FirestoreCommentRepository: CommentRepository {
             // The server validates length (500 characters) and shape. These are
             // refusals of the content, not transport problems, and offering a
             // retry would be offering something that cannot work.
-            return .rejected("That comment was not accepted. Check the length and try different wording.")
+            return .rejected(String(localized: "That comment was not accepted. Check the length and try different wording."))
         case .deadlineExceeded, .unavailable, .cancelled:
             return .outcomeUnknown
         default:

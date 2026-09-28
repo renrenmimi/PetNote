@@ -141,6 +141,37 @@ struct FeedViewModelTests {
         #expect(model.state == .loaded)
     }
 
+    /// A post deleted from its detail screen leaves the feed at once, and the
+    /// scroll anchor does not go on pointing at it.
+    @Test func aDeletedPostLeavesTheFeedAndTheAnchorWithIt() async {
+        let feed = FakeFeed()
+        feed.pages = [[Self.post("a"), Self.post("b"), Self.post("c")]]
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 3, sleeper: ManualDeadline.never)
+        await model.loadFirstPageIfNeeded()
+        model.rememberScrollAnchor("b")
+
+        model.removePost(id: "b")
+
+        #expect(model.posts.map(\.id) == ["a", "c"])
+        #expect(model.scrollAnchor == nil, "the anchor still names a post that is not in the list")
+        #expect(model.state == .loaded)
+    }
+
+    /// Removing a post the feed never had is not an error and changes nothing —
+    /// the detail screen can be reached for a post that is not on this page.
+    @Test func removingAPostTheFeedDoesNotHoldChangesNothing() async {
+        let feed = FakeFeed()
+        feed.pages = [[Self.post("a"), Self.post("b")]]
+        let model = FeedViewModel(feed: feed, likes: FakeLikes(), pageSize: 2, sleeper: ManualDeadline.never)
+        await model.loadFirstPageIfNeeded()
+        model.rememberScrollAnchor("a")
+
+        model.removePost(id: "elsewhere")
+
+        #expect(model.posts.map(\.id) == ["a", "b"])
+        #expect(model.scrollAnchor == "a", "an unrelated removal cleared the anchor")
+    }
+
     /// 5A.3: a fast scroll asks repeatedly; the same cursor must be fetched once.
     @Test func doesNotRequestTheSameCursorTwice() async {
         let feed = FakeFeed()

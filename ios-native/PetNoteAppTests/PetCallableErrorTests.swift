@@ -47,6 +47,24 @@ struct PetCallableErrorTests {
         #expect(FirestorePetRepository.map(error, for: .update) == .accountDeleted)
     }
 
+    /// The *other* half of `assertCallerAccountActive`: before it reads the
+    /// tombstone it calls `assertActorNotDeleting`, which refuses with the
+    /// same code and different words (functions/src/notifications.ts:112-118).
+    ///
+    /// Reachable, not theoretical: `deleteUserAccount` sets `deletionPending`
+    /// first and leaves it set, with Auth intact, when any cleanup step fails
+    /// (functions/src/users.ts:501-508, 616-622). That account can still sign
+    /// in, and until this case was recognised every pet create told it
+    /// "You already have 5 pets" and every delete told it the pet had other
+    /// owners.
+    @Test func anAccountMidDeletionIsNotToldItHasFivePetsOrOtherOwners() {
+        let error = functionsError(.failedPrecondition, "Account deletion is in progress.")
+
+        #expect(FirestorePetRepository.map(error, for: .create) == .accountDeleted)
+        #expect(FirestorePetRepository.map(error, for: .delete) == .accountDeleted)
+        #expect(FirestorePetRepository.map(error, for: .update) == .accountDeleted)
+    }
+
     // MARK: - permission-denied, two meanings
 
     @Test func aBannedCallerIsNotReportedAsNotBeingAnOwner() {

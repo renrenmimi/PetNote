@@ -40,6 +40,11 @@ final class FakeUserRepository: UserRepository, @unchecked Sendable {
     private(set) var profileReads: [String] = []
     private(set) var nameChecks: [String] = []
     private(set) var ensureCalls = 0
+    /// What each `ensureProfile` was asked to write. Recorded because a count
+    /// alone cannot tell "sent the generated name" from "sent nothing".
+    private(set) var ensureRequests: [(
+        displayName: String?, avatarURL: String?, bio: String?, onboardingComplete: Bool
+    )] = []
     private let lock = NSLock()
     private var _updateCalls: [(displayName: String?, avatarURL: String?, bio: String?)] = []
     var updateCalls: [(displayName: String?, avatarURL: String?, bio: String?)] { lock.withLock { _updateCalls } }
@@ -71,6 +76,7 @@ final class FakeUserRepository: UserRepository, @unchecked Sendable {
         displayName: String?, avatarURL: String?, bio: String?, onboardingComplete: Bool
     ) async throws -> EnsuredProfile {
         ensureCalls += 1
+        ensureRequests.append((displayName, avatarURL, bio, onboardingComplete))
         return try ensureResult.get()
     }
 
@@ -128,7 +134,12 @@ final class FakeAccountAuth: AccountAuthenticating, @unchecked Sendable {
     func createAccount(email: String, password: String) async throws(AuthError) -> String {
         createdAccounts.append((email, password))
         switch createResult {
-        case .success(let uid): return uid
+        case .success(let uid):
+            // Firebase signs the new account in as it creates it. This fake
+            // used to leave `currentAccount` on whoever was there before, which
+            // made "is this about the account now signed in?" untestable.
+            account = AccountSnapshot(uid: uid, email: email, isEmailVerified: false)
+            return uid
         case .failure(let error): throw error
         }
     }
@@ -329,7 +340,9 @@ struct UserAccountTests {
     @Test(arguments: [
         (GRPCStatus.unauthenticated, ProfileError.notSignedIn),
         (GRPCStatus.resourceExhausted, ProfileError.rateLimited),
-        (GRPCStatus.unavailable, ProfileError.offline),
+        // A 503 that came back, not a request that never left. See
+        // `aServiceUnavailableAnswerIsNotProofThatNothingCommitted`.
+        (GRPCStatus.unavailable, ProfileError.outcomeUnknown),
         (GRPCStatus.deadlineExceeded, ProfileError.outcomeUnknown),
         (GRPCStatus.cancelled, ProfileError.outcomeUnknown),
     ])
@@ -339,6 +352,22 @@ struct UserAccountTests {
         let (code, expected) = codeAndCase
         let mapped = FirestoreUserRepository.map(callableFailure(code))
         #expect(mapped == expected, "status \(code) mapped to \(mapped)")
+    }
+
+    /// `unavailable` from a callable is an **HTTP 503 that came back**
+    /// (FunctionsError.swift `init(httpStatusCode:)`, `case 503`), so the
+    /// request certainly left the device and the handler may have run. It is
+    /// not the "never left" that `offline` stands for, and it proves nothing
+    /// about whether `updateUserProfileCallable` committed — the pet, post and
+    /// comment mappers all read it as unknown for exactly this reason.
+    ///
+    /// It matters because `provesNothingCommitted` is what licenses deleting
+    /// a freshly uploaded avatar, and a profile saved pointing at a deleted
+    /// image is not recoverable.
+    @Test func aServiceUnavailableAnswerIsNotProofThatNothingCommitted() {
+        let mapped = FirestoreUserRepository.map(callableFailure(GRPCStatus.unavailable))
+        #expect(mapped == .outcomeUnknown)
+        #expect(mapped.provesNothingCommitted == false)
     }
 
     @Test func anInvalidArgumentKeepsTheServersOwnWords() {

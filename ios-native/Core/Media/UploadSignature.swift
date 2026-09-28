@@ -51,8 +51,43 @@ struct UploadSignature: Sendable, Equatable {
     }
 
     func uploadEndpoint(for resourceType: UploadedAsset.ResourceType) -> URL? {
-        URL(string: "https://api.cloudinary.com/v1_1/\(cloudName)/\(resourceType.rawValue)/upload")
+        Self.endpoint(cloudName: cloudName, resourceType: resourceType.rawValue)
     }
+
+    /// Where an upload goes. One place for the post and avatar paths, which had
+    /// each spelled the URL out.
+    static func endpoint(cloudName: String, resourceType: String) -> URL? {
+        let path = "v1_1/\(cloudName)/\(resourceType)/upload"
+        #if PETNOTE_FAULT_INJECTION
+        if let standIn = uploadStandIn { return URL(string: "\(standIn)/\(path)") }
+        #endif
+        return URL(string: "https://api.cloudinary.com/\(path)")
+    }
+
+    #if PETNOTE_FAULT_INJECTION
+    /// `-petnote-upload-standin http://127.0.0.1:<port>`: send uploads to the
+    /// local stand-in (`scripts/upload-standin.py`) instead of Cloudinary.
+    ///
+    /// Emulator builds only. The emulator has no Cloudinary account behind it,
+    /// so without this no UI test can publish a post at all — the composer
+    /// refuses to share without media, as the web client does. What the
+    /// stand-in proves is the client's half: the signed multipart request is
+    /// built and sent, and its answer is carried into `createPostCallable`. It
+    /// proves nothing about Cloudinary accepting that request, and the URL it
+    /// hands back does not exist on the real CDN.
+    ///
+    /// Loopback only, so a mistyped argument cannot send someone's photo to an
+    /// arbitrary host.
+    private static var uploadStandIn: String? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flag = arguments.firstIndex(of: "-petnote-upload-standin"),
+              flag + 1 < arguments.count
+        else { return nil }
+        let base = arguments[flag + 1]
+        guard base.hasPrefix("http://127.0.0.1:") else { return nil }
+        return base
+    }
+    #endif
 
     /// `maxFileSize` is a **client-side hint**, not a limit anybody enforces.
     ///

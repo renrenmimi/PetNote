@@ -35,8 +35,8 @@ final class FeedViewModel {
 
         var message: String {
             switch self {
-            case .offline: "You appear to be offline."
-            case .server: "Could not load the feed."
+            case .offline: String(localized: "You appear to be offline.")
+            case .server: String(localized: "Could not load the feed.")
             }
         }
     }
@@ -515,6 +515,19 @@ final class FeedViewModel {
         return min(abs(moved), abs(owed)) * owed.signum()
     }
 
+    /// Drops a post the server has already deleted.
+    ///
+    /// Told, not discovered: without this the feed goes on showing a row that
+    /// points at nothing until someone pulls to refresh, and opening it lands
+    /// on "this post was deleted" about something the same person deleted a
+    /// moment ago. The scroll anchor is cleared too if it was that row — coming
+    /// back to the feed would otherwise try to restore a position on a post
+    /// that is no longer in the list.
+    func removePost(id: String) {
+        posts.removeAll { $0.id == id }
+        if scrollAnchor == id { scrollAnchor = nil }
+    }
+
     func rememberScrollAnchor(_ postID: String) { scrollAnchor = postID }
     func clearScrollAnchor() { scrollAnchor = nil }
 
@@ -652,7 +665,7 @@ final class FeedViewModel {
                 // rides back in if that id is ever served again.
                 commentStates[postID] = nil
                 likedPostIDs.remove(postID)
-                likeFailureMessage = "That post no longer exists."
+                likeFailureMessage = String(localized: "That post no longer exists.")
             }
 
         case .failed(let description):
@@ -661,7 +674,7 @@ final class FeedViewModel {
             // goes back to what the server holds — but only if this is the last
             // request outstanding, because a later tap owns the intent.
             rollBackIntent(&state, postID: postID)
-            likeFailureMessage = "Could not update the like. Try again."
+            likeFailureMessage = String(localized: "Could not update the like. Try again.")
 
         case .timedOut:
             log.error("like request for \(postID, privacy: .public) was never answered")
@@ -669,7 +682,7 @@ final class FeedViewModel {
             // not know whether the write landed, so the next server read is
             // allowed to be the authority on both the heart and the count.
             rollBackIntent(&state, postID: postID)
-            likeFailureMessage = "Could not confirm that. Pull down to refresh."
+            likeFailureMessage = String(localized: "Could not confirm that. Pull down to refresh.")
         }
     }
 

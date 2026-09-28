@@ -6,21 +6,21 @@ import Foundation
 /// labels are in one place rather than spelled out at each call site — which
 /// is how "Best Friend" and "Best friend" end up on two screens.
 ///
-/// English only, like the rest of the native client so far. The web client
-/// carries a Chinese table for these (`relationshipLabelMapZh`); porting it
-/// belongs with whatever brings localisation to this app, not with this batch,
-/// and is named in the batch report so it is not forgotten.
+/// Every label is `String(localized:)`, so the String Catalog translates it;
+/// the raw values sent to the server never change. The web client carries a
+/// Chinese table for the relationships (`relationshipLabelMapZh`), which is
+/// where the zh-Hans entries should come from.
 enum PetDisplay {
     static func label(for species: PetSpecies) -> String {
         switch species {
-        case .dog: return "Dog"
-        case .cat: return "Cat"
-        case .bird: return "Bird"
-        case .rabbit: return "Rabbit"
-        case .hamster: return "Hamster"
-        case .fish: return "Fish"
-        case .reptile: return "Reptile"
-        case .other: return "Other"
+        case .dog: return String(localized: "Dog")
+        case .cat: return String(localized: "Cat")
+        case .bird: return String(localized: "Bird")
+        case .rabbit: return String(localized: "Rabbit")
+        case .hamster: return String(localized: "Hamster")
+        case .fish: return String(localized: "Fish")
+        case .reptile: return String(localized: "Reptile")
+        case .other: return String(localized: "Other", comment: "Pet species")
         }
     }
 
@@ -48,9 +48,9 @@ enum PetDisplay {
     /// hues. The symbol is still drawn next to this, as decoration.
     static func label(for gender: PetGender) -> String {
         switch gender {
-        case .male: return "Male"
-        case .female: return "Female"
-        case .unknown: return "Unspecified"
+        case .male: return String(localized: "Male")
+        case .female: return String(localized: "Female")
+        case .unknown: return String(localized: "Unspecified")
         }
     }
 
@@ -76,36 +76,36 @@ enum PetDisplay {
             return custom
         }
         switch relationship {
-        case .mom: return "Mom"
-        case .dad: return "Dad"
-        case .brother: return "Brother"
-        case .sister: return "Sister"
-        case .grandma: return "Grandma"
-        case .grandpa: return "Grandpa"
-        case .auntie: return "Auntie"
-        case .uncle: return "Uncle"
-        case .bestFriend: return "Best Friend"
-        case .caretaker: return "Caretaker"
-        case .other: return "Family"
+        case .mom: return String(localized: "Mom")
+        case .dad: return String(localized: "Dad")
+        case .brother: return String(localized: "Brother")
+        case .sister: return String(localized: "Sister")
+        case .grandma: return String(localized: "Grandma")
+        case .grandpa: return String(localized: "Grandpa")
+        case .auntie: return String(localized: "Auntie")
+        case .uncle: return String(localized: "Uncle")
+        case .bestFriend: return String(localized: "Best Friend")
+        case .caretaker: return String(localized: "Caretaker")
+        case .other: return String(localized: "Family", comment: "Relationship to a pet when no other label was given")
         }
     }
 
     /// "Born: 1 Jun 2020", in the viewer's locale.
     static func bornLine(_ birthday: Date?) -> String? {
         guard let birthday else { return nil }
-        return "Born: " + birthday.formatted(date: .abbreviated, time: .omitted)
+        return String(localized: "Born: \(birthday.formatted(date: .abbreviated, time: .omitted))")
     }
 
     /// Pluralised counts, so a profile does not say "1 posts".
     static func postCount(_ count: Int) -> String {
-        count == 1 ? "1 post" : "\(count) posts"
+        count == 1 ? String(localized: "1 post") : String(localized: "\(count) posts")
     }
 
     static func followerCount(_ count: Int) -> String {
-        count == 1 ? "1 follower" : "\(count) followers"
+        count == 1 ? String(localized: "1 follower") : String(localized: "\(count) followers")
     }
 
     static func ownerCount(_ count: Int) -> String {
-        count == 1 ? "1 owner" : "\(count) owners"
+        count == 1 ? String(localized: "1 owner") : String(localized: "\(count) owners")
     }
 }

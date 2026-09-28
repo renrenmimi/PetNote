@@ -8,6 +8,47 @@ import Foundation
 enum Route: Hashable, Sendable {
     case feed
     case postDetail(postID: String)
+    /// A pet's page — the web client's `/pet/:petId`.
+    ///
+    /// Only the screens a person *navigates to* are routes. Editors (compose,
+    /// a pet's details, a post's text) are presented modally and owned by the
+    /// shell, because they are things you finish or cancel rather than places
+    /// you go back through — and because a route is also a link target, and
+    /// nothing should be able to open an editor from a URL.
+    case pet(petID: String)
+    /// Somebody's profile — the web client's `/profile/:userId`.
+    case user(userID: String)
+    /// Search and discovery, optionally opened on one tag.
+    case search(tag: String?)
+    /// Who follows a pet. The name is carried for the title, not looked up.
+    case petFollowers(petID: String, petName: String)
+    /// The pets the signed-in person follows.
+    case followingPets
+    /// The posts the signed-in person saved — the web client's profile
+    /// "Saved" tab.
+    case savedPosts
+    /// The signed-in person's own check-ins — the web client's profile
+    /// "Check-ins" tab.
+    case myCheckins
+    /// A pet's owners and invitations. Management, so — like the editors — it
+    /// is reached from the pet's page and never from a link.
+    case family(petID: String)
+    /// Joining a pet's family with an invitation code. An action, not a place,
+    /// so it is not a link target either.
+    case joinFamily
+    /// The people the signed-in person has blocked, to unblock them — the web
+    /// client's Settings → Blocked Users.
+    case blockedUsers
+    /// Sending feedback — the web client's Contact Us.
+    case contactUs
+    /// The web client's Settings. Management, and never a link target.
+    case settings
+    /// The signed-in person's in-app notifications.
+    case notifications
+    /// A place — the web client's `/location/:locationId`.
+    case place(placeID: String)
+    /// A meetup — the web client's `/meetups/:meetupId`.
+    case meetup(meetupID: String)
 }
 
 /// Turns an incoming link into a `Route`.
@@ -70,6 +111,30 @@ enum DeepLink {
         case "post":
             guard decoded.count == 2, let id = validDocumentID(decoded[1]) else { return .feed }
             return .postDetail(postID: id)
+        case "pet":
+            // Same checks as a post id, for the same reason: the id reaches a
+            // Firestore read, and it is validated after percent-decoding.
+            guard decoded.count == 2, let id = validDocumentID(decoded[1]) else { return .feed }
+            return .pet(petID: id)
+        case "profile":
+            // `/profile/edit` is not a person. The web router would render a
+            // profile page for a user called "edit"; here it lands on the feed,
+            // so no link can look like it opens an editor.
+            guard decoded.count == 2, decoded[1] != "edit",
+                  let id = validDocumentID(decoded[1]) else { return .feed }
+            return .user(userID: id)
+        case "search":
+            guard decoded.count == 1 else { return .feed }
+            return .search(tag: nil)
+        case "location":
+            guard decoded.count == 2, let id = validDocumentID(decoded[1]) else { return .feed }
+            return .place(placeID: id)
+        case "meetups":
+            // `/meetups` is the tab; only `/meetups/<id>` is one meetup, and
+            // `/meetups/create` is an editor, which no link opens.
+            guard decoded.count == 2, decoded[1] != "create",
+                  let id = validDocumentID(decoded[1]) else { return .feed }
+            return .meetup(meetupID: id)
         case "feed", nil, "":
             return .feed
         default:

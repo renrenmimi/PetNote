@@ -35,6 +35,7 @@ struct SignUpView: View {
                 mismatchWarning
                 submitButton
                 legalNote
+                GoogleSignInButton()
             }
             .padding(.horizontal, Layout.pageInset)
             .padding(.vertical, Spacing.xl)
@@ -74,10 +75,13 @@ struct SignUpView: View {
                 // it, carrying the address across so it does not have to be
                 // typed again.
                 if case .emailAlreadyInUse(let email) = notice {
-                    Button("Sign in instead") { onUseExistingAccount(email) }
+                    Button { onUseExistingAccount(email) } label: {
+                        Text("Sign in instead")
+                            .frame(minHeight: Layout.minTouchTarget)
+                            .contentShape(.rect)
+                    }
                         .font(Typography.body)
                         .foregroundStyle(Palette.brandPrimary)
-                        .frame(minHeight: Layout.minTouchTarget)
                         .accessibilityIdentifier("signup.useExistingAccount")
                 }
             }
@@ -190,11 +194,16 @@ struct SignUpView: View {
         .accessibilityLabel(model.isSubmitting ? "Creating account" : "Create account")
     }
 
+    /// The agreement, and the two documents it refers to, one tap away —
+    /// the line used to be plain text with nothing to open.
     private var legalNote: some View {
-        Text("By creating an account you agree to the Terms and the Privacy Policy.")
-            .font(Typography.caption)
-            .foregroundStyle(Palette.tertiaryText)
-            .accessibilityIdentifier("signup.legal")
+        VStack(alignment: .leading, spacing: 0) {
+            Text("By creating an account you agree to the Terms and the Privacy Policy.")
+                .font(Typography.caption)
+                .foregroundStyle(Palette.tertiaryText)
+                .accessibilityIdentifier("signup.legal")
+            LegalLinks()
+        }
     }
 
     /// Return moves to the next empty field rather than submitting a form that

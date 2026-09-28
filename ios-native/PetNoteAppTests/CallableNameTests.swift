@@ -105,4 +105,51 @@ struct CallableNameTests {
             """
         )
     }
+
+    /// The online recomputes that were switched off on purpose.
+    ///
+    /// Counts are maintained by the server's triggers. These three entries
+    /// rewrote them on demand and were disabled; a client that called them
+    /// would be re-enabling something the owner turned off. If this fails,
+    /// the question is whether that decision changed — not how to make the
+    /// test pass.
+    ///
+    /// Reads the app's source as well as the registry: a name passed as a
+    /// literal at a call site never goes through `Callables.all`, and the
+    /// registry check alone would stay green over it.
+    @Test func theDisabledRecomputesAreNotWiredUp() throws {
+        let offLimits = [
+            "recomputePetPostCountCallable",
+            "recomputePostInteractionCountsCallable",
+            "recomputeLocationReviewAggregatesCallable",
+        ]
+        let registered = Callables.all.filter { offLimits.contains($0) }
+        #expect(
+            registered.isEmpty,
+            "These online recomputes were deliberately disabled: \(registered.joined(separator: ", "))"
+        )
+
+        let appRoot = Self.repositoryRoot.appendingPathComponent("ios-native")
+        var scanned = 0
+        var mentions: [String] = []
+        for folder in ["App", "Core", "Features", "DesignSystem", "Support"] {
+            let directory = appRoot.appendingPathComponent(folder)
+            guard let walker = FileManager.default.enumerator(atPath: directory.path) else { continue }
+            for case let path as String in walker where path.hasSuffix(".swift") {
+                let text = try String(
+                    contentsOf: directory.appendingPathComponent(path), encoding: .utf8
+                )
+                scanned += 1
+                for name in offLimits where text.contains("\"\(name)\"") {
+                    mentions.append("\(folder)/\(path): \(name)")
+                }
+            }
+        }
+        // A scan that read nothing would find nothing and pass.
+        #expect(scanned > 50, "Only \(scanned) app source files were read")
+        #expect(
+            mentions.isEmpty,
+            "A disabled recompute is named in the app source:\n\(mentions.joined(separator: "\n"))"
+        )
+    }
 }

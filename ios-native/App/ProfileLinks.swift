@@ -1,0 +1,121 @@
+import SwiftUI
+
+/// The two ways off the profile that are not about one's own pets: joining a
+/// pet's family with a code someone sent, and the pets one follows.
+///
+/// The web client puts the first on its Add Pet page ("Join existing") and the
+/// second in the profile's following section. Here both sit under the pets
+/// list, because a person holding an invitation code is looking for "my pets",
+/// not for "add a pet".
+struct ProfileLinks: View {
+    let onSettings: () -> Void
+    let onJoinFamily: () -> Void
+    let onFollowing: () -> Void
+    let onSaved: () -> Void
+    let onCheckins: () -> Void
+    let onBlocked: () -> Void
+    let onContact: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // First, where the web client's gear is: at the top of the profile.
+            row(
+                title: "Settings",
+                detail: nil,
+                systemImage: "gearshape",
+                action: onSettings
+            )
+            .accessibilityIdentifier("profile.settings")
+            Divider().overlay(Palette.separator)
+            row(
+                title: "Join a pet's family",
+                detail: "Use an invitation code from one of its owners",
+                systemImage: "person.2.badge.plus",
+                action: onJoinFamily
+            )
+            // Literals at the call site, not a parameter: the identifier guard
+            // reads the source, and a name passed in is one it cannot see.
+            .accessibilityIdentifier("profile.joinFamily")
+            Divider().overlay(Palette.separator)
+            row(
+                title: "Pets you follow",
+                detail: nil,
+                systemImage: "heart.text.square",
+                action: onFollowing
+            )
+            .accessibilityIdentifier("profile.following")
+            Divider().overlay(Palette.separator)
+            row(
+                title: "Saved posts",
+                detail: nil,
+                systemImage: "bookmark",
+                action: onSaved
+            )
+            .accessibilityIdentifier("profile.saved")
+            Divider().overlay(Palette.separator)
+            // After Saved, as the web's tabs run: pets, saved, check-ins.
+            row(
+                title: "Check-ins",
+                detail: nil,
+                systemImage: "mappin.circle",
+                action: onCheckins
+            )
+            .accessibilityIdentifier("profile.checkins")
+            Divider().overlay(Palette.separator)
+            row(
+                title: "Blocked people",
+                detail: nil,
+                systemImage: "hand.raised",
+                action: onBlocked
+            )
+            .accessibilityIdentifier("profile.blocked")
+            Divider().overlay(Palette.separator)
+            row(
+                title: "Contact us",
+                detail: nil,
+                systemImage: "envelope",
+                action: onContact
+            )
+            .accessibilityIdentifier("profile.contact")
+        }
+        .background(Palette.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.card))
+    }
+
+    private func row(
+        title: LocalizedStringKey, detail: LocalizedStringKey?, systemImage: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: Spacing.m) {
+                Image(systemName: systemImage)
+                    .font(Typography.body)
+                    .foregroundStyle(Palette.brandPrimary)
+                    .frame(width: Layout.minTouchTarget)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(Typography.body)
+                        .foregroundStyle(Palette.primaryText)
+                    if let detail {
+                        Text(detail)
+                            .font(Typography.caption)
+                            .foregroundStyle(Palette.secondaryText)
+                    }
+                }
+                .multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.tertiaryText)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, Spacing.l)
+            .padding(.vertical, Spacing.s)
+            .frame(minHeight: Layout.minTouchTarget)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+    }
+}

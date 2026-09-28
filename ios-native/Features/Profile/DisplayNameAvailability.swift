@@ -47,9 +47,9 @@ final class DisplayNameAvailability {
         var message: String? {
             switch self {
             case .idle, .available: nil
-            case .checking: "Checking name…"
-            case .taken: "That name is already taken."
-            case .unknown: "We could not check that name. You can still save."
+            case .checking: String(localized: "Checking name…")
+            case .taken: String(localized: "That name is already taken.")
+            case .unknown: String(localized: "We could not check that name. You can still save.")
             case .invalid(let problem): problem.message
             }
         }

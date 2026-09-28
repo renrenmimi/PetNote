@@ -1,0 +1,12 @@
+diff --git a/ios-native/Features/Profile/EditProfileModel.swift b/ios-native/Features/Profile/EditProfileModel.swift
+index b6858a5..b22deb9 100644
+--- a/ios-native/Features/Profile/EditProfileModel.swift
++++ b/ios-native/Features/Profile/EditProfileModel.swift
+@@ -119,6 +119,7 @@ final class EditProfileModel {
+     func save() async {
+         // Synchronous, before any suspension. See the type's note (2).
+         guard canSave else { return }
++        await Task.yield() // TEMPORARY MUTATION - DO NOT COMMIT (mutation-4-toctou.patch): check, suspend, then set
+         isSaving = true
+         outcome = nil
+         defer { isSaving = false }

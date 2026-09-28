@@ -267,6 +267,8 @@ struct PostCard: View {
             .accessibilityValue("\(post.commentCount)")
 
             Spacer(minLength: 0)
+
+            PostShareMenu(post: post)
         }
         .padding(.horizontal, Layout.pageInset)
     }

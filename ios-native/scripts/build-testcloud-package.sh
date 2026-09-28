@@ -134,8 +134,19 @@ STATUS_LAUNCH="TODO - needs the phone attached"
 # `strings PetNote | grep petnote-` on such a package returns almost nothing
 # and looks exactly like a clean result. Measured on this project: main binary
 # 2 hits, whole bundle 12.
+#
+# Property lists are read as XML, not as bytes. A compiled Info.plist is a
+# binary plist, where a string is followed straight away by the next object's
+# marker byte: the URL scheme "petnote" came out of the byte scan as
+# "petnoteQ" (2026-09-24), a token that exists nowhere in the app. Converted,
+# every string the plist really holds is still scanned, whole.
 scan_bundle() {  # scan_bundle <app path>  -> prints "file:token" lines
-  LC_ALL=C grep -raoE "$SCAN_RE" "$1" 2>/dev/null | sed "s|^$1/||" | sort -u
+  {
+    LC_ALL=C grep -raoE --exclude='*.plist' "$SCAN_RE" "$1" 2>/dev/null
+    find "$1" -type f -name '*.plist' -print0 | while IFS= read -r -d '' f; do
+      plutil -convert xml1 -o - "$f" 2>/dev/null | LC_ALL=C grep -aoE "$SCAN_RE" | sed "s|^|$f:|"
+    done
+  } | sed "s|^$1/||" | sort -u
 }
 scan_tokens() { scan_bundle "$1" | sed 's/^.*://' | sort -u; }
 
@@ -358,6 +369,20 @@ fi
 [ "$cbi" = "$EXPECTED_BUNDLE_ID" ] \
   && record PASS "CFBundleIdentifier = $cbi" "$INFO" \
   || record FAIL "CFBundleIdentifier = '$cbi', expected '$EXPECTED_BUNDLE_ID'" "$INFO"
+# Google sign-in: the button appears only when this scheme is the reversed
+# client ID of the Firebase project the package talks to (GoogleSignInService,
+# GoogleSignInAvailability). The placeholder means the button is hidden.
+gscheme="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleURLTypes:0:CFBundleURLSchemes:0' "$INFO" 2>/dev/null)"
+gclient="$(/usr/libexec/PlistBuddy -c 'Print :REVERSED_CLIENT_ID' "$APP/GoogleService-Info-Test.plist" 2>/dev/null)"
+if [ -z "$gscheme" ]; then
+  record FAIL "no URL scheme for Google sign-in - a tap on the button would crash the SDK" "$INFO"
+elif [ "$gscheme" = "com.googleusercontent.apps.not-configured" ]; then
+  record FACT "Google sign-in is off in this package (placeholder scheme); the button is hidden" "$INFO"
+elif [ -n "$gclient" ] && [ "$gscheme" = "$gclient" ]; then
+  record PASS "Google sign-in scheme is the test project's reversed client ID" "$INFO"
+else
+  record FAIL "Google sign-in scheme is not the test project's reversed client ID" "$INFO (scheme $gscheme)"
+fi
 record FACT "PetNoteBuildStamp = $s" "$INFO"
 
 # --- 3c. signature and provisioning -----------------------------------------
@@ -529,6 +554,83 @@ else
   fi
 fi
 
+# --- 3d'. the same question asked of what was compiled, not of strings ------
+# A literal can be missing from a binary for reasons of its own - folded,
+# split, built at run time - so "no string" is not "no code". Two further
+# checks that do not depend on strings:
+#   1. the configuration this package was built with does not define the
+#      compilation condition that gates fault injection at all;
+#   2. the types declared behind that gate have no type metadata in the
+#      package's symbol table - checked against the control, which must have
+#      them, so an empty answer cannot come from looking in the wrong place.
+say ""
+say "    Fault injection by compilation condition and by compiled symbol"
+if printf '%s\n' "$bs_conditions" | tr ' ' '\n' | grep -qx PETNOTE_FAULT_INJECTION; then
+  record FAIL "the package's configuration defines PETNOTE_FAULT_INJECTION" \
+    "SWIFT_ACTIVE_COMPILATION_CONDITIONS = $bs_conditions"
+else
+  record PASS "the package's configuration does not define PETNOTE_FAULT_INJECTION" \
+    "SWIFT_ACTIVE_COMPILATION_CONDITIONS = $bs_conditions"
+fi
+symbols_of() {  # symbols_of <app> -> demangled symbol names of the app's own code
+  for f in "$1/PetNote" "$1/PetNote.debug.dylib"; do
+    [ -f "$f" ] && nm -a "$f" 2>/dev/null | awk '{print $NF}'
+  done | xcrun swift-demangle 2>/dev/null
+}
+FAULT_TYPES="$(bash "$ROOT/scripts/fault-switches.sh" --types 2>/dev/null)"
+ntypes="$(printf '%s\n' "$FAULT_TYPES" | grep -c . )"
+PKG_SYMS="$LOGDIR/symbols-testcloud-$STAMP.txt"
+symbols_of "$APP" >"$PKG_SYMS"
+type_hits() {  # type_hits <symbols file> -> the gated types that have metadata there
+  for t in $FAULT_TYPES; do
+    grep -qE "(type metadata|nominal type descriptor) for PetNote\.([A-Za-z0-9_]+\.)*${t}\$" "$1" && echo "$t"
+  done
+}
+in_pkg="$(type_hits "$PKG_SYMS" | tr '\n' ' ')"
+if [ "$ntypes" -eq 0 ]; then
+  record FACT "no types are declared behind PETNOTE_FAULT_INJECTION" "scripts/fault-switches.sh --types"
+elif [ -n "$CONTROL_APP" ] && [ -d "$CONTROL_APP" ]; then
+  CTL_SYMS="$LOGDIR/symbols-control-$STAMP.txt"
+  symbols_of "$CONTROL_APP" >"$CTL_SYMS"
+  in_ctl="$(type_hits "$CTL_SYMS" | grep -c . )"
+  if [ "$in_ctl" -lt "$ntypes" ]; then
+    record BLOCKED "the control has metadata for only $in_ctl of $ntypes gated types - the symbol check cannot tell clean from not-looking" \
+      "$CTL_SYMS ($(wc -l <"$CTL_SYMS" | tr -d ' ') symbols)"
+  elif [ -n "$in_pkg" ]; then
+    record FAIL "the device package has compiled fault-injection types: $in_pkg" "$PKG_SYMS"
+  else
+    record PASS "0 of $ntypes fault-injection types are compiled into the package; the control has all $in_ctl" \
+      "types: $(printf '%s ' $FAULT_TYPES); package symbols $(wc -l <"$PKG_SYMS" | tr -d ' '), control $(wc -l <"$CTL_SYMS" | tr -d ' ')"
+  fi
+else
+  record BLOCKED "no control package - the symbol check is not reported as clean" "${CONTROL_APP:-not built}"
+fi
+
+# --- 3d''. credentials ---------------------------------------------------------
+# The client needs its Firebase client configuration and nothing else. A
+# server secret, a service-account key or a private key in the package would
+# be a credential handed to everyone who installs it.
+say ""
+say "    Credentials in the package"
+secret_files="$(LC_ALL=C grep -rlaE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----|"private_key"[[:space:]]*:|"type"[[:space:]]*:[[:space:]]*"service_account"|cloudinary://[^[:space:]"]+@|api_secret=' "$APP" 2>/dev/null)"
+if [ -n "$secret_files" ]; then
+  record FAIL "the package carries something shaped like a secret" "$(printf '%s ' $secret_files)"
+else
+  record PASS "no private key, service-account key or Cloudinary secret in the package" \
+    "patterns: BEGIN PRIVATE KEY, \"private_key\":, service_account, cloudinary://…@, api_secret="
+fi
+allowed_keys="$( { /usr/libexec/PlistBuddy -c 'Print :API_KEY' "$APP/GoogleService-Info-Test.plist" 2>/dev/null;
+                   /usr/libexec/PlistBuddy -c 'Print :API_KEY' "$APP/GoogleService-Info-Emulator.plist" 2>/dev/null; } | sort -u)"
+found_keys="$(LC_ALL=C grep -rhoaE 'AIza[0-9A-Za-z_-]{35}' "$APP" 2>/dev/null | sort -u)"
+stray_keys="$(comm -23 <(printf '%s\n' "$found_keys" | grep .) <(printf '%s\n' "$allowed_keys" | grep .))"
+if [ -n "$stray_keys" ]; then
+  record FAIL "the package carries a Firebase API key that is not the test or emulator project's" \
+    "$(printf '%s\n' "$stray_keys" | grep -c .) unexpected key(s); values not printed"
+else
+  record PASS "the only Firebase API keys in the package are the test and emulator projects' client keys" \
+    "$(printf '%s\n' "$found_keys" | grep -c .) distinct; these are client identifiers, not secrets"
+fi
+
 fi  # end: package exists
 
 # --- 3e. optional: the Release candidate must be clean -----------------------
@@ -539,6 +641,19 @@ if [ "$RELEASE_CHECK" = 1 ]; then
   xcb "$DD_RELEASE" "$RELEASE_SCHEME" "$RELEASE_CONFIGURATION" "$REL_LOG" \
     CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
   REL_APP="$(app_in "$DD_RELEASE" "$RELEASE_CONFIGURATION")"
+  # The configuration first: Release strips its symbols, so the symbol check
+  # above has nothing to read here, and the compilation condition is the
+  # structural answer.
+  REL_SETTINGS="$LOGDIR/settings-release-$STAMP.txt"
+  xcodebuild -project "$PROJECT" -scheme "$RELEASE_SCHEME" -configuration "$RELEASE_CONFIGURATION" \
+    -sdk iphoneos -showBuildSettings >"$REL_SETTINGS" 2>/dev/null
+  rel_conditions="$(grep -E "^[[:space:]]*SWIFT_ACTIVE_COMPILATION_CONDITIONS = " "$REL_SETTINGS" | head -1 | sed 's/^[^=]*= *//')"
+  if printf '%s\n' "$rel_conditions" | tr ' ' '\n' | grep -qxE 'PETNOTE_FAULT_INJECTION|DEBUG'; then
+    record FAIL "Release defines a test compilation condition" "SWIFT_ACTIVE_COMPILATION_CONDITIONS = $rel_conditions"
+  else
+    record PASS "Release defines neither DEBUG nor PETNOTE_FAULT_INJECTION" \
+      "SWIFT_ACTIVE_COMPILATION_CONDITIONS = ${rel_conditions:-(empty)}"
+  fi
   if [ -d "$REL_APP" ]; then
     reltok="$(scan_tokens "$REL_APP")"
     relsw="$(printf '%s\n' "$reltok" | grep -vE "$PROJECT_ID_TOKENS" | grep . )"

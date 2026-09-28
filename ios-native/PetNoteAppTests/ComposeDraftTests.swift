@@ -153,3 +153,153 @@ struct ComposeDraftTests {
         init(_ now: Date) { self.now = now }
     }
 }
+
+/// The draft on offer is kept until the person chooses Restore or Discard.
+///
+/// The web client's autosave does not run while its "unsaved draft" banner is
+/// up (src/pages/Create.tsx:283). Saving what is typed then replaces the draft
+/// being offered — and an interrupted attempt's draft is the only record of
+/// its operation id and of the photos already on the CDN.
+@MainActor
+struct ComposeDraftOfferTests {
+    static let pet = PetFixture.pet(id: "pet-1", name: "Momo")
+
+    private func makeModel(over drafts: InMemoryDraftStore) -> ComposeViewModel {
+        ComposeViewModel(
+            uid: "user-1", isEmailVerified: true,
+            uploader: FakeUploader(), writes: FakePostWrites(),
+            pets: FixedPets(pets: [Self.pet]), drafts: drafts
+        )
+    }
+
+    @Test func typingWhileADraftIsOfferedDoesNotReplaceIt() async throws {
+        let drafts = InMemoryDraftStore()
+        let operationID = OperationID.new()
+        drafts.save(
+            ComposeDraft(
+                text: "morning walk", tags: ["cat"], petID: Self.pet.id, savedAt: Date(),
+                operationID: operationID, uploadedAssets: [ComposeDraftTests.sampleAsset(1)]
+            ),
+            uid: "user-1"
+        )
+        let model = makeModel(over: drafts)
+        await model.start()
+        #expect(model.restorableDraft != nil, "precondition: the stored draft is offered")
+
+        // What the composer's fields do on every edit.
+        model.caption = "something else"
+        model.persistDraft()
+        model.tagInput = "dog"
+        model.commitTagInput()
+
+        let stored = try #require(drafts.load(uid: "user-1"), "the offered draft is gone")
+        #expect(stored.text == "morning walk", "typing replaced the draft on offer")
+        #expect(stored.tags == ["cat"])
+        #expect(stored.operationID == operationID, "the interrupted attempt's operation id was lost")
+        #expect(stored.uploadedAssets == [ComposeDraftTests.sampleAsset(1)], "the upload records were lost")
+    }
+
+    /// And once the person has chosen, what they type is kept again.
+    @Test func afterRestoringWhatIsTypedIsKeptAgain() async {
+        let drafts = InMemoryDraftStore()
+        drafts.save(ComposeDraft(text: "morning walk", petID: Self.pet.id), uid: "user-1")
+        let model = makeModel(over: drafts)
+        await model.start()
+        model.restoreDraft()
+
+        model.caption = "morning walk, then a nap"
+        model.persistDraft()
+
+        #expect(drafts.load(uid: "user-1")?.text == "morning walk, then a nap")
+    }
+
+    @Test func afterDiscardingWhatIsTypedIsKeptAgain() async {
+        let drafts = InMemoryDraftStore()
+        drafts.save(ComposeDraft(text: "morning walk", petID: Self.pet.id), uid: "user-1")
+        let model = makeModel(over: drafts)
+        await model.start()
+        model.discardDraft()
+
+        model.caption = "a new post"
+        model.persistDraft()
+
+        #expect(drafts.load(uid: "user-1")?.text == "a new post")
+    }
+
+    /// A draft with uploads, restored over photos already picked, would post
+    /// the draft's files in place of some of the picks. Refused; nothing moves.
+    @Test func aDraftWithUploadsIsNotRestoredOverPickedPhotos() async {
+        let drafts = InMemoryDraftStore()
+        let operationID = OperationID.new()
+        drafts.save(
+            ComposeDraft(
+                text: "morning walk", petID: Self.pet.id, savedAt: Date(),
+                operationID: operationID, uploadedAssets: [ComposeDraftTests.sampleAsset(1)]
+            ),
+            uid: "user-1"
+        )
+        let model = makeModel(over: drafts)
+        await model.start()
+        model.add([ComposePublishTests.photo(1), ComposePublishTests.photo(2)])
+        #expect(!model.canRestoreDraft)
+
+        model.restoreDraft()
+
+        #expect(model.restorableDraft != nil, "the draft was taken as restored")
+        #expect(model.caption.isEmpty, "the draft's text came back anyway")
+        #expect(model.items.map(\.id) == ["item-1", "item-2"], "the picked photos changed")
+        #expect(drafts.load(uid: "user-1")?.operationID == operationID, "the stored draft was touched")
+    }
+
+    /// A draft without uploads has nothing to mix: it restores over picks and
+    /// keeps them, as before.
+    @Test func aDraftWithoutUploadsRestoresOverPickedPhotosAndKeepsThem() async {
+        let drafts = InMemoryDraftStore()
+        drafts.save(ComposeDraft(text: "morning walk", petID: Self.pet.id), uid: "user-1")
+        let model = makeModel(over: drafts)
+        await model.start()
+        model.add([ComposePublishTests.photo(1)])
+        #expect(model.canRestoreDraft)
+
+        model.restoreDraft()
+
+        #expect(model.restorableDraft == nil)
+        #expect(model.caption == "morning walk")
+        #expect(model.items.map(\.id) == ["item-1"])
+    }
+
+    /// Once this session has started an attempt, restoring would replace its
+    /// operation id with the draft's and the next Share could post twice.
+    @Test func aDraftIsNotRestoredOverAnAttemptAlreadyStarted() async {
+        let drafts = InMemoryDraftStore()
+        let draftOperation = OperationID.new()
+        drafts.save(
+            ComposeDraft(text: "morning walk", petID: Self.pet.id, savedAt: Date(), operationID: draftOperation),
+            uid: "user-1"
+        )
+        // The publish lands and its answer is lost: an attempt with an id,
+        // uploads of its own, and an outcome nobody knows.
+        let writes = FakePostWrites()
+        writes.loseAnswer(onAttempts: [1])
+        let model = ComposeViewModel(
+            uid: "user-1", isEmailVerified: true,
+            uploader: FakeUploader(), writes: writes,
+            pets: FixedPets(pets: [Self.pet]), drafts: drafts
+        )
+        await model.start()
+        model.caption = "a new post"
+        model.selectedPetID = Self.pet.id
+        model.add([ComposePublishTests.photo(1)])
+        await model.share()
+        #expect(model.phase == .failed(stage: .publish), "precondition: the publish outcome is unknown")
+        #expect(model.operationID != nil, "precondition: the attempt started and kept its id")
+        #expect(model.operationID != draftOperation)
+        #expect(!model.canRestoreDraft)
+
+        let attempt = model.operationID
+        model.restoreDraft()
+
+        #expect(model.operationID == attempt, "restoring replaced the attempt's operation id")
+        #expect(model.caption == "a new post")
+    }
+}

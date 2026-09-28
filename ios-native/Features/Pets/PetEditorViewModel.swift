@@ -209,27 +209,27 @@ final class PetEditorViewModel {
     var validationProblem: String? {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedName.isEmpty {
-            return "Give your pet a name."
+            return String(localized: "Give your pet a name.")
         }
         if !PetValidation.isAcceptableName(trimmedName) {
-            return "The name has to be \(PetValidation.nameRange.lowerBound)–\(PetValidation.nameRange.upperBound) characters."
+            return String(localized: "The name has to be \(PetValidation.nameRange.lowerBound)–\(PetValidation.nameRange.upperBound) characters.")
         }
         if species == nil {
-            return "Choose a species."
+            return String(localized: "Choose a species.")
         }
         if breed.trimmingCharacters(in: .whitespacesAndNewlines).count > PetValidation.breedLimit {
-            return "The breed is too long."
+            return String(localized: "The breed is too long.")
         }
         if bio.trimmingCharacters(in: .whitespacesAndNewlines).count > PetValidation.bioLimit {
-            return "The bio is over \(PetValidation.bioLimit) characters."
+            return String(localized: "The bio is over \(PetValidation.bioLimit) characters.")
         }
         if !mode.isEdit, relationship == nil {
-            return "Say how you are related to this pet."
+            return String(localized: "Say how you are related to this pet.")
         }
         if !mode.isEdit, relationship == .other,
            customRelationship.trimmingCharacters(in: .whitespacesAndNewlines).count
             > PetValidation.customRelationshipLimit {
-            return "That relationship label is too long."
+            return String(localized: "That relationship label is too long.")
         }
         return nil
     }
@@ -354,42 +354,42 @@ final class PetEditorViewModel {
             switch preparation {
             case .tooLargeToProcess(_, let limit):
                 let megabytes = max(1, limit / 1_048_576)
-                return "That photo is bigger than \(megabytes)MB. Choose a smaller one."
+                return String(localized: "That photo is bigger than \(megabytes)MB. Choose a smaller one.")
             case .undecodable:
-                return "That photo could not be read. Try another one."
+                return String(localized: "That photo could not be read. Try another one.")
             case .unencodable:
-                return "That photo could not be prepared. Try another one."
+                return String(localized: "That photo could not be prepared. Try another one.")
             }
         }
         guard let upload = error as? UploadError else {
-            return "The photo could not be uploaded. The pet was not changed."
+            return String(localized: "The photo could not be uploaded. The pet was not changed.")
         }
         switch upload {
         case .notSignedIn:
-            return "Sign in again to add a photo."
+            return String(localized: "Sign in again to add a photo.")
         case .banned:
-            return "This account cannot upload photos."
+            return String(localized: "This account cannot upload photos.")
         case .rateLimited:
-            return "Too many uploads just now. Wait a moment and try again."
+            return String(localized: "Too many uploads just now. Wait a moment and try again.")
         case .signatureUnavailable(let detail):
             return detail == CallableTransport.unavailable
-                ? "This build cannot reach PetNote's server."
-                : "The photo could not be prepared for upload. Try again."
+                ? String(localized: "This build cannot reach PetNote's server.")
+                : String(localized: "The photo could not be prepared for upload. Try again.")
         case .tooLarge(let limitBytes, _):
             let megabytes = max(1, limitBytes / 1_048_576)
-            return "That photo is over the \(megabytes)MB limit."
+            return String(localized: "That photo is over the \(megabytes)MB limit.")
         case .timedOut:
-            return "The photo upload timed out. The pet was not changed."
+            return String(localized: "The photo upload timed out. The pet was not changed.")
         case .offline:
-            return "No connection. Check your network and try again."
+            return String(localized: "No connection. Check your network and try again.")
         case .rejected:
             // Never retryable: the same bytes and the same signature will be
             // refused again.
-            return "That photo was not accepted. Try a different one."
+            return String(localized: "That photo was not accepted. Try a different one.")
         case .malformedResponse:
-            return "The photo upload did not complete. Try again."
+            return String(localized: "The photo upload did not complete. Try again.")
         case .transport:
-            return "The photo could not be uploaded. The pet was not changed."
+            return String(localized: "The photo could not be uploaded. The pet was not changed.")
         }
     }
 
@@ -409,14 +409,14 @@ final class PetEditorViewModel {
 
     static func uncertainWording(isEdit: Bool) -> String {
         isEdit
-            ? """
+            ? String(localized: """
               We could not tell whether that was saved. Open the pet to check \
               before trying again.
-              """
-            : """
+              """)
+            : String(localized: """
               We could not tell whether the pet was created. Check your pets \
               before trying again — sending this twice would make two.
-              """
+              """)
     }
 
     // MARK: - Payloads

@@ -268,6 +268,17 @@ extension XCTestCase {
                 app.navigationBars["PetNote"].exists && !app.navigationBars["Post"].exists
             }
         }
+        // A probe beside the account entry can land on its neighbours in the
+        // bar, which push a screen of their own: search, and since the bell
+        // was added, notifications. Measured: the first probe 60pt left of
+        // the entry did exactly that, and every probe after it was recorded
+        // as "lost the feed", which made the width read 0. Back out.
+        for _ in 0..<3 where !app.navigationBars["PetNote"].exists {
+            let back = app.navigationBars.buttons["BackButton"].firstMatch
+            guard back.exists else { break }
+            back.tap()
+            becomesTrue(within: 10) { app.navigationBars["PetNote"].exists }
+        }
         return waitForExistence(of: app.navigationBars["PetNote"], in: app, timeout: 30)
             && !app.navigationBars["Post"].exists
     }

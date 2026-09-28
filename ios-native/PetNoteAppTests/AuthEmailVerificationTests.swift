@@ -112,7 +112,7 @@ struct AuthEmailVerificationTests {
         // and doing that a second time will not help if the request never
         // went out.
         #expect(!model.checkedAndStillUnverified)
-        #expect(model.sendState == .failed("Could not check just now. Try again in a moment."))
+        #expect(model.sendState == .failed(String(localized: "Could not check just now. Try again in a moment.")))
         #expect(model.isVisible)
     }
 
@@ -128,7 +128,7 @@ struct AuthEmailVerificationTests {
         #expect(auth.verificationSends == 1)
         #expect(model.sendState == .sent)
         #expect(model.cooldownRemaining(now: now) == Int(EmailVerificationModel.resendCooldown))
-        #expect(model.resendLabel(now: now) == "Resend in 60s")
+        #expect(model.resendLabel(now: now) == String(localized: "Resend in \(60)s"))
     }
 
     /// A cooldown so that somebody tapping repeatedly gets a straight answer
@@ -157,7 +157,7 @@ struct AuthEmailVerificationTests {
         // Nothing was sent, so there is nothing to wait for.
         #expect(model.cooldownRemaining() == 0)
         #expect(model.canResend())
-        #expect(model.resendLabel() == "Resend email")
+        #expect(model.resendLabel() == String(localized: "Resend email"))
     }
 
     // MARK: What sign-up left behind
@@ -179,6 +179,27 @@ struct AuthEmailVerificationTests {
         let second = EmailVerificationModel(auth: auth)
         second.adoptNotice(from: setup)
         #expect(second.setupNotice == nil)
+    }
+
+    /// Sign-up leaves the notice on a service that outlives the account. If
+    /// somebody else is signed in by the time a banner appears, it is not
+    /// theirs to read.
+    @Test func aNoticeFromAnotherAccountsSignUpIsNotShown() async {
+        let auth = unverified()
+        auth.verificationSendError = .networkUnavailable
+        let setup = AccountSetupService(auth: auth, users: FakeUserRepository())
+        _ = try? await setup.createAccount(email: "someone@example.com", password: "Passw0rd!")
+        _ = await setup.awaitSetup()
+
+        auth.account = AccountSnapshot(uid: "u2", email: "other@example.com", isEmailVerified: false)
+        let other = EmailVerificationModel(auth: auth)
+        other.adoptNotice(from: setup)
+        #expect(other.setupNotice == nil)
+
+        auth.account = AccountSnapshot(uid: "new-uid", email: "someone@example.com", isEmailVerified: false)
+        let owner = EmailVerificationModel(auth: auth)
+        owner.adoptNotice(from: setup)
+        #expect(owner.setupNotice?.contains("someone@example.com") == true)
     }
 
     /// A resend answers whatever the previous attempt said, so the carried

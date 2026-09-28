@@ -161,21 +161,21 @@ enum ProfileError: Error, Sendable, Equatable {
     var message: String {
         switch self {
         case .notSignedIn:
-            "Sign in to change your profile."
+            String(localized: "Sign in to change your profile.")
         case .displayNameTaken:
-            "That name is already taken."
+            String(localized: "That name is already taken.")
         case .rejected(let reason):
             reason
         case .banned:
-            "This account cannot change its profile."
+            String(localized: "This account cannot change its profile.")
         case .rateLimited:
-            "Too many changes just now. Wait a moment and try again."
+            String(localized: "Too many changes just now. Wait a moment and try again.")
         case .offline:
-            "No connection. Check your network and try again."
+            String(localized: "No connection. Check your network and try again.")
         case .outcomeUnknown:
-            "We could not confirm whether that saved. Reopen this screen to check."
+            String(localized: "We could not confirm whether that saved. Reopen this screen to check.")
         case .transport:
-            "Something went wrong saving your profile. Try again."
+            String(localized: "Something went wrong saving your profile. Try again.")
         }
     }
 
@@ -234,8 +234,8 @@ enum DisplayNameRule {
 
         var message: String {
             switch self {
-            case .tooShort: "Name must be at least 2 characters."
-            case .tooLong: "Name must be 30 characters or fewer."
+            case .tooShort: String(localized: "Name must be at least 2 characters.")
+            case .tooLong: String(localized: "Name must be 30 characters or fewer.")
             }
         }
     }
@@ -346,11 +346,17 @@ actor FirestoreUserRepository: UserRepository {
                 displayName: displayName, avatarURL: avatarURL,
                 bio: bio, onboardingComplete: onboardingComplete
             )
-        } catch let error as ProfileError where error.isRetryable {
+        } catch let error as ProfileError where error.isRetryable || error == .outcomeUnknown {
             // One retry after a second, which is what createUserProfile in
             // src/services/users.ts does. The call is idempotent server-side,
             // so repeating it cannot create a second profile — and the profile
             // is what every later screen depends on existing.
+            //
+            // `outcomeUnknown` is retried here and only here: an existing
+            // profile is returned rather than written again
+            // (functions/src/users.ts:309-321), so an attempt that did commit
+            // answers its own retry. It also keeps the 503 retry this had
+            // before `.unavailable` stopped mapping to `.offline`.
             log.info("ensureUserProfile failed once; retrying after a second")
             try await Task.sleep(for: .seconds(1))
             return try await callEnsure(
@@ -424,7 +430,7 @@ actor FirestoreUserRepository: UserRepository {
         guard displayName != nil || avatarURL != nil || bio != nil else {
             // The server answers `invalid-argument` for this. Saying so here
             // keeps a no-op save from looking like a server fault.
-            throw ProfileError.rejected("There is nothing to save.")
+            throw ProfileError.rejected(String(localized: "There is nothing to save."))
         }
         try requireReachableCallables()
 
@@ -485,7 +491,7 @@ actor FirestoreUserRepository: UserRepository {
     /// one moment this is called is the moment right after signing up.
     func completeOnboarding(uid: String) async throws {
         guard let validID = DeepLink.validDocumentID(uid) else {
-            throw ProfileError.rejected("That account id is not usable.")
+            throw ProfileError.rejected(String(localized: "That account id is not usable."))
         }
         do {
             try await db.collection("users").document(validID)
@@ -580,7 +586,7 @@ actor FirestoreUserRepository: UserRepository {
             if nsError.domain == FirestoreErrorDomain {
                 switch nsError.code {
                 case FirestoreErrorCode.permissionDenied.rawValue:
-                    return .rejected("You are not allowed to change that.")
+                    return .rejected(String(localized: "You are not allowed to change that."))
                 case FirestoreErrorCode.unavailable.rawValue:
                     return .offline
                 default:
@@ -605,9 +611,13 @@ actor FirestoreUserRepository: UserRepository {
             return .rejected(message)
         case .resourceExhausted:
             return .rateLimited
-        case .unavailable:
-            return .offline
-        case .deadlineExceeded, .aborted, .cancelled:
+        case .deadlineExceeded, .aborted, .cancelled, .unavailable:
+            // `.unavailable` is **not** `.offline`. From `call()` it is an
+            // HTTP 503 that came back (FunctionsError `init(httpStatusCode:)`),
+            // so the request left the device and the handler may have run —
+            // and `.offline` is the one answer that licenses deleting a
+            // freshly uploaded avatar. The pet, post and comment mappers all
+            // read it as unknown; this one had read it as "never sent".
             return .outcomeUnknown
         default:
             return .transport("functions-\(nsError.code)")

@@ -5,6 +5,11 @@
 #
 #   scripts/fault-switches.sh            # one literal per line
 #   scripts/fault-switches.sh --count
+#   scripts/fault-switches.sh --types    # the types declared behind the gate
+#
+# The types are what the package audit looks for in the compiled symbols: a
+# literal can be absent from a binary for reasons of its own, a type's
+# metadata cannot, if the type was compiled in.
 #
 # Why this exists rather than a naming convention: the audit has to prove that
 # none of these strings is in the device package, and to do that it needs to
@@ -26,7 +31,11 @@ ROOTS = (os.environ.get("PETNOTE_SCAN_ROOTS")
          or "App Core Features DesignSystem Support").split()
 GATE = "PETNOTE_FAULT_INJECTION"
 
-def gated_literals(path):
+TYPE_DECL = re.compile(
+    r'^\s*(?:(?:public|internal|private|fileprivate|final|nonisolated|indirect)\s+)*'
+    r'(?:struct|class|enum|actor)\s+([A-Za-z_][A-Za-z0-9_]*)')
+
+def gated_literals(path, types=False):
     out = []
     stack = []            # one bool per open #if: is the fault gate active?
     for line in open(path, encoding="utf-8"):
@@ -49,6 +58,11 @@ def gated_literals(path):
             continue
         if not any(stack) or stripped.startswith("//"):
             continue
+        if types:
+            declared = TYPE_DECL.match(line)
+            if declared:
+                out.append(declared.group(1))
+            continue
         for match in re.finditer(r'"(-?petnote[A-Za-z0-9._-]*)"', line):
             out.append(match.group(1))
     return out
@@ -58,7 +72,7 @@ for root in ROOTS:
     for directory, _, files in os.walk(root):
         for name in files:
             if name.endswith(".swift"):
-                found.update(gated_literals(os.path.join(directory, name)))
+                found.update(gated_literals(os.path.join(directory, name), types="--types" in sys.argv))
 
 if "--count" in sys.argv:
     print(len(found))

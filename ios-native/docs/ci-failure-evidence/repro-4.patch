@@ -1,0 +1,173 @@
+diff --git a/ios-native/PetNoteAppTests/TEMP_ReproCI35933245850Tests.swift b/ios-native/PetNoteAppTests/TEMP_ReproCI35933245850Tests.swift
+new file mode 100644
+index 0000000..88e09f2
+--- /dev/null
++++ b/ios-native/PetNoteAppTests/TEMP_ReproCI35933245850Tests.swift
+@@ -0,0 +1,167 @@
++// TEMPORARY - DO NOT COMMIT. Evidence for the owner (2026-09-23), not a test
++// of the app. Remove with `git apply -R repro-4.patch` or by deleting this file.
++//
++// Deterministic reproduction of CI run 35933245850 (5baad70, Apple M1 (Virtual),
++// 3 vCPU, 7 GiB):
++//
++//   ✘ Test twoTapsInTheSameTurnSaveOnce() recorded an issue at
++//     ProfileEditTests.swift:272:9: Expectation failed: (users.updateCalls.count → 2) == 1
++//   ↳ the profile was written twice
++//   ✘ Test twoTapsInTheSameTurnSaveOnce() failed after 0.037 seconds with 1 issue.
++//
++// The claim under test: the two `async let` saves did not overlap on the slow
++// runner - the second began after the first had finished, so a second write
++// was correct. EditProfileModel is @MainActor and save() checks and sets
++// `isSaving` with no suspension in between, so two writes are possible only if
++// the second save's check ran after the first save's `defer` - that is, only
++// if they did not overlap. Below, the old body with that ordering made certain.
++// No product code changes.
++//
++// Run: -only-testing:PetNoteAppTests/ReproCI35933245850Tests
++// Expected: reproduce_CI_35933245850 FAILS with exactly one issue,
++// "(users.updateCalls.count → 2) == 1" / "the profile was written twice";
++// fixedTestWithTheSecondTapAsLateAsItLikes and
++// proposed_aTapBeforeTheFirstSaveSuspendsWritesNothing PASS.
++// With mutation-4-toctou.patch also applied: the committed
++// ProfileEditTests.twoTapsInTheSameTurnSaveOnce still PASSES (its blind spot)
++// and proposed_aTapBeforeTheFirstSaveSuspendsWritesNothing FAILS (count 2).
++
++import Foundation
++import Testing
++
++@testable import PetNote
++
++@MainActor
++struct ReproCI35933245850Tests {
++    /// ProfileEditTests' private helpers, copied.
++    private func loaded() async -> (EditProfileModel, FakeUserRepository) {
++        let users = FakeUserRepository()
++        users.storedProfile = UserProfile(
++            id: "u1", displayName: "HappyOtter42",
++            avatarURL: "https://res.cloudinary.test/image/upload/old.jpg",
++            bio: "Two cats.", onboardingComplete: true
++        )
++        let model = EditProfileModel(uid: "u1", users: users, uploader: FakeAvatarUploader(), nameCheckDelay: .zero)
++        await model.load()
++        model.displayName = "SparklyKoala19"
++        await model.name.awaitPending()
++        return (model, users)
++    }
++
++    /// The body of twoTapsInTheSameTurnSaveOnce exactly as it was at 5baad70
++    /// (two `async let` saves), with the one thing the slow runner supplied
++    /// made certain: the second save begins only once the first has finished.
++    @Test func reproduce_CI_35933245850() async {
++        let (model, users) = await loaded()
++        let firstFinished = Flag()
++
++        async let first: Void = Self.save(model, thenSet: firstFinished)
++        async let second: Void = Self.save(model, after: firstFinished)
++        _ = await (first, second)
++
++        #expect(users.updateCalls.count == 1, "the profile was written twice")
++    }
++
++    /// The body as it is at HEAD (bc01248), with the second tap delayed for as
++    /// long as the injection above could possibly want: the first save is held
++    /// at the server, so it cannot finish first however late the tap is.
++    /// Expected: passes.
++    @Test func fixedTestWithTheSecondTapAsLateAsItLikes() async {
++        let (model, users) = await loaded()
++
++        let gate = HeldWrite()
++        users.whileUpdating = { await gate.hold() }
++        let first = Task { await model.save() }
++        #expect(await gate.arrives(), "the first save never reached the server")
++        #expect(model.isSaving)
++
++        for _ in 0..<5_000 { await Task.yield() } // injected: a very late second tap
++        #expect(model.isSaving, "the first save finished while it was held")
++        await model.save()
++        gate.release()
++        await first.value
++
++        #expect(users.updateCalls.count == 1, "the profile was written twice")
++    }
++
++    /// PROPOSED, not committed anywhere: what the HEAD test no longer covers.
++    /// The second tap arrives at the first save's *first suspension* - two
++    /// taps queued back to back on the main actor, which is what a real double
++    /// tap is. The type's note (2) says the guard is taken before any
++    /// suspension; the HEAD test only taps again once the first save is at the
++    /// server, so a guard that is checked, then suspends, then set
++    /// (mutation-4-toctou.patch) passes it. This one fails on that mutation.
++    @Test func proposed_aTapBeforeTheFirstSaveSuspendsWritesNothing() async {
++        let (model, users) = await loaded()
++
++        let gate = HeldWrite()
++        users.whileUpdating = { await gate.hold() }
++        let first = Task { await model.save() }
++        let second = Task { await model.save() } // runs at the first's first suspension
++        #expect(await gate.arrives(), "the first save never reached the server")
++        for _ in 0..<2_000 { await Task.yield() } // every chance for the second to write
++        gate.release()
++        await first.value
++        await second.value
++
++        #expect(users.updateCalls.count == 1, "the profile was written twice")
++    }
++
++    // MARK: - The injected ordering
++
++    @MainActor final class Flag {
++        var isSet = false
++    }
++
++    private static func save(_ model: EditProfileModel, thenSet flag: Flag) async {
++        await model.save()
++        flag.isSet = true
++    }
++
++    private static func save(_ model: EditProfileModel, after flag: Flag) async {
++        for _ in 0..<20_000 {
++            if flag.isSet { break }
++            await Task.yield()
++        }
++        #expect(flag.isSet, "the injection did not take: the first save never finished")
++        await model.save()
++    }
++
++    /// ProfileEditTests.HeldWrite (private there), copied, except that it holds
++    /// any number of writes - under the TOCTOU mutation two can arrive.
++    private final class HeldWrite: @unchecked Sendable {
++        private let lock = NSLock()
++        private var arrived = false
++        private var released = false
++        private var waiting: [CheckedContinuation<Void, Never>] = []
++
++        func hold() async {
++            await withCheckedContinuation { continuation in
++                let resumeNow = lock.withLock { () -> Bool in
++                    arrived = true
++                    if released { return true }
++                    waiting.append(continuation)
++                    return false
++                }
++                if resumeNow { continuation.resume() }
++            }
++        }
++
++        func arrives() async -> Bool {
++            for _ in 0..<20_000 {
++                if lock.withLock({ arrived }) { return true }
++                await Task.yield()
++            }
++            return false
++        }
++
++        func release() {
++            let continuations = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
++                released = true
++                defer { waiting = [] }
++                return waiting
++            }
++            for continuation in continuations { continuation.resume() }
++        }
++    }
++}

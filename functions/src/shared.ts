@@ -2,8 +2,7 @@ import { HttpsError } from "firebase-functions/v2/https";
 import {
   admin,
   db,
-  CLOUDINARY_CLOUD_NAME,
-  CLOUDINARY_FOLDER,
+  cloudinaryAccount,
   FieldValue,
   Timestamp,
   FieldPath,
@@ -189,14 +188,13 @@ export const CLOUDINARY_HOST = "res.cloudinary.com";
  * smaller problem than a foreign bucket.
  */
 function assertOwnCloudinaryAsset(parsed: URL, fieldName: string): void {
-  // A plain constant now, not a secret param read out of the environment.
-  // There is no longer a way for a caller to reach this function without the
-  // cloud name available, so the "misconfigured" branch that used to guard
-  // that case is gone with it.
-  const cloudName = CLOUDINARY_CLOUD_NAME;
+  // The deployment's own account, the one uploads are signed for. A project
+  // without one refuses with `failed-precondition` rather than accepting
+  // production's URLs.
+  const { cloudName, folder } = cloudinaryAccount();
   if (
     !parsed.pathname.startsWith(`/${cloudName}/`) ||
-    !parsed.pathname.includes(`/${CLOUDINARY_FOLDER}/`)
+    !parsed.pathname.includes(`/${folder}/`)
   ) {
     throw new HttpsError(
       "invalid-argument",

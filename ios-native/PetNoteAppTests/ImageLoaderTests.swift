@@ -226,6 +226,12 @@ struct ImageLoaderBehaviourTests {
         try await Self.waitUntil("both rows to join one request") {
             await loader.subscriberCountForTesting(url: self.photo, maxPixelSize: 300) == 2
         }
+        // Joined is not the same moment as arrived: the session hands the
+        // request to the stub on its own queue, a little later. Checking the
+        // count straight away is what failed, once in eleven runs and again
+        // under the full suite — and the count was 0, not 2: in that run the
+        // same check at the end passed, and the count only ever goes up.
+        try await Self.waitUntil("the shared request to reach the server") { stub.requestCount >= 1 }
         #expect(stub.requestCount == 1)
 
         leaving.cancel()

@@ -83,6 +83,13 @@ enum FirebaseBootstrap {
         FirebaseApp.configure(options: options)
 
         guard environment.backend == .emulator else {
+            // Memory only, as for the emulator below and as the web client
+            // does. That was always the stated intent, and the cloud path
+            // skipped it: its builds used the SDK's on-disk cache, which kept
+            // query results — posts, profiles, notifications — on the phone
+            // after sign-out (legal review, A1).
+            Firestore.firestore().settings = Self.memoryOnly(Firestore.firestore().settings)
+            Self.dropOnDiskCacheOnce()
             // Nothing to redirect: a cloud configuration talks to the cloud.
             // Checked here rather than before the guard below so that both
             // halves of the check — which project, and which host — always
@@ -94,12 +101,9 @@ enum FirebaseBootstrap {
 
         Auth.auth().useEmulator(withHost: environment.emulatorHost, port: 9099)
 
-        let settings = Firestore.firestore().settings
+        let settings = Self.memoryOnly(Firestore.firestore().settings)
         settings.host = environment.firestoreHost
         settings.isSSLEnabled = false
-        // Stage 1 matches the web client: no offline persistence. Turning it on
-        // is a later decision that needs measured benefit on a weak network.
-        settings.cacheSettings = MemoryCacheSettings()
         Firestore.firestore().settings = settings
 
         Functions.functions().useEmulator(withHost: environment.emulatorHost, port: environment.functionsPort)
@@ -110,5 +114,33 @@ enum FirebaseBootstrap {
         EnvironmentGuard.enforce(environment)
 
         log.info("Firebase configured against emulator at \(environment.emulatorHost, privacy: .public)")
+    }
+
+    /// Stage 1 matches the web client: no offline persistence, in every
+    /// build. Turning it on is a later decision that needs measured benefit
+    /// on a weak network.
+    static func memoryOnly(_ settings: FirestoreSettings) -> FirestoreSettings {
+        settings.cacheSettings = MemoryCacheSettings()
+        return settings
+    }
+
+    /// Not a lowercase `petnote…` name: the package audit reads those in a
+    /// Release binary as test switches, and this key ships.
+    static let droppedDiskCacheKey = "PetNote.droppedFirestoreDiskCache"
+
+    /// Builds before this one wrote Firestore's cache to disk. Memory-only
+    /// stops new writes; this removes what an earlier build left, once,
+    /// before anything reads — `clearPersistence` must run before the first
+    /// query, and here nothing has queried yet.
+    private static func dropOnDiskCacheOnce(defaults: UserDefaults = .standard) {
+        guard !defaults.bool(forKey: droppedDiskCacheKey) else { return }
+        Firestore.firestore().clearPersistence { error in
+            if let error {
+                log.error("could not drop the old on-disk cache: \(String(describing: error), privacy: .public)")
+            } else {
+                defaults.set(true, forKey: droppedDiskCacheKey)
+                log.info("dropped the on-disk Firestore cache an earlier build left")
+            }
+        }
     }
 }

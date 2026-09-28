@@ -25,6 +25,13 @@ enum AuthError: Error, Sendable, Equatable {
     /// Email/password sign-up is switched off in the Firebase console.
     /// Nothing the person can do, and nothing a retry fixes.
     case signUpNotAllowed
+    /// Google sign-in for an address whose account uses another method, where
+    /// Firebase would need the two linked. The web client's answer, word for
+    /// word: use that method, or reset the password. **The app never links the
+    /// two itself** — no `link(with:)` on the pending credential, no sign-in
+    /// method lookup. Firebase's own automatic handling of a trusted Google
+    /// address is Firebase's, not ours.
+    case differentSignInMethod
     case unknown
 
     init(_ error: Error) {
@@ -46,6 +53,8 @@ enum AuthError: Error, Sendable, Equatable {
             self = .emailAlreadyInUse
         case .operationNotAllowed:
             self = .signUpNotAllowed
+        case .accountExistsWithDifferentCredential:
+            self = .differentSignInMethod
         default:
             self = .unknown
         }
@@ -54,23 +63,25 @@ enum AuthError: Error, Sendable, Equatable {
     var message: String {
         switch self {
         case .invalidCredentials:
-            "That email and password do not match an account."
+            String(localized: "That email and password do not match an account.")
         case .invalidEmailFormat:
-            "That does not look like an email address."
+            String(localized: "That does not look like an email address.")
         case .networkUnavailable:
-            "No connection. Check your network and try again."
+            String(localized: "No connection. Check your network and try again.")
         case .tooManyAttempts:
-            "Too many attempts. Wait a moment before trying again."
+            String(localized: "Too many attempts. Wait a moment before trying again.")
         case .accountDisabled:
-            "This account has been disabled."
+            String(localized: "This account has been disabled.")
         case .weakPassword:
-            "Choose a longer password."
+            String(localized: "Choose a longer password.")
         case .emailAlreadyInUse:
-            "That email already has an account. Sign in instead."
+            String(localized: "That email already has an account. Sign in instead.")
         case .signUpNotAllowed:
-            "Creating an account with an email address is unavailable right now."
+            String(localized: "Creating an account with an email address is unavailable right now.")
+        case .differentSignInMethod:
+            String(localized: "This email is set up with another sign-in method. Use that one, or reset your password.")
         case .unknown:
-            "Something went wrong signing in. Try again."
+            String(localized: "Something went wrong signing in. Try again.")
         }
     }
 
@@ -79,7 +90,7 @@ enum AuthError: Error, Sendable, Equatable {
         switch self {
         case .networkUnavailable, .tooManyAttempts, .unknown: true
         case .invalidCredentials, .invalidEmailFormat, .accountDisabled, .weakPassword,
-             .emailAlreadyInUse, .signUpNotAllowed: false
+             .emailAlreadyInUse, .signUpNotAllowed, .differentSignInMethod: false
         }
     }
 }

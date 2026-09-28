@@ -87,12 +87,17 @@ final class OnboardingModel {
             } else {
                 displayName = existing
             }
-            // The assignments above go through `didSet`; settling afterwards
-            // is what stops a check being armed for a name that is not a
-            // change. `loadState` is still `.loading` at that point, so the
-            // `didSet` guard has already declined — this is belt and braces,
-            // and it is also what sets the baseline.
-            name.settle(on: displayName)
+            // The assignments above go through `didSet`; `loadState` is still
+            // `.loading` there, so no check was armed.
+            //
+            // The baseline is the name **the server has**, not the one in the
+            // field. For a generated name those differ — the account has no
+            // name, which is why one was generated — and settling on the
+            // generated one made Continue treat it as unchanged and write
+            // nothing. `finish()` then created a `users/{uid}` holding only
+            // `onboardingComplete`, and `ensureUserProfileCallable` never
+            // repairs a document that exists (functions/src/users.ts:309-321).
+            name.settle(on: existing)
             loadState = .ready
         } catch {
             loadState = .failed(Self.message(for: error))

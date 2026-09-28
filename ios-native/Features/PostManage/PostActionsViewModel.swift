@@ -95,7 +95,7 @@ final class PostActionsViewModel {
                 break
             case .postNotFound:
                 isBookmarked = false
-                failureMessage = "That post no longer exists."
+                failureMessage = String(localized: "That post no longer exists.")
             }
         } catch {
             isBookmarked = !wanted
@@ -116,7 +116,7 @@ final class PostActionsViewModel {
             // retry.
             try await writes.setPinned(postID: wanted ? post.id : nil)
             isPinned = wanted
-            notice = wanted ? "Pinned to your profile." : "Unpinned."
+            notice = wanted ? String(localized: "Pinned to your profile.") : String(localized: "Unpinned.")
         } catch {
             failureMessage = describe(error)
         }
@@ -148,6 +148,6 @@ final class PostActionsViewModel {
     private func describe(_ error: Error) -> String {
         if let write = error as? PostWriteError { return ComposeViewModel.describe(write) }
         log.error("post action failed: \(String(describing: error), privacy: .public)")
-        return "That did not go through."
+        return String(localized: "That did not go through.")
     }
 }

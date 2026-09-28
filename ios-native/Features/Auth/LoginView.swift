@@ -53,7 +53,9 @@ struct LoginView: View {
                     fields
                     submitButton
                     errorMessage
+                    GoogleSignInButton()
                     alternatives
+                    LegalLinks()
                     footer
                 }
                 .padding(.horizontal, Layout.pageInset)
@@ -101,17 +103,26 @@ struct LoginView: View {
     /// no account.
     private var alternatives: some View {
         VStack(alignment: .leading, spacing: Spacing.m) {
-            Button("Forgot your password?") { path.append(.forgotPassword) }
-                .font(Typography.body)
-                .foregroundStyle(Palette.brandPrimary)
-                .frame(minHeight: Layout.minTouchTarget)
-                .accessibilityIdentifier("login.forgotPassword")
+            // The height goes on the label, inside the button. On the button
+            // it made the row taller and left the control — what a finger and
+            // VoiceOver get — at the text's own 17pt at the smallest type size.
+            Button { path.append(.forgotPassword) } label: {
+                Text("Forgot your password?")
+                    .frame(minHeight: Layout.minTouchTarget)
+                    .contentShape(.rect)
+            }
+            .font(Typography.body)
+            .foregroundStyle(Palette.brandPrimary)
+            .accessibilityIdentifier("login.forgotPassword")
 
-            Button("New here? Create an account") { path.append(.signUp) }
-                .font(Typography.body)
-                .foregroundStyle(Palette.brandPrimary)
-                .frame(minHeight: Layout.minTouchTarget)
-                .accessibilityIdentifier("login.signUp")
+            Button { path.append(.signUp) } label: {
+                Text("New here? Create an account")
+                    .frame(minHeight: Layout.minTouchTarget)
+                    .contentShape(.rect)
+            }
+            .font(Typography.body)
+            .foregroundStyle(Palette.brandPrimary)
+            .accessibilityIdentifier("login.signUp")
         }
         .disabled(isSubmitting)
     }
@@ -139,6 +150,15 @@ struct LoginView: View {
     /// them. Only shown for an expiry: someone who tapped "sign out" knows.
     @ViewBuilder
     private var sessionEndedNotice: some View {
+        if session.endedReason == .accountDeleted {
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
+                Image(systemName: "checkmark.circle").accessibilityHidden(true)
+                Text("Your account has been deleted.")
+                    .accessibilityIdentifier("login.accountDeleted")
+            }
+            .font(Typography.caption)
+            .foregroundStyle(Palette.secondaryText)
+        }
         if session.endedReason == .expired {
             HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
                 Image(systemName: "clock.arrow.circlepath").accessibilityHidden(true)

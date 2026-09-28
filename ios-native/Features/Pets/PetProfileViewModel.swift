@@ -242,11 +242,11 @@ final class PetProfileViewModel {
     ///
     /// A person told only "this cannot be undone" would reasonably expect
     /// their photos to go too.
-    static let deletionConsequences = """
+    static let deletionConsequences = String(localized: """
         The pet's profile, its list of owners and its followers are removed. \
         Posts are not deleted — they stay in the feed, but they stop \
         being about this pet.
-        """
+        """)
 
     func confirmDelete() async {
         guard permissions.canDelete else {
@@ -291,43 +291,43 @@ final class PetProfileViewModel {
         }
         switch petError {
         case .notSignedIn:
-            return "Sign in again to do that."
+            return String(localized: "Sign in again to do that.")
         case .banned:
-            return "This account cannot make changes."
+            return String(localized: "This account cannot make changes.")
         case .accountDeleted:
-            return "This account has been deleted."
+            return String(localized: "This account has been deleted.")
         case .petLimitReached:
-            return "You already have \(PetValidation.maxPetsPerOwner) pets."
+            return String(localized: "You already have \(PetValidation.maxPetsPerOwner) pets.")
         case .petNotFound:
-            return "This pet no longer exists."
+            return String(localized: "This pet no longer exists.")
         case .notAnOwner:
             // Deliberately not "you are not the owner". Every family member is
             // an owner; this says the caller is not one of them.
-            return "You are not one of this pet's owners."
+            return String(localized: "You are not one of this pet's owners.")
         case .petHasOtherOwners:
             // The server's way out is to leave instead, which hands the pet on
             // rather than taking it away — and leaving is batch 3, so this
             // says what can be done today rather than naming a control that is
             // not there.
-            return """
+            return String(localized: """
                 This pet has other owners, so it cannot be deleted. \
                 Ask the other owners to leave first.
-                """
+                """)
         case .rateLimited:
-            return "Too many requests just now. Wait a moment and try again."
+            return String(localized: "Too many requests just now. Wait a moment and try again.")
         case .rejected(let message):
             return message
         case .outcomeUnknown:
             return doing == .deleting
-                ? "We could not tell whether that finished. Reload to check."
+                ? String(localized: "We could not tell whether that finished. Reload to check.")
                 : generic(doing)
 
         case .transport(let detail):
             if detail == FirestorePetRepository.Transport.unavailable {
-                return "This build cannot reach PetNote's server."
+                return String(localized: "This build cannot reach PetNote's server.")
             }
             if detail == FirestorePetRepository.Transport.offline {
-                return "No connection. Check your network and try again."
+                return String(localized: "No connection. Check your network and try again.")
             }
             return generic(doing)
         }
@@ -335,12 +335,12 @@ final class PetProfileViewModel {
 
     private static func generic(_ doing: Doing) -> String {
         switch doing {
-        case .loadingPet: return "Could not load this pet."
-        case .loadingFamily: return "Could not load this pet's owners."
-        case .loadingPosts: return "Could not load this pet's posts."
-        case .loadingCheckins: return "Could not load check-ins."
-        case .saving: return "Could not save this pet."
-        case .deleting: return "Could not delete this pet."
+        case .loadingPet: return String(localized: "Could not load this pet.")
+        case .loadingFamily: return String(localized: "Could not load this pet's owners.")
+        case .loadingPosts: return String(localized: "Could not load this pet's posts.")
+        case .loadingCheckins: return String(localized: "Could not load check-ins.")
+        case .saving: return String(localized: "Could not save this pet.")
+        case .deleting: return String(localized: "Could not delete this pet.")
         }
     }
 }

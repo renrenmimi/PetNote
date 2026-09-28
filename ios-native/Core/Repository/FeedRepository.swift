@@ -18,6 +18,33 @@ protocol CommentRepository: Sendable {
     /// - Throws: `CommentError`, one case per gate the callable enforces.
     /// - Returns: the new comment's id.
     func create(postID: String, text: String, replyTo: String?) async throws -> String
+
+    /// Goes through `deleteCommentCallable`, which lets the comment's author,
+    /// the post's author and an admin delete it. It answers success for a
+    /// comment that is already gone, so sending the same delete twice is
+    /// harmless — unlike `create`.
+    ///
+    /// - Throws: `CommentDeleteError`.
+    func delete(postID: String, commentID: String) async throws
+}
+
+/// Why a comment was not deleted.
+enum CommentDeleteError: Error, Sendable, Equatable {
+    case notSignedIn
+    /// `permission-denied` that is not a ban: the caller wrote neither the
+    /// comment nor the post. The screen does not offer the control then, so
+    /// reaching this means the two disagreed about who owns what.
+    case notAllowed
+    case banned
+    case rateLimited
+    /// Never left the device. Nothing happened; trying again is safe.
+    case offline
+    /// Sent, and no answer came back. Also safe to try again: deleting a
+    /// comment that is already gone succeeds.
+    case outcomeUnknown
+    /// This build cannot reach the callables at all.
+    case unavailable
+    case transport(String)
 }
 
 protocol LikeRepository: Sendable {

@@ -197,10 +197,13 @@ struct OnboardingView: View {
                 .font(Typography.body)
                 .foregroundStyle(Palette.danger)
                 .accessibilityIdentifier("onboarding.loadError")
-            Button("Try again") { Task { await model.start() } }
+            Button { Task { await model.start() } } label: {
+                Text("Try again")
+                    .frame(minHeight: Layout.minTouchTarget)
+                    .contentShape(.rect)
+            }
                 .font(Typography.body)
                 .foregroundStyle(Palette.brandPrimary)
-                .frame(minHeight: Layout.minTouchTarget)
                 .accessibilityIdentifier("onboarding.loadRetry")
         }
         .frame(maxWidth: .infinity)
