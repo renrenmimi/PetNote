@@ -1,11 +1,18 @@
-# PetNote 原生 iPhone 客户端（第一阶段）
+# PetNote 原生 iPhone 客户端
 
-一条核心链路的 Swift 原型：登录 → Feed（含图片与视频）→ 帖子详情 → 多行评论 →
-返回并回到原滚动位置。范围、禁令与验收标准以
-`PetNote-review-20260908/SWIFT-CLIENT-*.md` 四份文件为唯一来源。
+> A native iPhone client for PetNote, in Swift and SwiftUI, on the same Firebase
+> backend as the web app. Overview in English: the "Native iOS app" section of the
+> [root README](../README.md).
 
-**现有 Capacitor 客户端仍是交付客户端。** 这个工程与它共存：
-Bundle ID `dev.local.petnote.native`，和 `dev.local.petnote` 可同时装在一台设备上。
+用 Swift / SwiftUI 写的原生 iPhone 客户端，和网页版用同一个 Firebase 后端：同样的
+数据库规则，同样的云函数。功能按网页版的页面逐项迁移，每项做到哪一级、有什么证据，
+记在仓库根目录的 [`STATUS.md`](../STATUS.md)；和旧版的视觉对照在
+[`docs/visual-parity.md`](docs/visual-parity.md)。
+
+**还在测试阶段，没有上 App Store**，上架前要做的事见
+[`docs/app-store-readiness.md`](docs/app-store-readiness.md)。正式交付的仍是网页版。
+这个工程的 Bundle ID 是 `dev.local.petnote.native`，可以和旧的 Capacitor 壳
+（`dev.local.petnote`）同时装在一台手机上。
 
 ## 本地配置（必须做一次，且不提交）
 
@@ -100,7 +107,8 @@ Core/Model/     值类型与解码（PostDecoder 对照 src/services/posts.ts �
 Core/Auth/      Firebase 初始化、会话、错误映射
 Core/Repository/  数据访问协议与不透明游标
 Core/Navigation/  路由枚举与深链接校验
-Features/       Auth / Feed / PostDetail
+Features/       每个页面一个文件夹：Auth、Feed、PostDetail、Compose、Pets、Family、
+                Social、Search、Notifications、Places、Meetups、Settings 等
 DesignSystem/   间距、圆角、排版、语义色、令牌示例视图
 Support/        环境读取 + **会被打包的资源**（Firebase 配置）
 Config/         三套 xcconfig + Info.plist（**只被工程引用，不打包**）
@@ -130,7 +138,7 @@ Firebase 的 `GoogleService-Info-*.plist` 一开始放在 `Config/` 下，
 
 ## 已知的工程约束
 
-- 部署目标 **iOS 18.0**（第一阶段暂定基线，实测可在 Xcode 27.0 / 仅 iOS 27 SDK 下构建并装到 iOS 27 设备）
+- 部署目标 **iOS 18.0**（用 Xcode 27.0 / iOS 27 SDK 构建；iOS 18–25 上没有实测，本机没有这些版本的模拟器）
 - **Swift 6 语言模式 + 完全严格并发检查**（`SWIFT_STRICT_CONCURRENCY = complete`）
 - **不得修改** `ios/App/App.xcodeproj/project.pbxproj`（Capacitor 工程，含有意不提交的本地签名改动）
 - CI 只在 `ios-native/**` 变动时触发；**XCUITest 不进 CI**，只在本地与验收时跑
