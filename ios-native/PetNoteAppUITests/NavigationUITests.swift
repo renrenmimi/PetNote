@@ -353,13 +353,24 @@ final class NavigationUITests: XCTestCase {
             "the post never opened at all"
         )
         waitForQuietUI(app, quietFor: 1, timeout: 15)
+        print("MEASURED after the double tap at \(target): shareChoices=\(app.buttons["Copy Link"].exists) "
+              + "fullImage=\(app.buttons["fullImage.close"].exists)")
 
         // The second tap can land on the screen the first one opened — the
         // question here is whether it pushed a second copy, not what it
-        // touched there. Measured on 2026-09-26: the first post's text sits
-        // where the detail screen's share button is, and the share choices
-        // (an action sheet since 0fe5b27) covered the back button. They are
-        // closed by their own Cancel before going back.
+        // touched there — and what it opens there covers the back button.
+        // Measured on 2026-09-26: the first post's text sat where the detail
+        // screen's share button is, and the share choices (an action sheet
+        // since 0fe5b27) came up. On 2026-09-28, with Popular Pets at its new
+        // height, it sat over the detail screen's photo, and the full-screen
+        // viewer came up: three runs of three, back button "not hittable".
+        // Each is closed by its own button before going back.
+        let closePhoto = app.buttons["fullImage.close"]
+        if closePhoto.exists {
+            print("MEASURED the second tap opened the detail screen's photo in full")
+            closePhoto.tap()
+            XCTAssertTrue(waitForDisappearance(of: closePhoto, timeout: 10), "the full-screen photo did not close")
+        }
         if app.buttons["Copy Link"].exists {
             print("MEASURED the second tap opened the detail screen's share choices")
             let cancel = app.buttons["Cancel"]

@@ -254,7 +254,12 @@ final class AccessibilityWalkUITests: XCTestCase {
         where button.exists && !button.identifier.isEmpty && !button.frame.isEmpty
             && window.intersects(button.frame) && !barIDs.contains(button.identifier) {
             checked.append(button.identifier)
-            if button.frame.height < 44 {
+            // At a thousandth of a point, as `AccessibilityUITests` compares:
+            // a frame is the difference of two window coordinates, and a card
+            // that starts at a fractional y — the first one does, below the
+            // 107.5pt Popular Pets row — measured its 44pt identity row at
+            // 43.99999999999999 in the full regression of 2026-09-28.
+            if (button.frame.height * 1000).rounded() / 1000 < 44 {
                 tooSmall.append("\(button.identifier)=\(button.frame.height)pt")
             }
         }
