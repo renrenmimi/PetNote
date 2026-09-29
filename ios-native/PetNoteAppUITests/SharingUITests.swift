@@ -138,8 +138,11 @@ final class SharingUITests: XCTestCase {
         let (app, me) = try signInAsNewAccount(email)
         uid = me
 
+        // Brought into reach, as the other sharing tests do: the first card's
+        // actions start below the top of the tab bar.
         let share = app.buttons.matching(identifier: "post.share").firstMatch
-        XCTAssertTrue(waitUntilHittable(share, in: app, timeout: 30), "no share button in the feed")
+        XCTAssertTrue(bringIntoReach(share, in: app, timeout: 30),
+                      "no share button within reach in the feed\n\(app.debugDescription)")
         share.tap()
         let asImage = app.buttons["Share as Image"]
         XCTAssertTrue(waitUntilHittable(asImage, in: app, timeout: 10), "no Share as Image")
