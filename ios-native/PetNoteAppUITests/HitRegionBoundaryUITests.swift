@@ -608,6 +608,9 @@ final class HitRegionBoundaryUITests: XCTestCase {
         XCTAssertTrue(launchSignedInForProbing(app), "could not sign in")
         let conditions = conditions(app)
 
+        // Above the tab bar with room for the vertical probes, which reach
+        // 40pt from the centre: the feed's banner and spotlight rows put the
+        // first card's actions under the bar until the list is moved.
         let like = app.buttons.matching(identifier: "post.like").firstMatch
         XCTAssertTrue(waitUntilHittable(like, in: app, timeout: 40), "no post in the feed")
         XCTAssertTrue(bringClearOfBars(like, in: app),

@@ -154,15 +154,30 @@ final class NavigationUITests: XCTestCase {
         for _ in 0..<12 { app.swipeUp() }
         Thread.sleep(forTimeInterval: 1.5)
 
-        let onScreen = posts.allElementsBoundByIndex.filter { $0.exists && $0.isHittable }
-        XCTAssertFalse(onScreen.isEmpty, "nothing visible after scrolling")
-        let target = onScreen[onScreen.count / 2]
+        // A text wholly between the bars with room to spare, read as label and
+        // frame in one pass and tapped at that frame's centre by coordinate.
+        // The tap used to go to the middle one of the texts XCUITest called
+        // hittable, found again by its index at the moment of the tap; in the
+        // full regression of 2026-09-27 one such tap opened nothing, and the
+        // failure could not say where it had landed. The cause is not proven:
+        // the list was idle, and the ways it can go wrong — a text half under
+        // a bar, an index that moved while the rows below were still loading —
+        // are what this removes. A miss now says where it tapped.
+        let target = textInReach(posts, in: app)
+        XCTAssertNotNil(target, "no post's text is wholly on screen after scrolling\n\(app.debugDescription)")
+        guard let target else { return }
         let targetLabel = target.label
         XCTAssertNotEqual(targetLabel, topPostLabel, "the feed did not scroll at all")
 
-        target.tap()
+        app.windows.firstMatch.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: target.frame.midX, dy: target.frame.midY))
+            .tap()
         XCTAssertTrue(waitForExistence(of: app.textFields["composer.field"], in: app, timeout: 40),
-                      "tapping a post's text did not open it")
+                      """
+                      tapping a post's text at \(target.frame) did not open it \
+                      (navigation bar \(app.navigationBars.firstMatch.frame), tab bar \(app.tabBars.firstMatch.frame))
+                      \(app.debugDescription)
+                      """)
         popToFeed(app)
         Thread.sleep(forTimeInterval: 2)
 
@@ -175,6 +190,34 @@ final class NavigationUITests: XCTestCase {
             backOnScreen.contains(topPostLabel),
             "the feed jumped back to the top instead of restoring the position"
         )
+    }
+
+    /// A post's text wholly between the navigation bar and the tab bar with
+    /// 20pt to spare, as a label and a frame read in one pass. A card is
+    /// nearly as tall as the space between the bars, so the list can come to
+    /// rest with no text wholly inside it; then the feed is nudged up a
+    /// little and read again, three times at most.
+    private func textInReach(
+        _ posts: XCUIElementQuery, in app: XCUIApplication
+    ) -> (label: String, frame: CGRect)? {
+        for attempt in 0..<4 {
+            waitForQuietUI(app, quietFor: 1, timeout: 10)
+            let window = app.windows.firstMatch.frame
+            let bar = app.navigationBars.firstMatch
+            let tabBar = app.tabBars.firstMatch
+            let top = (bar.exists ? bar.frame.maxY : window.minY) + 20
+            let bottom = (tabBar.exists ? tabBar.frame.minY : window.maxY) - 20
+            let seen = posts.allElementsBoundByIndex.compactMap { post -> (label: String, frame: CGRect)? in
+                guard post.exists else { return nil }
+                return (post.label, post.frame)
+            }
+            if let text = seen.first(where: { !$0.frame.isEmpty && $0.frame.minY >= top && $0.frame.maxY <= bottom }) {
+                return text
+            }
+            print("MEASURED no post text wholly between y \(top) and \(bottom), try \(attempt + 1): \(seen.map(\.frame))")
+            if attempt < 3 { nudgeFeedUp(app) }
+        }
+        return nil
     }
 
     // MARK: - The feed across a refresh
@@ -290,6 +333,12 @@ final class NavigationUITests: XCTestCase {
         XCTAssertTrue(waitForExistence(of: posts.firstMatch, in: app, timeout: 60),
                       "the feed never loaded")
         waitForQuietUI(app)
+        // Since the feed grew rows above its posts, the first post's text
+        // starts below the top of the tab bar, and two taps at its centre
+        // opened nothing: "the post never opened at all".
+        XCTAssertTrue(bringIntoReach(posts.firstMatch, in: app),
+                      "the first post's text could not be brought on screen\n\(app.debugDescription)")
+        waitForQuietUI(app, quietFor: 1, timeout: 10)
 
         // Frame read once, in the same pass, and kept as a value.
         let target = posts.firstMatch.frame
@@ -304,13 +353,24 @@ final class NavigationUITests: XCTestCase {
             "the post never opened at all"
         )
         waitForQuietUI(app, quietFor: 1, timeout: 15)
+        print("MEASURED after the double tap at \(target): shareChoices=\(app.buttons["Copy Link"].exists) "
+              + "fullImage=\(app.buttons["fullImage.close"].exists)")
 
         // The second tap can land on the screen the first one opened — the
         // question here is whether it pushed a second copy, not what it
-        // touched there. Measured on 2026-09-26: the first post's text sits
-        // where the detail screen's share button is, and the share choices
-        // (an action sheet since 0fe5b27) covered the back button. They are
-        // closed by their own Cancel before going back.
+        // touched there — and what it opens there covers the back button.
+        // Measured on 2026-09-26: the first post's text sat where the detail
+        // screen's share button is, and the share choices (an action sheet
+        // since 0fe5b27) came up. On 2026-09-28, with Popular Pets at its new
+        // height, it sat over the detail screen's photo, and the full-screen
+        // viewer came up: three runs of three, back button "not hittable".
+        // Each is closed by its own button before going back.
+        let closePhoto = app.buttons["fullImage.close"]
+        if closePhoto.exists {
+            print("MEASURED the second tap opened the detail screen's photo in full")
+            closePhoto.tap()
+            XCTAssertTrue(waitForDisappearance(of: closePhoto, timeout: 10), "the full-screen photo did not close")
+        }
         if app.buttons["Copy Link"].exists {
             print("MEASURED the second tap opened the detail screen's share choices")
             let cancel = app.buttons["Cancel"]

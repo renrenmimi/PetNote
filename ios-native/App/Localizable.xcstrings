@@ -689,6 +689,16 @@
         }
       }
     },
+    "Birthday today": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天生日"
+          }
+        }
+      }
+    },
     "Block": {
       "localizations": {
         "zh-Hans": {
@@ -2995,6 +3005,16 @@
         }
       }
     },
+    "Loading popular pets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载人气萌宠"
+          }
+        }
+      }
+    },
     "Loading posts": {
       "localizations": {
         "zh-Hans": {
@@ -4195,6 +4215,16 @@
         }
       }
     },
+    "Popular Pets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人气萌宠"
+          }
+        }
+      }
+    },
     "Popular Tags": {
       "localizations": {
         "zh-Hans": {
@@ -4799,6 +4829,16 @@
         }
       }
     },
+    "Seen": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已看过"
+          }
+        }
+      }
+    },
     "Send": {
       "localizations": {
         "zh-Hans": {
@@ -4925,6 +4965,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "分享"
+          }
+        }
+      }
+    },
+    "Share a birthday post": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享生日帖子"
           }
         }
       }
@@ -6570,6 +6620,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "换个关键词试试。"
+          }
+        }
+      }
+    },
+    "Turning %lld years old today!": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天满 %lld 岁啦！"
+          }
+        }
+      }
+    },
+    "Turning 1 year old today!": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天满 1 岁啦！"
           }
         }
       }
@@ -8252,6 +8322,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "🎂 今天生日"
+          }
+        }
+      }
+    },
+    "🎂 Birthday!": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🎂 生日快乐！"
+          }
+        }
+      }
+    },
+    "🎂🎉 Happy Birthday, %@! 🎉🎂": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🎂🎉 %@，生日快乐！🎉🎂"
           }
         }
       }

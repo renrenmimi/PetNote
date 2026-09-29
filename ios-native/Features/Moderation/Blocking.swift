@@ -117,7 +117,9 @@ actor BlockFilteringFeed: FeedRepository {
         generation += 1
     }
 
-    private func blockedIDs() async -> Set<String> {
+    /// Not private: the feed's spotlight row filters by the same list, from
+    /// this same cache, so a block leaves both at once (`BlockedAuthorsProviding`).
+    func blockedIDs() async -> Set<String> {
         if let blocked { return blocked }
         let generation = self.generation
         let current: (number: Int, read: Task<Set<String>?, Never>)

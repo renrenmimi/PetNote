@@ -29,6 +29,11 @@ struct PostCard: View {
     /// all, by a test or by a finger, and no like ever reached the emulator.
     /// Keeping the gesture off the actions row is what makes both work.
     var onOpenPost: (() -> Void)?
+    /// The post's pet has its birthday today — the web card's
+    /// `initialBirthday`. Only the feed asks (`FeedExtrasModel.checkBirthdays`);
+    /// the pet page says it in words of its own.
+    var isBirthday = false
+
     /// Where the post sits. The feed and a pet's page show the web client's
     /// card (`PostCard.tsx`): a rounded panel on the grouped background, with
     /// a hairline edge and a soft shadow. The detail screen is the post's own
@@ -207,7 +212,8 @@ struct PostCard: View {
                     .truncationMode(.tail)
                 // The web client's second line (`PostIdentity.tsx`): the
                 // owner and the age when a pet leads, the age alone when the
-                // author already does.
+                // author already does — and, on the pet's birthday, the web
+                // card's cake.
                 HStack(spacing: Spacing.xs) {
                     if post.petName != nil {
                         Text(post.authorName)
@@ -219,6 +225,7 @@ struct PostCard: View {
                     Text(PostAge.short(post.createdAt))
                         .fixedSize()
                         .accessibilityLabel(PostAge.spoken(post.createdAt))
+                    if isBirthday { birthdayPill.padding(.leading, Spacing.xs) }
                 }
                 .font(Typography.caption)
                 .foregroundStyle(Palette.secondaryText)
@@ -244,12 +251,32 @@ struct PostCard: View {
         // `testTheCardAdvertisesThatItCanBeOpened` lose the app mid-scan.
         // Two gestures on two leaves add no container at all.
         .onTapGesture { onOpenPost?() }
-        // Author, pet and time read as one phrase.
+        // Author, pet and time read as one phrase — with the pill, "Mochi,
+        // 2 hours ago, birthday today".
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityHint("Opens the post")
         .accessibilityAction { onOpenPost?() }
         .accessibilityIdentifier("post.open")
+    }
+
+    /// The web card's "🎂 Birthday!" pill after the timestamp
+    /// (PostCard.tsx:551-555): the amber of the web's as a tint behind
+    /// ordinary text, the pairing `MeetupStatusBadge` uses for the same
+    /// reason — caption text on the status colour itself is not one the
+    /// contrast tests have measured.
+    ///
+    /// No vertical padding, so a card whose mark arrives after it was drawn
+    /// does not grow a line taller under the reader. Fixed, so a narrow row
+    /// cuts the timestamp before the pill.
+    private var birthdayPill: some View {
+        Text("🎂 Birthday!")
+            .font(Typography.caption.weight(.semibold))
+            .foregroundStyle(Palette.primaryText)
+            .padding(.horizontal, Spacing.s)
+            .background(Palette.warning.opacity(0.2), in: .capsule)
+            .fixedSize()
+            .accessibilityLabel("Birthday today")
     }
 
     private var text: some View {

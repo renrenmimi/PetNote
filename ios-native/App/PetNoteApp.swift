@@ -8,6 +8,20 @@ struct PetNoteApp: App {
     @State private var session = SessionStore()
 
     init() {
+        #if DEBUG
+        // A UI test's tidy-up, for the one thing a test cannot reach from
+        // outside the app: what the app wrote into its own defaults.
+        // `FeedExtrasUITests` opens a spotlight tile as a throwaway account,
+        // which leaves that account's seen list behind, and its tearDown
+        // relaunches with this flag and the account's uid. Debug-only and
+        // argument-gated, like `-petnote-start-signed-out`; nothing in the
+        // app passes it.
+        let arguments = ProcessInfo.processInfo.arguments
+        if let flag = arguments.firstIndex(of: "-petnote-forget-seen-spotlights"),
+           arguments.indices.contains(flag + 1) {
+            UserDefaultsSpotlightSeenStore().clear(uid: arguments[flag + 1])
+        }
+        #endif
         // Before any Firestore or Functions instance exists: emulator settings
         // are ignored once the first request has gone out.
         FirebaseBootstrap.configure()

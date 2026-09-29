@@ -75,6 +75,10 @@ struct SignedInView: View {
     /// redraw of the parent, and a filter made fresh each time would not be
     /// the one the model holds — invalidating it would change nothing.
     @State private var filteringFeed: BlockFilteringFeed
+    /// The birthday banner, the spotlight row and the cards' birthday marks.
+    /// From the same initialisation as the feed's model, for the same reason,
+    /// and reading its blocked list through the same filter.
+    @State private var feedExtras: FeedExtrasModel
 
     init(user: UserSession, repositories: Repositories = .live) {
         self.user = user
@@ -97,6 +101,28 @@ struct SignedInView: View {
         // customising unselected tab items is no longer supported from iOS 26
         // (threads 793700 and 818449). The web's grey is kept for the icons we
         // draw ourselves and not faked here.
+        _feedExtras = State(
+            initialValue: FeedExtrasModel(
+                accountID: user.uid,
+                pets: repositories.petChoices,
+                popular: repositories.popularPosts,
+                birthdays: repositories.petBirthdays,
+                blocked: filtering
+            )
+        )
+    }
+
+    /// A pet was created, edited, deleted, joined or left: the pet lists
+    /// re-read, and so does the feed's birthday banner — the pet may be one
+    /// whose birthday is today, or may have been and no longer is, and its
+    /// cards' marks come from the same read.
+    ///
+    /// Not an `onChange` of the counter: the account switch bumps it too, for
+    /// the pet lists, and the feed's extras read the new account's pets on
+    /// their own first load then.
+    private func notePetsChanged() {
+        petsChanged += 1
+        Task { await feedExtras.petsChanged() }
     }
 
     /// After a block or an unblock: the next read filters by the new list.
@@ -110,6 +136,10 @@ struct SignedInView: View {
         Task {
             await filteringFeed.invalidate()
             await feedModel.reload()
+            // The spotlight too, after the filter has forgotten the old list:
+            // somebody just blocked must not stay featured at the top of the
+            // feed until the next pull.
+            await feedExtras.blocksChanged()
         }
     }
 
@@ -194,6 +224,12 @@ struct SignedInView: View {
             // The previous person's saves and picture are theirs.
             bookmarks = PostBookmarks(writes: repositories.postWrites)
             accountAvatarURL = nil
+            // Its own reset, then its own first load: the feed's `.task` that
+            // would ask ran once, for the account that left. That load reads
+            // the new account's pets for the banner, so the pet lists' bump
+            // below is not passed on to it — it would be the same read twice.
+            feedExtras.prepare(for: user.uid)
+            Task { await feedExtras.loadIfNeeded() }
             path = []
             profilePath = []
             placesPath = []
@@ -267,7 +303,10 @@ struct SignedInView: View {
 
     private var homeTab: some View {
         NavigationStack(path: $path) {
-            FeedView(model: feedModel, path: $path)
+            FeedView(
+                model: feedModel, extras: feedExtras, path: $path,
+                onShareBirthday: { editor = .composeAbout(petID: $0) }
+            )
                 .environment(video)
                 .environment(bookmarks)
                 .suspendedBanner(isSuspended)
@@ -525,7 +564,12 @@ struct SignedInView: View {
     private func destinationContent(_ route: Route, stack: Binding<[Route]>) -> some View {
         switch route {
         case .feed:
-            FeedView(model: feedModel, path: stack).environment(video).environment(bookmarks)
+            FeedView(
+                model: feedModel, extras: feedExtras, path: stack,
+                onShareBirthday: { editor = .composeAbout(petID: $0) }
+            )
+            .environment(video)
+            .environment(bookmarks)
         case .postDetail(let postID):
             PostDetailView(
                 model: PostDetailViewModel(
@@ -580,7 +624,7 @@ struct SignedInView: View {
                 reloadToken: petsChanged,
                 onEdit: { editor = .editPet(petID: $0) },
                 onDeleted: {
-                    petsChanged += 1
+                    notePetsChanged()
                     if stack.wrappedValue.last == .pet(petID: petID) {
                         stack.wrappedValue.removeLast()
                     }
@@ -642,7 +686,7 @@ struct SignedInView: View {
                     // No longer an owner: the family screen and the pet page
                     // under it were both drawn for one. Back past both, and
                     // re-read the pet lists.
-                    petsChanged += 1
+                    notePetsChanged()
                     stack.wrappedValue.removeAll { $0 == .family(petID: petID) || $0 == .pet(petID: petID) }
                 }
             )
@@ -706,7 +750,7 @@ struct SignedInView: View {
                 onOpenPet: { petID in
                     // Joined: the join screen is done, the pet is now one of
                     // theirs, and its page is where to go.
-                    petsChanged += 1
+                    notePetsChanged()
                     if stack.wrappedValue.last == .joinFamily { stack.wrappedValue.removeLast() }
                     stack.wrappedValue.append(.pet(petID: petID))
                 }
@@ -720,20 +764,9 @@ struct SignedInView: View {
     private func editorView(_ editor: Editor) -> some View {
         switch editor {
         case .compose:
-            ComposeHost(
-                user: user,
-                repositories: repositories,
-                onPublished: { _ in
-                    self.editor = nil
-                    // Back to the feed and re-read, so the post someone just
-                    // published is the first thing they see — the way the web
-                    // client navigates to "/" after a publish.
-                    selectedTab = .home
-                    path = []
-                    Task { await feedModel.reload() }
-                },
-                onClose: { self.editor = nil }
-            )
+            composer(about: nil)
+        case .composeAbout(let petID):
+            composer(about: petID)
         case .createPet:
             PetEditorHost(
                 mode: .create,
@@ -742,7 +775,7 @@ struct SignedInView: View {
                 viewerID: user.uid,
                 onSaved: { petID in
                     self.editor = nil
-                    petsChanged += 1
+                    notePetsChanged()
                     profilePath.append(.pet(petID: petID))
                 },
                 onCancel: { self.editor = nil }
@@ -755,7 +788,7 @@ struct SignedInView: View {
                 viewerID: user.uid,
                 onSaved: { _ in
                     self.editor = nil
-                    petsChanged += 1
+                    notePetsChanged()
                 },
                 onCancel: { self.editor = nil }
             )
@@ -774,6 +807,27 @@ struct SignedInView: View {
                 onClose: { self.editor = nil }
             )
         }
+    }
+
+    /// The composer, from the tab or from the birthday banner's "Share a
+    /// birthday post" — which is the web's `/create?petId=` and arrives with
+    /// that pet chosen.
+    private func composer(about petID: String?) -> some View {
+        ComposeHost(
+            user: user,
+            repositories: repositories,
+            preferredPetID: petID,
+            onPublished: { _ in
+                self.editor = nil
+                // Back to the feed and re-read, so the post someone just
+                // published is the first thing they see — the way the web
+                // client navigates to "/" after a publish.
+                selectedTab = .home
+                path = []
+                Task { await feedModel.reload() }
+            },
+            onClose: { self.editor = nil }
+        )
     }
 
     // MARK: - Onboarding
@@ -852,6 +906,8 @@ enum AppTab: Hashable {
 /// A screen that is finished or cancelled rather than navigated back through.
 enum Editor: Identifiable, Hashable {
     case compose
+    /// The composer with this pet already chosen.
+    case composeAbout(petID: String)
     case createPet
     case editPet(petID: String)
     case editPost(postID: String)
@@ -859,6 +915,7 @@ enum Editor: Identifiable, Hashable {
     var id: String {
         switch self {
         case .compose: "compose"
+        case .composeAbout(let id): "compose:\(id)"
         case .createPet: "createPet"
         case .editPet(let id): "editPet:\(id)"
         case .editPost(let id): "editPost:\(id)"
@@ -894,8 +951,14 @@ struct Repositories {
     let places: any PlacesReading
     let placeReviews: any PlaceReviewing
     let meetups: any MeetupsReading
+    /// The spotlight row's candidates. The search repository's own read — see
+    /// `PopularPostsReading`.
+    let popularPosts: any PopularPostsReading
+    /// The pets behind the feed cards' birthday marks.
+    let petBirthdays: any PetBirthdayReading
 
     static var live: Repositories {
+        let search = FirestoreSearchRepository()
         let places = FirestorePlacesSource()
         return Repositories(
             feed: FirestoreFeedRepository(),
@@ -911,7 +974,7 @@ struct Repositories {
             auth: LiveAccountAuth(),
             social: FirestoreSocialRepository(),
             family: FirestoreFamilyRepository(),
-            search: FirestoreSearchRepository(),
+            search: search,
             reports: FirestoreContentReporter(),
             feedback: FirestoreFeedbackSender(),
             saved: FirestoreSavedPostsSource(),
@@ -922,7 +985,9 @@ struct Repositories {
             notifications: FirestoreNotificationsSource(),
             places: places,
             placeReviews: places,
-            meetups: FirestoreMeetupsSource()
+            meetups: FirestoreMeetupsSource(),
+            popularPosts: search,
+            petBirthdays: FirestorePetBirthdaySource()
         )
     }
 }

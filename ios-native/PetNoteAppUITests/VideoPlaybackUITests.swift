@@ -181,7 +181,7 @@ final class VideoPlaybackUITests: XCTestCase {
     /// that is seen — below the navigation bar, above the tab bar — and
     /// waits until the coordinator is playing that same video there.
     ///
-    /// **Needed since the feed grew rows above its posts.** The "⭐ Popular
+    /// **Needed since the feed grew rows above its posts.** The "Popular
     /// Pets" row, and the birthday banner on a day it is up, move every card
     /// down, so the slow swipes that used to stop with the seed's first video
     /// in view now stopped with it partly under the tab bar (full regression,

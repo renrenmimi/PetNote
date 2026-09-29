@@ -327,15 +327,10 @@ final class AuthUITests: XCTestCase {
                 .compactMap { $0.exists ? $0.identifier : nil }
         )
 
+        var barItems: [String] = []
         for button in ours {
             if barButtonIDs.contains(button.identifier) {
-                // waitUntilHittable, not a bare assertion: the save-password
-                // sheet can arrive late and cover the bar, which is not a
-                // touch-target defect.
-                XCTAssertTrue(
-                    waitUntilHittable(button, in: app, timeout: 10),
-                    "\(button.identifier) is not hittable"
-                )
+                barItems.append(button.identifier)
             } else {
                 XCTAssertGreaterThanOrEqual(
                     button.frame.height, 44,
@@ -343,6 +338,21 @@ final class AuthUITests: XCTestCase {
                 )
                 XCTAssertTrue(button.isHittable, "\(button.identifier) is not hittable")
             }
+        }
+
+        // The bar's items after the content, off the very top of the list
+        // (`leaveTheTopOfTheFeed` says why), and found again by name: the
+        // drag moved the list, so an element picked by its index is now
+        // whatever holds that index.
+        leaveTheTopOfTheFeed(app)
+        for id in barItems {
+            // waitUntilHittable, not a bare assertion: the save-password
+            // sheet can arrive late and cover the bar, which is not a
+            // touch-target defect.
+            XCTAssertTrue(
+                waitUntilHittable(app.buttons.matching(identifier: id).firstMatch, in: app, timeout: 10),
+                "\(id) is not hittable"
+            )
         }
     }
 
