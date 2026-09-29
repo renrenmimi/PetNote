@@ -2011,6 +2011,16 @@
         }
       }
     },
+    "Discover Pets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "去发现宠物"
+          }
+        }
+      }
+    },
     "Discover pets": {
       "localizations": {
         "zh-Hans": {
@@ -2382,6 +2392,16 @@
         }
       }
     },
+    "Follow some pets to see their posts here": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先去关注一些宠物，这里就会出现它们的动态"
+          }
+        }
+      }
+    },
     "Followers": {
       "localizations": {
         "zh-Hans": {
@@ -2428,6 +2448,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "附近有餐饮"
+          }
+        }
+      }
+    },
+    "For You": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推荐"
           }
         }
       }
@@ -3493,6 +3523,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有找到地点"
+          }
+        }
+      }
+    },
+    "No posts from followed pets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你关注的宠物还没有发帖"
           }
         }
       }
@@ -5306,6 +5346,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "种类"
+          }
+        }
+      }
+    },
+    "Start by sharing your first pet moment.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从分享第一条宠物动态开始吧。"
           }
         }
       }

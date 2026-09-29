@@ -297,6 +297,62 @@ final class FeedViewModel {
         await loadMoreIfNeeded(currentItem: nil)
     }
 
+    /// Asks again which of the posts on screen this person likes, without
+    /// reading the posts again: for a list coming back into view after a
+    /// second list of some of the same posts may have changed their hearts —
+    /// the feed's two tabs. The web keeps one set of liked posts for both; here
+    /// each tab's model owns its likes, so the one coming back asks.
+    ///
+    /// **Hearts only, and counts left alone.** The posts are not re-read, so
+    /// there is no fresh count to reconcile an offset against, and running
+    /// `refreshLikeStatus` would spend one of an offset's three chances on a
+    /// read that could not confirm it. A heart the server says changed
+    /// elsewhere is carried as a one-like offset against the count this list
+    /// already has, and the next real read settles it the usual way.
+    func refreshLikes() async {
+        guard state == .loaded, !posts.isEmpty else { return }
+        let thisGeneration = generation
+        let readSequence = writeSequence
+        let shown = posts
+        let liked: Set<String>
+        do {
+            liked = try await likes.likedPostIDs(among: shown.map(\.id))
+        } catch {
+            // Nothing lost: the hearts stay as they were, which is what they
+            // were before this was asked.
+            log.error("like status on return failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        guard thisGeneration == generation else { return }
+
+        for post in shown {
+            let serverSaysLiked = liked.contains(post.id)
+            guard var existing = likeStates[post.id] else {
+                likeStates[post.id] = LikeState(
+                    serverLiked: serverSaysLiked, intendedLiked: serverSaysLiked,
+                    unreflectedDelta: 0, snapshotCount: post.likeCount, inFlight: 0
+                )
+                continue
+            }
+            // A tap still owns its heart, and an answer newer than this read
+            // is newer than this read.
+            guard existing.inFlight == 0, existing.lastWriteSequence <= readSequence,
+                  serverSaysLiked != existing.serverLiked else { continue }
+            existing.serverLiked = serverSaysLiked
+            existing.intendedLiked = serverSaysLiked
+            // Changed since this list read its count, so the change is not in
+            // that count: added to what the offset already carried, not put in
+            // its place. A like of this list's own that the count has not
+            // caught up with, undone in the other tab, comes out at nothing.
+            existing.unreflectedDelta += serverSaysLiked ? 1 : -1
+            existing.unconfirmedReads = 0
+            likeStates[post.id] = existing
+        }
+        let present = Set(posts.map(\.id))
+        likeStates = likeStates.filter { present.contains($0.key) }
+        likedPostIDs = Set(likeStates.filter(\.value.intendedLiked).map(\.key))
+    }
+
     /// The batch query is authoritative for the ids it was asked about: present
     /// means liked, absent means not liked. Both halves are applied.
     ///

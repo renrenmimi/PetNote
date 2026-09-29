@@ -7,7 +7,19 @@ import SwiftUI
 /// scroll budget and Instruments points here, `UICollectionView` is the next
 /// step — but not before a measurement says so.
 struct FeedView: View {
-    @State private var model: FeedViewModel
+    /// "For You": every post, the list this screen has always shown.
+    @State private var forYou: FeedViewModel
+    /// "Following": the posts of the pets this person follows
+    /// (`FollowingFeed`). Its first page is read when the tab is first chosen.
+    @State private var following: FeedViewModel
+    /// Which of the two is showing. For You on every launch, as on the web.
+    @State private var tab: FeedTab = .forYou
+    /// Whether this person follows any pet, read only when Following comes up
+    /// empty: it decides which empty state that is, and nothing else — the
+    /// web's `followingCount`, which is only ever compared with zero. Nil
+    /// until read, and when the read fails.
+    @State private var followsAnyPet: Bool?
+    private let checkFollowsAnyPet: @Sendable () async -> Bool?
     /// The birthday banner, the spotlight row and the cards' birthday marks.
     /// Owned by the shell with `model`, and reset with it on an account switch.
     @State private var extras: FeedExtrasModel
@@ -32,14 +44,31 @@ struct FeedView: View {
 
     init(
         model: FeedViewModel,
+        following: FeedViewModel,
         extras: FeedExtrasModel,
         path: Binding<[Route]>,
+        followsAnyPet: @escaping @Sendable () async -> Bool?,
         onShareBirthday: @escaping (String) -> Void
     ) {
-        _model = State(initialValue: model)
+        _forYou = State(initialValue: model)
+        _following = State(initialValue: following)
         _extras = State(initialValue: extras)
         _path = path
+        self.checkFollowsAnyPet = followsAnyPet
         self.onShareBirthday = onShareBirthday
+    }
+
+    /// The list showing now. Everything that reads the feed reads it through
+    /// this — paging, likes, refresh, the failure banners, the way back to the
+    /// row a post was opened from — so each tab keeps all of that to itself.
+    private var model: FeedViewModel {
+        tab == .forYou ? forYou : following
+    }
+
+    /// Whether Following is showing, loaded and empty: the one time whether
+    /// this person follows anyone is worth a read.
+    private var followingIsEmpty: Bool {
+        tab == .following && following.state == .loaded && following.posts.isEmpty
     }
 
     var body: some View {
@@ -88,6 +117,22 @@ struct FeedView: View {
             .overlay(alignment: .topLeading) { extrasProbe }
             .background(Palette.groupedBackground)
             .task { await model.loadFirstPageIfNeeded() }
+            .onChange(of: tab) { _, _ in
+                let shown = model
+                Task {
+                    // The first time a tab comes up, its first page; after
+                    // that, only the hearts the other tab may have changed.
+                    if shown.state == .idle {
+                        await shown.loadFirstPageIfNeeded()
+                    } else {
+                        await shown.refreshLikes()
+                    }
+                }
+            }
+            .task(id: followingIsEmpty) {
+                guard followingIsEmpty else { return }
+                followsAnyPet = await checkFollowsAnyPet()
+            }
             .task { returnToWhereTheSessionEnded() }
             .task { await extras.loadIfNeeded() }
             // On the ids, so a new page or a refresh asks about the pets it
@@ -113,6 +158,12 @@ struct FeedView: View {
             .safeAreaInset(edge: .top, spacing: 0) { refreshFailureBanner }
             .onChange(of: model.state) { _, newState in
                 if case .failed = newState { refreshFailureDismissed = false }
+                // Following reset while it is showing — an account switch —
+                // reads again, because nothing else would: its first page is
+                // otherwise asked for only when the tab is chosen.
+                if newState == .idle, tab == .following {
+                    Task { await following.loadFirstPageIfNeeded() }
+                }
             }
             .overlay(alignment: .bottom) { likeFailureBanner }
             // A session can be revoked while the app is in the background, and
@@ -293,7 +344,20 @@ struct FeedView: View {
             case .failed(let kind):
                 FeedErrorView(message: kind.message) { Task { await model.reload() } }
             case .empty:
-                emptyState
+                switch tab {
+                case .forYou:
+                    emptyState(detail: "Start by sharing your first pet moment.")
+                case .following:
+                    // The web's two: following nobody, and following pets
+                    // that have not posted (Feed.tsx:544-551). Not known yet,
+                    // or not readable, is taken as nobody, as the web's count
+                    // starts at zero.
+                    if followsAnyPet != true {
+                        followingEmptyState
+                    } else {
+                        emptyState(detail: "Posts from pets you follow will appear here.")
+                    }
+                }
             }
         }
         .padding(.vertical, Spacing.xxl)
@@ -315,17 +379,48 @@ struct FeedView: View {
 
     /// Empty is not failure. The web client rendered "no data" as a product
     /// slogan, which read like a feature rather than an empty state.
-    private var emptyState: some View {
+    ///
+    /// The line under the heading is the tab's own. For You's said "Posts from
+    /// pets you follow will appear here." when it was the only list, which
+    /// stopped being true of it the day there was a Following; it now has the
+    /// web's welcome line, and that sentence went to the tab it describes.
+    private func emptyState(detail: LocalizedStringKey) -> some View {
         VStack(spacing: Spacing.m) {
             BrandMark(size: 36)
             Text("No posts yet")
                 .font(Typography.sectionTitle)
                 .foregroundStyle(Palette.primaryText)
                 .accessibilityIdentifier("feed.empty")
-            Text("Posts from pets you follow will appear here.")
+            Text(detail)
                 .font(Typography.body)
                 .foregroundStyle(Palette.secondaryText)
                 .multilineTextAlignment(.center)
+        }
+        .padding(Layout.pageInset)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Palette.groupedBackground)
+    }
+
+    /// Following, for someone who follows no pets: the web's `EmptyState` with
+    /// its "Discover Pets", which opens search (Feed.tsx:544-551).
+    private var followingEmptyState: some View {
+        VStack(spacing: Spacing.m) {
+            Image(systemName: "person.2")
+                .font(Typography.pageTitle)
+                .foregroundStyle(Palette.brandPrimary)
+                .accessibilityHidden(true)
+            Text("No posts from followed pets")
+                .font(Typography.sectionTitle)
+                .foregroundStyle(Palette.primaryText)
+                .multilineTextAlignment(.center)
+                .accessibilityIdentifier("feed.followingEmpty")
+            Text("Follow some pets to see their posts here")
+                .font(Typography.body)
+                .foregroundStyle(Palette.secondaryText)
+                .multilineTextAlignment(.center)
+            Button("Discover Pets") { path.append(.search(tag: nil)) }
+                .buttonStyle(SocialButtonStyle(kind: .primary))
+                .accessibilityIdentifier("feed.discoverPets")
         }
         .padding(Layout.pageInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -341,6 +436,14 @@ struct FeedView: View {
         // Anchoring to an identity survives that.
         ScrollViewReader { proxy in
             List {
+                // For You and Following, first, as the web has them
+                // (Feed.tsx:452-492). A row, so it scrolls away with the rest —
+                // see `FeedTabStrip` for why it is not pinned under the bar.
+                FeedTabStrip(selection: $tab)
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+
                 // The web feed's order: the birthday banner, then the
                 // spotlight, then the posts. Rows of this list rather than
                 // views above it, so they scroll away with it. On the grouped
