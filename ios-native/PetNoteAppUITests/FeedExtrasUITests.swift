@@ -116,10 +116,9 @@ final class FeedExtrasUITests: XCTestCase {
         XCTAssertTrue(waitForQuietUI(app), "the save-password sheet kept coming back")
 
         // At the top: the first row starts below the bar only while the list
-        // has not moved. The banner is the first row when there is one.
+        // has not moved. The first row is the For You / Following strip.
         let bar = app.navigationBars["PetNote"]
-        let banner = app.descendants(matching: .any)["feed.birthday"]
-        let row = banner.exists ? banner : app.descendants(matching: .any)["feed.spotlight"]
+        let row = app.descendants(matching: .any)["feed.tabs"]
         XCTAssertTrue(bar.exists && row.exists, "no feed bar or no first row\n\(app.debugDescription)")
         XCTAssertGreaterThanOrEqual(row.frame.minY, bar.frame.maxY, "the list is not at its top")
 

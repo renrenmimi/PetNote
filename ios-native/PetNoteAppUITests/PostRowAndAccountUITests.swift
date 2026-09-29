@@ -33,8 +33,12 @@ final class PostRowAndAccountUITests: XCTestCase {
         let (app, uid) = try signInAsNewAccount("row-save-\(run)@petnote.test")
         createdUID = uid
 
+        // Brought into reach, not waited for: with the For You / Following
+        // strip, Popular Pets and the banner above it, the first card's
+        // actions start below the top of the tab bar.
         let save = app.buttons.matching(identifier: "post.bookmark").firstMatch
-        XCTAssertTrue(waitUntilHittable(save, in: app, timeout: 30), "no save button on the first card")
+        XCTAssertTrue(bringIntoReach(save, in: app, timeout: 30),
+                      "no save button within reach on the first card\n\(app.debugDescription)")
         XCTAssertEqual(save.label, "Save")
         XCTAssertGreaterThanOrEqual(save.frame.height, 44)
         XCTAssertGreaterThanOrEqual(save.frame.width, 44)
@@ -70,6 +74,8 @@ final class PostRowAndAccountUITests: XCTestCase {
         dismissOnboardingIfShown(relaunched)
         let again = relaunched.buttons.matching(identifier: "post.bookmark").firstMatch
         XCTAssertTrue(waitForLabel(again, "Remove from saved"), "a fresh launch lost the save")
+        // The relaunched feed is at its top again, with the actions out of reach.
+        XCTAssertTrue(bringIntoReach(again, in: relaunched, timeout: 30), "the save button is out of reach after a relaunch")
         again.tap()
         XCTAssertTrue(waitForLabel(again, "Save"))
         XCTAssertTrue(eventually { (try? Self.bookmarkIDs(uid).isEmpty) == true })
