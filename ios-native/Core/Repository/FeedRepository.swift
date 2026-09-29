@@ -8,6 +8,13 @@ protocol FeedRepository: Sendable {
     func post(id: String) async throws -> Post?
 }
 
+/// The feed's "Following" tab: the posts of the given pets, newest first —
+/// the web client's `getFollowingPosts` (src/services/posts.ts:255). Which
+/// pets is the caller's to decide (`FollowingFeed`).
+protocol FollowingPostsReading: Sendable {
+    func posts(ofPets petIDs: [String], after cursor: PageCursor?, limit: Int) async throws -> Page<Post>
+}
+
 protocol CommentRepository: Sendable {
     /// Newest first, matching `getComments` (src/services/posts.ts:439).
     func comments(postID: String, after cursor: PageCursor?, limit: Int) async throws -> Page<Comment>
