@@ -26,6 +26,13 @@ struct SignedInView: View {
     /// appearance can be told from a switch. Nil until the first binding.
     @State private var boundAccountID: String?
     @State private var feedModel: FeedViewModel
+    /// The feed's Following tab: the same model over the posts of the pets
+    /// this person follows. Its first page is read when the tab is chosen.
+    @State private var followingModel: FeedViewModel
+    /// What that model reads, before and after blocked authors come out. In
+    /// `@State` with it, for the reason `filteringFeed` gives.
+    @State private var followingFeed: FollowingFeed
+    @State private var followingFiltering: BlockFilteringFeed
     /// One coordinator for the whole signed-in tree: the player ceiling and
     /// "only the most visible one plays" are global properties, and a per-view
     /// owner could not enforce either.
@@ -92,6 +99,20 @@ struct SignedInView: View {
                 feed: filtering, likes: repositories.likes, accountID: user.uid
             )
         )
+        let following = FollowingFeed(
+            viewerID: user.uid, social: repositories.social,
+            reader: repositories.followingPosts, lookup: repositories.feed
+        )
+        let followingFiltering = BlockFilteringFeed(
+            base: following, social: repositories.social, viewerID: user.uid
+        )
+        _followingFeed = State(initialValue: following)
+        _followingFiltering = State(initialValue: followingFiltering)
+        _followingModel = State(
+            initialValue: FeedViewModel(
+                feed: followingFiltering, likes: repositories.likes, accountID: user.uid
+            )
+        )
         _bookmarks = State(initialValue: PostBookmarks(writes: repositories.postWrites))
         // Unselected tab items stay the system's colour, as the owner decided
         // on 09-26. On iOS 26 the glass tab bar ignores both
@@ -132,10 +153,26 @@ struct SignedInView: View {
         Image(uiImage: UIImage(systemName: name) ?? UIImage())
     }
 
+    /// For the feed's Following tab when it comes up empty: whether this
+    /// person follows any pet at all, which decides which empty state it
+    /// shows. One follow is enough to answer.
+    private var followsAnyPet: @Sendable () async -> Bool? {
+        let social = repositories.social
+        let uid = user.uid
+        return {
+            guard let pets = try? await social.followedPets(viewerID: uid, limit: 1) else { return nil }
+            return !pets.isEmpty
+        }
+    }
+
     private func refilterFeed() {
         Task {
             await filteringFeed.invalidate()
+            await followingFiltering.invalidate()
             await feedModel.reload()
+            // Following too, once it has been shown: a block also unfollows
+            // the blocked person's pets.
+            if followingModel.state != .idle { await followingModel.reload() }
             // The spotlight too, after the filter has forgotten the old list:
             // somebody just blocked must not stay featured at the top of the
             // feed until the next pull.
@@ -221,6 +258,9 @@ struct SignedInView: View {
             // read for the new account uses the new account's blocks.
             await filteringFeed.switchAccount(to: user.uid)
             feedModel.prepare(for: user.uid)
+            await followingFeed.switchAccount(to: user.uid)
+            await followingFiltering.switchAccount(to: user.uid)
+            followingModel.prepare(for: user.uid)
             // The previous person's saves and picture are theirs.
             bookmarks = PostBookmarks(writes: repositories.postWrites)
             accountAvatarURL = nil
@@ -304,7 +344,8 @@ struct SignedInView: View {
     private var homeTab: some View {
         NavigationStack(path: $path) {
             FeedView(
-                model: feedModel, extras: feedExtras, path: $path,
+                model: feedModel, following: followingModel, extras: feedExtras, path: $path,
+                followsAnyPet: followsAnyPet,
                 onShareBirthday: { editor = .composeAbout(petID: $0) }
             )
                 .environment(video)
@@ -565,7 +606,8 @@ struct SignedInView: View {
         switch route {
         case .feed:
             FeedView(
-                model: feedModel, extras: feedExtras, path: stack,
+                model: feedModel, following: followingModel, extras: feedExtras, path: stack,
+                followsAnyPet: followsAnyPet,
                 onShareBirthday: { editor = .composeAbout(petID: $0) }
             )
             .environment(video)
@@ -583,6 +625,7 @@ struct SignedInView: View {
                     // "0 comments" until a manual refresh.
                     onCommentCountChanged: { id, delta in
                         feedModel.recordCommentChange(postID: id, delta: delta)
+                        followingModel.recordCommentChange(postID: id, delta: delta)
                     }
                 ),
                 reloadToken: postsEdited
@@ -598,6 +641,7 @@ struct SignedInView: View {
                         onEdit: { editor = .editPost(postID: $0) },
                         onDeleted: { id in
                             feedModel.removePost(id: id)
+                            followingModel.removePost(id: id)
                             // Off the deleted post's screen: staying on it
                             // would leave a person looking at "this post was
                             // deleted" about their own action.
@@ -927,6 +971,8 @@ enum Editor: Identifiable, Hashable {
 /// in tests, and so sign-out drops them together.
 struct Repositories {
     let feed: any FeedRepository
+    /// The feed's Following tab, by pet.
+    let followingPosts: any FollowingPostsReading
     let likes: any LikeRepository
     let comments: any CommentRepository
     let users: any UserRepository
@@ -962,6 +1008,7 @@ struct Repositories {
         let places = FirestorePlacesSource()
         return Repositories(
             feed: FirestoreFeedRepository(),
+            followingPosts: FirestoreFollowingPostsRepository(),
             likes: FirestoreLikeRepository(),
             comments: FirestoreCommentRepository(),
             users: FirestoreUserRepository(),
