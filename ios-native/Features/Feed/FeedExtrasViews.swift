@@ -311,13 +311,26 @@ struct PetSpotlightRow: View {
         }
     }
 
+    /// The loading hearts' surface: the cards' own, white on the feed's grey
+    /// in light mode and dark grey on black in dark. It was the page's
+    /// secondary background, which is the very grey the feed has had since it
+    /// went onto the grouped background (09-26), so on a phone on 2026-09-29
+    /// the hearts were not there at all — a heading over five floating bars.
+    static let placeholderFill = Palette.cardBackground
+
     /// Still, not pulsing: `RemoteImage` explains what a pulse that never
     /// stopped cost the web client. The name line is a redacted word in the
-    /// real font, so the tile is the height a real one will be.
+    /// real font, so the tile is the height a real one will be. The heart has
+    /// the cards' hairline edge as well as their surface.
     private var placeholderTile: some View {
         VStack(spacing: Spacing.xs + 2) {
             ChubbyHeart()
-                .fill(Palette.secondaryBackground)
+                .fill(Self.placeholderFill)
+                .overlay {
+                    ChubbyHeart()
+                        .stroke(Palette.separator, lineWidth: 0.5)
+                        .accessibilityHidden(true)
+                }
                 .frame(width: Self.heartSize, height: Self.heartSize)
             Text("Pet", comment: "Stand-in name for a pet whose name is missing")
                 .font(Typography.caption)
