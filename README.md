@@ -29,6 +29,19 @@ The React client reads through Firestore security rules. Most business writes go
 | Geocoding | Geoapify through Cloud Functions                       |
 | Quality   | Vitest, ESLint, strict TypeScript                      |
 
+## Native iOS app
+
+A native iPhone client, written in Swift with SwiftUI, lives in [`ios-native/`](ios-native/). It uses the same Firebase backend as the web app, through the same security rules and callable functions. It is in testing and not yet on the App Store.
+
+![The iOS feed: For You and Following, Popular Pets, the birthday banner, and dark mode](docs/ios-screenshots.jpg)
+
+- The web app's main screens: email and Google sign-in; the feed with For You and Following, Popular Pets and birthday banners; posts with comments, likes, bookmarks and sharing; pets shared with family members; profiles, search and notifications; places and meetups; settings and account deletion. English and Chinese.
+- Swift 6 language mode with complete strict concurrency checking.
+- More than 900 unit tests (Swift Testing) and more than 150 UI tests (XCUITest), run against the Firebase emulators. CI builds the app and runs the unit tests on every change under `ios-native/`.
+- Accessibility is tested rather than assumed: touch targets of at least 44pt at the smallest and the largest text sizes, a VoiceOver label on every control along the core path, and text contrast measured on the rendered screens.
+
+Setup and project notes are in [`ios-native/README.md`](ios-native/README.md). Progress against the web app, feature by feature, is tracked in [`STATUS.md`](STATUS.md) (in Chinese).
+
 ## Security notes
 
 - Firestore rules limit direct client writes and validate permitted fields.
