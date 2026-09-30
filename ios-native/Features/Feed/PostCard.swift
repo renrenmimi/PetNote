@@ -201,7 +201,7 @@ struct PostCard: View {
     /// "button" is how this reads on other feeds.
     private var identity: some View {
         HStack(spacing: Spacing.s) {
-            Avatar(url: post.petAvatarURL ?? post.authorAvatarURL)
+            Avatar(url: post.petAvatarURL ?? post.authorAvatarURL, name: post.petName ?? post.authorName)
             VStack(alignment: .leading, spacing: Spacing.xs / 2) {
                 // The pet leads when there is one; a post without a pet
                 // degrades to the author rather than showing an empty row.
@@ -393,13 +393,15 @@ struct PostCard: View {
 
 private struct Avatar: View {
     let url: URL?
+    let name: String
 
     var body: some View {
-        // .avatar, not the default .medium: this draws at 40pt and the web
-        // client asks Cloudinary for w_100,h_100,c_fill here. Fetching w_800
-        // for a 40pt circle is 60x the pixels, on every row.
-        RemoteImage(url: url, aspectRatio: 1, cornerRadius: .infinity, size: .avatar)
-            .frame(width: 40, height: 40)
-            .accessibilityHidden(true)
+        // 40pt, as the web card draws it. `SocialAvatar` asks Cloudinary for
+        // .avatar, not the default .medium, as the web client asks for
+        // w_100,h_100,c_fill here: w_800 for a 40pt circle is 60x the pixels,
+        // on every row. It also draws the name's initial under the picture,
+        // so a default avatar the app cannot draw (the server's SVG) or a
+        // picture that fails shows the initial, not "Tap to retry" in 40pt.
+        SocialAvatar(url: url, name: name, size: 40)
     }
 }

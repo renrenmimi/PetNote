@@ -103,23 +103,20 @@ struct BirthdayBannerRow: View {
         .accessibilityIdentifier("feed.birthday")
     }
 
-    /// The pet's photo, or its species mark when there is none — the web
-    /// banner's `meta.emoji` fallback. Decoration: the name is in the title.
+    /// The pet's photo over its species mark — the web banner's `meta.emoji`
+    /// fallback — so a photo that fails to load leaves the mark rather than a
+    /// retry button inside the ring. Decoration: the name is in the title.
     private var avatar: some View {
-        Group {
+        ZStack {
+            Palette.background
+            Text(PetDisplay.emoji(for: banner.species))
+                .font(Typography.sectionTitle)
             if banner.avatarURL != nil {
-                RemoteImage(
-                    url: banner.avatarURL, aspectRatio: 1,
-                    cornerRadius: Self.avatarSize / 2, size: .avatar
-                )
-            } else {
-                Text(PetDisplay.emoji(for: banner.species))
-                    .font(Typography.sectionTitle)
-                    .frame(width: Self.avatarSize, height: Self.avatarSize)
-                    .background(Palette.background, in: Circle())
+                RemoteImage(url: banner.avatarURL, aspectRatio: 1, size: .avatar, retriesOnFailure: false)
             }
         }
         .frame(width: Self.avatarSize, height: Self.avatarSize)
+        .clipShape(Circle())
         .padding(Spacing.xs / 2)
         .background(Palette.brandGradient, in: Circle())
         .accessibilityHidden(true)
@@ -298,7 +295,7 @@ struct PetSpotlightRow: View {
     /// tile whose whole face is already a button.
     private func picture(_ item: SpotlightItem) -> some View {
         ZStack {
-            Palette.brandPrimary.opacity(0.12)
+            Palette.standInFill
             // Sized to the circle, not to the text: the circle is a fixed size
             // at every text size, and a paw that grew with the text would fill it.
             Image(systemName: "pawprint")
