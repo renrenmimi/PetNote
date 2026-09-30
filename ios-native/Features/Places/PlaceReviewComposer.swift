@@ -158,61 +158,11 @@ private struct FlowTags: View {
     let onToggle: (String) -> Void
 
     var body: some View {
-        FlowLayout(spacing: Spacing.s) {
+        FlowLayout {
             ForEach(options, id: \.self) { tag in
-                let isOn = selected.contains(tag)
-                Button { onToggle(tag) } label: {
-                    Text(PlaceReviewDraft.tagLabel(tag))
-                        .font(Typography.caption)
-                        .padding(.horizontal, Spacing.m)
-                        .frame(minHeight: Layout.minTouchTarget)
-                        .foregroundStyle(isOn ? Palette.textOnBrand : Palette.primaryText)
-                        .background(isOn ? Palette.brandPrimary : Palette.secondaryBackground, in: .capsule)
-                        .contentShape(.capsule)
-                }
-                .buttonStyle(.borderless)
-                .accessibilityAddTraits(isOn ? .isSelected : [])
-                .accessibilityIdentifier("review.tag.\(PlaceReviewDraft.tagOptions.firstIndex(of: tag) ?? 0)")
+                ChoiceChip(title: PlaceReviewDraft.tagLabel(tag), isSelected: selected.contains(tag)) { onToggle(tag) }
+                    .accessibilityIdentifier("review.tag.\(PlaceReviewDraft.tagOptions.firstIndex(of: tag) ?? 0)")
             }
-        }
-    }
-}
-
-/// Lays children out left to right, wrapping when a line is full.
-/// `SwiftUI.Layout` by name: this app's own `Layout` holds the spacing
-/// tokens and shadows the protocol.
-private struct FlowLayout: SwiftUI.Layout {
-    var spacing: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: LayoutSubviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? .infinity
-        var x: CGFloat = 0, y: CGFloat = 0, lineHeight: CGFloat = 0, widest: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > width {
-                y += lineHeight + spacing
-                x = 0
-                lineHeight = 0
-            }
-            x += size.width + spacing
-            lineHeight = max(lineHeight, size.height)
-            widest = max(widest, x - spacing)
-        }
-        return CGSize(width: min(widest, width), height: y + lineHeight)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: LayoutSubviews, cache: inout ()) {
-        var x = bounds.minX, y = bounds.minY, lineHeight: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > bounds.minX, x + size.width > bounds.maxX {
-                y += lineHeight + spacing
-                x = bounds.minX
-                lineHeight = 0
-            }
-            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-            x += size.width + spacing
-            lineHeight = max(lineHeight, size.height)
         }
     }
 }

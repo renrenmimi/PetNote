@@ -1061,16 +1061,6 @@
         }
       }
     },
-    "Choose one": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请选择"
-          }
-        }
-      }
-    },
     "City hidden": {
       "localizations": {
         "zh-Hans": {
@@ -3831,7 +3821,7 @@
       }
     },
     "Other": {
-      "comment": "Feedback type / Meetups for pets other than dogs and cats / Pet species / Place category / Report reason",
+      "comment": "Feedback type / Meetups for pets other than dogs and cats / Pet species / The relationship option that asks for a label of the person's own / Place category / Report reason",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -4443,16 +4433,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "最近打卡（%lld）"
-          }
-        }
-      }
-    },
-    "Relationship": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "关系"
           }
         }
       }
@@ -5195,16 +5175,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "请登录后再修改个人资料。"
-          }
-        }
-      }
-    },
-    "Sign in to continue": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "登录以继续"
           }
         }
       }
@@ -7916,16 +7886,16 @@
     "login.heading": {
       "comment": "Sign-in screen title",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Log in to your account"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "登录你的账号"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Log in to your account"
           }
         }
       }
@@ -7933,16 +7903,16 @@
     "login.tagline": {
       "comment": "Sign-in screen line under the title",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Share your pet's everyday moments"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "记录宠物的日常瞬间"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share your pet's everyday moments"
           }
         }
       }
@@ -8154,16 +8124,16 @@
     "post.age.days": {
       "comment": "A post's age in days, short: 3d",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lldd"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "%lld天前"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lldd"
           }
         }
       }
@@ -8171,16 +8141,16 @@
     "post.age.hours": {
       "comment": "A post's age in hours, short: 5h",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lldh"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "%lld小时前"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lldh"
           }
         }
       }
@@ -8188,16 +8158,16 @@
     "post.age.minutes": {
       "comment": "A post's age in minutes, short: 30m",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lldm"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "%lld分钟前"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lldm"
           }
         }
       }
@@ -8205,16 +8175,16 @@
     "post.age.now": {
       "comment": "A post's age under five seconds",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "just now"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "刚刚"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "just now"
           }
         }
       }
@@ -8222,16 +8192,16 @@
     "post.age.seconds": {
       "comment": "A post's age in seconds, short: 42s",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%llds"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "%lld秒前"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%llds"
           }
         }
       }
@@ -8239,16 +8209,16 @@
     "post.age.weeks": {
       "comment": "A post's age in weeks, short: 2w",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lldw"
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "%lld周前"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lldw"
           }
         }
       }

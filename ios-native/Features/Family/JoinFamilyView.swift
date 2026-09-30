@@ -169,8 +169,8 @@ struct JoinFamilyView: View {
         let selected = model.relationship == option
         return Button { model.relationship = option } label: {
             VStack(spacing: Spacing.xs) {
-                Text(Self.emoji(for: option)).accessibilityHidden(true)
-                Text(PetDisplay.label(for: option))
+                Text(PetDisplay.emoji(for: option)).accessibilityHidden(true)
+                Text(PetDisplay.choiceLabel(for: option))
                     .font(Typography.caption.weight(.semibold))
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
@@ -205,24 +205,6 @@ struct JoinFamilyView: View {
             Button("Open \(pet.petName)'s page") { onOpenPet(pet.petID) }
                 .buttonStyle(SocialButtonStyle(kind: .primary, fullWidth: true))
                 .accessibilityIdentifier("join.openPet")
-        }
-    }
-
-    /// The web selector's marks. Decoration only; the word beside each is
-    /// what VoiceOver reads.
-    static func emoji(for relationship: PetFamilyRelationship) -> String {
-        switch relationship {
-        case .mom: return "👩"
-        case .dad: return "👨"
-        case .sister: return "👧"
-        case .brother: return "👦"
-        case .grandma: return "👵"
-        case .grandpa: return "👴"
-        case .auntie: return "🧓"
-        case .uncle: return "🧔"
-        case .bestFriend: return "👫"
-        case .caretaker: return "🤝"
-        case .other: return "📝"
         }
     }
 }

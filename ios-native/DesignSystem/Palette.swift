@@ -28,6 +28,15 @@ enum Palette {
     /// A card's soft shadow (`PostCard.tsx`'s shadow-[0_18px_40px_-28px]).
     static let cardShadow = Color.black.opacity(0.08)
     static let separator = Color(uiColor: .separator)
+    /// A chip's resting fill (`ChoiceChip`): the system's translucent fill for
+    /// small shapes, so it shows on a form row, a card or the page, in either
+    /// mode. `secondaryBackground` does not: in dark mode it is the same grey
+    /// as a form row.
+    static let chipFill = Color(uiColor: .tertiarySystemFill)
+    /// A chosen chip's fill, under white text: the gradient's first purple,
+    /// which is the same in both modes. Not `brandPrimary`, which dark mode
+    /// lightens for purple text on a dark page — white on that is 2.8:1.
+    static let chipChosenFill = brandGradientStart
 
     // MARK: Text
     static let primaryText = Color(uiColor: .label)

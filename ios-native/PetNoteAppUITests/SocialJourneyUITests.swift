@@ -181,15 +181,8 @@ final class SocialJourneyUITests: XCTestCase {
         XCTAssertTrue(waitUntilHittable(name, in: app, timeout: 20))
         name.tap()
         name.typeText(petName)
-        for (picker, option) in [("petEditor.species", "Cat"), ("petEditor.relationship", "Mom")] {
-            let control = app.buttons[picker]
-            for _ in 0..<4 where !(control.exists && control.isHittable) { app.swipeUp() }
-            XCTAssertTrue(waitUntilHittable(control, in: app, timeout: 10), "no \(picker)")
-            control.tap()
-            let choice = app.buttons[option]
-            XCTAssertTrue(waitUntilHittable(choice, in: app, timeout: 10), "no \(option)")
-            choice.tap()
-        }
+        choose(app, picker: "petEditor.species", option: "Cat")
+        choose(app, picker: "petEditor.relationship", option: "Mom")
         let save = app.buttons["petEditor.save"]
         for _ in 0..<6 where !(save.exists && save.isHittable) { app.swipeUp() }
         save.tap()

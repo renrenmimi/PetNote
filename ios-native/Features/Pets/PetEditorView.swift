@@ -158,26 +158,24 @@ struct PetEditorView: View {
         Section(String(localized: "petEditor.about", defaultValue: "About", comment: "The pet editor's section for name, species and the rest")) {
             TextField("Name", text: $model.name)
                 .accessibilityIdentifier("petEditor.name")
-            Picker("Species", selection: $model.species) {
-                // Nil is a real option and stays reachable: a create with no
-                // species is refused by the server, and defaulting it here
-                // would make the choice on somebody's behalf.
-                Text("Choose one").tag(PetSpecies?.none)
+            // Chips, not a menu: eight short words a person should see at
+            // once and choose with one tap. None is chosen until someone
+            // chooses — a create with no species is refused by the server, and
+            // defaulting it here would make the choice on somebody's behalf.
+            choices("Species", identifier: "petEditor.species") {
                 ForEach(PetSpecies.allCases, id: \.self) { value in
-                    Text(PetDisplay.label(for: value)).tag(PetSpecies?.some(value))
+                    ChoiceChip(
+                        title: PetDisplay.label(for: value), symbol: PetDisplay.emoji(for: value),
+                        isSelected: model.species == value
+                    ) { model.species = value }
+                    .accessibilityIdentifier("petEditor.species.\(value.rawValue)")
                 }
             }
-            .accessibilityIdentifier("petEditor.species")
 
             TextField("Breed", text: $model.breed)
                 .accessibilityIdentifier("petEditor.breed")
 
-            Picker("Gender", selection: $model.gender) {
-                ForEach(PetGender.allCases, id: \.self) { value in
-                    Text(PetDisplay.label(for: value)).tag(value)
-                }
-            }
-            .accessibilityIdentifier("petEditor.gender")
+            genderRow
 
             birthdayRow
 
@@ -189,6 +187,52 @@ struct PetEditorView: View {
                 .foregroundStyle(Palette.secondaryText)
                 .accessibilityIdentifier("petEditor.bioCount")
         }
+    }
+
+    /// Three options, so a segmented control, the row's full width, under the
+    /// same small heading as the species. Beside a name on one line, the three
+    /// words did not fit a phone's width even at the default text size.
+    private var genderRow: some View {
+        VStack(alignment: .leading, spacing: Spacing.s) {
+            heading("Gender")
+            Picker("Gender", selection: $model.gender) {
+                ForEach(PetGender.allCases, id: \.self) { value in
+                    Text(PetDisplay.label(for: value)).tag(value)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .accessibilityIdentifier("petEditor.gender")
+        }
+        .padding(.vertical, Spacing.xs)
+    }
+
+    /// Chips that wrap, for choosing one of a few short words, as the species
+    /// and the relationship are — under a heading unless the section's own
+    /// header already names them.
+    private func choices<Chips: View>(
+        _ title: LocalizedStringKey?, identifier: String, @ViewBuilder chips: () -> Chips
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            if let title { heading(title) }
+            FlowLayout { chips() }
+        }
+        .padding(.vertical, Spacing.xs)
+        // A row's separator starts where its first text does, which with no
+        // heading is the first chip's emoji, inside the capsule: it was set
+        // in further than every other separator on the form.
+        .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(identifier)
+    }
+
+    /// The small grey heading over a row's control, so every row that is a
+    /// choice among a few reads the same, chips or segments.
+    private func heading(_ title: LocalizedStringKey) -> some View {
+        Text(title)
+            .font(Typography.caption)
+            .foregroundStyle(Palette.secondaryText)
+            .accessibilityAddTraits(.isHeader)
     }
 
     /// A date plus an explicit way to remove it.
@@ -226,13 +270,17 @@ struct PetEditorView: View {
 
     private var relationshipSection: some View {
         Section("Your relationship") {
-            Picker("Relationship", selection: $model.relationship) {
-                Text("Choose one").tag(PetFamilyRelationship?.none)
+            // Chips for the same reason as the species; none until chosen,
+            // because a create needs one and it is this person's to say.
+            choices(nil, identifier: "petEditor.relationship") {
                 ForEach(PetFamilyRelationship.allCases, id: \.self) { value in
-                    Text(PetDisplay.label(for: value)).tag(PetFamilyRelationship?.some(value))
+                    ChoiceChip(
+                        title: PetDisplay.choiceLabel(for: value), symbol: PetDisplay.emoji(for: value),
+                        isSelected: model.relationship == value
+                    ) { model.relationship = value }
+                    .accessibilityIdentifier("petEditor.relationship.\(value.rawValue)")
                 }
             }
-            .accessibilityIdentifier("petEditor.relationship")
             if model.relationship == .other {
                 TextField("Describe it", text: $model.customRelationship)
                     .accessibilityIdentifier("petEditor.customRelationship")

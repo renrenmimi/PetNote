@@ -130,6 +130,18 @@ struct PetDecoderTests {
             """)
     }
 
+    /// A member the server holds no relationship for is read as `.other`,
+    /// and shown as the web shows one: "Family". Offered as a choice, the
+    /// same case is "Other", because choosing it asks for a label of one's
+    /// own.
+    @Test func aMemberWithNoRelationshipReadsFamilyAndTheOptionReadsOther() throws {
+        let member = try #require(PetDecoder.familyMember(id: "alice", from: [:]))
+        #expect(member.relationship == .other)
+        #expect(PetDisplay.label(for: member.relationship, custom: member.customRelationship) == "Family")
+        #expect(PetDisplay.choiceLabel(for: .other) == "Other")
+        #expect(PetDisplay.choiceLabel(for: .bestFriend) == PetDisplay.label(for: .bestFriend))
+    }
+
     /// Dropping a row understates `memberCount`, and `memberCount` is what
     /// decides whether the pet may be deleted.
     @Test func keepsAFamilyMemberWhoseNameIsMissing() throws {
