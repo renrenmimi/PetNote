@@ -24,6 +24,24 @@ enum PetDisplay {
         }
     }
 
+    /// The web family selector's marks. Decoration only; the word beside
+    /// each is what VoiceOver reads.
+    static func emoji(for relationship: PetFamilyRelationship) -> String {
+        switch relationship {
+        case .mom: return "👩"
+        case .dad: return "👨"
+        case .sister: return "👧"
+        case .brother: return "👦"
+        case .grandma: return "👵"
+        case .grandpa: return "👴"
+        case .auntie: return "🧓"
+        case .uncle: return "🧔"
+        case .bestFriend: return "👫"
+        case .caretaker: return "🤝"
+        case .other: return "📝"
+        }
+    }
+
     /// Shown in place of a photo. Decoration standing in for a missing image,
     /// so it is hidden from VoiceOver at the call site and the species is read
     /// from the text beside it.
@@ -88,6 +106,18 @@ enum PetDisplay {
         case .caretaker: return String(localized: "Caretaker")
         case .other: return String(localized: "Family", comment: "Relationship to a pet when no other label was given")
         }
+    }
+
+    /// A relationship as one of the options to choose from, which differs
+    /// from `label(for:)` only for `.other`. Chosen, it asks for words of the
+    /// person's own, so it reads "Other", as the web's list of options does
+    /// (`RELATIONSHIP_OPTIONS`). Shown on a member it reads "Family", because
+    /// a member the server holds no relationship for is read as `.other`, and
+    /// that is what the web calls such a member.
+    static func choiceLabel(for relationship: PetFamilyRelationship) -> String {
+        relationship == .other
+            ? String(localized: "Other", comment: "The relationship option that asks for a label of the person's own")
+            : label(for: relationship)
     }
 
     /// "Born: 1 Jun 2020", in the viewer's locale.

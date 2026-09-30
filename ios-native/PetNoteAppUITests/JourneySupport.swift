@@ -51,14 +51,21 @@ extension XCTestCase {
         XCTAssertEqual(element.value as? String, text, "the field does not hold what was typed")
     }
 
+    /// Chooses the chip `label` in the group of chips named `identifier`, as
+    /// the pet editor's species and relationship are. The editor is a Form,
+    /// which only realises rows once they are scrolled to: with the keyboard
+    /// up after the name, the relationship row starts below the fold.
     func choose(_ app: XCUIApplication, picker identifier: String, option label: String) {
-        let picker = app.buttons[identifier]
-        for _ in 0..<4 where !(picker.exists && picker.isHittable) { app.swipeUp() }
-        XCTAssertTrue(waitUntilHittable(picker, in: app, timeout: 10), "no \(identifier)")
-        picker.tap()
-        let option = app.buttons[label]
-        XCTAssertTrue(waitUntilHittable(option, in: app, timeout: 10), "no \(label) in \(identifier)")
-        option.tap()
+        let chip = app.descendants(matching: .any).matching(identifier: identifier).firstMatch.buttons[label]
+        for _ in 0..<5 where !chip.waitForExistence(timeout: 3) { app.swipeUp() }
+        XCTAssertTrue(bringIntoReach(chip, in: app, timeout: 20), "no \(label) in \(identifier)")
+        chip.tap()
+        XCTAssertTrue(
+            XCTWaiter().wait(for: [XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "selected == true"), object: chip
+            )], timeout: 5) == .completed,
+            "\(label) in \(identifier) was tapped and is not selected"
+        )
     }
 
     func pickFirstPhoto(_ app: XCUIApplication) throws {
