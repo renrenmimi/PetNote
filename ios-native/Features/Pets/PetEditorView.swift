@@ -268,7 +268,6 @@ struct PetEditorView: View {
                     Task { await model.save() }
                 }
                 .disabled(!model.canSave)
-                .frame(minHeight: Layout.minTouchTarget)
                 .accessibilityIdentifier("petEditor.save")
             }
 

@@ -118,8 +118,6 @@ struct PlaceReviewSheet: View {
                     }
                 } label: {
                     Text(model.isSubmitting ? String(localized: "Submitting...") : String(localized: "Submit Review"))
-                        .frame(minHeight: Layout.minTouchTarget)
-                        .contentShape(.rect)
                 }
                 .disabled(!model.canSubmit)
                 .accessibilityIdentifier("review.submit")
