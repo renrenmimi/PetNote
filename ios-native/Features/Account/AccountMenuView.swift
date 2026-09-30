@@ -65,21 +65,29 @@ struct AccountMenuView: View {
     /// screen, which signs them out.
     let onClose: () -> Void
 
-    /// The sheet's resting height: enough for the header and one row at the
-    /// default type size. Not a design token — it is a fact about this sheet's
-    /// contents rather than a value other screens should share, and
-    /// `DesignSystem/` is not ours to add to.
-    static let preferredHeight: CGFloat = 220
+    /// The sheet rests at the height of its header and its row, measured.
+    ///
+    /// It was a fixed 220pt. At the default type size that left an empty band
+    /// under the row, about a third of the sheet, and a fixed height is wrong
+    /// at every other size: a second `.large` detent was there for the
+    /// largest ones, since clamping Dynamic Type is what
+    /// AccessibilityGuardTests forbids. Measured, the one detent is right at
+    /// every size. It starts at the old figure, for the first layout pass.
+    @State private var contentHeight: CGFloat = 220
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider()
             signOutRow
-            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+        .frame(maxHeight: .infinity, alignment: .top)
         .background(Palette.background)
+        .presentationDetents([.height(contentHeight)])
+        .presentationDragIndicator(.visible)
         // No .accessibilityIdentifier and no .accessibilityAction on this
         // stack. An `.accessibilityAction` on a container in this project
         // turned a child button's reported rectangle into 603x874 at x=-100 —
