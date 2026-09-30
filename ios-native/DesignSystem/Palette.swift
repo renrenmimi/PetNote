@@ -37,6 +37,10 @@ enum Palette {
     /// which is the same in both modes. Not `brandPrimary`, which dark mode
     /// lightens for purple text on a dark page — white on that is 2.8:1.
     static let chipChosenFill = brandGradientStart
+    /// Behind a stand-in for a missing picture, a pet's paw or a person's
+    /// initial: a wash of the brand purple, which shows on a white row, a
+    /// grey one and the page alike, in either mode.
+    static let standInFill = brandPrimary.opacity(0.12)
 
     // MARK: Text
     static let primaryText = Color(uiColor: .label)

@@ -192,22 +192,21 @@ struct MyPetsSection: View {
         .accessibilityIdentifier("profile.pet.\(pet.id)")
     }
 
+    /// The species mark on the stand-in wash, and the photo over it, as
+    /// `SocialAvatar` draws a person: a photo that fails to load leaves the
+    /// mark, not "Tap to retry" squeezed into 44pt inside a row that is
+    /// itself a button.
     private func avatar(_ pet: Pet) -> some View {
-        Group {
+        ZStack {
+            Palette.standInFill
+            Text(PetDisplay.emoji(for: pet.species))
+                .font(Typography.sectionTitle)
             if pet.avatarURL != nil {
-                RemoteImage(
-                    url: pet.avatarURL, aspectRatio: 1,
-                    cornerRadius: Self.rowAvatar / 2, size: .avatar
-                )
-                .frame(width: Self.rowAvatar, height: Self.rowAvatar)
-            } else {
-                Text(PetDisplay.emoji(for: pet.species))
-                    .font(Typography.sectionTitle)
-                    .frame(width: Self.rowAvatar, height: Self.rowAvatar)
-                    .background(Palette.secondaryBackground)
-                    .clipShape(Circle())
+                RemoteImage(url: pet.avatarURL, aspectRatio: 1, size: .avatar, retriesOnFailure: false)
             }
         }
+        .frame(width: Self.rowAvatar, height: Self.rowAvatar)
+        .clipShape(Circle())
         .accessibilityHidden(true)
     }
 }

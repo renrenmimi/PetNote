@@ -12,6 +12,16 @@ import SwiftUI
 /// every default avatar — a broken-looking screen for the most common case.
 /// The initial is what the picture was standing in for anyway.
 ///
+/// **The initial is always drawn, and the picture over it.** It sits on the
+/// pale brand wash the Popular Pets circles put behind their paw, so the
+/// circle shows on a white row, an unread notification's grey row and the
+/// page alike. It used to be a grey letter on `secondaryBackground`, which is
+/// that same unread grey, so there the circle vanished and left a loose
+/// letter. A picture that fails to load leaves the initial showing, not
+/// "Tap to retry": the words do not fit a circle this size, and the retry
+/// button would take the tap from the row it sits in, which is usually a
+/// button itself.
+///
 /// Decorative: the name is always in the text beside it, so this is hidden
 /// from VoiceOver rather than read as a second copy.
 struct SocialAvatar: View {
@@ -26,19 +36,17 @@ struct SocialAvatar: View {
     }
 
     var body: some View {
-        Group {
+        ZStack {
+            Palette.standInFill
+            Text(Self.initial(of: name))
+                .font(Typography.sectionTitle)
+                .foregroundStyle(Palette.brandPrimary)
             if Self.isDrawable(url) {
-                RemoteImage(url: url, aspectRatio: 1, cornerRadius: size / 2, size: .avatar)
-            } else {
-                Text(Self.initial(of: name))
-                    .font(Typography.sectionTitle)
-                    .foregroundStyle(Palette.secondaryText)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Palette.secondaryBackground)
-                    .clipShape(Circle())
+                RemoteImage(url: url, aspectRatio: 1, size: .avatar, retriesOnFailure: false)
             }
         }
         .frame(width: size, height: size)
+        .clipShape(Circle())
         .accessibilityHidden(true)
     }
 
