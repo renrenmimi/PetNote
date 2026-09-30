@@ -218,6 +218,10 @@ struct PetEditorView: View {
             FlowLayout { chips() }
         }
         .padding(.vertical, Spacing.xs)
+        // A row's separator starts where its first text does, which with no
+        // heading is the first chip's emoji, inside the capsule: it was set
+        // in further than every other separator on the form.
+        .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(identifier)
     }
