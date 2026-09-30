@@ -70,7 +70,7 @@ struct PaletteContrastTests {
 
     /// Non-essential only, so 3:1. Anything a person must be able to read uses
     /// secondaryText or better.
-    /// The spotlight's loading hearts sit on the feed's grouped background.
+    /// The spotlight's loading circles sit on the feed's grouped background.
     /// They were filled with the page's secondary background — the same grey
     /// there — and did not show at all (seen on a phone on 2026-09-29).
     /// Decoration, so not the 3:1 a control needs; only that there is
