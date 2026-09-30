@@ -82,6 +82,26 @@ struct PaletteContrastTests {
         }
     }
 
+    /// The app-wide accent (`AccentColor`, named in Base.xcconfig) is the
+    /// brand purple in both modes. It is a second copy of `BrandPrimary`,
+    /// because an asset catalog's global accent has to be a colour of its own;
+    /// this keeps the copy from drifting.
+    @Test func theAppWideAccentIsTheBrandPurple() throws {
+        let accent = try #require(UIColor(named: "AccentColor"), "no AccentColor in the app's assets")
+        // Compared by components: two UIColors with the same values are not
+        // `==` when they came from different places.
+        func rgba(_ color: UIColor) -> [CGFloat] {
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            color.getRed(&r, green: &g, blue: &b, alpha: &a)
+            return [r, g, b, a]
+        }
+        for (style, name) in styles {
+            let traits = UITraitCollection(userInterfaceStyle: style)
+            let pairs = zip(rgba(accent.resolvedColor(with: traits)), rgba(resolve(Palette.brandPrimary, style)))
+            #expect(pairs.allSatisfy { abs($0 - $1) < 0.001 }, "AccentColor is not BrandPrimary in \(name)")
+        }
+    }
+
     @Test func tertiaryTextMeets3() {
         for (style, name) in styles {
             let ratio = contrast(Palette.tertiaryText, on: Palette.background, style)
