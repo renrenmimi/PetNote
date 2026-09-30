@@ -33,7 +33,7 @@ The React client reads through Firestore security rules. Most business writes go
 
 A native iPhone client, written in Swift with SwiftUI, lives in [`ios-native/`](ios-native/). It uses the same Firebase backend as the web app, through the same security rules and callable functions. It is in testing and not yet on the App Store.
 
-![The iOS app on the simulator with test data: the feed with For You / Following and Popular Pets, a post, and the feed in dark mode](docs/ios-screenshots.jpg)
+![The iOS app on the simulator with test data: the feed with For You / Following and Popular Pets, the pet editor, notifications, and the feed in dark mode](docs/ios-screenshots.jpg)
 
 - The web app's main screens: email and Google sign-in; the feed with For You and Following, Popular Pets and birthday banners; posts with comments, likes, bookmarks and sharing; pets shared with family members; profiles, search and notifications; places and meetups; settings and account deletion. English and Chinese.
 - Swift 6 language mode with complete strict concurrency checking.
