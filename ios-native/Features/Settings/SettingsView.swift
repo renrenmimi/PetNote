@@ -174,12 +174,8 @@ struct SettingsView: View {
 
     private var danger: some View {
         Section("Danger Zone") {
-            Button(role: .destructive) { isDeleting = true } label: {
-                Text("Delete Account")
-                    .frame(maxWidth: .infinity, minHeight: Layout.minTouchTarget, alignment: .leading)
-                    .contentShape(.rect)
-            }
-            .accessibilityIdentifier("settings.deleteAccount")
+            Button("Delete Account", role: .destructive) { isDeleting = true }
+                .accessibilityIdentifier("settings.deleteAccount")
         }
     }
 
@@ -206,6 +202,11 @@ struct SettingsView: View {
     /// A tappable row. Identifiers go on at the call site, as literals: the
     /// identifier guard reads the source, and a name passed in is one it
     /// cannot see.
+    ///
+    /// No height of its own. A button that is a form row makes the whole row
+    /// its touch area, and a row is never under 44pt. A 44pt frame in here
+    /// was added to the row's own padding: these rows stood 74pt tall
+    /// beside 51pt switches.
     private func row(_ title: LocalizedStringKey, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack {
@@ -216,8 +217,6 @@ struct SettingsView: View {
                     .foregroundStyle(Palette.tertiaryText)
                     .accessibilityHidden(true)
             }
-            .frame(minHeight: Layout.minTouchTarget)
-            .contentShape(.rect)
         }
     }
 }

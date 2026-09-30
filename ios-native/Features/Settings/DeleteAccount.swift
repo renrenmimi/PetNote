@@ -187,8 +187,6 @@ struct DeleteAccountView: View {
                         Text(model.isWorking ? "Deleting..." : "Delete Account")
                         Spacer()
                     }
-                    .frame(minHeight: Layout.minTouchTarget)
-                    .contentShape(.rect)
                 }
                 .disabled(!model.canSubmit)
                 .accessibilityIdentifier("deleteAccount.delete")

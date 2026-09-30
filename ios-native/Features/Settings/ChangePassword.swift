@@ -91,8 +91,6 @@ struct ChangePasswordView: View {
                             Text(model.isSaving ? "Saving..." : "Change Password")
                             Spacer()
                         }
-                        .frame(minHeight: Layout.minTouchTarget)
-                        .contentShape(.rect)
                     }
                     .disabled(!model.canSubmit)
                     .accessibilityIdentifier("changePassword.save")

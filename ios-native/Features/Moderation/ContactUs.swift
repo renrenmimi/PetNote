@@ -206,10 +206,7 @@ struct ContactUsView: View {
                                     .accessibilityHidden(true)
                             }
                         }
-                        .frame(minHeight: Layout.minTouchTarget)
-                        .contentShape(.rect)
                     }
-                    .buttonStyle(.plain)
                     .accessibilityLabel(kind.label)
                     .accessibilityAddTraits(model.kind == kind ? .isSelected : [])
                     .accessibilityIdentifier("contact.type.\(kind.rawValue)")
@@ -250,8 +247,6 @@ struct ContactUsView: View {
                         Text(model.state == .sending ? "Sending…" : "Send")
                         Spacer()
                     }
-                    .frame(minHeight: Layout.minTouchTarget)
-                    .contentShape(.rect)
                 }
                 .disabled(!model.canSend)
                 .accessibilityIdentifier("contact.send")

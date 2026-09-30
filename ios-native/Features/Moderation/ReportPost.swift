@@ -223,10 +223,7 @@ struct ReportPostSheet: View {
                                     .accessibilityHidden(true)
                             }
                         }
-                        .frame(minHeight: Layout.minTouchTarget)
-                        .contentShape(.rect)
                     }
-                    .buttonStyle(.plain)
                     .accessibilityAddTraits(model.selected == reason ? .isSelected : [])
                     .accessibilityIdentifier("report.reason.\(index)")
                 }
