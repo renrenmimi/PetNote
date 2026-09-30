@@ -57,7 +57,11 @@ extension XCTestCase {
     /// up after the name, the relationship row starts below the fold.
     func choose(_ app: XCUIApplication, picker identifier: String, option label: String) {
         let chip = app.descendants(matching: .any).matching(identifier: identifier).firstMatch.buttons[label]
-        for _ in 0..<5 where !chip.waitForExistence(timeout: 3) { app.swipeUp() }
+        var swipes = 0
+        while swipes < 5, !chip.waitForExistence(timeout: 3) {
+            app.swipeUp()
+            swipes += 1
+        }
         XCTAssertTrue(bringIntoReach(chip, in: app, timeout: 20), "no \(label) in \(identifier)")
         chip.tap()
         XCTAssertTrue(
