@@ -126,38 +126,40 @@ struct BirthdayBannerRow: View {
     }
 }
 
-/// The old iPhone app's `PetSpotlight` (`feature/ios-polish-round2`,
-/// src/components/PetSpotlight.tsx), which is what the owner's phone showed:
-/// a small grey "POPULAR PETS" over a sideways strip of hearts, the pet's name
-/// under each, one tile per pet.
+/// "Popular Pets": a small grey heading over a sideways strip of round
+/// pictures, each in a ring, the pet's name under each, one tile per pet —
+/// the shape Instagram's stories made the one everybody reads as "tap to see".
 ///
-/// **Drawn as that version, not as main's web card.** Main's web still has
-/// the earlier card — "⭐ Popular Pets" in a white panel, rounded squares —
-/// and the first version of this row was a compact take on it, with the
-/// heading beside 44pt tiles to spend less height above the posts. The owner
-/// has asked, screen by screen, for the look the phone had; this row was
-/// never in a candidate they saw, so it is brought to that look before it is.
-/// It is taller: 107.5pt on an iPhone 17 at the default text size (measured
-/// 2026-09-28), against about 66 for the compact row.
+/// **Circles, not the old app's hearts.** The row first came back as the old
+/// iPhone app drew it (`feature/ios-polish-round2`'s `PetSpotlight`), a heart
+/// cut from the post's picture. On 2026-09-29 the owner asked for another
+/// shape: a heart crops a pet's head at its two lobes and its point, which is
+/// exactly where ears and chins are. A circle keeps the middle of the picture
+/// and cuts evenly all round. The rules stayed: one tile per pet, a paw on a
+/// pale brand tint for a post with no picture, no row at all when there is
+/// nothing to show.
 ///
-/// **One difference, on purpose: the placeholders.** The old app draws
-/// nothing until the tiles arrive, so the posts below jump down when they do.
-/// Here five still hearts hold the row's place while it loads — the height
-/// the tiles will have — and only an empty or failed read takes the row away,
-/// which the feed does by not drawing it (`FeedView`).
+/// **The ring says whether it has been opened.** The brand gradient, with a
+/// gap of the page's own colour inside it, while unseen; a hairline grey once
+/// opened, the picture a little dimmer — so a strip of seen and unseen pets
+/// reads at a glance, as a story tray does.
+///
+/// **Placeholders hold the row's place while it loads**, five still circles
+/// the height the tiles will have, so the posts below do not jump when the
+/// tiles arrive; only an empty or failed read takes the row away, which the
+/// feed does by not drawing it (`FeedView`).
 struct PetSpotlightRow: View {
     let phase: SpotlightPhase
     let onOpen: (String) -> Void
 
-    /// `style={{ width: 72 }}`: room for the name under a heart.
+    /// Room for the name under a picture: eight characters and the "…".
     private static let tileWidth: CGFloat = 72
-    /// `h-[62px] w-[62px]`.
-    private static let heartSize: CGFloat = 62
-    /// `inset-[2.5px]`: the brand-coloured edge, then the white.
-    private static let edgeWidth: CGFloat = 2.5
-    /// `inset-[4px]`: the picture, inside the white.
-    private static let pictureInset: CGFloat = 4
-    /// `<PawPrint size={22} />`, for a post with no picture.
+    /// The picture and its ring together.
+    private static let circleSize: CGFloat = 64
+    /// The unseen ring, and the gap of page colour between it and the picture.
+    private static let ringWidth: CGFloat = 2.5
+    private static let ringGap: CGFloat = 2.5
+    /// For a post with no picture.
     private static let pawSize: CGFloat = 22
 
     var body: some View {
@@ -225,7 +227,7 @@ struct PetSpotlightRow: View {
             onOpen(item.post.id)
         } label: {
             VStack(spacing: Spacing.xs + 2) {
-                heart(item)
+                ringed(item)
                 // Secondary rather than the web's gray-400 for a seen tile:
                 // this is still the only place the name is written, so it
                 // keeps the body-text contrast. The picture carries the dimming.
@@ -264,42 +266,41 @@ struct PetSpotlightRow: View {
             }
     }
 
-    /// The web tile's `PawAvatar`: the whole square cut to a heart, so what
-    /// shows of the brand gradient — or of the grey, once the post has been
-    /// opened — is the edge where the heart meets the square, then a white
-    /// line, then the post's first picture.
-    private func heart(_ item: SpotlightItem) -> some View {
+    /// The post's first picture as a circle in its ring: the brand gradient
+    /// while unseen, a hairline grey once opened. The gap between ring and
+    /// picture is left clear, so it is the page's own colour in either mode.
+    private func ringed(_ item: SpotlightItem) -> some View {
         ZStack {
             if item.isSeen {
-                Rectangle().fill(Palette.separator)
+                Circle().strokeBorder(Palette.separator, lineWidth: 1)
             } else {
-                Rectangle().fill(LinearGradient(
-                    colors: [Palette.brandGradientStart, Palette.brandGradientEnd],
-                    startPoint: .topLeading, endPoint: .bottomTrailing
-                ))
+                Circle().strokeBorder(
+                    LinearGradient(
+                        colors: [Palette.brandGradientStart, Palette.brandGradientEnd],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    ),
+                    lineWidth: Self.ringWidth
+                )
             }
-            Rectangle()
-                .fill(Palette.background)
-                .padding(Self.edgeWidth)
             picture(item)
-                .padding(Self.pictureInset)
+                .clipShape(Circle())
+                .padding(Self.ringWidth + Self.ringGap)
                 .opacity(item.isSeen ? 0.7 : 1)
         }
-        .frame(width: Self.heartSize, height: Self.heartSize)
-        .clipShape(ChubbyHeart())
+        .frame(width: Self.circleSize, height: Self.circleSize)
         .accessibilityHidden(true)
     }
 
-    /// The picture, over the old app's stand-in for a post without one: a paw
-    /// on a pale brand tint. It used to be the ring's gradient, which inside a
-    /// heart "read as a broken image rather than an empty one"; and a picture
+    /// The picture, over the stand-in for a post without one: a paw on a pale
+    /// brand tint. Not the ring's gradient, which inside the shape "read as a
+    /// broken image rather than an empty one" in the old app; and a picture
     /// that fails leaves the stand-in showing, rather than a retry button in a
     /// tile whose whole face is already a button.
     private func picture(_ item: SpotlightItem) -> some View {
         ZStack {
             Palette.brandPrimary.opacity(0.12)
-            // Sized to the heart, not to the text: the heart is a fixed 62pt
-            // at every text size, and a paw that grew with it would fill it.
+            // Sized to the circle, not to the text: the circle is a fixed size
+            // at every text size, and a paw that grew with the text would fill it.
             Image(systemName: "pawprint")
                 .resizable()
                 .scaledToFit()
@@ -311,27 +312,28 @@ struct PetSpotlightRow: View {
         }
     }
 
-    /// The loading hearts' surface: the cards' own, white on the feed's grey
+    /// The loading circles' surface: the cards' own, white on the feed's grey
     /// in light mode and dark grey on black in dark. It was the page's
     /// secondary background, which is the very grey the feed has had since it
     /// went onto the grouped background (09-26), so on a phone on 2026-09-29
-    /// the hearts were not there at all — a heading over five floating bars.
+    /// the placeholders were not there at all — a heading over five floating
+    /// bars.
     static let placeholderFill = Palette.cardBackground
 
     /// Still, not pulsing: `RemoteImage` explains what a pulse that never
     /// stopped cost the web client. The name line is a redacted word in the
-    /// real font, so the tile is the height a real one will be. The heart has
+    /// real font, so the tile is the height a real one will be. The circle has
     /// the cards' hairline edge as well as their surface.
     private var placeholderTile: some View {
         VStack(spacing: Spacing.xs + 2) {
-            ChubbyHeart()
+            Circle()
                 .fill(Self.placeholderFill)
                 .overlay {
-                    ChubbyHeart()
-                        .stroke(Palette.separator, lineWidth: 0.5)
+                    Circle()
+                        .strokeBorder(Palette.separator, lineWidth: 0.5)
                         .accessibilityHidden(true)
                 }
-                .frame(width: Self.heartSize, height: Self.heartSize)
+                .frame(width: Self.circleSize, height: Self.circleSize)
             Text("Pet", comment: "Stand-in name for a pet whose name is missing")
                 .font(Typography.caption)
                 .redacted(reason: .placeholder)
@@ -339,25 +341,5 @@ struct PetSpotlightRow: View {
         }
         .frame(width: Self.tileWidth)
         .frame(minHeight: Layout.minTouchTarget)
-    }
-}
-
-/// The old app's `chubbyHeartClip`, point for point: the same path in the
-/// same unit square, scaled to whatever frame it is given.
-private struct ChubbyHeart: Shape {
-    func path(in rect: CGRect) -> Path {
-        func at(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-            CGPoint(x: rect.minX + x * rect.width, y: rect.minY + y * rect.height)
-        }
-        var path = Path()
-        path.move(to: at(0.5, 0.93))
-        path.addCurve(to: at(0, 0.3), control1: at(0.1, 0.7), control2: at(0, 0.45))
-        path.addCurve(to: at(0.35, 0), control1: at(0, 0.12), control2: at(0.15, 0))
-        path.addCurve(to: at(0.5, 0.25), control1: at(0.48, 0), control2: at(0.5, 0.15))
-        path.addCurve(to: at(0.65, 0), control1: at(0.5, 0.15), control2: at(0.52, 0))
-        path.addCurve(to: at(1, 0.3), control1: at(0.85, 0), control2: at(1, 0.12))
-        path.addCurve(to: at(0.5, 0.93), control1: at(1, 0.45), control2: at(0.9, 0.7))
-        path.closeSubpath()
-        return path
     }
 }
