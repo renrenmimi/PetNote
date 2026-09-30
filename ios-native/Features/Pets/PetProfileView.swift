@@ -161,10 +161,9 @@ struct PetProfileView: View {
                 // VoiceOver because the species is already in the line of text
                 // beside it, and reading "dog face" there would be a second
                 // copy of the same fact.
-                Text(PetDisplay.emoji(for: pet.species))
-                    .font(Typography.pageTitle)
+                PetStandInMark(species: pet.species, font: Typography.pageTitle)
                     .frame(width: Layout.avatarSize, height: Layout.avatarSize)
-                    .background(Palette.secondaryBackground)
+                    .background(Palette.standInFill)
                     .clipShape(Circle())
                     .accessibilityHidden(true)
             }

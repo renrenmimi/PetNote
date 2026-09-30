@@ -199,8 +199,7 @@ struct MyPetsSection: View {
     private func avatar(_ pet: Pet) -> some View {
         ZStack {
             Palette.standInFill
-            Text(PetDisplay.emoji(for: pet.species))
-                .font(Typography.sectionTitle)
+            PetStandInMark(species: pet.species, font: Typography.sectionTitle)
             if pet.avatarURL != nil {
                 RemoteImage(url: pet.avatarURL, aspectRatio: 1, size: .avatar, retriesOnFailure: false)
             }

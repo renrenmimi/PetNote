@@ -121,10 +121,9 @@ struct PetEditorView: View {
             )
             .frame(width: Layout.avatarSize, height: Layout.avatarSize)
         } else {
-            Text(PetDisplay.emoji(for: model.species ?? .other))
-                .font(Typography.pageTitle)
+            PetStandInMark(species: model.species, font: Typography.pageTitle)
                 .frame(width: Layout.avatarSize, height: Layout.avatarSize)
-                .background(Palette.secondaryBackground)
+                .background(Palette.standInFill)
                 .clipShape(Circle())
                 .accessibilityHidden(true)
         }
