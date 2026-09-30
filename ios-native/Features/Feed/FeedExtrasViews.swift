@@ -109,8 +109,7 @@ struct BirthdayBannerRow: View {
     private var avatar: some View {
         ZStack {
             Palette.background
-            Text(PetDisplay.emoji(for: banner.species))
-                .font(Typography.sectionTitle)
+            PetStandInMark(species: banner.species, font: Typography.sectionTitle)
             if banner.avatarURL != nil {
                 RemoteImage(url: banner.avatarURL, aspectRatio: 1, size: .avatar, retriesOnFailure: false)
             }
