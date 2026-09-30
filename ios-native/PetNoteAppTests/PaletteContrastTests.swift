@@ -134,6 +134,15 @@ struct PaletteContrastTests {
         }
     }
 
+    /// A chosen chip's words (`ChoiceChip`). The chips first used
+    /// `brandPrimary`, which passed in light mode and was 2.8:1 in dark.
+    @Test func whiteOnAChosenChipMeets45() {
+        for (style, name) in styles {
+            let ratio = contrast(Palette.textOnBrand, on: Palette.chipChosenFill, style)
+            #expect(ratio >= 4.5, "white on a chosen chip in \(name): \(ratio)")
+        }
+    }
+
     /// 4.5, not 3: a status colour almost always has words beside it in the
     /// same colour, and splitting the two would be a distinction the code
     /// cannot enforce.
