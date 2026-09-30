@@ -70,6 +70,18 @@ struct PaletteContrastTests {
 
     /// Non-essential only, so 3:1. Anything a person must be able to read uses
     /// secondaryText or better.
+    /// The spotlight's loading hearts sit on the feed's grouped background.
+    /// They were filled with the page's secondary background — the same grey
+    /// there — and did not show at all (seen on a phone on 2026-09-29).
+    /// Decoration, so not the 3:1 a control needs; only that there is
+    /// something to see, as the cards' own surface is on the same page.
+    @Test func theSpotlightPlaceholdersShowOnTheFeed() {
+        for (style, name) in styles {
+            let ratio = contrast(PetSpotlightRow.placeholderFill, on: Palette.groupedBackground, style)
+            #expect(ratio > 1.1, "spotlight placeholder on the feed in \(name): \(ratio)")
+        }
+    }
+
     @Test func tertiaryTextMeets3() {
         for (style, name) in styles {
             let ratio = contrast(Palette.tertiaryText, on: Palette.background, style)
