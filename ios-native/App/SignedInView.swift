@@ -469,11 +469,7 @@ struct SignedInView: View {
                         },
                         onClose: { isAccountMenuOpen = false }
                     )
-                    // The second detent is somewhere for the largest
-                    // accessibility type sizes to go, since clamping Dynamic
-                    // Type is what AccessibilityGuardTests forbids.
-                    .presentationDetents([.height(AccountMenuView.preferredHeight), .large])
-                    .presentationDragIndicator(.visible)
+                    // Its height is its own: the menu measures what it holds.
                 }
                 .navigationDestination(for: Route.self) { route in
                     destination(route, stack: $path)
