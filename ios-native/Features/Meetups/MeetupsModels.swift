@@ -26,15 +26,22 @@ final class MeetupsModel {
     }
 
     let uid: String
+    /// Where each meetup is, for the ones at a place from Apple Maps or at a
+    /// typed address.
+    let lookups: PlaceLookups
     private let source: any MeetupsReading
     private let now: @Sendable () -> Date
     private var loadTask: Task<Void, Never>?
     private let log = Logger(subsystem: "dev.local.petnote.native", category: "meetups")
 
-    init(uid: String, source: any MeetupsReading, now: @escaping @Sendable () -> Date = { Date() }) {
+    init(
+        uid: String, source: any MeetupsReading, now: @escaping @Sendable () -> Date = { Date() },
+        lookups: PlaceLookups = PlaceLookups()
+    ) {
         self.uid = uid
         self.source = source
         self.now = now
+        self.lookups = lookups
     }
 
     func load() async {
@@ -55,6 +62,7 @@ final class MeetupsModel {
             guard filter == self.filter else { return }
             items = found
             state = .loaded
+            await lookups.lookUp(meetupPlaces: found.map(\.place))
         } catch {
             guard !Task.isCancelled, filter == self.filter else { return }
             log.error("meetups read failed: \(String(describing: error), privacy: .public)")
@@ -95,6 +103,9 @@ final class MeetupDetailModel {
     let meetupID: String
     let viewerID: String
     let reviewer: (any PlaceReviewing)?
+    /// Where the meetup is, when that is a place from Apple Maps or a typed
+    /// address.
+    let lookups: PlaceLookups
     private let source: any MeetupsReading
     private let petSource: any PetChoiceProviding
     private let now: @Sendable () -> Date
@@ -103,7 +114,8 @@ final class MeetupDetailModel {
     init(
         meetupID: String, viewerID: String, source: any MeetupsReading, pets: any PetChoiceProviding,
         reviewer: (any PlaceReviewing)? = nil,
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        lookups: PlaceLookups = PlaceLookups()
     ) {
         self.meetupID = meetupID
         self.viewerID = viewerID
@@ -111,6 +123,7 @@ final class MeetupDetailModel {
         self.source = source
         self.petSource = pets
         self.now = now
+        self.lookups = lookups
     }
 
     var meetup: Meetup? {
@@ -172,12 +185,18 @@ final class MeetupDetailModel {
         } else {
             privatePlace = nil
         }
+        // Apple is asked where the meetup is while the rest is read: the pets
+        // to join with and the rating button do not wait for Apple's answer.
+        let lookups = lookups
+        let shown = shownPlace.map { [$0] } ?? []
+        async let lookedUp: Void = lookups.lookUp(meetupPlaces: shown)
         if pets.isEmpty, let owned = try? await petSource.pets(ownedBy: viewerID) {
             pets = owned
         }
         if let reviewer, let meetup, meetup.status == .completed, let placeID = meetup.locationID {
             hasRated = try? await reviewer.hasReviewed(placeID: placeID, uid: viewerID, meetupID: meetupID)
         }
+        await lookedUp
     }
 
     /// With a pet, or — for the organiser only — without one, as the server

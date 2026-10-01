@@ -213,10 +213,15 @@ final class PlaceDetailModel {
         do { self.reviews = try await reviews } catch { failedSections.insert("reviews") }
         do { self.checkins = try await checkins } catch { failedSections.insert("checkins") }
         do { self.meetups = try await meetups } catch { failedSections.insert("meetups") }
+        // And about where those meetups are, while the review button waits
+        // only for the server.
+        let meetupPlaces = self.meetups.map(\.place)
+        async let meetupsLookedUp: Void = lookups.lookUp(meetupPlaces: meetupPlaces)
         hasReviewed = try? await reviewer.hasReviewed(placeID: placeID, uid: viewerID, meetupID: nil)
         if !failedSections.isEmpty {
             log.error("place sections failed: \(self.failedSections.sorted().joined(separator: ","), privacy: .public)")
         }
         await lookedUp
+        await meetupsLookedUp
     }
 }

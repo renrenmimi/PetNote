@@ -258,7 +258,7 @@ struct PlaceDetailView: View {
             } else {
                 ForEach(model.meetups) { meetup in
                     Button { onOpenMeetup(meetup.id) } label: {
-                        MeetupSummary(meetup: meetup)
+                        MeetupSummary(meetup: meetup, lookups: model.lookups)
                             .frame(maxWidth: .infinity, minHeight: Layout.minTouchTarget, alignment: .leading)
                             .contentShape(.rect)
                     }
