@@ -21,7 +21,7 @@ import {
   VALIDATION_LIMITS,
   wasCountedAtCreate,
 } from "./shared";
-import { getOrCreatePublicMeetupLocation } from "./places";
+import { getOrCreatePublicMeetupLocation, releaseMeetupPlaceIfUnused } from "./places";
 
 const allowedMeetupDogSizes = new Set([
   "any",
@@ -557,6 +557,14 @@ export const updateMeetupCallable = onCall(async (request) => {
   }
   await batch.commit();
 
+  // The place this meetup was at, when it was public there and is not any
+  // more: it went participants_only, or it moved.
+  const previousLocationId =
+    typeof existing.locationId === "string" ? existing.locationId : "";
+  if (previousLocationId && previousLocationId !== locationId) {
+    await releaseMeetupPlaceIfUnused(previousLocationId, meetupId);
+  }
+
   return { success: true };
 });
 
@@ -591,6 +599,11 @@ export const cancelMeetupCallable = onCall(async (request) => {
     status: "cancelled",
     updatedAt: FieldValue.serverTimestamp(),
   });
+
+  // A cancelled meetup no longer uses its place.
+  if (typeof meetupData.locationId === "string" && meetupData.locationId) {
+    await releaseMeetupPlaceIfUnused(meetupData.locationId, meetupId);
+  }
 
   return { success: true };
 });

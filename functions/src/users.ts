@@ -9,6 +9,7 @@ import {
   deleteQueryDocs,
 } from "./cleanup";
 import { getPetIdsForMember, releasePetMembership } from "./family";
+import { releaseMeetupPlaceIfUnused } from "./places";
 import { assertCallerAccountActive, getNotificationActor } from "./notifications";
 import {
   assertRateLimit,
@@ -568,7 +569,13 @@ export const deleteUserAccount = onCall({ timeoutSeconds: 540 }, async (request)
     await forEachQueryDocumentInBatches(
       db.collection("meetups").where("organizerId", "==", userId),
       async (docSnap) => {
+        const locationId = docSnap.get("locationId");
         await cascadeDeleteMeetup(docSnap.id);
+        // A place one of these meetups created goes too, unless something
+        // else uses it.
+        if (typeof locationId === "string" && locationId) {
+          await releaseMeetupPlaceIfUnused(locationId, docSnap.id);
+        }
       }
     );
   });
