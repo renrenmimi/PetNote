@@ -62,7 +62,7 @@ jobs:
       # firebase-ios-sdk pulls 13 transitive packages; resolving them from
       # scratch is the slowest step in this job.
       - name: Cache SwiftPM checkouts
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ios-native/build/spm
           key: spm-${{ runner.os }}-${{ hashFiles('ios-native/PetNoteApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
