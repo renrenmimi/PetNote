@@ -325,7 +325,7 @@ protocol PlacesReading: Sendable {
     func checkins(placeID: String, limit: Int) async throws -> [PlaceCheckin]
 }
 
-actor FirestorePlacesSource: PlacesReading, PlaceReviewing, PlaceAdding {
+actor FirestorePlacesSource: PlacesReading, PlaceReviewing, PlaceAdding, PlaceCheckingIn {
     private let db: Firestore
     private var cursors: [String: DocumentSnapshot] = [:]
 
@@ -420,5 +420,17 @@ actor FirestorePlacesSource: PlacesReading, PlaceReviewing, PlaceAdding {
             .limit(to: limit)
             .getDocuments()
         return snapshot.documents.map { PlaceCheckin.decode(id: $0.documentID, $0.data()) }
+    }
+
+    func checkIn(_ draft: CheckinDraft) async throws {
+        try await CallableClient.callIgnoringResult(Callables.checkIn, draft.payload)
+    }
+
+    /// The web's `hasUserCheckedIn`: the day's check-in is kept under the
+    /// person and the day.
+    func hasCheckedIn(placeID: String, uid: String, on date: Date) async throws -> Bool {
+        try await db.collection("locations").document(placeID).collection("checkins")
+            .document(CheckinDraft.checkinID(uid: uid, on: date))
+            .getDocument().exists
     }
 }

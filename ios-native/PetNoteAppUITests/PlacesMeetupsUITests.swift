@@ -1063,6 +1063,78 @@ final class PlacesMeetupsUITests: XCTestCase {
         XCTAssertTrue(cancelledRow.label.contains("\(hostName) cancelled the meetup \(title)"), cancelledRow.label)
     }
 
+    // MARK: - Check-ins
+
+    /// Checking in at a place: a photo from the library, sent to the upload
+    /// stand-in, and a caption. The server keeps the day's check-in under the
+    /// person and the day, with the photo's address, and the place's page
+    /// says today's is done. At a place of its own, so the seeded places'
+    /// counts stay as the other tests expect them.
+    func testCheckingInAtAPlace() throws {
+        let place = "ui-\(run)-checkin"
+        cleanup.append("locations/\(place)")
+        try Self.write(path: "locations/\(place)", [
+            "name": "TEST CONTENT Check-in corner \(run)", "category": "park", "description": "",
+            "address": "4 Corner St, Cambridge, MA", "city": "Cambridge", "state": "MA",
+            "lat": 42.3656, "lng": -71.104, "features": [Any](), "photos": [Any](), "tags": [Any](),
+            "source": "user", "verified": false, "addedBy": "ui-test", "addedByName": "UI Test",
+            "totalPhotos": 0, "averageRating": 0, "totalRatings": 0, "totalCheckins": 0, "createdAt": Date(),
+        ])
+        let (app, me) = try signInAsNewAccount(
+            "checkin-\(run)@petnote.test", extraArguments: ["-petnote-upload-standin", "http://127.0.0.1:8766"]
+        )
+        uid = me
+        let today = "locations/\(place)/checkins/\(me)_\(Self.utcDay(Date()))"
+        cleanup.append(today)
+
+        // The newest place, so first in the list.
+        app.tabBars.buttons["Places"].tap()
+        let row = app.buttons["place.\(place)"]
+        XCTAssertTrue(waitUntilHittable(row, in: app, timeout: 30), "the new place is not listed\n\(app.debugDescription)")
+        row.tap()
+        let checkIn = app.buttons["place.checkIn"]
+        for _ in 0..<6 where !(checkIn.exists && checkIn.isHittable) { app.swipeUp() }
+        XCTAssertTrue(waitUntilHittable(checkIn, in: app, timeout: 20), "no Check In\n\(app.debugDescription)")
+        checkIn.tap()
+
+        let save = app.buttons["checkIn.save"]
+        XCTAssertTrue(save.waitForExistence(timeout: 10), "no Check In sheet\n\(app.debugDescription)")
+        XCTAssertFalse(save.isEnabled, "a check-in without a photo could be sent")
+        let photo = app.buttons["checkIn.photo"]
+        XCTAssertTrue(waitUntilHittable(photo, in: app, timeout: 10), "\(app.debugDescription)")
+        photo.tap()
+        try pickFirstPhoto(app)
+        let chosen = app.buttons
+            .matching(NSPredicate(format: "identifier == 'checkIn.photo' AND label == 'Change the photo'")).firstMatch
+        XCTAssertTrue(chosen.waitForExistence(timeout: 20), "the photo was not chosen\n\(app.debugDescription)")
+        try type("TEST CONTENT At the corner \(run)", into: "checkIn.caption", in: app)
+        XCTAssertTrue(waitForEnabled(save, timeout: 5), "Check In stayed off")
+        save.tap()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["place.checkedInToday"].waitForExistence(timeout: 30),
+            "the page does not say today's is done\n\(app.debugDescription)"
+        )
+        let shown = app.descendants(matching: .any).matching(identifier: "place.checkin").firstMatch
+        XCTAssertTrue(shown.waitForExistence(timeout: 10), "the check-in is not listed")
+        XCTAssertTrue(shown.label.contains("At the corner \(run)"), shown.label)
+
+        let stored = try XCTUnwrap(try JourneyAdmin.fields(path: today), "no check-in for today on the server")
+        XCTAssertEqual(JourneyAdmin.string(stored["userId"]), me)
+        XCTAssertEqual(JourneyAdmin.string(stored["caption"]), "TEST CONTENT At the corner \(run)")
+        let photoURL = try XCTUnwrap(JourneyAdmin.string(stored["photoUrl"]), "the check-in has no photo")
+        XCTAssertTrue(photoURL.hasPrefix("https://res.cloudinary.com/"), photoURL)
+        XCTAssertNil(stored["petId"], "a pet was sent that was not chosen")
+    }
+
+    /// The server's day, as it names a person's check-in of the day.
+    private static func utcDay(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate]
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        return formatter.string(from: date)
+    }
+
     // MARK: - Reviews
 
     func testWritingAReviewOfAPlace() throws {

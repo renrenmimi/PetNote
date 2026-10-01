@@ -176,10 +176,15 @@ final class PlaceDetailModel {
     /// Whether the viewer has reviewed this place. Nil until known — the
     /// button to write one waits rather than guessing.
     private(set) var hasReviewed: Bool?
+    /// Whether the viewer has checked in here today, the server's day. Nil
+    /// until known, as for a review.
+    private(set) var hasCheckedInToday: Bool?
 
     let placeID: String
     let viewerID: String
     let reviewer: any PlaceReviewing
+    private let checker: any PlaceCheckingIn
+    private let now: @Sendable () -> Date
     /// Where the place is, for one from Apple Maps.
     let lookups: PlaceLookups
     private let places: any PlacesReading
@@ -188,15 +193,17 @@ final class PlaceDetailModel {
 
     init(
         placeID: String, viewerID: String, places: any PlacesReading,
-        reviewer: any PlaceReviewing, meetups: any MeetupsReading,
-        lookups: PlaceLookups = PlaceLookups()
+        reviewer: any PlaceReviewing, checker: any PlaceCheckingIn, meetups: any MeetupsReading,
+        lookups: PlaceLookups = PlaceLookups(), now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.placeID = placeID
         self.viewerID = viewerID
         self.places = places
         self.reviewer = reviewer
+        self.checker = checker
         self.meetupSource = meetups
         self.lookups = lookups
+        self.now = now
     }
 
     /// Every photo the web gathers for the place: its own, then the reviews',
@@ -238,7 +245,10 @@ final class PlaceDetailModel {
         // only for the server.
         let meetupPlaces = self.meetups.map(\.place)
         async let meetupsLookedUp: Void = lookups.lookUp(meetupPlaces: meetupPlaces)
-        hasReviewed = try? await reviewer.hasReviewed(placeID: placeID, uid: viewerID, meetupID: nil)
+        async let reviewed = try? reviewer.hasReviewed(placeID: placeID, uid: viewerID, meetupID: nil)
+        async let checkedIn = try? checker.hasCheckedIn(placeID: placeID, uid: viewerID, on: now())
+        hasReviewed = await reviewed
+        hasCheckedInToday = await checkedIn
         if !failedSections.isEmpty {
             log.error("place sections failed: \(self.failedSections.sorted().joined(separator: ","), privacy: .public)")
         }
