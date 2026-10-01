@@ -112,7 +112,7 @@ struct MeetupsView: View {
             } else {
                 ForEach(model.items) { meetup in
                     Button { onOpen(meetup.id) } label: {
-                        MeetupSummary(meetup: meetup, lookups: model.lookups)
+                        MeetupSummary(meetup: meetup, lookups: model.lookups, showsCover: true)
                             .frame(maxWidth: .infinity, minHeight: Layout.minTouchTarget, alignment: .leading)
                             .contentShape(.rect)
                     }
@@ -130,27 +130,33 @@ struct MeetupSummary: View {
     /// Where the meetup is, for one at a place from Apple Maps or a typed
     /// address: the screen's own lookups, which have already asked.
     let lookups: PlaceLookups
+    /// The web's meetups list has each one's cover beside it; a place's page
+    /// lists its meetups without.
+    var showsCover = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
-                Text(meetup.title)
-                    .font(Typography.body.weight(.semibold))
-                    .foregroundStyle(Palette.primaryText)
-                Spacer(minLength: Spacing.s)
-                MeetupStatusBadge(status: meetup.status)
-            }
-            if let date = meetup.date {
-                Text(date.formatted(date: .abbreviated, time: .shortened))
+        HStack(alignment: .top, spacing: Spacing.m) {
+            if showsCover { MeetupCoverThumb(url: meetup.coverImageURL) }
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
+                    Text(meetup.title)
+                        .font(Typography.body.weight(.semibold))
+                        .foregroundStyle(Palette.primaryText)
+                    Spacer(minLength: Spacing.s)
+                    MeetupStatusBadge(status: meetup.status)
+                }
+                if let date = meetup.date {
+                    Text(date.formatted(date: .abbreviated, time: .shortened))
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.secondaryText)
+                }
+                Text(MeetupSummary.whereLine(meetup, lookups: lookups))
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.secondaryText)
+                Text(MeetupSummary.countLine(meetup))
                     .font(Typography.caption)
                     .foregroundStyle(Palette.secondaryText)
             }
-            Text(MeetupSummary.whereLine(meetup, lookups: lookups))
-                .font(Typography.caption)
-                .foregroundStyle(Palette.secondaryText)
-            Text(MeetupSummary.countLine(meetup))
-                .font(Typography.caption)
-                .foregroundStyle(Palette.secondaryText)
         }
         .padding(.vertical, Spacing.xs)
         .accessibilityElement(children: .combine)
@@ -180,6 +186,30 @@ struct MeetupSummary: View {
             return String(localized: "\(meetup.participantCount)/\(meetup.requirements.maxPets) pets")
         }
         return String(localized: "\(meetup.participantCount) going")
+    }
+}
+
+/// A meetup's cover beside it in the list, the web's 80 points. Under it, the
+/// web's paw on the brand gradient: what shows for a meetup with none, and
+/// for one whose cover does not load.
+private struct MeetupCoverThumb: View {
+    static let side: CGFloat = 80
+    let url: URL?
+
+    var body: some View {
+        ZStack {
+            Palette.brandGradient
+            // Free to grow: the largest size is 60 points, inside the tile.
+            Text(verbatim: "🐾")
+                .font(Typography.pageTitle)
+            if let url {
+                // No retry inside a row: a tap there is the row's.
+                RemoteImage(url: url, cornerRadius: Radius.control, size: .small, retriesOnFailure: false)
+            }
+        }
+        .frame(width: Self.side, height: Self.side)
+        .clipShape(.rect(cornerRadius: Radius.control))
+        .accessibilityHidden(true)
     }
 }
 
