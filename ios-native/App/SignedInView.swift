@@ -515,7 +515,7 @@ struct SignedInView: View {
             MeetupsView(
                 model: MeetupsModel(uid: user.uid, source: repositories.meetups),
                 makeCreateMeetup: {
-                    CreateMeetupModel(
+                    MeetupFormModel(
                         uid: user.uid, creator: repositories.meetupCreating,
                         places: repositories.places, pets: repositories.petChoices
                     )
@@ -756,6 +756,12 @@ struct SignedInView: View {
                     source: repositories.meetups, pets: repositories.petChoices,
                     reviewer: repositories.placeReviews
                 ),
+                makeEditMeetup: { meetup, place, details in
+                    MeetupFormModel(
+                        editing: meetup, place: place, details: details,
+                        editor: repositories.meetupEditing, places: repositories.places
+                    )
+                },
                 onOpenPlace: { stack.wrappedValue.append(.place(placeID: $0)) }
             )
         case .notifications:
@@ -1004,6 +1010,7 @@ struct Repositories {
     let placeAdding: any PlaceAdding
     let meetups: any MeetupsReading
     let meetupCreating: any MeetupCreating
+    let meetupEditing: any MeetupEditing
     /// The spotlight row's candidates. The search repository's own read — see
     /// `PopularPostsReading`.
     let popularPosts: any PopularPostsReading
@@ -1043,6 +1050,7 @@ struct Repositories {
             placeAdding: places,
             meetups: meetups,
             meetupCreating: meetups,
+            meetupEditing: meetups,
             popularPosts: search,
             petBirthdays: FirestorePetBirthdaySource()
         )

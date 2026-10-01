@@ -789,6 +789,16 @@
         }
       }
     },
+    "As it was": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保持原样"
+          }
+        }
+      }
+    },
     "Ask one of the pet's owners for the %lld-character code on their Owners screen.": {
       "localizations": {
         "zh-Hans": {
@@ -2541,6 +2551,16 @@
         }
       }
     },
+    "Edit Meetup": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑聚会"
+          }
+        }
+      }
+    },
     "Edit Post": {
       "localizations": {
         "zh-Hans": {
@@ -2697,6 +2717,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "评价提交失败。"
+          }
+        }
+      }
+    },
+    "Failed to update meetup.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聚会更新失败。"
           }
         }
       }

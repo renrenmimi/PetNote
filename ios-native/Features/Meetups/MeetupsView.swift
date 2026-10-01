@@ -4,10 +4,10 @@ import SwiftUI
 struct MeetupsView: View {
     @State private var model: MeetupsModel
     @State private var isCreating = false
-    private let makeCreateMeetup: () -> CreateMeetupModel
+    private let makeCreateMeetup: () -> MeetupFormModel
     private let onOpen: (String) -> Void
 
-    init(model: MeetupsModel, makeCreateMeetup: @escaping () -> CreateMeetupModel, onOpen: @escaping (String) -> Void) {
+    init(model: MeetupsModel, makeCreateMeetup: @escaping () -> MeetupFormModel, onOpen: @escaping (String) -> Void) {
         _model = State(initialValue: model)
         self.makeCreateMeetup = makeCreateMeetup
         self.onOpen = onOpen
@@ -42,7 +42,7 @@ struct MeetupsView: View {
         .refreshable { await model.load() }
         .sheet(isPresented: $isCreating) {
             NavigationStack {
-                CreateMeetupSheet(model: makeCreateMeetup()) { meetupID in
+                MeetupFormSheet(model: makeCreateMeetup()) { meetupID in
                     onOpen(meetupID)
                     // So that back from it, the list has it.
                     Task { await model.load() }

@@ -1,17 +1,26 @@
 import SwiftUI
 
 /// One meetup: when and where, who is going, what it asks of a pet, and
-/// joining, leaving or — for its organiser — cancelling it.
+/// joining, leaving or — for its organiser — editing or cancelling it.
 struct MeetupDetailView: View {
     @State private var model: MeetupDetailModel
     @State private var isChoosingPet = false
     @State private var isConfirmingLeave = false
     @State private var isConfirmingCancel = false
     @State private var isRating = false
+    @State private var isEditing = false
     private let onOpenPlace: (String) -> Void
+    /// Editing the meetup as its organiser sees it: where it is, and what
+    /// Apple says about a place from Apple Maps.
+    private let makeEditMeetup: ((Meetup, MeetupPlace?, PlaceDetails?) -> MeetupFormModel)?
 
-    init(model: MeetupDetailModel, onOpenPlace: @escaping (String) -> Void) {
+    init(
+        model: MeetupDetailModel,
+        makeEditMeetup: ((Meetup, MeetupPlace?, PlaceDetails?) -> MeetupFormModel)? = nil,
+        onOpenPlace: @escaping (String) -> Void
+    ) {
         _model = State(initialValue: model)
+        self.makeEditMeetup = makeEditMeetup
         self.onOpenPlace = onOpenPlace
     }
 
@@ -50,6 +59,15 @@ struct MeetupDetailView: View {
                         ),
                         onSubmitted: { Task { await model.load() } }
                     )
+                }
+            }
+        }
+        .sheet(isPresented: $isEditing) {
+            if let meetup = model.meetup, let makeEditMeetup {
+                NavigationStack {
+                    MeetupFormSheet(model: makeEditMeetup(meetup, model.shownPlace, model.shownPlace.flatMap(shownDetails))) { _ in
+                        Task { await model.load() }
+                    }
                 }
             }
         }
@@ -194,9 +212,20 @@ struct MeetupDetailView: View {
         VStack(alignment: .leading, spacing: Spacing.s) {
             if meetup.status == .upcoming {
                 if model.isOrganizer {
-                    // The web's rule: an organiser cancels their meetup, and
-                    // is offered neither Join nor Leave. They are on its guest
-                    // list from the start, and leaving would take them off it.
+                    // The web's rule: an organiser edits or cancels their
+                    // meetup, and is offered neither Join nor Leave. They are
+                    // on its guest list from the start, and leaving would take
+                    // them off it.
+                    if makeEditMeetup != nil {
+                        Button { isEditing = true } label: {
+                            Text("Edit Meetup")
+                                .frame(maxWidth: .infinity, minHeight: Layout.minTouchTarget)
+                                .contentShape(.rect)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!model.canAct)
+                        .accessibilityIdentifier("meetupDetail.edit")
+                    }
                     Button(role: .destructive) { isConfirmingCancel = true } label: {
                         Text(model.working == .cancelling ? String(localized: "Cancelling…") : String(localized: "Cancel Meetup"))
                             .frame(maxWidth: .infinity, minHeight: Layout.minTouchTarget)

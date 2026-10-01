@@ -319,7 +319,7 @@ protocol MeetupsReading: Sendable {
     func settle(meetupID: String) async throws
 }
 
-actor FirestoreMeetupsSource: MeetupsReading, MeetupCreating {
+actor FirestoreMeetupsSource: MeetupsReading, MeetupCreating, MeetupEditing {
     private let db: Firestore
 
     init(db: Firestore = .firestore()) { self.db = db }
@@ -410,6 +410,16 @@ actor FirestoreMeetupsSource: MeetupsReading, MeetupCreating {
 
     /// The server said it created a meetup and did not say which.
     private struct NoMeetupInAnswer: Error {}
+
+    /// `updateMeetupCallable`, which rewrites where the meetup is, its private
+    /// copy and its link to a place together, and lets go of a place it made
+    /// that nothing uses any more.
+    func updateMeetup(id: String, _ draft: MeetupDraft) async throws {
+        var payload = draft.payload
+        payload["meetupId"] = id
+        payload["organizerPetId"] = nil
+        try await CallableClient.callIgnoringResult(Callables.updateMeetup, payload)
+    }
 
     func join(meetupID: String, petID: String?) async throws -> MeetupJoinOutcome {
         var payload: [String: Any] = ["meetupId": meetupID]
