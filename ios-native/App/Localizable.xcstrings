@@ -1701,6 +1701,16 @@
         }
       }
     },
+    "Couldn't load this place": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个地点加载失败"
+          }
+        }
+      }
+    },
     "Couldn't load your check-ins.": {
       "localizations": {
         "zh-Hans": {
@@ -3065,6 +3075,16 @@
         }
       }
     },
+    "Loading…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载中…"
+          }
+        }
+      }
+    },
     "Location": {
       "localizations": {
         "zh-Hans": {
@@ -3111,6 +3131,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "公"
+          }
+        }
+      }
+    },
+    "Map of %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@的地图"
           }
         }
       }
@@ -3443,6 +3473,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "还没有粉丝。"
+          }
+        }
+      }
+    },
+    "No longer on Apple Maps": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "苹果地图上已没有这个地点"
           }
         }
       }
@@ -6770,6 +6810,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "取消静音"
+          }
+        }
+      }
+    },
+    "Unnamed place": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未命名的地点"
           }
         }
       }

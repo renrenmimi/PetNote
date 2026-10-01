@@ -54,12 +54,16 @@ final class PlacesModel {
     /// A name search replaces the list while it is not empty.
     private(set) var searchText = ""
 
+    /// Names for the places from Apple Maps on the list, asked for as each
+    /// page arrives.
+    let lookups: PlaceLookups
     private let source: any PlacesReading
     private var loadTask: Task<Void, Never>?
     private let log = Logger(subsystem: "dev.local.petnote.native", category: "places")
 
-    init(source: any PlacesReading) {
+    init(source: any PlacesReading, lookups: PlaceLookups = PlaceLookups()) {
         self.source = source
+        self.lookups = lookups
     }
 
     private func reload() {
@@ -83,6 +87,7 @@ final class PlacesModel {
             guard category == self.category, sort == self.sort, search == searchText else { return }
             items = found
             state = .loaded
+            await lookups.lookUp(found)
         } catch {
             guard !Task.isCancelled else { return }
             log.error("places read failed: \(String(describing: error), privacy: .public)")
@@ -107,6 +112,7 @@ final class PlacesModel {
             let known = Set(items.map(\.id))
             items += next.filter { !known.contains($0.id) }
             hasMore = next.count == Self.pageSize
+            await lookups.lookUp(next)
         } catch {
             log.error("places page failed: \(String(describing: error), privacy: .public)")
             hasMore = false
@@ -144,19 +150,23 @@ final class PlaceDetailModel {
     let placeID: String
     let viewerID: String
     let reviewer: any PlaceReviewing
+    /// Where the place is, for one from Apple Maps.
+    let lookups: PlaceLookups
     private let places: any PlacesReading
     private let meetupSource: any MeetupsReading
     private let log = Logger(subsystem: "dev.local.petnote.native", category: "places")
 
     init(
         placeID: String, viewerID: String, places: any PlacesReading,
-        reviewer: any PlaceReviewing, meetups: any MeetupsReading
+        reviewer: any PlaceReviewing, meetups: any MeetupsReading,
+        lookups: PlaceLookups = PlaceLookups()
     ) {
         self.placeID = placeID
         self.viewerID = viewerID
         self.places = places
         self.reviewer = reviewer
         self.meetupSource = meetups
+        self.lookups = lookups
     }
 
     /// Every photo the web gathers for the place: its own, then the reviews',
@@ -175,6 +185,7 @@ final class PlaceDetailModel {
                 return
             }
             state = .loaded(place)
+            await lookups.lookUp([place])
         } catch {
             log.error("place read failed: \(String(describing: error), privacy: .public)")
             if case .loaded = state { return }

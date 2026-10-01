@@ -173,3 +173,68 @@ extension PlaceDetails {
         }
     }
 }
+
+extension PlaceDetails {
+    /// Apple Maps at this place. No position, no link.
+    var directionsURL: URL? {
+        guard latitude != 0 || longitude != 0 else { return nil }
+        var components = URLComponents(string: "https://maps.apple.com/")
+        components?.queryItems = [
+            URLQueryItem(name: "ll", value: "\(latitude),\(longitude)"),
+            URLQueryItem(name: "q", value: name),
+        ]
+        return components?.url
+    }
+}
+
+/// The directory the app uses: one for the whole process, as
+/// `ImageLoader.shared` is, so every screen shares its cache.
+/// `SessionStore` empties it at sign-out.
+enum PlaceDirectories {
+    static let shared: any PlaceDirectory = {
+        #if PETNOTE_FAULT_INJECTION
+        // The emulator's places and meetups are seeded with made-up
+        // identifiers Apple has never heard of, so this build answers from a
+        // table unless told to ask Apple (`-petnote-maps-live`).
+        if !ProcessInfo.processInfo.arguments.contains("-petnote-maps-live") {
+            return StandInPlaceDirectory()
+        }
+        #endif
+        return MapKitPlaceDirectory()
+    }()
+}
+
+#if PETNOTE_FAULT_INJECTION
+/// Apple Maps as a fixed table, in the emulator build only.
+///
+/// The seed (`functions/scripts/seed-ios-native.mjs`) writes places and
+/// meetups with these identifiers, so UI tests see the same answers every run
+/// and never reach Apple. An identifier not in the table is a place Apple no
+/// longer knows. The names start TEST CONTENT, like everything else seeded.
+struct StandInPlaceDirectory: PlaceDirectory {
+    static let places: [String: PlaceDetails] = [
+        "TESTAPPLEDOGRUN01": PlaceDetails(
+            name: "TEST CONTENT Fenway Dog Run", address: "1 Park Dr, Boston, MA 02215",
+            latitude: 42.3434, longitude: -71.0950
+        ),
+        "TESTAPPLEPETSHOP1": PlaceDetails(
+            name: "TEST CONTENT Corner Pet Shop", address: "20 Elm St, Somerville, MA 02144",
+            latitude: 42.3967, longitude: -71.1220
+        ),
+    ]
+
+    func details(forApplePlaceID id: String) async throws -> PlaceDetails? {
+        Self.places[id]
+    }
+
+    /// Every typed address is found, a little north of Boston, under its own
+    /// words: enough for a map and a directions link in a test.
+    func locate(address: String) async throws -> PlaceDetails? {
+        let text = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        return PlaceDetails(name: text, address: text, latitude: 42.3876, longitude: -71.0995)
+    }
+
+    func forget() async {}
+}
+#endif

@@ -140,9 +140,20 @@ final class CheckinHistoryModel {
     private var generation = 0
     private let log = Logger(subsystem: "dev.local.petnote.native", category: "checkins")
 
-    init(uid: String, source: any CheckinHistoryReading) {
+    init(uid: String, source: any CheckinHistoryReading, lookups: PlaceLookups = PlaceLookups()) {
         self.uid = uid
         self.source = source
+        self.lookups = lookups
+    }
+
+    /// Names for check-ins at places from Apple Maps, asked for once the list is in.
+    let lookups: PlaceLookups
+
+    /// The name a row shows: the place's own, or Apple's for one from Apple
+    /// Maps, or "Unknown location" for a place that is gone.
+    func placeName(for row: CheckinHistoryRow) -> String {
+        guard let place = row.place, place.applePlaceID != nil else { return row.placeName }
+        return lookups.name(of: place)
     }
 
     /// Run every time the screen appears, as the web reads the tab each time
@@ -162,6 +173,7 @@ final class CheckinHistoryModel {
             let rows = entries.map { CheckinHistoryRow(entry: $0, place: places[$0.placeID]) }
             state = rows.isEmpty ? .empty : .loaded(rows)
             refreshFailed = false
+            await lookups.lookUp(rows.compactMap(\.place))
         } catch {
             guard mine == generation else { return }
             log.error("check-in history read failed: \(String(describing: error), privacy: .public)")
@@ -264,7 +276,9 @@ struct CheckinHistoryView: View {
                         .accessibilityIdentifier("checkins.refreshFailed")
                 }
                 ForEach(rows) { row in
-                    CheckinHistoryRowView(row: row) { onOpenPlace(row.entry.placeID) }
+                    CheckinHistoryRowView(row: row, placeName: model.placeName(for: row)) {
+                        onOpenPlace(row.entry.placeID)
+                    }
                 }
             }
             .padding(.horizontal, Layout.pageInset)
@@ -279,6 +293,8 @@ struct CheckinHistoryView: View {
 /// which the web's row leaves out.
 private struct CheckinHistoryRowView: View {
     let row: CheckinHistoryRow
+    /// The place's own name, or Apple's for one from Apple Maps.
+    let placeName: String
     let onOpen: () -> Void
 
     var body: some View {
@@ -286,7 +302,7 @@ private struct CheckinHistoryRowView: View {
             HStack(alignment: .top, spacing: Spacing.m) {
                 placeThumbnail
                 VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text(row.placeName)
+                    Text(placeName)
                         .font(Typography.body.weight(.semibold))
                         .foregroundStyle(Palette.primaryText)
                     if !row.entry.checkin.caption.isEmpty {
