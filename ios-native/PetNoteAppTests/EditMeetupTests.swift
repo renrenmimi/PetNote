@@ -45,21 +45,24 @@ import Testing
 
     private func meetup(
         _ location: [String: Any], visibility: String = "everyone", requirements: [String: Any] = [:],
-        date: Date = nextWeek
+        date: Date = nextWeek, cover: URL? = nil
     ) -> Meetup {
-        Meetup.decode(id: "m1", [
+        var fields: [String: Any] = [
             "title": "Morning walk", "description": "Bring water.", "organizerId": "me", "status": "upcoming",
             "date": Timestamp(date: date), "duration": 90, "location": location,
             "locationVisibility": visibility, "requirements": requirements,
-        ])
+        ]
+        if let cover { fields["coverImage"] = cover.absoluteString }
+        return Meetup.decode(id: "m1", fields)
     }
 
     private func model(
-        _ meetup: Meetup, place: MeetupPlace? = nil, details: PlaceDetails? = nil, editor: Editor = Editor()
+        _ meetup: Meetup, place: MeetupPlace? = nil, details: PlaceDetails? = nil, editor: Editor = Editor(),
+        uploader: FakeUploader = FakeUploader()
     ) -> MeetupFormModel {
         MeetupFormModel(
             editing: meetup, place: place ?? meetup.place, details: details,
-            editor: editor, places: Places(), directory: Directory(), now: { Self.now }
+            editor: editor, places: Places(), uploader: uploader, directory: Directory(), now: { Self.now }
         )
     }
 
@@ -171,6 +174,48 @@ import Testing
 
         #expect(model.outcome == .failed("Cannot edit this meetup."))
         #expect(model.canSave)
+    }
+
+    /// The cover it has is shown and not sent back: the server keeps it when
+    /// none is sent.
+    @Test func theCoverItHasStaysUnlessANewOneIsChosen() async throws {
+        let cover = URL(string: "https://res.cloudinary.com/petnote/image/upload/v1/u/old.jpg")!
+        let editor = Editor()
+        let uploader = FakeUploader()
+        let model = model(meetup(Self.webPark, cover: cover), editor: editor, uploader: uploader)
+        #expect(model.currentCover == cover)
+
+        await model.submit()
+
+        #expect(uploader.sendCount == 0)
+        #expect(try #require(editor.sent.first).1.payload["coverImage"] == nil)
+    }
+
+    @Test func aNewCoverIsUploadedAndSent() async throws {
+        let editor = Editor()
+        let uploader = FakeUploader()
+        let model = model(meetup(Self.webPark), editor: editor, uploader: uploader)
+        model.chooseCover(data: UploadTestImages.jpeg(width: 400, height: 300, quality: 0.5), filename: "c.jpg")
+
+        await model.submit()
+
+        #expect(model.outcome == .saved)
+        #expect(uploader.sendCount == 1)
+        let payload = try #require(editor.sent.first).1.payload
+        #expect(payload["coverImage"] as? String == "https://res.cloudinary.com/petnote/image/upload/v1/u/1.jpg")
+    }
+
+    @Test func aNewCoverThatDoesNotGoChangesNothing() async {
+        let editor = Editor()
+        let uploader = FakeUploader()
+        uploader.fail(atSend: [1], with: UploadError.transport("offline"))
+        let model = model(meetup(Self.webPark), editor: editor, uploader: uploader)
+        model.chooseCover(data: UploadTestImages.jpeg(width: 200, height: 200, quality: 0.5), filename: "c.jpg")
+
+        await model.submit()
+
+        #expect(model.outcome == .failed("The cover could not be uploaded. The meetup was not changed."))
+        #expect(editor.sent.isEmpty)
     }
 
     @Test func aTimeThatHasPassedWaitsForANewOne() {

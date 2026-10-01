@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import OSLog
+import PhotosUI
 import SwiftUI
 
 /// What is sent to create or edit a meetup (`createMeetupCallable`,
@@ -128,6 +129,11 @@ struct MeetupDraft: Equatable, Sendable {
     /// On the guest list with the organiser from the start, as the web sends
     /// it; none, and the organiser goes alone. Only for a new meetup.
     var organizerPetID: String?
+    /// A cover uploaded already. Sent only when there is a new one: the
+    /// server keeps the cover a meetup has when none is sent, and has no way
+    /// to take one away, so the web's habit of sending the old one back
+    /// would only have the server check it again.
+    var coverImage: URL?
 
     init(date: Date) {
         self.date = date
@@ -235,6 +241,7 @@ struct MeetupDraft: Equatable, Sendable {
             "requirements": requirements.payload,
         ]
         if let organizerPetID { payload["organizerPetId"] = organizerPetID }
+        if let coverImage { payload["coverImage"] = coverImage.absoluteString }
         return payload
     }
 }
@@ -265,7 +272,21 @@ final class MeetupFormModel {
         case failed(String)
     }
 
+    /// A cover chosen in the form, uploaded when the meetup is saved; its
+    /// preview made once, as it is chosen. Once uploaded, its address is
+    /// kept, so trying again after the server refused does not send it twice.
+    struct Cover: Identifiable, Equatable {
+        let id = UUID()
+        let data: Data
+        let filename: String
+        let preview: UIImage?
+        fileprivate(set) var uploaded: URL?
+    }
+
     let purpose: Purpose
+    /// The cover the meetup has, for an edit.
+    let currentCover: URL?
+    private(set) var cover: Cover?
 
     var draft: MeetupDraft
     /// Apple Maps, searched for the place. Any place can hold a meetup, so
@@ -278,20 +299,23 @@ final class MeetupFormModel {
     private let creator: (any MeetupCreating)?
     private let editor: (any MeetupEditing)?
     private let pets: (any PetChoiceProviding)?
+    private let uploader: any MediaUploading
     private let now: @Sendable () -> Date
     private let log = Logger(subsystem: "dev.local.petnote.native", category: "meetups")
 
     /// A new meetup.
     init(
         uid: String, creator: any MeetupCreating, places: any PlacesReading, pets: any PetChoiceProviding,
-        directory: any PlaceDirectory = PlaceDirectories.shared,
+        uploader: any MediaUploading, directory: any PlaceDirectory = PlaceDirectories.shared,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.purpose = .create
+        self.currentCover = nil
         self.uid = uid
         self.creator = creator
         self.editor = nil
         self.pets = pets
+        self.uploader = uploader
         self.now = now
         self.draft = MeetupDraft(date: MeetupDraft.defaultDate(now: now()))
         self.finder = ApplePlaceFinder(places: places, marksAdded: false, directory: directory)
@@ -300,15 +324,17 @@ final class MeetupFormModel {
     /// A meetup that is, as its organiser sees it.
     init(
         editing meetup: Meetup, place: MeetupPlace?, details: PlaceDetails?,
-        editor: any MeetupEditing, places: any PlacesReading,
+        editor: any MeetupEditing, places: any PlacesReading, uploader: any MediaUploading,
         directory: any PlaceDirectory = PlaceDirectories.shared,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.purpose = .edit(meetupID: meetup.id)
+        self.currentCover = meetup.coverImageURL
         self.uid = meetup.organizerID
         self.creator = nil
         self.editor = editor
         self.pets = nil
+        self.uploader = uploader
         self.now = now
         self.draft = MeetupDraft(editing: meetup, place: place, details: details)
         self.finder = ApplePlaceFinder(places: places, marksAdded: false, directory: directory)
@@ -326,6 +352,19 @@ final class MeetupFormModel {
     var hasInput: Bool {
         if case .edit = purpose { return true }
         return !draft.title.isEmpty || !draft.description.isEmpty || draft.place != nil || !draft.address.isEmpty
+            || cover != nil
+    }
+
+    func chooseCover(data: Data, filename: String) {
+        guard !isSaving else { return }
+        let preview = UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 1200, height: 1200))
+        cover = Cover(data: data, filename: filename, preview: preview)
+    }
+
+    /// Back to none for a new meetup, or to the cover it has for an edit.
+    func removeCover() {
+        guard !isSaving else { return }
+        cover = nil
     }
 
     /// The web brings the organiser's first pet (`pets[0]`) to a new meetup.
@@ -348,12 +387,23 @@ final class MeetupFormModel {
 
     /// One at a time, taken before any suspension. The server's words when it
     /// refuses: an unverified email, a time that has passed, too many at once,
-    /// someone who is not the organiser.
+    /// someone who is not the organiser. The web's order: a new cover first,
+    /// so a meetup is never saved without the one that was meant for it.
     func submit() async {
         guard canSave else { return }
         isSaving = true
         outcome = nil
         defer { isSaving = false }
+        var draft = draft
+        if let cover {
+            do {
+                draft.coverImage = try await upload(cover)
+            } catch {
+                log.error("a meetup's cover failed: \(String(describing: error), privacy: .public)")
+                outcome = .failed(Self.coverWording(for: error, purpose: purpose))
+                return
+            }
+        }
         do {
             switch purpose {
             case .create:
@@ -371,6 +421,45 @@ final class MeetupFormModel {
             outcome = .failed(GatheringWords.message(for: error, fallback: fallback))
         }
     }
+
+    /// Prepared as the composer prepares a photo, off the main actor, and
+    /// sent, unless it went up already. Like the composer's, nothing here
+    /// deletes an upload.
+    private func upload(_ cover: Cover) async throws -> URL {
+        if let uploaded = cover.uploaded { return uploaded }
+        let data = cover.data, filename = cover.filename
+        let prepared = try await Task.detached(priority: .userInitiated) {
+            try UploadPreparation.prepareImage(data, filename: filename)
+        }.value
+        let asset = try await uploader.upload(UploadItem(
+            data: prepared.data, filename: prepared.filename, mimeType: prepared.mimeType, resourceType: .image
+        ))
+        // Kept with the cover it is for, for another try.
+        if self.cover?.id == cover.id { self.cover?.uploaded = asset.url }
+        return asset.url
+    }
+
+    /// The pet editor's words for a photo that did not go, with the meetup in
+    /// them where those name the pet: nothing was saved.
+    static func coverWording(for error: Error, purpose: Purpose) -> String {
+        let isNew = purpose == .create
+        let timedOut = isNew
+            ? String(localized: "The cover upload timed out. The meetup was not created.")
+            : String(localized: "The cover upload timed out. The meetup was not changed.")
+        let notSent = isNew
+            ? String(localized: "The cover could not be uploaded. The meetup was not created.")
+            : String(localized: "The cover could not be uploaded. The meetup was not changed.")
+        if let upload = error as? UploadError {
+            switch upload {
+            case .timedOut: return timedOut
+            case .transport: return notSent
+            default: break
+            }
+        } else if !(error is UploadPreparation.PreparationError) {
+            return notSent
+        }
+        return PetEditorViewModel.photoWording(for: error)
+    }
 }
 
 struct MeetupFormSheet: View {
@@ -385,6 +474,7 @@ struct MeetupFormSheet: View {
 
     @State private var model: MeetupFormModel
     @State private var showsSafetyTips = true
+    @State private var coverSelection: PhotosPickerItem?
     @Environment(\.dismiss) private var dismiss
     private let onOpen: (String) -> Void
 
@@ -395,6 +485,7 @@ struct MeetupFormSheet: View {
 
     var body: some View {
         Form {
+            coverSection
             Section {
                 TextField("Title", text: $model.draft.title)
                     .accessibilityIdentifier("createMeetup.title")
@@ -527,6 +618,46 @@ struct MeetupFormSheet: View {
         }
     }
 
+    /// The web's Cover Image, first in the form as there: what the meetup
+    /// shows at its top. One from the library; for a new meetup, one chosen
+    /// can be taken out again. The server keeps a cover once a meetup has
+    /// one, so an edit can change it and not remove it.
+    private var coverSection: some View {
+        Section("Cover Image") {
+            MeetupCoverPreview(picked: model.cover?.preview, current: model.currentCover)
+            PhotosPicker(selection: $coverSelection, matching: .images, photoLibrary: .shared()) {
+                HStack(spacing: Spacing.s) {
+                    // Decoration: the words say it.
+                    Image(systemName: "photo").accessibilityHidden(true)
+                    Text(model.cover == nil && model.currentCover == nil
+                         ? String(localized: "Upload cover") : String(localized: "Change cover"))
+                }
+                .frame(minHeight: Layout.minTouchTarget)
+                .contentShape(.rect)
+            }
+            .disabled(model.isSaving)
+            .accessibilityIdentifier("createMeetup.cover.choose")
+            if model.cover != nil, model.purpose == .create {
+                Button(role: .destructive) { model.removeCover() } label: {
+                    Text("Remove cover")
+                        .frame(minHeight: Layout.minTouchTarget)
+                        .contentShape(.rect)
+                }
+                .disabled(model.isSaving)
+                .accessibilityIdentifier("createMeetup.cover.remove")
+            }
+        }
+        .onChange(of: coverSelection) { _, item in
+            guard let item else { return }
+            Task {
+                if let data = try? await item.loadTransferable(type: Data.self) {
+                    model.chooseCover(data: data, filename: "cover.jpg")
+                }
+                coverSelection = nil
+            }
+        }
+    }
+
     private var saveTitle: String {
         switch (model.purpose, model.isSaving) {
         case (.create, false): String(localized: "Create")
@@ -627,5 +758,36 @@ struct MeetupFormSheet: View {
     private func counter(_ count: Int, of limit: Int) -> some View {
         Text(verbatim: "\(count)/\(limit)")
             .foregroundStyle(count > limit ? Palette.danger : Palette.secondaryText)
+    }
+}
+
+/// A meetup's cover as the form shows it: the one just chosen, else the one
+/// it has, else the web's paw on the brand gradient. The detail page's shape.
+private struct MeetupCoverPreview: View {
+    let picked: UIImage?
+    let current: URL?
+
+    var body: some View {
+        if let picked {
+            Color.clear
+                .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                .overlay { Image(uiImage: picked).resizable().scaledToFill() }
+                .clipShape(.rect(cornerRadius: Radius.control))
+                .accessibilityElement()
+                .accessibilityLabel(Text("New cover"))
+                .accessibilityIdentifier("createMeetup.cover")
+        } else if let current {
+            // As it is: it has its own retry for when it does not load, which
+            // a wrapper made into one element would hide.
+            RemoteImage(url: current, aspectRatio: 16.0 / 9.0, cornerRadius: Radius.control, size: .large)
+        } else {
+            Palette.brandGradient
+                .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                .overlay { Text(verbatim: "🐾").font(Typography.pageTitle) }
+                .clipShape(.rect(cornerRadius: Radius.control))
+                .accessibilityElement()
+                .accessibilityLabel(Text("No cover yet"))
+                .accessibilityIdentifier("createMeetup.cover")
+        }
     }
 }

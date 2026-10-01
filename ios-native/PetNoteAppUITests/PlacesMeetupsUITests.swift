@@ -607,21 +607,33 @@ final class PlacesMeetupsUITests: XCTestCase {
         XCTAssertEqual(JourneyAdmin.string(rulesStored["additionalNotes"]), "TEST CONTENT Bring water.")
     }
 
-    /// Creating a public meetup at a place from Apple Maps: the server keeps
-    /// the identifier and links the meetup to the place it makes for it,
-    /// which holds none of Apple's words either. Its page names the place
-    /// from Apple Maps, on a map.
+    /// Creating a public meetup at a place from Apple Maps, with a cover: the
+    /// server keeps the identifier and links the meetup to the place it makes
+    /// for it, which holds none of Apple's words either, and keeps the
+    /// cover's address. Its page names the place from Apple Maps, on a map.
     func testCreatingAMeetupAtAPlaceFromAppleMaps() throws {
         let place = "locations/apple_TESTAPPLEDOGRUN01"
         cleanup.append(place)
         XCTAssertNil(try JourneyAdmin.fields(path: place), "a place for the dog run is on the server already; an earlier run left it")
-        let (app, me) = try signInAsNewAccount("applemeetup-\(run)@petnote.test")
+        // The cover goes to the upload stand-in (scripts/upload-standin.py),
+        // which answers as Cloudinary would.
+        let (app, me) = try signInAsNewAccount(
+            "applemeetup-\(run)@petnote.test", extraArguments: ["-petnote-upload-standin", "http://127.0.0.1:8766"]
+        )
         uid = me
         inboxes.append(me)
         organisers.append(me)
 
         app.tabBars.buttons["Meetups"].tap()
         try openCreateMeetup(in: app)
+        // A cover, first in the form as on the web.
+        let chooseCover = app.buttons["createMeetup.cover.choose"]
+        XCTAssertTrue(waitUntilHittable(chooseCover, in: app, timeout: 10), "no Upload cover\n\(app.debugDescription)")
+        chooseCover.tap()
+        try pickFirstPhoto(app)
+        let chosen = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'createMeetup.cover' AND label == 'New cover'")).firstMatch
+        XCTAssertTrue(chosen.waitForExistence(timeout: 20), "the cover was not chosen\n\(app.debugDescription)")
         try type("TEST CONTENT Fetch at the run \(run)\n", into: "createMeetup.title", in: app)
         try type("TEST CONTENT Bring a ball.", into: "createMeetup.description", in: app)
         try type("dog run\n", into: "applePlace.search", in: app)
@@ -646,6 +658,8 @@ final class PlacesMeetupsUITests: XCTestCase {
         XCTAssertEqual(JourneyAdmin.string(stored["locationVisibility"]), "everyone")
         XCTAssertEqual(Self.mapStrings(stored["location"]), ["applePlaceId": "TESTAPPLEDOGRUN01"])
         XCTAssertEqual(JourneyAdmin.string(stored["locationId"]), "apple_TESTAPPLEDOGRUN01")
+        let cover = try XCTUnwrap(JourneyAdmin.string(stored["coverImage"]), "the cover was not kept with the meetup")
+        XCTAssertTrue(cover.hasPrefix("https://res.cloudinary.com/"), cover)
         let made = try XCTUnwrap(try JourneyAdmin.fields(path: place), "no place made for the meetup")
         XCTAssertEqual(JourneyAdmin.string(made["applePlaceId"]), "TESTAPPLEDOGRUN01")
         for field in ["name", "address", "lat", "lng", "city", "state"] {

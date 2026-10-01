@@ -1281,6 +1281,16 @@
         }
       }
     },
+    "Change cover": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更换封面"
+          }
+        }
+      }
+    },
     "Change photo": {
       "localizations": {
         "zh-Hans": {
@@ -2117,6 +2127,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "收藏没有更新"
+          }
+        }
+      }
+    },
+    "Cover Image": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "封面图"
           }
         }
       }
@@ -3897,6 +3917,16 @@
         }
       }
     },
+    "New cover": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新封面"
+          }
+        }
+      }
+    },
     "New here? Create an account": {
       "localizations": {
         "zh-Hans": {
@@ -3983,6 +4013,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "网络不可用，没有做任何更改。请重试。"
+          }
+        }
+      }
+    },
+    "No cover yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有封面"
           }
         }
       }
@@ -5134,6 +5174,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "移除生日"
+          }
+        }
+      }
+    },
+    "Remove cover": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "去掉封面"
           }
         }
       }
@@ -6664,6 +6714,46 @@
         }
       }
     },
+    "The cover could not be uploaded. The meetup was not changed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "封面没能上传，聚会没有改动。"
+          }
+        }
+      }
+    },
+    "The cover could not be uploaded. The meetup was not created.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "封面没能上传，聚会没有发起。"
+          }
+        }
+      }
+    },
+    "The cover upload timed out. The meetup was not changed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "封面上传超时，聚会没有改动。"
+          }
+        }
+      }
+    },
+    "The cover upload timed out. The meetup was not created.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "封面上传超时，聚会没有发起。"
+          }
+        }
+      }
+    },
     "The draft can't be restored once photos are picked or a post has started.": {
       "localizations": {
         "zh-Hans": {
@@ -7690,6 +7780,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "即将举行"
+          }
+        }
+      }
+    },
+    "Upload cover": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上传封面"
           }
         }
       }
