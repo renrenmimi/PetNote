@@ -29,6 +29,13 @@ final class PlacesMeetupsUITests: XCTestCase {
         for organiser in organisers {
             for name in (try? JourneyAdmin.documentNames(in: "meetups", field: "organizerId", equals: organiser)) ?? [] {
                 let id = String(name.split(separator: "/").last ?? "")
+                // A place the server made for this meetup, which this account
+                // organised; never a seeded one a meetup links to.
+                if let place = JourneyAdmin.string((try? JourneyAdmin.fields(path: "meetups/\(id)"))?["locationId"]),
+                   let made = try? JourneyAdmin.fields(path: "locations/\(place)"),
+                   JourneyAdmin.string(made["source"]) == "meetup", JourneyAdmin.string(made["addedBy"]) == organiser {
+                    cleanup.append("locations/\(place)")
+                }
                 cleanup += ["meetups/\(id)", "meetups/\(id)/private/address", "meetups/\(id)/participants/\(organiser)"]
             }
         }
@@ -72,9 +79,16 @@ final class PlacesMeetupsUITests: XCTestCase {
             predicate: NSPredicate(format: "label CONTAINS %@", "TEST CONTENT Fenway Dog Run"), object: row
         )
         XCTAssertEqual(XCTWaiter().wait(for: [named], timeout: 20), .completed, "the row is not named: \(row.label)")
-
-        XCTAssertTrue(waitUntilHittable(row, in: app, timeout: 10))
-        row.tap()
+        // The list's places on an Apple map, as Apple's terms ask of a list
+        // that names a place in Apple's words; its marker opens it.
+        let showMap = app.buttons["places.showMap"]
+        XCTAssertTrue(waitUntilHittable(showMap, in: app, timeout: 10), "no Map\n\(app.debugDescription)")
+        showMap.tap()
+        let map = app.descendants(matching: .any)["places.map"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10), "no map of the list\n\(app.debugDescription)")
+        let marker = map.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "TEST CONTENT Fenway Dog Run")).firstMatch
+        XCTAssertTrue(marker.waitForExistence(timeout: 20), "no marker for the place from Apple Maps\n\(app.debugDescription)")
+        marker.tap()
         let name = app.staticTexts["place.name"]
         XCTAssertTrue(waitForExistence(of: name, in: app, timeout: 20), "the place did not open\n\(app.debugDescription)")
         XCTAssertEqual(name.label, "TEST CONTENT Fenway Dog Run")
@@ -664,14 +678,22 @@ final class PlacesMeetupsUITests: XCTestCase {
         XCTAssertTrue(kept.label.contains(lot), kept.label)
         XCTAssertTrue(app.segmentedControls["createMeetup.where"].buttons["As it was"].isSelected)
         try save(in: app)
-        let shownTitle = app.staticTexts["meetupDetail.title"]
-        XCTAssertTrue(waitForLabel(of: shownTitle, "TEST CONTENT Edited \(run)"), "the new title is not shown: \(shownTitle.label)")
-        let edited = try XCTUnwrap(try JourneyAdmin.fields(path: "meetups/\(id)"))
+        // The server first, and the place it made noted for cleanup before
+        // anything that can fail: a run that stopped on the title below left
+        // the place in everyone's list, and pushed a seeded one off screen.
+        var edited: [String: Any] = [:]
+        for _ in 0..<20 {
+            edited = try XCTUnwrap(try JourneyAdmin.fields(path: "meetups/\(id)"))
+            if JourneyAdmin.string(edited["title"]) == "TEST CONTENT Edited \(run)" { break }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        let place = try XCTUnwrap(JourneyAdmin.string(edited["locationId"]), "no place linked, as the web's edit links one")
+        cleanup.append("locations/\(place)")
         XCTAssertEqual(JourneyAdmin.string(edited["title"]), "TEST CONTENT Edited \(run)")
         XCTAssertEqual(Self.mapStrings(edited["location"])["name"], lot, "the meetup moved")
         XCTAssertEqual(Self.mapStrings(edited["location"])["address"], "9 Elm St, Boston, MA")
-        let place = try XCTUnwrap(JourneyAdmin.string(edited["locationId"]), "no place linked, as the web's edit links one")
-        cleanup.append("locations/\(place)")
+        let shownTitle = app.staticTexts["meetupDetail.title"]
+        XCTAssertTrue(waitForLabel(of: shownTitle, "TEST CONTENT Edited \(run)"), "the new title is not shown: \(shownTitle.label)")
 
         // Moved to a typed address.
         try openEdit(in: app)
