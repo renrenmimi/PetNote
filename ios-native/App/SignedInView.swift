@@ -501,7 +501,7 @@ struct SignedInView: View {
                 makeAddPlace: { query in
                     AddPlaceModel(
                         query: query, places: repositories.places, adder: repositories.placeAdding,
-                        reviewer: repositories.placeReviews
+                        reviewer: repositories.placeReviews, uploader: repositories.media
                     )
                 },
                 onOpen: { placesPath.append(.place(placeID: $0)) }

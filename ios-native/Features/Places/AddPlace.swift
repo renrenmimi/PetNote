@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import OSLog
+import PhotosUI
 import SwiftUI
 
 /// What is sent to add a place found on Apple Maps: its identifier and our
@@ -21,6 +22,8 @@ struct ApplePlaceDraft: Equatable, Sendable {
     var category: PlaceCategory
     var description: String
     var features: Set<String>
+    /// Uploaded already: the server keeps these addresses with a new place.
+    var photos: [URL] = []
 
     var trimmedDescription: String { description.trimmingCharacters(in: .whitespacesAndNewlines) }
     var descriptionLength: Int { trimmedDescription.utf16.count }
@@ -31,12 +34,14 @@ struct ApplePlaceDraft: Equatable, Sendable {
     }
 
     var payload: [String: Any] {
-        [
+        var payload: [String: Any] = [
             "applePlaceId": applePlaceID,
             "category": category.rawValue,
             "description": trimmedDescription,
             "features": Self.featureKeys.filter(features.contains),
         ]
+        if !photos.isEmpty { payload["photos"] = photos.map(\.absoluteString) }
+        return payload
     }
 }
 
@@ -74,6 +79,20 @@ final class AddPlaceModel {
     private(set) var isSaving = false
     private(set) var outcome: Outcome?
 
+    /// A photo picked to go with the place, uploaded when it is added; its
+    /// thumbnail made once, as it is picked.
+    struct Photo: Identifiable, Equatable {
+        let id = UUID()
+        let data: Data
+        let filename: String
+        let thumbnail: UIImage?
+    }
+
+    /// The server's limit, and the web's.
+    static let maxPhotos = 5
+
+    private(set) var photos: [Photo] = []
+
     /// The web's optional rating, sent as a review once the place is in.
     var rating = 0
     var space = 0
@@ -82,15 +101,30 @@ final class AddPlaceModel {
 
     private let adder: any PlaceAdding
     private let reviewer: any PlaceReviewing
+    private let uploader: any MediaUploading
     private let log = Logger(subsystem: "dev.local.petnote.native", category: "places")
 
     init(
         query: String = "", places: any PlacesReading, adder: any PlaceAdding, reviewer: any PlaceReviewing,
-        directory: any PlaceDirectory = PlaceDirectories.shared
+        uploader: any MediaUploading, directory: any PlaceDirectory = PlaceDirectories.shared
     ) {
         self.finder = ApplePlaceFinder(query: query, places: places, marksAdded: true, directory: directory)
         self.adder = adder
         self.reviewer = reviewer
+        self.uploader = uploader
+    }
+
+    var photosLeft: Int { Self.maxPhotos - photos.count }
+
+    func addPhoto(data: Data, filename: String) {
+        guard photosLeft > 0, !isSaving else { return }
+        let thumbnail = UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 200, height: 200))
+        photos.append(Photo(data: data, filename: filename, thumbnail: thumbnail))
+    }
+
+    func removePhoto(_ id: Photo.ID) {
+        guard !isSaving else { return }
+        photos.removeAll { $0.id == id }
     }
 
     var draft: ApplePlaceDraft? {
@@ -138,10 +172,19 @@ final class AddPlaceModel {
     /// of it, which goes to a place someone else added meanwhile too. A
     /// rating that fails leaves the place added, as it is.
     func save() async {
-        guard canSave, let draft else { return }
+        guard canSave, var draft else { return }
         isSaving = true
         outcome = nil
         defer { isSaving = false }
+        // The web's order: the photos first, so a place is never added
+        // without the ones that were meant to come with it.
+        do {
+            draft.photos = try await uploadPhotos()
+        } catch {
+            log.error("photos for a new place failed: \(String(describing: error), privacy: .public)")
+            outcome = .failed(Self.photoWording(for: error))
+            return
+        }
         let added: AddedPlace
         do {
             added = try await adder.addPlace(draft)
@@ -167,12 +210,47 @@ final class AddPlaceModel {
             outcome = .notRated(added, GatheringWords.message(for: error, fallback: String(localized: "Failed to submit review.")))
         }
     }
+
+    /// Each photo prepared as the composer prepares one, off the main actor,
+    /// and sent; their addresses, in the order picked. One that fails stops
+    /// the add. Like the composer's, nothing here deletes an upload: one sent
+    /// before a later one failed is left behind, as the composer leaves one.
+    private func uploadPhotos() async throws -> [URL] {
+        var urls: [URL] = []
+        for photo in photos {
+            let picked = photo
+            let prepared = try await Task.detached(priority: .userInitiated) {
+                try UploadPreparation.prepareImage(picked.data, filename: picked.filename)
+            }.value
+            let asset = try await uploader.upload(UploadItem(
+                data: prepared.data, filename: prepared.filename, mimeType: prepared.mimeType, resourceType: .image
+            ))
+            urls.append(asset.url)
+        }
+        return urls
+    }
+
+    /// The pet editor's words for a photo that did not go, with the place in
+    /// them where those name the pet: nothing was added.
+    static func photoWording(for error: Error) -> String {
+        if let upload = error as? UploadError {
+            switch upload {
+            case .timedOut: return String(localized: "The photo upload timed out. The place was not added.")
+            case .transport: return String(localized: "The photo could not be uploaded. The place was not added.")
+            default: break
+            }
+        } else if !(error is UploadPreparation.PreparationError) {
+            return String(localized: "The photo could not be uploaded. The place was not added.")
+        }
+        return PetEditorViewModel.photoWording(for: error)
+    }
 }
 
 /// The web's Add a Place page, with the place chosen from Apple Maps where
 /// the web takes a name and an address.
 struct AddPlaceSheet: View {
     @State private var model: AddPlaceModel
+    @State private var photoSelection: [PhotosPickerItem] = []
     @Environment(\.dismiss) private var dismiss
     /// Opens a place: the one just added, or one found that is here already.
     private let onOpen: (String) -> Void
@@ -216,6 +294,7 @@ struct AddPlaceSheet: View {
                             model.descriptionLength > ApplePlaceDraft.maxDescription ? Palette.danger : Palette.secondaryText
                         )
                 }
+                photosSection
                 Section("Features & Amenities") {
                     FlowLayout {
                         ForEach(ApplePlaceDraft.featureKeys, id: \.self) { key in
@@ -258,7 +337,9 @@ struct AddPlaceSheet: View {
                     .accessibilityIdentifier("addPlace.cancel")
             }
             ToolbarItem(placement: .confirmationAction) {
-                Button(model.isSaving ? String(localized: "Adding…") : String(localized: "Add")) {
+                // The web's words. Not "Add": the photo picker's confirm button
+                // says that, over this one.
+                Button(model.isSaving ? String(localized: "Submitting...") : String(localized: "Submit")) {
                     Task { await model.save() }
                 }
                 .disabled(!model.canSave)
@@ -316,5 +397,90 @@ struct AddPlaceSheet: View {
     private func open(_ placeID: String) {
         dismiss()
         onOpen(placeID)
+    }
+
+    /// The web's photos: up to five, picked from the library, sent before the
+    /// place.
+    private var photosSection: some View {
+        Section {
+            if !model.photos.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: Spacing.s) {
+                        ForEach(Array(model.photos.enumerated()), id: \.element.id) { index, photo in
+                            PickedPhotoThumb(photo: photo, number: index + 1) { model.removePhoto(photo.id) }
+                                .accessibilityIdentifier("addPlace.photo.\(index)")
+                        }
+                    }
+                }
+            }
+            if model.photosLeft > 0 {
+                PhotosPicker(
+                    selection: $photoSelection, maxSelectionCount: model.photosLeft,
+                    matching: .images, photoLibrary: .shared()
+                ) {
+                    HStack(spacing: Spacing.s) {
+                        // Decoration: the words say it.
+                        Image(systemName: "photo.on.rectangle").accessibilityHidden(true)
+                        Text(model.photos.isEmpty ? String(localized: "Add photos") : String(localized: "Add more photos"))
+                    }
+                    .frame(minHeight: Layout.minTouchTarget)
+                    .contentShape(.rect)
+                }
+                .disabled(model.isSaving)
+                .accessibilityIdentifier("addPlace.photos.add")
+            }
+        } header: {
+            Text("Photos")
+        } footer: {
+            Text("Up to \(AddPlaceModel.maxPhotos). They help others find the place.")
+        }
+        .onChange(of: photoSelection) { _, items in
+            Task { await loadPhotos(items) }
+        }
+    }
+
+    private func loadPhotos(_ items: [PhotosPickerItem]) async {
+        guard !items.isEmpty else { return }
+        for item in items {
+            guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
+            model.addPhoto(data: data, filename: "photo.jpg")
+        }
+        photoSelection = []
+    }
+}
+
+/// One picked photo, with the way to take it out again.
+private struct PickedPhotoThumb: View {
+    let photo: AddPlaceModel.Photo
+    let number: Int
+    let onRemove: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Group {
+                if let thumbnail = photo.thumbnail {
+                    Image(uiImage: thumbnail).resizable().scaledToFill()
+                } else {
+                    Palette.secondaryBackground
+                }
+            }
+            .frame(width: 88, height: 88)
+            .clipShape(.rect(cornerRadius: Radius.control))
+            .accessibilityElement()
+            .accessibilityLabel(String(localized: "Photo \(number)"))
+            Button(action: onRemove) {
+                // Over a photo, so on the scrim, as the full-size image's
+                // close button is.
+                Image(systemName: "xmark")
+                    .font(Typography.caption.weight(.bold))
+                    .foregroundStyle(Palette.textOnBrand)
+                    .padding(Spacing.xs)
+                    .controlScrim()
+                    .frame(width: Layout.minTouchTarget, height: Layout.minTouchTarget)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(String(localized: "Remove photo \(number)"))
+        }
     }
 }

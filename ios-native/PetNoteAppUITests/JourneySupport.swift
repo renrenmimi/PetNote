@@ -74,14 +74,18 @@ extension XCTestCase {
 
     func pickFirstPhoto(_ app: XCUIApplication) throws {
         // PHPicker's cells are labelled "Photo, <date>". It runs out of
-        // process, and its tree is reached through the app's.
-        let photo = app.images.matching(NSPredicate(format: "label BEGINSWITH 'Photo'")).firstMatch
+        // process, and its tree is reached through the app's. The comma
+        // matters: an SF Symbol such as "photo.on.rectangle" on the app's own
+        // button reads "Photo", and was tapped instead of the picker's cell.
+        let photo = app.images.matching(NSPredicate(format: "label BEGINSWITH 'Photo, '")).firstMatch
         XCTAssertTrue(
             waitForExistence(of: photo, in: app, timeout: 30),
             "no photo in the picker — add one with `xcrun simctl addmedia`\n\(app.debugDescription)"
         )
         photo.tap()
-        // Multi-select pickers need confirming; single-select ones close on tap.
+        // Multi-select pickers need confirming; single-select ones close on
+        // tap. The app keeps "Add" off its own buttons behind the picker so
+        // that this finds the picker's.
         let confirm = app.buttons["Add"]
         if confirm.waitForExistence(timeout: 5) { confirm.tap() }
     }
