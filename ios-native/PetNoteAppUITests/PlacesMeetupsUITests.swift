@@ -39,6 +39,40 @@ final class PlacesMeetupsUITests: XCTestCase {
 
     // MARK: - Places
 
+    /// A place added from Apple Maps stores its identifier and none of what
+    /// Apple says about it. The emulator build answers the identifier from
+    /// StandInPlaceDirectory, as the app on a phone asks Apple: the list names
+    /// the place, and the place shows an address, a map and directions that
+    /// the server does not hold. The words below are that table's.
+    func testAPlaceFromAppleMapsIsShownFromWhatAppleSays() throws {
+        let place = try landmark("place_apple")
+        let stored = try XCTUnwrap(try JourneyAdmin.fields(path: "locations/\(place)"))
+        XCTAssertEqual(JourneyAdmin.string(stored["applePlaceId"]), "TESTAPPLEDOGRUN01")
+        for field in ["name", "address", "lat", "lng"] {
+            XCTAssertNil(stored[field], "the server holds the \(field) of a place from Apple Maps")
+        }
+        let (app, me) = try signInAsNewAccount("apple-\(run)@petnote.test")
+        uid = me
+
+        app.tabBars.buttons["Places"].tap()
+        let row = app.buttons["place.\(place)"]
+        for _ in 0..<4 where !(row.exists && row.isHittable) { app.swipeUp() }
+        XCTAssertTrue(waitForExistence(of: row, in: app, timeout: 30), "the place is not listed\n\(app.debugDescription)")
+        let named = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label CONTAINS %@", "TEST CONTENT Fenway Dog Run"), object: row
+        )
+        XCTAssertEqual(XCTWaiter().wait(for: [named], timeout: 20), .completed, "the row is not named: \(row.label)")
+
+        XCTAssertTrue(waitUntilHittable(row, in: app, timeout: 10))
+        row.tap()
+        let name = app.staticTexts["place.name"]
+        XCTAssertTrue(waitForExistence(of: name, in: app, timeout: 20), "the place did not open\n\(app.debugDescription)")
+        XCTAssertEqual(name.label, "TEST CONTENT Fenway Dog Run")
+        XCTAssertEqual(app.staticTexts["place.address"].label, "1 Park Dr, Boston, MA 02215")
+        XCTAssertTrue(app.descendants(matching: .any)["place.map"].waitForExistence(timeout: 10), "no map with the address")
+        XCTAssertTrue(app.links["place.directions"].exists || app.buttons["place.directions"].exists, "no directions")
+    }
+
     func testThePlacesListAPlaceAndAMeetupHeldThere() throws {
         let park = try landmark("place_reviewed")
         let cafe = try landmark("place_quiet")
