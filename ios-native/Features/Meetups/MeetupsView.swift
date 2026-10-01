@@ -1,12 +1,15 @@
 import SwiftUI
 
-/// The Meetups tab.
+/// The Meetups tab, and a meetup created from it.
 struct MeetupsView: View {
     @State private var model: MeetupsModel
+    @State private var isCreating = false
+    private let makeCreateMeetup: () -> CreateMeetupModel
     private let onOpen: (String) -> Void
 
-    init(model: MeetupsModel, onOpen: @escaping (String) -> Void) {
+    init(model: MeetupsModel, makeCreateMeetup: @escaping () -> CreateMeetupModel, onOpen: @escaping (String) -> Void) {
         _model = State(initialValue: model)
+        self.makeCreateMeetup = makeCreateMeetup
         self.onOpen = onOpen
     }
 
@@ -23,8 +26,29 @@ struct MeetupsView: View {
         .background(Palette.background)
         .navigationTitle("Meetups")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // The web's round "+".
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { isCreating = true } label: {
+                    Image(systemName: "plus")
+                        .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget)
+                        .contentShape(.rect)
+                }
+                .accessibilityLabel("Create Meetup")
+                .accessibilityIdentifier("meetups.create")
+            }
+        }
         .task { if model.items.isEmpty { await model.load() } }
         .refreshable { await model.load() }
+        .sheet(isPresented: $isCreating) {
+            NavigationStack {
+                CreateMeetupSheet(model: makeCreateMeetup()) { meetupID in
+                    onOpen(meetupID)
+                    // So that back from it, the list has it.
+                    Task { await model.load() }
+                }
+            }
+        }
     }
 
     private var filters: some View {
@@ -64,21 +88,27 @@ struct MeetupsView: View {
                 .accessibilityIdentifier("meetups.error")
         default:
             if model.items.isEmpty {
-                // The web's words, less its "Create Meetup": creating one
-                // needs the address lookup (docs/places-meetups-plan.md).
-                VStack(spacing: Spacing.s) {
-                    Text(model.filter.emptyTitle)
-                        .font(Typography.sectionTitle)
-                        .foregroundStyle(Palette.primaryText)
-                    Text("Be the first to organize one!")
-                        .font(Typography.body)
-                        .foregroundStyle(Palette.secondaryText)
+                VStack(spacing: Spacing.m) {
+                    VStack(spacing: Spacing.s) {
+                        Text(model.filter.emptyTitle)
+                            .font(Typography.sectionTitle)
+                            .foregroundStyle(Palette.primaryText)
+                        Text("Be the first to organize one!")
+                            .font(Typography.body)
+                            .foregroundStyle(Palette.secondaryText)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("meetups.empty")
+                    // The web's action, outside the words so it is its own
+                    // button.
+                    Button("Create Meetup") { isCreating = true }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Palette.brandPrimary)
+                        .accessibilityIdentifier("meetups.empty.create")
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, Spacing.xl)
                 .listRowSeparator(.hidden)
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("meetups.empty")
             } else {
                 ForEach(model.items) { meetup in
                     Button { onOpen(meetup.id) } label: {

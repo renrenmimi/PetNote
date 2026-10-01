@@ -6,9 +6,10 @@ import Foundation
 // `src/services/locations.ts`, `src/services/checkins.ts`).
 //
 // The rules let no client write a place, a review or a check-in directly;
-// each goes through the server. Reviews without photos are here; adding a
-// place needs an address lookup and check-ins need a photo upload, which the
-// test project does not have yet (docs/places-meetups-plan.md).
+// each goes through the server. Reviews without photos are here, and adding
+// a place found on Apple Maps is in AddPlace.swift; check-ins need a photo
+// upload, which the test project does not have yet
+// (docs/places-meetups-plan.md).
 
 enum PlaceCategory: String, CaseIterable, Sendable {
     case dogPark = "dog_park"

@@ -294,7 +294,7 @@ protocol MeetupsReading: Sendable {
     func settle(meetupID: String) async throws
 }
 
-actor FirestoreMeetupsSource: MeetupsReading {
+actor FirestoreMeetupsSource: MeetupsReading, MeetupCreating {
     private let db: Firestore
 
     init(db: Firestore = .firestore()) { self.db = db }
@@ -373,6 +373,18 @@ actor FirestoreMeetupsSource: MeetupsReading {
               snapshot.exists else { return nil }
         return MeetupPlace.decode(snapshot.data())
     }
+
+    /// `createMeetupCallable`, which writes the meetup, its private address
+    /// and the organiser's place on the guest list together, and answers with
+    /// the meetup's id.
+    func createMeetup(_ draft: MeetupDraft) async throws -> String {
+        let answer = try await CallableClient.call(Callables.createMeetup, draft.payload)
+        guard let meetupID = answer["id"] as? String, !meetupID.isEmpty else { throw NoMeetupInAnswer() }
+        return meetupID
+    }
+
+    /// The server said it created a meetup and did not say which.
+    private struct NoMeetupInAnswer: Error {}
 
     func join(meetupID: String, petID: String?) async throws -> MeetupJoinOutcome {
         var payload: [String: Any] = ["meetupId": meetupID]
