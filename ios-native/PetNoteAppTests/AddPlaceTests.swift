@@ -87,15 +87,15 @@ import Testing
         }
     }
 
-    private func found(_ model: AddPlaceModel) -> [AddPlaceModel.Found] {
-        if case .found(let found) = model.search { return found }
+    private func found(_ model: AddPlaceModel) -> [ApplePlaceFinder.Found] {
+        if case .found(let found) = model.finder.state { return found }
         return []
     }
 
     /// The shop chosen and described, ready to add.
     private func shopReady(adder: Adder = Adder()) async -> AddPlaceModel {
         let model = AddPlaceModel(query: "pet", places: Places(), adder: adder, directory: Directory())
-        await model.searchAppleMaps()
+        await model.finder.search()
         if let shop = found(model).first(where: { $0.id == "I2" }) { model.choose(shop) }
         model.description = "Treats at the counter."
         return model
@@ -104,7 +104,7 @@ import Testing
     @Test func aSearchMarksThePlacesSomeoneHasAddedAlready() async {
         let model = AddPlaceModel(query: "  pet  ", places: Places(), adder: Adder(), directory: Directory())
 
-        await model.searchAppleMaps()
+        await model.finder.search()
 
         #expect(found(model).map(\.id) == ["I1", "I2"])
         #expect(found(model).map(\.placeID) == ["apple_I1", nil])
@@ -112,7 +112,7 @@ import Testing
 
     @Test func aPlaceSomeoneAddedAlreadyIsNotChosenToBeAddedAgain() async {
         let model = AddPlaceModel(query: "pet", places: Places(), adder: Adder(), directory: Directory())
-        await model.searchAppleMaps()
+        await model.finder.search()
 
         model.choose(found(model)[0])
         #expect(model.chosen == nil)
@@ -184,9 +184,9 @@ import Testing
     @Test func aSearchAppleCannotAnswerSaysSo() async {
         let model = AddPlaceModel(query: "pet", places: Places(), adder: Adder(), directory: Directory(fails: true))
 
-        await model.searchAppleMaps()
+        await model.finder.search()
 
-        #expect(model.search == .failed(String(localized: "Couldn't search Apple Maps. Try again.")))
+        #expect(model.finder.state == .failed(String(localized: "Couldn't search Apple Maps. Try again.")))
     }
 
     /// A slow answer to the first search must not replace the second's.
@@ -194,10 +194,10 @@ import Testing
         let directory = Directory([[PlaceSearchHit(applePlaceID: "I1", details: Self.run)], [PlaceSearchHit(applePlaceID: "I2", details: Self.shop)]], holdFirst: true)
         let model = AddPlaceModel(query: "dog run", places: Places(), adder: Adder(), directory: directory)
 
-        let first = Task { await model.searchAppleMaps() }
+        let first = Task { await model.finder.search() }
         #expect(await eventuallyTrue { directory.isHolding })
-        model.query = "pet shop"
-        await model.searchAppleMaps()
+        model.finder.query = "pet shop"
+        await model.finder.search()
         directory.release()
         await first.value
 

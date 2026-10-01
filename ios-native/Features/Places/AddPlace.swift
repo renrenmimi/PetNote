@@ -56,50 +56,30 @@ protocol PlaceAdding: Sendable {
 @MainActor
 @Observable
 final class AddPlaceModel {
-    /// A place Apple Maps found, with ours for it when someone added it.
-    struct Found: Identifiable, Equatable {
-        let hit: PlaceSearchHit
-        let placeID: String?
-        var id: String { hit.applePlaceID }
-    }
-
-    enum Search: Equatable {
-        case idle
-        case searching
-        case found([Found])
-        case failed(String)
-    }
-
     enum Outcome: Equatable {
         case added(AddedPlace)
         case failed(String)
     }
 
-    var query: String
+    /// Apple Maps, searched for the place, with the ones added here marked.
+    let finder: ApplePlaceFinder
     var category: PlaceCategory = .dogPark
     var description = ""
     private(set) var features: Set<String> = []
-    private(set) var search: Search = .idle
     /// The place being added, once chosen from what Apple found.
     private(set) var chosen: PlaceSearchHit?
     private(set) var isSaving = false
     private(set) var outcome: Outcome?
 
-    private let directory: any PlaceDirectory
-    private let places: any PlacesReading
     private let adder: any PlaceAdding
-    /// Bumped by each search, so an older answer does not replace a newer one.
-    private var searches = 0
     private let log = Logger(subsystem: "dev.local.petnote.native", category: "places")
 
     init(
         query: String = "", places: any PlacesReading, adder: any PlaceAdding,
         directory: any PlaceDirectory = PlaceDirectories.shared
     ) {
-        self.query = query
-        self.places = places
+        self.finder = ApplePlaceFinder(query: query, places: places, marksAdded: true, directory: directory)
         self.adder = adder
-        self.directory = directory
     }
 
     var draft: ApplePlaceDraft? {
@@ -116,31 +96,8 @@ final class AddPlaceModel {
         return true
     }
 
-    /// Asks Apple Maps, then marks the places someone has added here already.
-    func searchAppleMaps() async {
-        let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        searches += 1
-        let mine = searches
-        search = .searching
-        do {
-            let hits = try await directory.search(text)
-            let ours = hits.isEmpty ? [] : try await places.places(applePlaceIDs: hits.map(\.applePlaceID))
-            guard mine == searches else { return }
-            let added = Dictionary(
-                ours.compactMap { place in place.applePlaceID.map { ($0, place.id) } },
-                uniquingKeysWith: { first, _ in first }
-            )
-            search = .found(hits.map { Found(hit: $0, placeID: added[$0.applePlaceID]) })
-        } catch {
-            guard mine == searches else { return }
-            log.error("Apple Maps search to add a place failed: \(String(describing: error), privacy: .public)")
-            search = .failed(String(localized: "Couldn't search Apple Maps. Try again."))
-        }
-    }
-
     /// For a place nobody has added yet: the view opens the others.
-    func choose(_ found: Found) {
+    func choose(_ found: ApplePlaceFinder.Found) {
         guard found.placeID == nil else { return }
         chosen = found.hit
         outcome = nil
@@ -193,15 +150,13 @@ struct AddPlaceSheet: View {
     var body: some View {
         Form {
             Section("Place") {
-                if let chosen = model.chosen {
-                    chosenPlace(chosen)
-                } else {
-                    TextField("Search Apple Maps", text: $model.query)
-                        .submitLabel(.search)
-                        .onSubmit { Task { await model.searchAppleMaps() } }
-                        .accessibilityIdentifier("addPlace.search")
-                    results
-                }
+                ApplePlacePicker(
+                    finder: model.finder, chosen: model.chosen,
+                    onSelect: { found in
+                        if let placeID = found.placeID { open(placeID) } else { model.choose(found) }
+                    },
+                    onChange: { model.changePlace() }
+                )
             }
             if model.chosen != nil {
                 Section("Category") {
@@ -279,8 +234,8 @@ struct AddPlaceSheet: View {
         // Opened from a search that found nothing: Apple Maps is asked for
         // the same words straight away.
         .task {
-            if case .idle = model.search, !model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                await model.searchAppleMaps()
+            if case .idle = model.finder.state, !model.finder.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                await model.finder.search()
             }
         }
     }
@@ -301,80 +256,5 @@ struct AddPlaceSheet: View {
     private func open(_ placeID: String) {
         dismiss()
         onOpen(placeID)
-    }
-
-    @ViewBuilder
-    private var results: some View {
-        switch model.search {
-        case .idle:
-            EmptyView()
-        case .searching:
-            ProgressView()
-                .frame(maxWidth: .infinity)
-                .accessibilityIdentifier("addPlace.searching")
-        case .failed(let message):
-            Text(message)
-                .foregroundStyle(Palette.danger)
-                .accessibilityIdentifier("addPlace.searchError")
-        case .found(let found) where found.isEmpty:
-            Text("Nothing found on Apple Maps.")
-                .foregroundStyle(Palette.secondaryText)
-                .accessibilityIdentifier("addPlace.nothingFound")
-        case .found(let found):
-            ForEach(found) { result in
-                Button {
-                    if let placeID = result.placeID { open(placeID) } else { model.choose(result) }
-                } label: {
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        Text(result.hit.details.name.isEmpty ? String(localized: "Unnamed place") : result.hit.details.name)
-                            .font(Typography.body.weight(.semibold))
-                            .foregroundStyle(Palette.primaryText)
-                        if !result.hit.details.address.isEmpty {
-                            Text(result.hit.details.address)
-                                .font(Typography.caption)
-                                .foregroundStyle(Palette.secondaryText)
-                        }
-                        if result.placeID != nil {
-                            Text("Already on PetNote")
-                                .font(Typography.caption.weight(.semibold))
-                                .foregroundStyle(Palette.brandPrimary)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, minHeight: Layout.minTouchTarget, alignment: .leading)
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("addPlace.result.\(result.id)")
-            }
-        }
-    }
-
-    /// The chosen place as Apple Maps has it, on Apple's map, as its terms ask
-    /// wherever its address is shown.
-    private func chosenPlace(_ hit: PlaceSearchHit) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.s) {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text(hit.details.name.isEmpty ? String(localized: "Unnamed place") : hit.details.name)
-                    .font(Typography.body.weight(.semibold))
-                    .foregroundStyle(Palette.primaryText)
-                if !hit.details.address.isEmpty {
-                    Text(hit.details.address)
-                        .font(Typography.body)
-                        .foregroundStyle(Palette.secondaryText)
-                }
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("addPlace.chosen")
-            if hit.details.directionsURL != nil {
-                PlaceMap(details: hit.details)
-            }
-            Button { model.changePlace() } label: {
-                Text("Choose another place")
-                    .frame(minHeight: Layout.minTouchTarget)
-                    .contentShape(.rect)
-            }
-            .accessibilityIdentifier("addPlace.change")
-        }
     }
 }

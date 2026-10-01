@@ -218,16 +218,16 @@ final class PlacesMeetupsUITests: XCTestCase {
 
         app.tabBars.buttons["Places"].tap()
         try openAddPlace(in: app)
-        let search = app.textFields["addPlace.search"]
+        let search = app.textFields["applePlace.search"]
         search.typeText("pet shop\n")
-        let shop = app.buttons["addPlace.result.TESTAPPLEPETSHOP1"]
+        let shop = app.buttons["applePlace.result.TESTAPPLEPETSHOP1"]
         XCTAssertTrue(waitForExistence(of: shop, in: app, timeout: 20), "Apple Maps found no pet shop\n\(app.debugDescription)")
         XCTAssertFalse(shop.label.contains("Already on PetNote"), shop.label)
         let save = app.buttons["addPlace.save"]
         XCTAssertFalse(save.isEnabled, "Add before a place is chosen")
         shop.tap()
 
-        let chosen = app.descendants(matching: .any)["addPlace.chosen"]
+        let chosen = app.descendants(matching: .any)["applePlace.chosen"]
         XCTAssertTrue(waitForExistence(of: chosen, in: app, timeout: 10), "\(app.debugDescription)")
         XCTAssertTrue(chosen.label.contains("TEST CONTENT Corner Pet Shop"), chosen.label)
         XCTAssertTrue(app.descendants(matching: .any)["place.map"].exists, "no map with Apple's address")
@@ -272,7 +272,7 @@ final class PlacesMeetupsUITests: XCTestCase {
 
         // Found again: there already, and opened rather than added.
         try openAddPlace(in: app)
-        app.textFields["addPlace.search"].typeText("pet shop\n")
+        app.textFields["applePlace.search"].typeText("pet shop\n")
         XCTAssertTrue(waitForExistence(of: shop, in: app, timeout: 20), "\(app.debugDescription)")
         assertLabel(of: shop, contains: "Already on PetNote")
         shop.tap()
@@ -286,7 +286,7 @@ final class PlacesMeetupsUITests: XCTestCase {
         let add = app.buttons["places.add"]
         XCTAssertTrue(waitUntilHittable(add, in: app, timeout: 30), "no Add\n\(app.debugDescription)")
         add.tap()
-        let search = app.textFields["addPlace.search"]
+        let search = app.textFields["applePlace.search"]
         XCTAssertTrue(waitUntilHittable(search, in: app, timeout: 10), "no search in Add a Place\n\(app.debugDescription)")
         search.tap()
     }
