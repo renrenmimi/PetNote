@@ -525,6 +525,7 @@ async function seedGatherings({ uidA, uidB, now }) {
     reviewed: place("park"),
     quiet: place("cafe"),
     trail: place("trail"),
+    apple: place("apple"),
   };
   const common = { source: "user", verified: false, addedBy: uidA, addedByName: "Accept A", tags: [], totalPhotos: 0 };
   await db.doc(`locations/${places.reviewed}`).set({
@@ -562,6 +563,22 @@ async function seedGatherings({ uidA, uidB, now }) {
     createdAt: Timestamp.fromMillis(now - 2 * day),
   });
 
+  // A place added from Apple Maps: its identifier and our own fields only, as
+  // addPlaceCallable stores one, because Apple's terms let us keep nothing
+  // else. The emulator build answers this identifier from
+  // StandInPlaceDirectory (ios-native/Core/Maps/PlaceDirectory.swift) with the
+  // name, address and position Apple would give. The oldest place and
+  // unreviewed, so it comes last in every sort and moves no other place.
+  await db.doc(`locations/${places.apple}`).set({
+    ...common,
+    applePlaceId: "TESTAPPLEDOGRUN01",
+    category: "dog_park",
+    description: "TEST CONTENT Found on Apple Maps.",
+    features: ["off_leash"], photos: [],
+    averageRating: 0, totalRatings: 0, totalCheckins: 0,
+    createdAt: Timestamp.fromMillis(now - 4 * day),
+  });
+
   // Reviews and check-ins as the callables write them; the triggers count them.
   const review = (uid, name, rating, comment, tags, ago) => ({
     userId: uid, userName: name, userAvatar: avatar(uid), rating, comment, photos: [], tags,
@@ -589,6 +606,12 @@ async function seedGatherings({ uidA, uidB, now }) {
     checkin(uidA, "Accept A", { petId: "ios-pet-latin", petName: "Mochi" }, "TEST CONTENT First visit!", 1 * hour));
   await db.doc(`locations/${places.reviewed}/checkins/${uidB}_${dayKey}`).set(
     checkin(uidB, "Accept B", {}, "TEST CONTENT Quick walk.", 3 * hour));
+  // A's check-in at the place from Apple Maps, which the history names from
+  // what Apple says.
+  await db.doc(`locations/${places.apple}/checkins/${uidA}_${dayKey}`).set({
+    ...checkin(uidA, "Accept A", {}, "TEST CONTENT Found it on the map.", 2 * hour),
+    locationId: places.apple,
+  });
 
   const meetups = {
     soon: meetup("soon"),

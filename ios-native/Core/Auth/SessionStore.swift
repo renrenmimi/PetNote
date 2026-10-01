@@ -364,7 +364,10 @@ final class SessionStore {
         scope.tearDown()
         scope = SessionScope()
         Task { await ImageLoader.shared.clearMemoryCache() }
-        log.info("session scope reset; image cache cleared")
+        // The same for places looked up on Apple Maps: kept only for a while
+        // by Apple's terms, and nothing of one person's browsing for the next.
+        Task { await PlaceDirectories.shared.forget() }
+        log.info("session scope reset; image and place caches cleared")
     }
 
     /// Removes the auth listener.

@@ -113,7 +113,7 @@ struct PlacesView: View {
                 .accessibilityIdentifier("places.empty")
             } else {
                 ForEach(model.items) { place in
-                    PlaceRow(place: place) { onOpen(place.id) }
+                    PlaceRow(place: place, name: model.lookups.name(of: place)) { onOpen(place.id) }
                         .onAppear {
                             if place.id == model.items.last?.id { Task { await model.loadMore() } }
                         }
@@ -128,6 +128,8 @@ struct PlacesView: View {
 
 private struct PlaceRow: View {
     let place: Place
+    /// The place's own name, or Apple's for one from Apple Maps.
+    let name: String
     let onOpen: () -> Void
 
     var body: some View {
@@ -135,7 +137,7 @@ private struct PlaceRow: View {
             HStack(alignment: .top, spacing: Spacing.m) {
                 PlaceThumbnail(place: place, side: 72)
                 VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text(place.name)
+                    Text(name)
                         .font(Typography.body.weight(.semibold))
                         .foregroundStyle(Palette.primaryText)
                     Text("\(place.category.emoji) \(place.category.label)")

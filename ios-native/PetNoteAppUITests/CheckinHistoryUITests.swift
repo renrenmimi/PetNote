@@ -14,6 +14,31 @@ final class CheckinHistoryUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    /// A check-in at a place from Apple Maps is named from what Apple says,
+    /// since the place stores none of it: StandInPlaceDirectory's words, in
+    /// the emulator build.
+    func testACheckinAtAPlaceFromAppleMapsIsNamedFromAppleMaps() throws {
+        let place = try XCTUnwrap(try EmulatorAdmin.seedManifest().post("place_apple"),
+                                  "the seed has no place_apple; reseed the emulator")
+        let me = try XCTUnwrap(try JourneyAdmin.uid(forEmail: "accept-a@example.com"), "no seeded Accept A")
+        let mine = try XCTUnwrap(try Self.checkin(by: me, at: place), "Accept A has no check-in at \(place); reseed")
+
+        let app = launchOnSignIn()
+        signIn(app, email: "accept-a@example.com")
+        app.tabBars.buttons["Profile"].tap()
+        let entry = app.buttons["profile.checkins"]
+        for _ in 0..<4 where !(entry.exists && entry.isHittable) { app.swipeUp() }
+        XCTAssertTrue(waitUntilHittable(entry, in: app, timeout: 20), "no Check-ins on the profile\n\(app.debugDescription)")
+        entry.tap()
+
+        let row = app.buttons["checkins.row.\(place).\(mine.id)"]
+        XCTAssertTrue(waitForExistence(of: row, in: app, timeout: 30), "the check-in is not listed\n\(app.debugDescription)")
+        let named = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label CONTAINS %@", "TEST CONTENT Fenway Dog Run"), object: row
+        )
+        XCTAssertEqual(XCTWaiter().wait(for: [named], timeout: 20), .completed, "the row is not named: \(row.label)")
+    }
+
     func testMyCheckinNamesItsPlaceAndOpensIt() throws {
         let park = try XCTUnwrap(try EmulatorAdmin.seedManifest().post("place_reviewed"),
                                  "the seed has no place_reviewed; reseed the emulator")

@@ -40,7 +40,9 @@ struct PlaceDetailView: View {
             if case .loaded(let place) = model.state {
                 NavigationStack {
                     PlaceReviewSheet(
-                        model: PlaceReviewModel(placeID: place.id, placeName: place.name, source: model.reviewer),
+                        model: PlaceReviewModel(
+                            placeID: place.id, placeName: model.lookups.name(of: place), source: model.reviewer
+                        ),
                         onSubmitted: { Task { await model.load() } }
                     )
                 }
@@ -70,6 +72,13 @@ struct PlaceDetailView: View {
         }
     }
 
+    /// Where the place is: what it stores, or what Apple said for one from
+    /// Apple Maps. Nil while Apple is being asked, or when it could not say.
+    private func shownDetails(_ place: Place) -> PlaceDetails? {
+        if case .found(let details) = model.lookups.shown(place) { return details }
+        return nil
+    }
+
     private func header(_ place: Place) -> some View {
         VStack(alignment: .leading, spacing: Spacing.s) {
             if let photo = place.photos.first {
@@ -77,7 +86,7 @@ struct PlaceDetailView: View {
                     .accessibilityHidden(true)
             }
             HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
-                Text(place.name)
+                Text(model.lookups.name(of: place))
                     .font(Typography.pageTitle)
                     .foregroundStyle(Palette.primaryText)
                     .accessibilityIdentifier("place.name")
@@ -90,11 +99,14 @@ struct PlaceDetailView: View {
             Text("\(place.category.emoji) \(place.category.label)")
                 .font(Typography.caption)
                 .foregroundStyle(Palette.secondaryText)
-            if !place.address.isEmpty {
-                Text(place.address)
+            if let details = shownDetails(place), !details.address.isEmpty {
+                Text(details.address)
                     .font(Typography.body)
                     .foregroundStyle(Palette.secondaryText)
                     .accessibilityIdentifier("place.address")
+            }
+            if let details = shownDetails(place), details.directionsURL != nil {
+                PlaceMap(details: details)
             }
             Text(place.ratingLine.map { "⭐ \($0)" } ?? String(localized: "No reviews yet"))
                 .font(Typography.body)
@@ -106,7 +118,7 @@ struct PlaceDetailView: View {
                     .foregroundStyle(Palette.primaryText)
             }
             HStack(spacing: Spacing.m) {
-                if let directions = place.directionsURL {
+                if let directions = shownDetails(place)?.directionsURL {
                     Link(destination: directions) {
                         Label("Directions", systemImage: "map")
                             .frame(minHeight: Layout.minTouchTarget)

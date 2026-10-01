@@ -101,6 +101,18 @@ struct Place: Identifiable, Equatable, Sendable {
     let totalRatings: Int
     let totalCheckins: Int
     let verifiedByCheckins: Bool
+    /// Set for a place added from Apple Maps, which stores this and nothing
+    /// of Apple's: no name, address or position, which Apple's terms do not
+    /// let us keep (docs/apple-maps-places-plan.md). Those are looked up each
+    /// time the place is shown, through `PlaceLookups`. Nil for a place from
+    /// the web, which stores its own.
+    var applePlaceID: String? = nil
+
+    /// What a place from the web stores of where it is. Empty for one from
+    /// Apple Maps.
+    var storedDetails: PlaceDetails {
+        PlaceDetails(name: name, address: address, latitude: latitude, longitude: longitude)
+    }
 
     /// "4.5 (2 reviews)", or nil with no reviews — the web's line.
     var ratingLine: String? {
@@ -109,16 +121,10 @@ struct Place: Identifiable, Equatable, Sendable {
         return String(localized: "\(average) (\(totalRatings) reviews)")
     }
 
-    /// Apple Maps, where the web opened Google Maps. No coordinates, no link.
-    var directionsURL: URL? {
-        guard latitude != 0 || longitude != 0 else { return nil }
-        var components = URLComponents(string: "https://maps.apple.com/")
-        components?.queryItems = [
-            URLQueryItem(name: "ll", value: "\(latitude),\(longitude)"),
-            URLQueryItem(name: "q", value: name),
-        ]
-        return components?.url
-    }
+    /// Apple Maps, where the web opened Google Maps, from what the place
+    /// stores. No coordinates, no link: so never for a place from Apple Maps,
+    /// whose link comes from what `PlaceLookups` finds.
+    var directionsURL: URL? { storedDetails.directionsURL }
 
     static func decode(id: String, _ data: [String: Any]) -> Place {
         func text(_ key: String) -> String { (data[key] as? String) ?? "" }
@@ -139,7 +145,8 @@ struct Place: Identifiable, Equatable, Sendable {
             averageRating: number("averageRating"),
             totalRatings: Int(number("totalRatings")),
             totalCheckins: Int(number("totalCheckins")),
-            verifiedByCheckins: data["verifiedByCheckins"] as? Bool ?? false
+            verifiedByCheckins: data["verifiedByCheckins"] as? Bool ?? false,
+            applePlaceID: text("applePlaceId").isEmpty ? nil : text("applePlaceId")
         )
     }
 
