@@ -21,7 +21,14 @@ final class PlaceLookups {
         case failed
     }
 
-    private(set) var answers: [String: Answer] = [:]
+    /// What is asked: a place by its Apple identifier, or an address someone
+    /// typed.
+    private enum Question: Hashable, Sendable {
+        case apple(String)
+        case address(String)
+    }
+
+    private var answers: [Question: Answer] = [:]
     private let directory: any PlaceDirectory
 
     init(directory: any PlaceDirectory = PlaceDirectories.shared) {
@@ -31,27 +38,47 @@ final class PlaceLookups {
     /// Asks for every place from Apple Maps among `places` that is not found,
     /// gone or being asked for already: all at once, as a list shows them.
     func lookUp(_ places: [Place]) async {
-        let ids = Set(places.compactMap(\.applePlaceID)).filter { id in
-            switch answers[id] {
+        await ask(places.compactMap { $0.applePlaceID.map(Question.apple) })
+    }
+
+    /// The same for where meetups are: a place from Apple Maps by its
+    /// identifier, and a typed address for its position on a map.
+    func lookUp(meetupPlaces: [MeetupPlace]) async {
+        await ask(meetupPlaces.compactMap { place in
+            switch place.shape {
+            case .apple(let id): .apple(id)
+            case .typed: .address(place.address)
+            case .stored: nil
+            }
+        })
+    }
+
+    private func ask(_ questions: [Question]) async {
+        let pending = Set(questions).filter { question in
+            switch answers[question] {
             case .found, .gone, .looking: false
             case .failed, nil: true
             }
         }
-        guard !ids.isEmpty else { return }
-        for id in ids { answers[id] = .looking }
+        guard !pending.isEmpty else { return }
+        for question in pending { answers[question] = .looking }
         let directory = directory
-        await withTaskGroup(of: (String, Answer).self) { group in
-            for id in ids {
+        await withTaskGroup(of: (Question, Answer).self) { group in
+            for question in pending {
                 group.addTask {
                     do {
-                        let found = try await directory.details(forApplePlaceID: id)
-                        return (id, found.map(Answer.found) ?? .gone)
+                        let found: PlaceDetails?
+                        switch question {
+                        case .apple(let id): found = try await directory.details(forApplePlaceID: id)
+                        case .address(let text): found = try await directory.locate(address: text)
+                        }
+                        return (question, found.map(Answer.found) ?? .gone)
                     } catch {
-                        return (id, .failed)
+                        return (question, .failed)
                     }
                 }
             }
-            for await (id, answer) in group { answers[id] = answer }
+            for await (question, answer) in group { answers[question] = answer }
         }
     }
 
@@ -59,13 +86,37 @@ final class PlaceLookups {
     /// what Apple said, for one from Apple Maps.
     func shown(_ place: Place) -> Answer {
         guard let id = place.applePlaceID else { return .found(place.storedDetails) }
-        return answers[id] ?? .looking
+        return answers[.apple(id)] ?? .looking
+    }
+
+    /// What to show for where a meetup is. A typed address shows the
+    /// organiser's words straight away, whatever Apple says; the position
+    /// Apple finds for them is what puts them on a map.
+    func shown(_ place: MeetupPlace) -> Answer {
+        switch place.shape {
+        case .stored:
+            return .found(place.storedDetails)
+        case .apple(let id):
+            return answers[.apple(id)] ?? .looking
+        case .typed:
+            let words = place.storedDetails
+            guard case .found(let located) = answers[.address(place.address)] else { return .found(words) }
+            return .found(PlaceDetails(
+                name: words.name, address: words.address,
+                latitude: located.latitude, longitude: located.longitude
+            ))
+        }
     }
 
     /// The name to show for `place`, in words even when there is no answer:
     /// a row is never left blank.
-    func name(of place: Place) -> String {
-        switch shown(place) {
+    func name(of place: Place) -> String { Self.words(for: shown(place)) }
+
+    /// The same for where a meetup is.
+    func name(of place: MeetupPlace) -> String { Self.words(for: shown(place)) }
+
+    private static func words(for answer: Answer) -> String {
+        switch answer {
         case .found(let details) where !details.name.isEmpty: details.name
         case .found: String(localized: "Unnamed place")
         case .looking: String(localized: "Loading…")

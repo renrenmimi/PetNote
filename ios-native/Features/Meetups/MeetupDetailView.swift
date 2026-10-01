@@ -44,7 +44,8 @@ struct MeetupDetailView: View {
                 NavigationStack {
                     PlaceReviewSheet(
                         model: PlaceReviewModel(
-                            placeID: placeID, placeName: model.shownPlace?.name ?? meetup.place.name,
+                            placeID: placeID,
+                            placeName: model.lookups.name(of: model.shownPlace ?? meetup.place),
                             meetupID: meetup.id, source: reviewer
                         ),
                         onSubmitted: { Task { await model.load() } }
@@ -132,25 +133,35 @@ struct MeetupDetailView: View {
         }
     }
 
+    /// Where the meetup is: what it stores, or what Apple said for a place
+    /// from Apple Maps, or the organiser's words with Apple's position for a
+    /// typed address. Nil while Apple is asked about a place from Apple Maps.
+    private func shownDetails(_ place: MeetupPlace) -> PlaceDetails? {
+        if case .found(let details) = model.lookups.shown(place) { return details }
+        return nil
+    }
+
     private func place(_ meetup: Meetup) -> some View {
         section(String(localized: "Location")) {
             if let place = model.shownPlace {
+                let found = shownDetails(place)
                 VStack(alignment: .leading, spacing: Spacing.xs) {
-                    if !place.name.isEmpty {
-                        Text(place.name)
-                            .font(Typography.body.weight(.semibold))
-                            .foregroundStyle(Palette.primaryText)
-                    }
-                    if !place.address.isEmpty {
-                        Text(place.address)
+                    Text(model.lookups.name(of: place))
+                        .font(Typography.body.weight(.semibold))
+                        .foregroundStyle(Palette.primaryText)
+                    if let address = found?.address, !address.isEmpty, address != found?.name {
+                        Text(address)
                             .font(Typography.body)
                             .foregroundStyle(Palette.secondaryText)
                     }
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("meetupDetail.address")
+                if let found, found.directionsURL != nil {
+                    PlaceMap(details: found)
+                }
                 HStack(spacing: Spacing.m) {
-                    if let directions = place.directionsURL {
+                    if let directions = found?.directionsURL {
                         Link(destination: directions) {
                             Label("Directions", systemImage: "map")
                                 .frame(minHeight: Layout.minTouchTarget)

@@ -20,6 +20,7 @@ struct PlacesMeetupsTests {
         var mineList: [Meetup] = []
         var stored: [String: Meetup] = [:]
         var participantList: [MeetupParticipant] = []
+        var atPlaceList: [Meetup] = []
         var address: MeetupPlace?
         var joinAnswer: MeetupJoinOutcome = .joined
         var readError: Error?
@@ -53,7 +54,7 @@ struct PlacesMeetupsTests {
             lock.withLock { _mineFor = uid }
             return mineList
         }
-        func atPlace(placeID: String, limit: Int) async throws -> [Meetup] { [] }
+        func atPlace(placeID: String, limit: Int) async throws -> [Meetup] { atPlaceList }
         func meetup(id: String) async throws -> Meetup? {
             if let readError { throw readError }
             return lock.withLock { stored[id] }
@@ -140,10 +141,10 @@ struct PlacesMeetupsTests {
     @Test func aMeetupWithoutAVisibilityIsPrivate() {
         let meetup = Self.meetup(visibility: nil)
         #expect(meetup.isAddressPrivate)
-        #expect(MeetupSummary.whereLine(meetup) == "Boston, MA")
-        #expect(!MeetupSummary.whereLine(meetup).contains("Park"))
+        #expect(MeetupSummary.whereLine(meetup, lookups: PlaceLookups()) == "Boston, MA")
+        #expect(!MeetupSummary.whereLine(meetup, lookups: PlaceLookups()).contains("Park"))
         let nowhere = Meetup.decode(id: "m", ["title": "x", "location": ["name": "Somewhere"]])
-        #expect(MeetupSummary.whereLine(nowhere) == "City hidden")
+        #expect(MeetupSummary.whereLine(nowhere, lookups: PlaceLookups()) == "City hidden")
     }
 
     @Test func theRequirementsAreTheServersRules() {

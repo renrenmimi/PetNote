@@ -25,6 +25,16 @@ enum MeetupStatus: String, Sendable {
     }
 }
 
+/// Where a meetup is, as the server keeps it: in the meetup's public copy, or
+/// in `private/address` for those allowed to read it.
+///
+/// Three shapes (`functions/src/meetups.ts`, `MeetupLocationInput`): the
+/// web's name, address and position; a place found on Apple Maps, by its
+/// identifier only, whose name, address and position `PlaceLookups` asks for;
+/// and an address the organiser typed, with an optional label, which
+/// `PlaceLookups` finds on a map. A participants_only meetup's public copy has
+/// none of these, only the city it is near or, in the new shapes, the area the
+/// organiser named.
 struct MeetupPlace: Equatable, Sendable {
     let name: String
     let address: String
@@ -32,21 +42,54 @@ struct MeetupPlace: Equatable, Sendable {
     let state: String
     let latitude: Double
     let longitude: Double
+    var applePlaceID: String? = nil
+    /// The organiser's words for where a participants_only meetup is.
+    var area: String = ""
+    /// The organiser's name for a typed address ("Alex's backyard").
+    var label: String = ""
+
+    enum Shape: Equatable {
+        case stored
+        case apple(String)
+        case typed
+    }
+
+    var shape: Shape {
+        if let applePlaceID { return .apple(applePlaceID) }
+        if name.isEmpty, !address.isEmpty, latitude == 0, longitude == 0 { return .typed }
+        return .stored
+    }
+
+    /// What the meetup itself says about where it is: everything, for the
+    /// web's shape; the organiser's words, for a typed address.
+    var storedDetails: PlaceDetails {
+        PlaceDetails(
+            name: name.isEmpty ? (label.isEmpty ? address : label) : name,
+            address: address, latitude: latitude, longitude: longitude
+        )
+    }
 
     static func decode(_ data: [String: Any]?) -> MeetupPlace {
         let data = data ?? [:]
+        let apple = data["applePlaceId"] as? String ?? ""
         return MeetupPlace(
             name: data["name"] as? String ?? "",
             address: data["address"] as? String ?? "",
             city: data["city"] as? String ?? "",
             state: data["state"] as? String ?? "",
             latitude: (data["lat"] as? NSNumber)?.doubleValue ?? 0,
-            longitude: (data["lng"] as? NSNumber)?.doubleValue ?? 0
+            longitude: (data["lng"] as? NSNumber)?.doubleValue ?? 0,
+            applePlaceID: apple.isEmpty ? nil : apple,
+            area: data["area"] as? String ?? "",
+            label: data["label"] as? String ?? ""
         )
     }
 
+    /// Where a participants_only meetup is near: the area its organiser
+    /// named, or, for the web's shape, its city and state.
     var cityLine: String {
-        [city, state].filter { !$0.isEmpty }.joined(separator: ", ")
+        if !area.isEmpty { return area }
+        return [city, state].filter { !$0.isEmpty }.joined(separator: ", ")
     }
 
     var directionsURL: URL? {

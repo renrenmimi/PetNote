@@ -11,6 +11,9 @@ import Testing
     private static let dogRun = PlaceDetails(
         name: "Fenway Dog Run", address: "1 Park Dr, Boston, MA", latitude: 42.3434, longitude: -71.095
     )
+    private static let petShop = PlaceDetails(
+        name: "Corner Pet Shop", address: "20 Elm St, Somerville, MA", latitude: 42.3967, longitude: -71.122
+    )
 
     /// Apple Maps as a table, counting what it is asked, under a lock: the
     /// lookups ask from their own tasks.
@@ -41,7 +44,7 @@ import Testing
     }
 
     /// Apple Maps taking its time: every question waits until `answer()`.
-    private final class SlowDirectory: PlaceDirectory, @unchecked Sendable {
+    final class SlowDirectory: PlaceDirectory, @unchecked Sendable {
         private let lock = NSLock()
         private var waiting: [CheckedContinuation<Void, Never>] = []
         private var answered = false
@@ -174,24 +177,31 @@ import Testing
     /// While Apple is being asked about a place, the rest of its page comes
     /// in: Apple's answer is for the name, address and map only.
     @Test func aSlowAppleHoldsUpOnlyWhatAppleIsAskedFor() async {
-        let directory = SlowDirectory(["I1": Self.dogRun])
+        let directory = SlowDirectory(["I1": Self.dogRun, "I2": Self.petShop])
         let run = place("apple_I1", apple: "I1")
         let review = PlaceReview.decode(id: "r1", ["userId": "u1", "rating": 4, "comment": "Shady"])
+        let meetups = PlacesMeetupsTests.FakeMeetups()
+        meetups.atPlaceList = [Meetup.decode(id: "m1", [
+            "title": "Morning walk", "organizerId": "o1", "status": "upcoming",
+            "location": ["applePlaceId": "I2"], "locationVisibility": "everyone", "locationId": run.id,
+        ])]
         let model = PlaceDetailModel(
             placeID: run.id, viewerID: "me", places: Places(places: [run], reviews: [review]),
-            reviewer: PlacesMeetupsTests.FakeReviews(), meetups: PlacesMeetupsTests.FakeMeetups(),
+            reviewer: PlacesMeetupsTests.FakeReviews(), meetups: meetups,
             lookups: PlaceLookups(directory: directory)
         )
 
         let loading = Task { await model.load() }
         #expect(await eventuallyTrue { directory.isAsked })
         #expect(await eventuallyTrue { model.reviews.map(\.id) == ["r1"] && model.hasReviewed == false },
-                "the reviews waited for Apple")
+                "the reviews, or the review button, waited for Apple")
+        #expect(model.meetups.map(\.id) == ["m1"])
         #expect(model.lookups.shown(run) == .looking)
 
         directory.answer()
         await loading.value
         #expect(model.lookups.name(of: run) == "Fenway Dog Run")
+        #expect(model.meetups.first.map { model.lookups.name(of: $0.place) } == "Corner Pet Shop")
     }
 
     @Test func theNextPageNeedNotWaitForAppleToNameThisOne() async {
