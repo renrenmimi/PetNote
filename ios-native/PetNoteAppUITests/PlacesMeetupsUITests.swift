@@ -473,6 +473,144 @@ final class PlacesMeetupsUITests: XCTestCase {
         assertMeetupPlace(["TEST CONTENT Corner Pet Shop", "20 Elm St, Somerville, MA 02144"], in: app)
     }
 
+    /// Creating a meetup at an address typed here, which only those who
+    /// join may see: the server keeps the organiser's words in the private
+    /// copy and the area they named in the public one, makes no place, and
+    /// puts the organiser and their pet on the guest list. Its page shows its
+    /// organiser where it is.
+    func testCreatingAMeetupAtATypedAddressOnlyThoseWhoJoinSee() throws {
+        let (app, me) = try signInAsNewAccount("createmeetup-\(run)@petnote.test")
+        uid = me
+        inboxes.append(me)
+        let petName = "Juniper \(run)"
+        try givePet(named: petName, to: me)
+        let title = "TEST CONTENT Yard games \(run)"
+
+        app.tabBars.buttons["Meetups"].tap()
+        try openCreateMeetup(in: app)
+        try type(title, into: "createMeetup.title", in: app)
+        try type("TEST CONTENT A fenced yard.", into: "createMeetup.description", in: app)
+        let whereChoice = app.segmentedControls["createMeetup.where"]
+        for _ in 0..<6 where !(whereChoice.exists && whereChoice.isHittable) { app.swipeUp() }
+        XCTAssertTrue(waitUntilHittable(whereChoice, in: app, timeout: 10), "\(app.debugDescription)")
+        whereChoice.buttons["An address"].tap()
+        try type("5 Oak Ave, Medford, MA", into: "createMeetup.address", in: app)
+        try type("TEST CONTENT Oak yard", into: "createMeetup.label", in: app)
+        try type("Medford", into: "createMeetup.area", in: app)
+        let create = app.buttons["createMeetup.save"]
+        XCTAssertTrue(waitUntilHittable(create, in: app, timeout: 10), "Create stayed off")
+        create.tap()
+
+        // Its page, as its organiser sees it: the private address.
+        let shownTitle = app.staticTexts["meetupDetail.title"]
+        XCTAssertTrue(waitForExistence(of: shownTitle, in: app, timeout: 30), "the meetup did not open\n\(app.debugDescription)")
+        XCTAssertEqual(shownTitle.label, title)
+        assertMeetupPlace(["TEST CONTENT Oak yard", "5 Oak Ave, Medford, MA"], in: app)
+
+        // What the server keeps.
+        let id = try createdMeetup(by: me)
+        let stored = try XCTUnwrap(try JourneyAdmin.fields(path: "meetups/\(id)"))
+        XCTAssertEqual(JourneyAdmin.string(stored["title"]), title)
+        XCTAssertEqual(JourneyAdmin.string(stored["locationVisibility"]), "participants_only")
+        XCTAssertNil(stored["locationId"], "a meetup at a typed address made a place")
+        XCTAssertEqual(Self.mapStrings(stored["location"]), ["name": "Meetup near Medford", "area": "Medford"])
+        let hidden = try XCTUnwrap(try JourneyAdmin.fields(path: "meetups/\(id)/private/address"))
+        XCTAssertEqual(Self.strings(of: hidden), ["address": "5 Oak Ave, Medford, MA", "label": "TEST CONTENT Oak yard"])
+        let organiser = try XCTUnwrap(try JourneyAdmin.fields(path: "meetups/\(id)/participants/\(me)"), "the organiser is not on the guest list")
+        XCTAssertEqual(JourneyAdmin.string(organiser["petName"]), petName)
+    }
+
+    /// Creating a public meetup at a place from Apple Maps: the server keeps
+    /// the identifier and links the meetup to the place it makes for it,
+    /// which holds none of Apple's words either. Its page names the place
+    /// from Apple Maps, on a map.
+    func testCreatingAMeetupAtAPlaceFromAppleMaps() throws {
+        let place = "locations/apple_TESTAPPLEDOGRUN01"
+        cleanup.append(place)
+        XCTAssertNil(try JourneyAdmin.fields(path: place), "a place for the dog run is on the server already; an earlier run left it")
+        let (app, me) = try signInAsNewAccount("applemeetup-\(run)@petnote.test")
+        uid = me
+        inboxes.append(me)
+
+        app.tabBars.buttons["Meetups"].tap()
+        try openCreateMeetup(in: app)
+        try type("TEST CONTENT Fetch at the run \(run)", into: "createMeetup.title", in: app)
+        try type("TEST CONTENT Bring a ball.", into: "createMeetup.description", in: app)
+        try type("dog run\n", into: "applePlace.search", in: app)
+        let result = app.buttons["applePlace.result.TESTAPPLEDOGRUN01"]
+        XCTAssertTrue(waitForExistence(of: result, in: app, timeout: 20), "Apple Maps found no dog run\n\(app.debugDescription)")
+        result.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["applePlace.chosen"].waitForExistence(timeout: 10))
+        let everyone = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Everyone")).firstMatch
+        for _ in 0..<6 where !(everyone.exists && everyone.isHittable) { app.swipeUp() }
+        XCTAssertTrue(waitUntilHittable(everyone, in: app, timeout: 10), "\(app.debugDescription)")
+        everyone.tap()
+        let create = app.buttons["createMeetup.save"]
+        XCTAssertTrue(waitUntilHittable(create, in: app, timeout: 10), "Create stayed off")
+        create.tap()
+
+        XCTAssertTrue(waitForExistence(of: app.staticTexts["meetupDetail.title"], in: app, timeout: 30), "the meetup did not open\n\(app.debugDescription)")
+        assertMeetupPlace(["TEST CONTENT Fenway Dog Run", "1 Park Dr, Boston, MA 02215"], in: app)
+        XCTAssertTrue(app.buttons["meetupDetail.place"].exists, "no way to the place it is at")
+
+        let id = try createdMeetup(by: me)
+        let stored = try XCTUnwrap(try JourneyAdmin.fields(path: "meetups/\(id)"))
+        XCTAssertEqual(JourneyAdmin.string(stored["locationVisibility"]), "everyone")
+        XCTAssertEqual(Self.mapStrings(stored["location"]), ["applePlaceId": "TESTAPPLEDOGRUN01"])
+        XCTAssertEqual(JourneyAdmin.string(stored["locationId"]), "apple_TESTAPPLEDOGRUN01")
+        let made = try XCTUnwrap(try JourneyAdmin.fields(path: place), "no place made for the meetup")
+        XCTAssertEqual(JourneyAdmin.string(made["applePlaceId"]), "TESTAPPLEDOGRUN01")
+        for field in ["name", "address", "lat", "lng", "city", "state"] {
+            XCTAssertNil(made[field], "the place made for the meetup holds the \(field)")
+        }
+    }
+
+    /// The Create button on the meetups list.
+    private func openCreateMeetup(in app: XCUIApplication) throws {
+        let create = app.buttons["meetups.create"]
+        XCTAssertTrue(waitUntilHittable(create, in: app, timeout: 30), "no Create\n\(app.debugDescription)")
+        create.tap()
+        XCTAssertTrue(waitForExistence(of: app.descendants(matching: .any)["createMeetup.title"], in: app, timeout: 10),
+                      "no Create Meetup\n\(app.debugDescription)")
+    }
+
+    /// Types into a field of a form, scrolled to first: one below the
+    /// keyboard is not hittable.
+    private func type(_ text: String, into identifier: String, in app: XCUIApplication) throws {
+        let field = app.descendants(matching: .any)[identifier]
+        for _ in 0..<6 where !(field.exists && field.isHittable) { app.swipeUp() }
+        XCTAssertTrue(waitUntilHittable(field, in: app, timeout: 10), "no \(identifier)\n\(app.debugDescription)")
+        field.tap()
+        field.typeText(text)
+    }
+
+    /// The meetup this account created, which tearDown then removes with its
+    /// guest list and private address.
+    private func createdMeetup(by organiser: String) throws -> String {
+        var names: [String] = []
+        for _ in 0..<20 {
+            names = try JourneyAdmin.documentNames(in: "meetups", field: "organizerId", equals: organiser)
+            if !names.isEmpty { break }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        let id = try XCTUnwrap(names.first.map { String($0.split(separator: "/").last ?? "") }, "the server has no meetup by \(organiser)")
+        XCTAssertEqual(names.count, 1, "more than one meetup was created")
+        cleanup.append("meetups/\(id)")
+        cleanup.append("meetups/\(id)/private/address")
+        cleanup.append("meetups/\(id)/participants/\(organiser)")
+        return id
+    }
+
+    /// A map field's string values, as the REST API returns them.
+    private static func mapStrings(_ value: Any?) -> [String: String] {
+        let fields = ((value as? [String: Any])?["mapValue"] as? [String: Any])?["fields"] as? [String: Any] ?? [:]
+        return fields.compactMapValues { JourneyAdmin.string($0) }
+    }
+
+    private static func strings(of fields: [String: Any]) -> [String: String] {
+        fields.compactMapValues { JourneyAdmin.string($0) }
+    }
+
     func testAnOrganiserCancelsTheirMeetupFromMyMeetups() throws {
         let (app, me) = try signInAsNewAccount("organiser-\(run)@petnote.test")
         uid = me

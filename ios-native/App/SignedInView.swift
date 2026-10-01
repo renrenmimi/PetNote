@@ -514,6 +514,12 @@ struct SignedInView: View {
         NavigationStack(path: $meetupsPath) {
             MeetupsView(
                 model: MeetupsModel(uid: user.uid, source: repositories.meetups),
+                makeCreateMeetup: {
+                    CreateMeetupModel(
+                        uid: user.uid, creator: repositories.meetupCreating,
+                        places: repositories.places, pets: repositories.petChoices
+                    )
+                },
                 onOpen: { meetupsPath.append(.meetup(meetupID: $0)) }
             )
             // Whose "My Meetups" these are: a new account gets a new list.
@@ -997,6 +1003,7 @@ struct Repositories {
     let placeReviews: any PlaceReviewing
     let placeAdding: any PlaceAdding
     let meetups: any MeetupsReading
+    let meetupCreating: any MeetupCreating
     /// The spotlight row's candidates. The search repository's own read — see
     /// `PopularPostsReading`.
     let popularPosts: any PopularPostsReading
@@ -1006,6 +1013,7 @@ struct Repositories {
     static var live: Repositories {
         let search = FirestoreSearchRepository()
         let places = FirestorePlacesSource()
+        let meetups = FirestoreMeetupsSource()
         return Repositories(
             feed: FirestoreFeedRepository(),
             followingPosts: FirestoreFollowingPostsRepository(),
@@ -1033,7 +1041,8 @@ struct Repositories {
             places: places,
             placeReviews: places,
             placeAdding: places,
-            meetups: FirestoreMeetupsSource(),
+            meetups: meetups,
+            meetupCreating: meetups,
             popularPosts: search,
             petBirthdays: FirestorePetBirthdaySource()
         )
