@@ -748,8 +748,16 @@ struct SignedInView: View {
             PlaceDetailView(
                 model: PlaceDetailModel(
                     placeID: placeID, viewerID: user.uid, places: repositories.places,
-                    reviewer: repositories.placeReviews, meetups: repositories.meetups
+                    reviewer: repositories.placeReviews, checker: repositories.placeCheckins,
+                    meetups: repositories.meetups
                 ),
+                makeCheckIn: { placeID, placeName in
+                    CheckInModel(
+                        placeID: placeID, placeName: placeName, uid: user.uid,
+                        isEmailVerified: user.isEmailVerified, checker: repositories.placeCheckins,
+                        uploader: repositories.media, pets: repositories.petChoices
+                    )
+                },
                 onOpenMeetup: { stack.wrappedValue.append(.meetup(meetupID: $0)) }
             )
         case .meetup(let meetupID):
@@ -1011,6 +1019,7 @@ struct Repositories {
     let places: any PlacesReading
     let placeReviews: any PlaceReviewing
     let placeAdding: any PlaceAdding
+    let placeCheckins: any PlaceCheckingIn
     let meetups: any MeetupsReading
     let meetupCreating: any MeetupCreating
     let meetupEditing: any MeetupEditing
@@ -1051,6 +1060,7 @@ struct Repositories {
             places: places,
             placeReviews: places,
             placeAdding: places,
+            placeCheckins: places,
             meetups: meetups,
             meetupCreating: meetups,
             meetupEditing: meetups,

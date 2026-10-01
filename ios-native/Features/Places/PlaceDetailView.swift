@@ -10,10 +10,17 @@ struct PlaceDetailView: View {
 
     @State private var model: PlaceDetailModel
     @State private var isReviewing = false
+    @State private var isCheckingIn = false
+    /// A check-in at this place, by its id and the name it is shown with.
+    private let makeCheckIn: (String, String) -> CheckInModel
     private let onOpenMeetup: (String) -> Void
 
-    init(model: PlaceDetailModel, onOpenMeetup: @escaping (String) -> Void) {
+    init(
+        model: PlaceDetailModel, makeCheckIn: @escaping (String, String) -> CheckInModel,
+        onOpenMeetup: @escaping (String) -> Void
+    ) {
         _model = State(initialValue: model)
+        self.makeCheckIn = makeCheckIn
         self.onOpenMeetup = onOpenMeetup
     }
 
@@ -49,6 +56,16 @@ struct PlaceDetailView: View {
                             placeID: place.id, placeName: model.lookups.name(of: place), source: model.reviewer
                         ),
                         onSubmitted: { Task { await model.load() } }
+                    )
+                }
+            }
+        }
+        .sheet(isPresented: $isCheckingIn) {
+            if case .loaded(let place) = model.state {
+                NavigationStack {
+                    CheckInSheet(
+                        model: makeCheckIn(place.id, model.lookups.name(of: place)),
+                        onCheckedIn: { Task { await model.load() } }
                     )
                 }
             }
@@ -168,6 +185,26 @@ struct PlaceDetailView: View {
 
     private var checkins: some View {
         section(String(localized: "Recent Check-ins (\(model.checkins.count))")) {
+            // The web's button, under the check-ins here. It waits until the
+            // server says whether today's is done, rather than guessing.
+            switch model.hasCheckedInToday {
+            case false?:
+                Button { isCheckingIn = true } label: {
+                    Label("Check In", systemImage: "mappin.and.ellipse")
+                        .font(Typography.body)
+                        .frame(minHeight: Layout.minTouchTarget)
+                        .contentShape(.rect)
+                }
+                .accessibilityIdentifier("place.checkIn")
+            case true?:
+                Label("Checked In Today", systemImage: "checkmark.circle")
+                    .font(Typography.body)
+                    .foregroundStyle(Palette.secondaryText)
+                    .frame(minHeight: Layout.minTouchTarget)
+                    .accessibilityIdentifier("place.checkedInToday")
+            case nil:
+                EmptyView()
+            }
             if model.failedSections.contains("checkins") {
                 failure(String(localized: "Could not load check-ins."))
             } else if model.checkins.isEmpty {

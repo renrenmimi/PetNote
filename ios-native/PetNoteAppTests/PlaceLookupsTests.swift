@@ -199,7 +199,7 @@ import Testing
         ])]
         let model = PlaceDetailModel(
             placeID: run.id, viewerID: "me", places: Places(places: [run], reviews: [review]),
-            reviewer: PlacesMeetupsTests.FakeReviews(), meetups: meetups,
+            reviewer: PlacesMeetupsTests.FakeReviews(), checker: FakeCheckins(), meetups: meetups,
             lookups: PlaceLookups(directory: directory)
         )
 

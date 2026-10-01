@@ -505,6 +505,16 @@
         }
       }
     },
+    "A photo from this place": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个地方的一张照片"
+          }
+        }
+      }
+    },
     "A place": {
       "localizations": {
         "zh-Hans": {
@@ -1205,6 +1215,16 @@
         }
       }
     },
+    "Caption (optional)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "说点什么（可不填）"
+          }
+        }
+      }
+    },
     "Card": {
       "shouldTranslate": false
     },
@@ -1301,6 +1321,26 @@
         }
       }
     },
+    "Change the photo": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "换一张照片"
+          }
+        }
+      }
+    },
+    "Check In": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打卡"
+          }
+        }
+      }
+    },
     "Check code": {
       "localizations": {
         "zh-Hans": {
@@ -1331,12 +1371,42 @@
         }
       }
     },
+    "Check-in failed. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打卡失败，请重试。"
+          }
+        }
+      }
+    },
     "Check-ins": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "打卡"
+          }
+        }
+      }
+    },
+    "Checked In Today": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天已打卡"
+          }
+        }
+      }
+    },
+    "Checking in...": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打卡中..."
           }
         }
       }
@@ -6251,6 +6321,16 @@
         }
       }
     },
+    "Tap to choose one": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点按选一张"
+          }
+        }
+      }
+    },
     "Tap to retry": {
       "localizations": {
         "zh-Hans": {
@@ -6854,6 +6934,16 @@
         }
       }
     },
+    "The photo could not be uploaded. You were not checked in.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片没能上传，没有打卡。"
+          }
+        }
+      }
+    },
     "The photo upload did not complete. Try again.": {
       "localizations": {
         "zh-Hans": {
@@ -6880,6 +6970,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "照片上传超时，地点没有加上。"
+          }
+        }
+      }
+    },
+    "The photo upload timed out. You were not checked in.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片上传超时，没有打卡。"
           }
         }
       }
@@ -7864,6 +7964,16 @@
         }
       }
     },
+    "Verify your email to check in.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "验证邮箱后才能打卡。"
+          }
+        }
+      }
+    },
     "Verify your email to start posting and commenting": {
       "localizations": {
         "zh-Hans": {
@@ -8225,6 +8335,16 @@
         }
       }
     },
+    "What are you doing here? 🐾": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你在这里做什么？🐾"
+          }
+        }
+      }
+    },
     "What is it like for pets?": {
       "localizations": {
         "zh-Hans": {
@@ -8311,6 +8431,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "这条帖子是关于哪只宠物的？"
+          }
+        }
+      }
+    },
+    "Which pet is with you? (optional)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "哪只宠物和你一起来？（可不选）"
           }
         }
       }
