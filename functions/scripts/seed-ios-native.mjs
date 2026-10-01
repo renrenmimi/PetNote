@@ -506,7 +506,7 @@ function textFor(index) {
 }
 
 /**
- * Three places and five meetups, each shaped for one thing the screens do.
+ * Four places and nine meetups, each shaped for one thing the screens do.
  *
  * The place aggregates (rating, review and check-in counts) are left to the
  * review and check-in triggers, like the post counts. The meetup participant
@@ -620,6 +620,9 @@ async function seedGatherings({ uidA, uidB, now }) {
     private: meetup("private"),
     full: meetup("full"),
     past: meetup("past"),
+    apple: meetup("apple"),
+    applePrivate: meetup("apple-private"),
+    typed: meetup("typed"),
   };
   const organizerB = { organizerId: uidB, organizerName: "Accept B", organizerAvatar: avatar(uidB) };
   const requirements = (petType, maxPets) => ({
@@ -679,6 +682,30 @@ async function seedGatherings({ uidA, uidB, now }) {
     title: "TEST CONTENT One-pet walk", date: Timestamp.fromMillis(now + 4 * day),
     location: publicPark, locationId: places.reviewed, locationVisibility: "everyone",
     requirements: requirements("any", 1), status: "upcoming",
+  }));
+  // Where a meetup made in the iOS app is, as the server stores it
+  // (planMeetupLocation in functions/src/meetups.ts): a place from Apple Maps
+  // by its identifier only, linked to that place; the same, participants-only,
+  // with the area its organiser named on the public copy; and an address its
+  // organiser typed, which makes no place. The emulator build answers the
+  // identifiers and finds the address from StandInPlaceDirectory. Twelve to
+  // fourteen days out, after every other meetup, so they come last in the
+  // list and none is this week's.
+  await db.doc(`meetups/${meetups.apple}`).set(shape({
+    title: "TEST CONTENT Fenway fetch", date: Timestamp.fromMillis(now + 12 * day),
+    location: { applePlaceId: "TESTAPPLEDOGRUN01" }, locationId: places.apple, locationVisibility: "everyone",
+    requirements: requirements("any", 0), status: "upcoming",
+  }));
+  await db.doc(`meetups/${meetups.applePrivate}`).set(shape({
+    title: "TEST CONTENT Pet shop meet", date: Timestamp.fromMillis(now + 13 * day),
+    location: { name: "Meetup near Somerville", area: "Somerville" }, locationVisibility: "participants_only",
+    requirements: requirements("any", 0), status: "upcoming",
+  }));
+  await db.doc(`meetups/${meetups.applePrivate}/private/address`).set({ applePlaceId: "TESTAPPLEPETSHOP1" });
+  await db.doc(`meetups/${meetups.typed}`).set(shape({
+    title: "TEST CONTENT Yard games", date: Timestamp.fromMillis(now + 14 * day),
+    location: { address: "5 Oak Ave, Medford, MA", label: "TEST CONTENT Oak Ave yard" }, locationVisibility: "everyone",
+    requirements: requirements("any", 0), status: "upcoming",
   }));
   // Every meetup has its organiser as its first participant, as the create
   // callable writes it — and the count of 1 above is that entry.

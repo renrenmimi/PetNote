@@ -71,6 +71,12 @@ final class PlacesMeetupsUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["place.address"].label, "1 Park Dr, Boston, MA 02215")
         XCTAssertTrue(app.descendants(matching: .any)["place.map"].waitForExistence(timeout: 10), "no map with the address")
         XCTAssertTrue(app.links["place.directions"].exists || app.buttons["place.directions"].exists, "no directions")
+
+        // A meetup held there stores the identifier too, and is named the same.
+        let fetch = app.buttons["place.meetup.\(try landmark("meetup_apple"))"]
+        for _ in 0..<6 where !(fetch.exists && fetch.isHittable) { app.swipeUp() }
+        XCTAssertTrue(waitForExistence(of: fetch, in: app, timeout: 20), "the meetup held there is not shown\n\(app.debugDescription)")
+        assertLabel(of: fetch, contains: "TEST CONTENT Fenway Dog Run")
     }
 
     func testThePlacesListAPlaceAndAMeetupHeldThere() throws {
@@ -283,6 +289,61 @@ final class PlacesMeetupsUITests: XCTestCase {
         XCTAssertTrue(waitForExistence(of: refusal, in: app, timeout: 20), "a full meetup said nothing\n\(app.debugDescription)")
         XCTAssertEqual(refusal.label, "Meetup is full.")
         XCTAssertNil(try JourneyAdmin.fields(path: "meetups/\(full)/participants/\(me)"))
+    }
+
+    /// Where a meetup made in the iOS app is: a place from Apple Maps, stored
+    /// by its identifier only, or an address its organiser typed. The list
+    /// and the meetup name the one from what Apple says and the other in the
+    /// organiser's words, each on a map; a participants-only one says only
+    /// the area its organiser named until this person joins. The words below
+    /// are StandInPlaceDirectory's and the seed's.
+    func testMeetupsAtAPlaceFromAppleMapsAndAtATypedAddress() throws {
+        let apple = try landmark("meetup_apple")
+        let hidden = try landmark("meetup_applePrivate")
+        let typed = try landmark("meetup_typed")
+        let stored = try XCTUnwrap(try JourneyAdmin.fields(path: "meetups/\(apple)"))
+        let location = ((stored["location"] as? [String: Any])?["mapValue"] as? [String: Any])?["fields"] as? [String: Any]
+        XCTAssertEqual(location.map { Set($0.keys) }, ["applePlaceId"], "the server holds more of the place than Apple's identifier")
+        let (app, me) = try signInAsNewAccount("applemeetups-\(run)@petnote.test")
+        uid = me
+        let petName = "Pepper \(run)"
+        try givePet(named: petName, to: me)
+
+        // The list: Apple's name, the area the organiser named, and the
+        // organiser's label. The three come last, in that order.
+        app.tabBars.buttons["Meetups"].tap()
+        let appleRow = app.buttons["meetup.\(apple)"]
+        let hiddenRow = app.buttons["meetup.\(hidden)"]
+        let typedRow = app.buttons["meetup.\(typed)"]
+        XCTAssertTrue(waitForExistence(of: app.buttons["meetups.filter.upcoming"], in: app, timeout: 30))
+        for _ in 0..<8 where !(typedRow.exists && typedRow.isHittable) { app.swipeUp() }
+        XCTAssertTrue(waitForExistence(of: typedRow, in: app, timeout: 30), "\(app.debugDescription)")
+        assertLabel(of: appleRow, contains: "TEST CONTENT Fenway Dog Run")
+        XCTAssertTrue(hiddenRow.label.contains("Somerville"), hiddenRow.label)
+        XCTAssertFalse(hiddenRow.label.contains("Pet Shop") || hiddenRow.label.contains("Elm"), "the private place is in the list: \(hiddenRow.label)")
+        XCTAssertTrue(typedRow.label.contains("TEST CONTENT Oak Ave yard"), typedRow.label)
+
+        // At a place from Apple Maps: Apple's name and address, on a map.
+        try openMeetup(apple, in: app)
+        assertMeetupPlace(["TEST CONTENT Fenway Dog Run", "1 Park Dr, Boston, MA 02215"], in: app)
+        XCTAssertTrue(app.buttons["meetupDetail.place"].exists, "no way to the place it is at")
+        app.navigationBars.buttons["BackButton"].firstMatch.tap()
+
+        // At a typed address: the organiser's words, on the map Apple found
+        // for them, and no place made of somebody's yard.
+        try openMeetup(typed, in: app)
+        assertMeetupPlace(["TEST CONTENT Oak Ave yard", "5 Oak Ave, Medford, MA"], in: app)
+        XCTAssertFalse(app.buttons["meetupDetail.place"].exists, "a typed address made a place")
+        app.navigationBars.buttons["BackButton"].firstMatch.tap()
+
+        // Participants-only at a place from Apple Maps: nothing of it until
+        // joined, then all of it.
+        try openMeetup(hidden, in: app)
+        XCTAssertTrue(app.descendants(matching: .any)["meetupDetail.addressHidden"].exists, "the place showed before joining")
+        XCTAssertFalse(app.descendants(matching: .any)["place.map"].exists, "a map showed before joining")
+        try join(in: app, pet: petName)
+        cleanup.append("meetups/\(hidden)/participants/\(me)")
+        assertMeetupPlace(["TEST CONTENT Corner Pet Shop", "20 Elm St, Somerville, MA 02144"], in: app)
     }
 
     func testAnOrganiserCancelsTheirMeetupFromMyMeetups() throws {
@@ -583,6 +644,34 @@ final class PlacesMeetupsUITests: XCTestCase {
     }
 
     // MARK: - Steps
+
+    /// Waits for `element`'s label to say `words`: a name looked up on Apple
+    /// Maps comes in after the row does.
+    private func assertLabel(
+        of element: XCUIElement, contains words: String, timeout: TimeInterval = 20,
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let said = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", words), object: element)
+        XCTAssertEqual(XCTWaiter().wait(for: [said], timeout: timeout), .completed, "not \(words): \(element.label)", file: file, line: line)
+    }
+
+    /// The meetup's place: its name and then its address in one element,
+    /// with a map and directions.
+    private func assertMeetupPlace(
+        _ words: [String], in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let place = app.descendants(matching: .any)["meetupDetail.address"]
+        XCTAssertTrue(waitForExistence(of: place, in: app, timeout: 20), "no place\n\(app.debugDescription)", file: file, line: line)
+        assertLabel(of: place, contains: words[0], file: file, line: line)
+        for word in words.dropFirst() {
+            XCTAssertTrue(place.label.contains(word), "no \(word): \(place.label)", file: file, line: line)
+        }
+        XCTAssertTrue(app.descendants(matching: .any)["place.map"].waitForExistence(timeout: 10), "no map", file: file, line: line)
+        XCTAssertTrue(
+            app.links["meetupDetail.directions"].exists || app.buttons["meetupDetail.directions"].exists,
+            "no directions", file: file, line: line
+        )
+    }
 
     private func openMeetup(_ id: String, in app: XCUIApplication) throws {
         let row = app.buttons["meetup.\(id)"]
