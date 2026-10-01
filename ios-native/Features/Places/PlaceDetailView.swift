@@ -3,6 +3,11 @@ import SwiftUI
 /// One place: what it is and where, its photos, the latest check-ins, its
 /// reviews and the meetups held there — the web's location page, read only.
 struct PlaceDetailView: View {
+    /// Read out for the photo strip: "1 photo", "3 photos".
+    static func photoCount(_ count: Int) -> String {
+        count == 1 ? String(localized: "1 photo") : String(localized: "\(count) photos")
+    }
+
     @State private var model: PlaceDetailModel
     @State private var isReviewing = false
     private let onOpenMeetup: (String) -> Void
@@ -155,7 +160,7 @@ struct PlaceDetailView: View {
                     }
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(String(localized: "\(photos.count) photos"))
+                .accessibilityLabel(Self.photoCount(photos.count))
                 .accessibilityIdentifier("place.photos")
             }
         }
