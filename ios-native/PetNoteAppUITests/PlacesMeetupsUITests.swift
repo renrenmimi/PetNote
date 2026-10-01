@@ -617,6 +617,117 @@ final class PlacesMeetupsUITests: XCTestCase {
         }
     }
 
+    /// Editing a meetup made on the web, as its organiser: a new title, and
+    /// the meetup stays where it was, in the web's shape, linked to the place
+    /// the server makes for a public meetup there, as the web's edit does.
+    /// Then moved to a typed address: the new shape, the link gone, and the
+    /// place the server made let go as nothing else uses it.
+    func testEditingAMeetupKeepsWhereItWasUntilItMoves() throws {
+        let (app, me) = try signInAsNewAccount("editmeetup-\(run)@petnote.test")
+        uid = me
+        inboxes.append(me)
+        organisers.append(me)
+        let id = "ui-\(run)-edit"
+        let lot = "TEST CONTENT Elm Street lot \(run)"
+        let web: [String: Any] = [
+            "name": lot, "address": "9 Elm St, Boston, MA", "lat": 42.35123, "lng": -71.06321,
+            "city": "Boston", "state": "MA",
+        ]
+        try Self.write(path: "meetups/\(id)", [
+            "organizerId": me, "organizerName": "Organiser \(run)", "organizerAvatar": "",
+            "title": "TEST CONTENT Lot walk \(run)", "description": "TEST CONTENT Around the lot.",
+            "date": Date().addingTimeInterval(5 * 24 * 3600), "duration": 60, "location": web,
+            "locationVisibility": "everyone",
+            "requirements": ["petType": "any", "dogSize": "any", "maxPets": 0, "mustHavePosts": false,
+                             "mustHavePetProfile": false, "minFollowers": 0, "additionalNotes": ""],
+            "status": "upcoming", "participantCount": 1, "isRatingOpen": false,
+        ])
+        try Self.write(path: "meetups/\(id)/participants/\(me)", [
+            "meetupId": id, "userId": me, "userName": "Organiser \(run)", "userAvatar": "",
+            "petId": "", "petName": "Organizer", "petAvatar": "", "joinedAt": Date(),
+            "status": "confirmed", "counted": true,
+        ])
+
+        app.tabBars.buttons["Meetups"].tap()
+        let mine = app.buttons["meetups.filter.mine"]
+        XCTAssertTrue(waitUntilHittable(mine, in: app, timeout: 30))
+        mine.tap()
+        try openMeetup(id, in: app)
+
+        // A new title, and nothing else. Where it is shows as kept, further
+        // down the form, which builds its rows as they come into view.
+        try openEdit(in: app)
+        try replace(with: "TEST CONTENT Edited \(run)\n", in: "createMeetup.title", app: app)
+        let kept = app.descendants(matching: .any)["createMeetup.unchanged"]
+        reveal(kept, in: app)
+        XCTAssertTrue(kept.exists, "where it was is not shown as kept\n\(app.debugDescription)")
+        XCTAssertTrue(kept.label.contains(lot), kept.label)
+        XCTAssertTrue(app.segmentedControls["createMeetup.where"].buttons["As it was"].isSelected)
+        try save(in: app)
+        let shownTitle = app.staticTexts["meetupDetail.title"]
+        XCTAssertTrue(waitForLabel(of: shownTitle, "TEST CONTENT Edited \(run)"), "the new title is not shown: \(shownTitle.label)")
+        let edited = try XCTUnwrap(try JourneyAdmin.fields(path: "meetups/\(id)"))
+        XCTAssertEqual(JourneyAdmin.string(edited["title"]), "TEST CONTENT Edited \(run)")
+        XCTAssertEqual(Self.mapStrings(edited["location"])["name"], lot, "the meetup moved")
+        XCTAssertEqual(Self.mapStrings(edited["location"])["address"], "9 Elm St, Boston, MA")
+        let place = try XCTUnwrap(JourneyAdmin.string(edited["locationId"]), "no place linked, as the web's edit links one")
+        cleanup.append("locations/\(place)")
+
+        // Moved to a typed address.
+        try openEdit(in: app)
+        let whereChoice = app.segmentedControls["createMeetup.where"]
+        reveal(whereChoice, in: app)
+        whereChoice.buttons["An address"].tap()
+        try type("5 Oak Ave, Medford, MA\n", into: "createMeetup.address", in: app)
+        try save(in: app)
+        assertMeetupPlace(["5 Oak Ave, Medford, MA"], in: app)
+        var moved: [String: Any] = [:]
+        for _ in 0..<20 {
+            moved = try XCTUnwrap(try JourneyAdmin.fields(path: "meetups/\(id)"))
+            if Self.mapStrings(moved["location"])["address"] == "5 Oak Ave, Medford, MA" { break }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        XCTAssertEqual(Self.mapStrings(moved["location"]), ["address": "5 Oak Ave, Medford, MA", "label": ""])
+        XCTAssertNil(moved["locationId"], "a meetup at a typed address is still linked to a place")
+        XCTAssertNil(try JourneyAdmin.fields(path: "locations/\(place)"), "the place made for it was not let go")
+    }
+
+    private func openEdit(in app: XCUIApplication) throws {
+        let edit = app.buttons["meetupDetail.edit"]
+        for _ in 0..<4 where !(edit.exists && edit.isHittable) { app.swipeUp() }
+        XCTAssertTrue(waitUntilHittable(edit, in: app, timeout: 20), "no Edit for the organiser\n\(app.debugDescription)")
+        edit.tap()
+        XCTAssertTrue(waitForExistence(of: app.descendants(matching: .any)["createMeetup.title"], in: app, timeout: 10),
+                      "no Edit Meetup\n\(app.debugDescription)")
+    }
+
+    private func save(in app: XCUIApplication) throws {
+        let save = app.buttons["createMeetup.save"]
+        XCTAssertTrue(waitUntilHittable(save, in: app, timeout: 10), "Save stayed off\n\(app.debugDescription)")
+        save.tap()
+        XCTAssertTrue(waitForDisappearance(of: save, timeout: 30), "the edit was not saved\n\(app.debugDescription)")
+    }
+
+    /// Clears a one-line field and types into it. Tapped at its right end,
+    /// which puts the cursor after the text: a tap in the middle left half of
+    /// the old title in front of the deletes.
+    private func replace(with text: String, in identifier: String, app: XCUIApplication) throws {
+        let field = app.descendants(matching: .any)[identifier]
+        reveal(field, in: app)
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
+        XCTAssertTrue(Self.hasKeyboardFocus(field), "\(identifier) did not take the keyboard")
+        let current = (field.value as? String) ?? ""
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 2))
+        XCTAssertTrue(((field.value as? String) ?? "").isEmpty || field.value as? String == field.placeholderValue,
+                      "\(identifier) still says \(field.value ?? "")")
+        field.typeText(text)
+    }
+
+    private func waitForLabel(of element: XCUIElement, _ label: String, timeout: TimeInterval = 20) -> Bool {
+        let said = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", label), object: element)
+        return XCTWaiter().wait(for: [said], timeout: timeout) == .completed
+    }
+
     /// The Create button on the meetups list.
     private func openCreateMeetup(in app: XCUIApplication) throws {
         let create = app.buttons["meetups.create"]

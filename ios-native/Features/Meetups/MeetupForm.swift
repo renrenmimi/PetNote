@@ -3,12 +3,15 @@ import Observation
 import OSLog
 import SwiftUI
 
-/// What is sent to create a meetup (`createMeetupCallable`,
-/// functions/src/meetups.ts): its words, when and for how long, and where, in
-/// one of the two shapes the app can find. A place from Apple Maps goes by its
-/// identifier only; an address the organiser types goes with what to call it,
-/// and makes no place (the owner's choice on 2026-09-30). When only those who
-/// join may see where, everyone else sees the area the organiser names.
+/// What is sent to create or edit a meetup (`createMeetupCallable`,
+/// `updateMeetupCallable`, functions/src/meetups.ts): its words, when and for
+/// how long, and where, in one of the two shapes the app can find. A place
+/// from Apple Maps goes by its identifier only; an address the organiser types
+/// goes with what to call it, and makes no place (the owner's choice on
+/// 2026-09-30). When only those who join may see where, everyone else sees the
+/// area the organiser names. A meetup made on the web, at a place with a name,
+/// address and position of its own, is sent back where it was unless the
+/// organiser chooses somewhere else.
 struct MeetupDraft: Equatable, Sendable {
     /// The server's limits, in its units: UTF-16, as JavaScript counts.
     static let maxTitle = 60
@@ -22,6 +25,9 @@ struct MeetupDraft: Equatable, Sendable {
     enum Where: Equatable, Sendable {
         case applePlace
         case address
+        /// Where a meetup made on the web already is: its name, address and
+        /// position, sent back as they are.
+        case unchanged
     }
 
     /// Who may join, as the web's form sets it. `sanitizeMeetupRequirements`
@@ -50,6 +56,21 @@ struct MeetupDraft: Equatable, Sendable {
         var isValid: Bool {
             (petType != "other" || MeetupDraft.length(customPetType) <= Self.maxCustomPetType)
                 && MeetupDraft.length(notes) <= Self.maxNotes
+        }
+
+        init() {}
+
+        /// What a meetup already asks, to edit.
+        init(_ requirements: MeetupRequirements) {
+            petType = Self.petTypes.contains(requirements.petType) ? requirements.petType
+                : requirements.petType == "any_dog" ? "dog" : requirements.petType == "any_cat" ? "cat" : "any"
+            customPetType = requirements.customPetType
+            dogSize = MeetupRequirements.dogSizes.contains(requirements.dogSize) ? requirements.dogSize : "any"
+            maxPets = min(max(requirements.maxPets, 0), Self.maxPetsRange.upperBound)
+            mustHavePosts = requirements.mustHavePosts
+            mustHavePetProfile = requirements.mustHavePetProfile
+            minFollowers = min(max(requirements.minFollowers, 0), Self.minFollowersRange.upperBound)
+            notes = requirements.notes
         }
 
         var payload: [String: Any] {
@@ -102,14 +123,55 @@ struct MeetupDraft: Equatable, Sendable {
     var isAddressPrivate = true
     var area = ""
     var requirements = Requirements()
+    /// For `.unchanged`: the web's place, as the meetup keeps it.
+    var unchangedPlace: MeetupPlace?
     /// On the guest list with the organiser from the start, as the web sends
-    /// it; none, and the organiser goes alone.
+    /// it; none, and the organiser goes alone. Only for a new meetup.
     var organizerPetID: String?
+
+    init(date: Date) {
+        self.date = date
+    }
+
+    /// A meetup as it is, to edit. `place` is where it is as its organiser
+    /// sees it, the private copy for a participants-only meetup; `details` is
+    /// what Apple says about a place from Apple Maps, so it shows as chosen.
+    init(editing meetup: Meetup, place: MeetupPlace?, details: PlaceDetails?) {
+        self.date = meetup.date ?? Date()
+        title = meetup.title
+        description = meetup.description
+        duration = meetup.durationMinutes
+        isAddressPrivate = meetup.isAddressPrivate
+        if isAddressPrivate { area = meetup.place.area }
+        requirements = Requirements(meetup.requirements)
+        guard let place else { return }
+        switch place.shape {
+        case .apple(let id):
+            whereKind = .applePlace
+            self.place = PlaceSearchHit(
+                applePlaceID: id,
+                details: details ?? PlaceDetails(name: "", address: "", latitude: 0, longitude: 0)
+            )
+        case .typed:
+            whereKind = .address
+            address = place.address
+            label = place.label
+        case .stored:
+            whereKind = .unchanged
+            unchangedPlace = place
+        }
+    }
 
     /// Tomorrow at ten: a time a meetup could be, which a person changes.
     static func defaultDate(now: Date, calendar: Calendar = .current) -> Date {
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
         return calendar.date(bySettingHour: 10, minute: 0, second: 0, of: tomorrow) ?? tomorrow
+    }
+
+    /// The web's choices, and one a meetup already has that is not among
+    /// them (the server takes five minutes to a day), so it shows as chosen.
+    static func durationChoices(including current: Int) -> [Int] {
+        durations.contains(current) ? durations : (durations + [current]).sorted()
     }
 
     /// The web's words for each duration.
@@ -141,6 +203,8 @@ struct MeetupDraft: Equatable, Sendable {
         case .address:
             let address = Self.length(address)
             return address > 0 && address <= Self.maxAddress && Self.length(label) <= Self.maxLabel
+        case .unchanged:
+            return unchangedPlace != nil
         }
     }
 
@@ -151,8 +215,16 @@ struct MeetupDraft: Equatable, Sendable {
             location = ["kind": "applePlace", "applePlaceId": place?.applePlaceID ?? ""]
         case .address:
             location = ["kind": "address", "address": Self.trimmed(address), "label": Self.trimmed(label)]
+        case .unchanged:
+            // The web's shape, which the server still takes as it always has.
+            let kept = unchangedPlace
+            location = [
+                "name": kept?.name ?? "", "address": kept?.address ?? "",
+                "lat": kept?.latitude ?? 0, "lng": kept?.longitude ?? 0,
+                "city": kept?.city ?? "", "state": kept?.state ?? "",
+            ]
         }
-        if isAddressPrivate { location["area"] = Self.trimmed(area) }
+        if isAddressPrivate, whereKind != .unchanged { location["area"] = Self.trimmed(area) }
         var payload: [String: Any] = [
             "title": Self.trimmed(title),
             "description": Self.trimmed(description),
@@ -172,15 +244,28 @@ protocol MeetupCreating: Sendable {
     func createMeetup(_ draft: MeetupDraft) async throws -> String
 }
 
-/// Creating a meetup: the web's Create Meetup, with where found on Apple Maps
-/// or typed, as the app can now keep it.
+protocol MeetupEditing: Sendable {
+    /// Organiser or admin only, as the server checks.
+    func updateMeetup(id: String, _ draft: MeetupDraft) async throws
+}
+
+/// Creating or editing a meetup: the web's Create Meetup and Edit Meetup,
+/// with where found on Apple Maps or typed, as the app can now keep it.
 @MainActor
 @Observable
-final class CreateMeetupModel {
+final class MeetupFormModel {
+    enum Purpose: Equatable {
+        case create
+        case edit(meetupID: String)
+    }
+
     enum Outcome: Equatable {
         case created(String)
+        case saved
         case failed(String)
     }
+
+    let purpose: Purpose
 
     var draft: MeetupDraft
     /// Apple Maps, searched for the place. Any place can hold a meetup, so
@@ -190,38 +275,62 @@ final class CreateMeetupModel {
     private(set) var outcome: Outcome?
 
     private let uid: String
-    private let creator: any MeetupCreating
-    private let pets: any PetChoiceProviding
+    private let creator: (any MeetupCreating)?
+    private let editor: (any MeetupEditing)?
+    private let pets: (any PetChoiceProviding)?
     private let now: @Sendable () -> Date
     private let log = Logger(subsystem: "dev.local.petnote.native", category: "meetups")
 
+    /// A new meetup.
     init(
         uid: String, creator: any MeetupCreating, places: any PlacesReading, pets: any PetChoiceProviding,
         directory: any PlaceDirectory = PlaceDirectories.shared,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
+        self.purpose = .create
         self.uid = uid
         self.creator = creator
+        self.editor = nil
         self.pets = pets
         self.now = now
         self.draft = MeetupDraft(date: MeetupDraft.defaultDate(now: now()))
         self.finder = ApplePlaceFinder(places: places, marksAdded: false, directory: directory)
     }
 
+    /// A meetup that is, as its organiser sees it.
+    init(
+        editing meetup: Meetup, place: MeetupPlace?, details: PlaceDetails?,
+        editor: any MeetupEditing, places: any PlacesReading,
+        directory: any PlaceDirectory = PlaceDirectories.shared,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
+        self.purpose = .edit(meetupID: meetup.id)
+        self.uid = meetup.organizerID
+        self.creator = nil
+        self.editor = editor
+        self.pets = nil
+        self.now = now
+        self.draft = MeetupDraft(editing: meetup, place: place, details: details)
+        self.finder = ApplePlaceFinder(places: places, marksAdded: false, directory: directory)
+    }
+
     var canSave: Bool {
         guard draft.canSubmit(now: now()), !isSaving else { return false }
-        if case .created = outcome { return false }
-        return true
+        switch outcome {
+        case .created, .saved: return false
+        case .failed, nil: return true
+        }
     }
 
-    /// Something a swipe down would lose.
+    /// Something a swipe down would lose. An edit has it from the start.
     var hasInput: Bool {
-        !draft.title.isEmpty || !draft.description.isEmpty || draft.place != nil || !draft.address.isEmpty
+        if case .edit = purpose { return true }
+        return !draft.title.isEmpty || !draft.description.isEmpty || draft.place != nil || !draft.address.isEmpty
     }
 
-    /// The web brings the organiser's first pet (`pets[0]`).
+    /// The web brings the organiser's first pet (`pets[0]`) to a new meetup.
     func loadPets() async {
-        guard draft.organizerPetID == nil else { return }
+        guard purpose == .create, draft.organizerPetID == nil, let pets else { return }
         do {
             draft.organizerPetID = try await pets.pets(ownedBy: uid).first?.id
         } catch {
@@ -238,22 +347,33 @@ final class CreateMeetupModel {
     }
 
     /// One at a time, taken before any suspension. The server's words when it
-    /// refuses: an unverified email, a time that has passed, too many at once.
-    func create() async {
+    /// refuses: an unverified email, a time that has passed, too many at once,
+    /// someone who is not the organiser.
+    func submit() async {
         guard canSave else { return }
         isSaving = true
         outcome = nil
         defer { isSaving = false }
         do {
-            outcome = .created(try await creator.createMeetup(draft))
+            switch purpose {
+            case .create:
+                guard let creator else { return }
+                outcome = .created(try await creator.createMeetup(draft))
+            case .edit(let meetupID):
+                guard let editor else { return }
+                try await editor.updateMeetup(id: meetupID, draft)
+                outcome = .saved
+            }
         } catch {
-            log.error("create meetup failed: \(String(describing: error), privacy: .public)")
-            outcome = .failed(GatheringWords.message(for: error, fallback: String(localized: "Failed to create meetup.")))
+            log.error("saving a meetup failed: \(String(describing: error), privacy: .public)")
+            let fallback = purpose == .create
+                ? String(localized: "Failed to create meetup.") : String(localized: "Failed to update meetup.")
+            outcome = .failed(GatheringWords.message(for: error, fallback: fallback))
         }
     }
 }
 
-struct CreateMeetupSheet: View {
+struct MeetupFormSheet: View {
     /// The web's tips, shown open as the web shows them.
     static let safetyTips = [
         String(localized: "Always choose a public, well-lit location — dog parks, community parks, or pet-friendly cafés"),
@@ -263,12 +383,12 @@ struct CreateMeetupSheet: View {
         String(localized: "Ensure all attending pets are up to date on vaccinations"),
     ]
 
-    @State private var model: CreateMeetupModel
+    @State private var model: MeetupFormModel
     @State private var showsSafetyTips = true
     @Environment(\.dismiss) private var dismiss
     private let onOpen: (String) -> Void
 
-    init(model: CreateMeetupModel, onOpen: @escaping (String) -> Void) {
+    init(model: MeetupFormModel, onOpen: @escaping (String) -> Void) {
         _model = State(initialValue: model)
         self.onOpen = onOpen
     }
@@ -296,7 +416,7 @@ struct CreateMeetupSheet: View {
                 DatePicker("Starts", selection: $model.draft.date, in: Date()..., displayedComponents: [.date, .hourAndMinute])
                     .accessibilityIdentifier("createMeetup.date")
                 Picker("Duration", selection: $model.draft.duration) {
-                    ForEach(MeetupDraft.durations, id: \.self) { minutes in
+                    ForEach(MeetupDraft.durationChoices(including: model.draft.duration), id: \.self) { minutes in
                         Text(MeetupDraft.durationLabel(minutes)).tag(minutes)
                     }
                 }
@@ -314,12 +434,17 @@ struct CreateMeetupSheet: View {
             }
             Section {
                 Picker("Where", selection: $model.draft.whereKind) {
+                    if model.draft.unchangedPlace != nil {
+                        Text("As it was").tag(MeetupDraft.Where.unchanged)
+                    }
                     Text("A place").tag(MeetupDraft.Where.applePlace)
                     Text("An address").tag(MeetupDraft.Where.address)
                 }
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("createMeetup.where")
                 switch model.draft.whereKind {
+                case .unchanged:
+                    if let kept = model.draft.unchangedPlace { unchangedPlace(kept) }
                 case .applePlace:
                     ApplePlacePicker(
                         finder: model.finder, chosen: model.draft.place,
@@ -373,7 +498,7 @@ struct CreateMeetupSheet: View {
             }
         }
         .scrollDismissesKeyboard(.interactively)
-        .navigationTitle("Create Meetup")
+        .navigationTitle(model.purpose == .create ? String(localized: "Create Meetup") : String(localized: "Edit Meetup"))
         .navigationBarTitleDisplayMode(.inline)
         // Only Cancel closes it once something is written or chosen.
         .interactiveDismissDisabled(model.hasInput)
@@ -383,8 +508,8 @@ struct CreateMeetupSheet: View {
                     .accessibilityIdentifier("createMeetup.cancel")
             }
             ToolbarItem(placement: .confirmationAction) {
-                Button(model.isSaving ? String(localized: "Creating…") : String(localized: "Create")) {
-                    Task { await model.create() }
+                Button(saveTitle) {
+                    Task { await model.submit() }
                 }
                 .disabled(!model.canSave)
                 .accessibilityIdentifier("createMeetup.save")
@@ -392,9 +517,43 @@ struct CreateMeetupSheet: View {
         }
         .task { await model.loadPets() }
         .onChange(of: model.outcome) { _, outcome in
-            if case .created(let meetupID) = outcome {
+            switch (outcome, model.purpose) {
+            case (.created(let meetupID), _), (.saved, .edit(let meetupID)):
                 dismiss()
                 onOpen(meetupID)
+            default:
+                break
+            }
+        }
+    }
+
+    private var saveTitle: String {
+        switch (model.purpose, model.isSaving) {
+        case (.create, false): String(localized: "Create")
+        case (.create, true): String(localized: "Creating…")
+        case (.edit, false): String(localized: "Save")
+        case (.edit, true): String(localized: "Saving…")
+        }
+    }
+
+    /// Where a meetup made on the web is, as it keeps it: its name, address
+    /// and, with a position, a map.
+    private func unchangedPlace(_ place: MeetupPlace) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.s) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text(place.storedDetails.name)
+                    .font(Typography.body.weight(.semibold))
+                    .foregroundStyle(Palette.primaryText)
+                if !place.address.isEmpty, place.address != place.storedDetails.name {
+                    Text(place.address)
+                        .font(Typography.body)
+                        .foregroundStyle(Palette.secondaryText)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("createMeetup.unchanged")
+            if place.storedDetails.directionsURL != nil {
+                PlaceMap(details: place.storedDetails)
             }
         }
     }

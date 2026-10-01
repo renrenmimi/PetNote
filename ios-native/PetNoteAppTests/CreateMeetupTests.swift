@@ -50,15 +50,15 @@ import Testing
         }
     }
 
-    private func model(creator: Creator = Creator(), places: Places = Places(), pets: [Pet] = []) -> CreateMeetupModel {
-        CreateMeetupModel(
+    private func model(creator: Creator = Creator(), places: Places = Places(), pets: [Pet] = []) -> MeetupFormModel {
+        MeetupFormModel(
             uid: "me", creator: creator, places: places, pets: FixedPets(pets: pets),
             directory: Directory(), now: { Self.now }
         )
     }
 
     /// Written, timed, at a place: ready for Create.
-    private func ready(_ model: CreateMeetupModel) async {
+    private func ready(_ model: MeetupFormModel) async {
         model.draft.title = "  Morning fetch  "
         model.draft.description = "  Bring a ball. "
         model.finder.query = "dog run"
@@ -74,7 +74,7 @@ import Testing
         model.draft.isAddressPrivate = false
         model.draft.duration = 90
 
-        await model.create()
+        await model.submit()
 
         #expect(model.outcome == .created("m-new"))
         let payload = try #require(creator.sent.first).payload
@@ -102,7 +102,7 @@ import Testing
         model.draft.label = " Oak yard "
         model.draft.area = " Medford "
 
-        await model.create()
+        await model.submit()
 
         let payload = try #require(creator.sent.first).payload
         #expect(payload["location"] as? [String: String] == [
@@ -174,7 +174,7 @@ import Testing
         let model = model(creator: creator)
         await ready(model)
 
-        await model.create()
+        await model.submit()
 
         #expect(model.outcome == .failed("Verify your email before creating meetups."))
         #expect(model.draft.title == "  Morning fetch  " && model.draft.place != nil)
@@ -186,8 +186,8 @@ import Testing
         let model = model(creator: creator)
         await ready(model)
 
-        await model.create()
-        await model.create()
+        await model.submit()
+        await model.submit()
 
         #expect(creator.sent.count == 1)
         #expect(!model.canSave)
@@ -278,12 +278,12 @@ import Testing
     }
 
     @Test func theSteppersSayWhatTheyAreSetTo() {
-        #expect(CreateMeetupSheet.maxPetsLine(0) == "Any number of pets")
-        #expect(CreateMeetupSheet.maxPetsLine(1) == "Up to 1 pet")
-        #expect(CreateMeetupSheet.maxPetsLine(5) == "Up to 5 pets")
-        #expect(CreateMeetupSheet.minFollowersLine(0) == "No followed pets needed")
-        #expect(CreateMeetupSheet.minFollowersLine(1) == "At least 1 followed pet")
-        #expect(CreateMeetupSheet.minFollowersLine(3) == "At least 3 followed pets")
+        #expect(MeetupFormSheet.maxPetsLine(0) == "Any number of pets")
+        #expect(MeetupFormSheet.maxPetsLine(1) == "Up to 1 pet")
+        #expect(MeetupFormSheet.maxPetsLine(5) == "Up to 5 pets")
+        #expect(MeetupFormSheet.minFollowersLine(0) == "No followed pets needed")
+        #expect(MeetupFormSheet.minFollowersLine(1) == "At least 1 followed pet")
+        #expect(MeetupFormSheet.minFollowersLine(3) == "At least 3 followed pets")
     }
 
     @Test func itStartsTomorrowAtTenForAnHour() {
