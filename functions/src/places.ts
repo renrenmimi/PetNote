@@ -249,6 +249,15 @@ export function applePlaceLocationId(applePlaceId: string): string {
   return `apple_${applePlaceId}`;
 }
 
+/** An Apple place identifier, or invalid-argument. */
+export function requiredApplePlaceId(value: unknown): string {
+  const applePlaceId = typeof value === "string" ? value.trim() : "";
+  if (!APPLE_PLACE_ID.test(applePlaceId)) {
+    throw new HttpsError("invalid-argument", "That is not an Apple Maps place.");
+  }
+  return applePlaceId;
+}
+
 /**
  * A place found on Apple Maps: its identifier and our own fields. A name,
  * address or coordinates sent with it are refused, not dropped. Keeping them
@@ -263,10 +272,7 @@ function sanitizeApplePlaceDraft(data: Record<string, unknown>): {
   photos: string[];
   source: "user";
 } {
-  const applePlaceId = typeof data.applePlaceId === "string" ? data.applePlaceId.trim() : "";
-  if (!APPLE_PLACE_ID.test(applePlaceId)) {
-    throw new HttpsError("invalid-argument", "That is not an Apple Maps place.");
-  }
+  const applePlaceId = requiredApplePlaceId(data.applePlaceId);
   for (const field of ["name", "address", "lat", "lng", "city", "state"]) {
     if (data[field] !== undefined) {
       throw new HttpsError(
@@ -335,6 +341,47 @@ export async function getOrCreatePublicMeetupLocation(params: {
       updatedAt: FieldValue.serverTimestamp(),
     });
   }
+  return locationId;
+}
+
+/**
+ * The place a public meetup at an Apple Maps place links to, made if it is
+ * not there yet: its identifier only, as addPlaceCallable stores one. Made
+ * this way it is a meetup's (source "meetup"), with category "other" because
+ * nobody chose one, and releaseMeetupPlaceIfUnused may remove it later. A
+ * place someone added on purpose is reused as it is.
+ */
+export async function getOrCreateAppleMeetupLocation(params: {
+  organizerId: string;
+  organizerName: string;
+  applePlaceId: string;
+}): Promise<string> {
+  const locationId = applePlaceLocationId(params.applePlaceId);
+  const locationRef = db.doc(`locations/${locationId}`);
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(locationRef);
+    if (snapshot.exists) return;
+    transaction.set(locationRef, {
+      applePlaceId: params.applePlaceId,
+      category: "other",
+      description: "",
+      features: [],
+      photos: [],
+      locationPhotos: [],
+      addedBy: params.organizerId,
+      addedByName: params.organizerName,
+      averageRating: 0,
+      totalRatings: 0,
+      totalPhotos: 0,
+      totalCheckins: 0,
+      verifiedByCheckins: false,
+      tags: [],
+      source: "meetup",
+      verified: false,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
   return locationId;
 }
 
