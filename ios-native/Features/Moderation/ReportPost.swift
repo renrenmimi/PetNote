@@ -122,6 +122,14 @@ final class ReportModel {
     var isOther: Bool { selected == Self.other }
     var detailRemaining: Int { Self.detailLimit - detail.utf16.count }
 
+    /// Under the field: "1 character left", "12 characters left", and never
+    /// fewer than none.
+    nonisolated static func remainingLine(_ remaining: Int) -> String {
+        remaining == 1
+            ? String(localized: "1 character left")
+            : String(localized: "\(max(remaining, 0)) characters left")
+    }
+
     var canSubmit: Bool {
         guard selected != nil, detailRemaining >= 0 else { return false }
         switch state {
@@ -237,7 +245,7 @@ struct ReportPostSheet: View {
                         .lineLimit(3...8)
                         .accessibilityIdentifier("report.detail")
                 } footer: {
-                    Text("\(max(model.detailRemaining, 0)) characters left")
+                    Text(ReportModel.remainingLine(model.detailRemaining))
                         .foregroundStyle(model.detailRemaining < 0 ? Palette.danger : Palette.secondaryText)
                 }
             }

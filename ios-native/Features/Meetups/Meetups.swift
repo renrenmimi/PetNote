@@ -136,10 +136,16 @@ struct MeetupRequirements: Equatable, Sendable {
         case "other": lines.append(String(localized: "Other pets only."))
         default: break
         }
-        if maxPets > 0 { lines.append(String(localized: "Up to \(maxPets) pets.")) }
+        if maxPets > 0 {
+            lines.append(maxPets == 1 ? String(localized: "Up to 1 pet.") : String(localized: "Up to \(maxPets) pets."))
+        }
         if mustHavePosts { lines.append(String(localized: "Must have posted at least once.")) }
         if mustHavePetProfile { lines.append(String(localized: "Must have a pet profile.")) }
-        if minFollowers > 0 { lines.append(String(localized: "Requires at least \(minFollowers) followed pets.")) }
+        if minFollowers > 0 {
+            lines.append(minFollowers == 1
+                ? String(localized: "Requires at least 1 followed pet.")
+                : String(localized: "Requires at least \(minFollowers) followed pets."))
+        }
         return lines
     }
 }

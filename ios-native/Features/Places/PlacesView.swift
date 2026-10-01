@@ -152,8 +152,8 @@ private struct PlaceRow: View {
                             .font(Typography.caption)
                             .foregroundStyle(Palette.secondaryText)
                     }
-                    if place.totalCheckins > 0 {
-                        Text("\(place.totalCheckins) check-ins")
+                    if let checkins = place.checkinsLine {
+                        Text(checkins)
                             .font(Typography.caption)
                             .foregroundStyle(Palette.secondaryText)
                     }
