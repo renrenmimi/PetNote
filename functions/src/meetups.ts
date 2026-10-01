@@ -596,8 +596,15 @@ export const cancelMeetupCallable = onCall(async (request) => {
 });
 
 export const joinMeetupCallable = onCall(async (request) => {
-  const callerUid = request.auth?.uid;
+  const callerAuth = request.auth;
+  const callerUid = callerAuth?.uid;
   if (!callerUid) throw new HttpsError("unauthenticated", "Must be logged in.");
+  // The same gate as creating one. Joining is what lets someone read a
+  // participants_only meetup's private/address (see the admission check
+  // below), so it asks for the same verified email that organising does.
+  if (callerAuth.token.email_verified !== true) {
+    throw new HttpsError("permission-denied", "Verify your email before joining meetups.");
+  }
 
   const caller = await getNotificationActor(callerUid);
   if (caller.banned === true) {
