@@ -280,6 +280,61 @@ export async function getOrCreatePublicMeetupLocation(params: {
   return locationId;
 }
 
+/**
+ * Removes a place that a public meetup created, once nothing uses it.
+ *
+ * Called after a meetup lets go of its place: it went participants_only or
+ * moved, it was cancelled, or its organiser's account was deleted. Without
+ * this the place outlived all of that, and an address someone used once for
+ * a public meetup stayed a public place. The owner chose the rule on
+ * 2026-09-30.
+ *
+ * "Uses" is a review, a check-in, or a meetup other than `exceptMeetupId`
+ * that links to the place and is not cancelled. Only a place a meetup made
+ * (`source: "meetup"`) is ever removed. One someone added on purpose stays.
+ * The cancelled meetups that still link to a removed place lose the link, so
+ * none of them points at nothing.
+ *
+ * Best effort: the meetup change that called it has already been made, so a
+ * failure leaves the place where it was rather than failing that change.
+ */
+export async function releaseMeetupPlaceIfUnused(
+  locationId: string,
+  exceptMeetupId: string
+): Promise<boolean> {
+  const locationRef = db.doc(`locations/${locationId}`);
+  try {
+    return await db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(locationRef);
+      if (!snapshot.exists) return false;
+      const place = snapshot.data() ?? {};
+      if (place.source !== "meetup") return false;
+      if (Number(place.totalRatings ?? 0) > 0 || Number(place.totalCheckins ?? 0) > 0) {
+        return false;
+      }
+      const [reviews, checkins, meetups] = await Promise.all([
+        transaction.get(locationRef.collection("reviews").limit(1)),
+        transaction.get(locationRef.collection("checkins").limit(1)),
+        transaction.get(db.collection("meetups").where("locationId", "==", locationId)),
+      ]);
+      if (!reviews.empty || !checkins.empty) return false;
+      const stillUsed = meetups.docs.some(
+        (doc) => doc.id !== exceptMeetupId && doc.data().status !== "cancelled"
+      );
+      if (stillUsed) return false;
+
+      for (const doc of meetups.docs) {
+        transaction.update(doc.ref, { locationId: FieldValue.delete() });
+      }
+      transaction.delete(locationRef);
+      return true;
+    });
+  } catch (error) {
+    console.error("releaseMeetupPlaceIfUnused failed; the place stays", { locationId, error });
+    return false;
+  }
+}
+
 function readReviewSubscores(
   data: admin.firestore.DocumentData,
   fallback: number
