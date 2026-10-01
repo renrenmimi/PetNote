@@ -192,6 +192,28 @@ describe("joining a meetup", () => {
     expect(code).toBe("permission-denied");
   });
 
+  it("refuses a join until the email is verified, and admits it once it is", async () => {
+    await seedMeetup("m1", BLOCKER);
+    const petId = await petFor(BYSTANDER, "Peach");
+
+    const code = await errorCodeOf(() =>
+      callAs(joinMeetupCallable, BYSTANDER, { meetupId: "m1", petId }, { emailVerified: false })
+    );
+
+    expect(code).toBe("permission-denied");
+    // No roster entry, so no read of meetups/m1/private/address either.
+    expect(
+      (await db.doc(`meetups/m1/participants/${BYSTANDER}`).get()).exists
+    ).toBe(false);
+
+    const result = await callAs<{ success: boolean }>(
+      joinMeetupCallable,
+      BYSTANDER,
+      { meetupId: "m1", petId }
+    );
+    expect(result.success).toBe(true);
+  });
+
   it("still admits everyone else", async () => {
     await seedMeetup("m1", BLOCKER);
     await block(BLOCKER, BLOCKED);
