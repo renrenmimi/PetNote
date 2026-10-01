@@ -6,6 +6,7 @@ struct PlacesView: View {
     @State private var model: PlacesModel
     @State private var query = ""
     @State private var isAdding = false
+    @State private var isShowingMap = false
     /// Adding a place, starting from what was searched for, if anything.
     private let makeAddPlace: (String) -> AddPlaceModel
     private let onOpen: (String) -> Void
@@ -35,6 +36,17 @@ struct PlacesView: View {
             if text.isEmpty { model.search("") }
         }
         .toolbar {
+            // The list's places on a map. A header there pushed all but a
+            // row or two of the list off the screen.
+            ToolbarItem(placement: .topBarLeading) {
+                Button { isShowingMap = true } label: {
+                    Image(systemName: "map")
+                        .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget)
+                        .contentShape(.rect)
+                }
+                .accessibilityLabel("Map")
+                .accessibilityIdentifier("places.showMap")
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { isAdding = true } label: {
                     Image(systemName: "plus")
@@ -65,6 +77,14 @@ struct PlacesView: View {
         }
         .task { if model.items.isEmpty { await model.load() } }
         .refreshable { await model.load() }
+        .sheet(isPresented: $isShowingMap) {
+            NavigationStack {
+                PlacesMap(pins: PlacesMap.pins(for: model.items, lookups: model.lookups)) { placeID in
+                    isShowingMap = false
+                    onOpen(placeID)
+                }
+            }
+        }
         .sheet(isPresented: $isAdding) {
             NavigationStack {
                 AddPlaceSheet(model: makeAddPlace(query)) { placeID in
