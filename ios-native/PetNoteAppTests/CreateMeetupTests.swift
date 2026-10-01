@@ -215,6 +215,16 @@ import Testing
         #expect(payload["coverImage"] as? String == Self.firstUpload)
     }
 
+    /// The preview covers the form's width on the widest phone, a portrait
+    /// photo included.
+    @Test func aChosenCoversPreviewCoversTheForm() throws {
+        let model = model()
+        model.chooseCover(data: UploadTestImages.jpeg(width: 1800, height: 2400, quality: 0.5), filename: "c.jpg")
+
+        let preview = try #require(model.cover?.preview)
+        #expect(preview.size.width * preview.scale >= 1200, "\(preview.size)")
+    }
+
     /// A cover alone is something a swipe down would lose.
     @Test func aCoverChosenKeepsTheFormOpen() {
         let model = model()

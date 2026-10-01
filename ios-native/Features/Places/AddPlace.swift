@@ -118,7 +118,8 @@ final class AddPlaceModel {
 
     func addPhoto(data: Data, filename: String) {
         guard photosLeft > 0, !isSaving else { return }
-        let thumbnail = UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 200, height: 200))
+        let side = PickedPhotoThumb.side
+        let thumbnail = PickedPreview.image(from: data, covering: CGSize(width: side, height: side))
         photos.append(Photo(data: data, filename: filename, thumbnail: thumbnail))
     }
 
@@ -451,6 +452,7 @@ struct AddPlaceSheet: View {
 
 /// One picked photo, with the way to take it out again.
 private struct PickedPhotoThumb: View {
+    static let side: CGFloat = 88
     let photo: AddPlaceModel.Photo
     let number: Int
     let onRemove: () -> Void
@@ -464,7 +466,7 @@ private struct PickedPhotoThumb: View {
                     Palette.secondaryBackground
                 }
             }
-            .frame(width: 88, height: 88)
+            .frame(width: Self.side, height: Self.side)
             .clipShape(.rect(cornerRadius: Radius.control))
             .accessibilityElement()
             .accessibilityLabel(String(localized: "Photo \(number)"))

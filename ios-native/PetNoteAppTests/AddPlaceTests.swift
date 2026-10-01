@@ -276,6 +276,16 @@ import Testing
         #expect(model.canSave, "a failed photo left Submit off")
     }
 
+    /// Sharp in its square on a phone: a 4:3 photo's short side at three
+    /// pixels a point.
+    @Test func aPickedPhotosThumbnailCoversItsSquare() async throws {
+        let model = await shopReady()
+        model.addPhoto(data: UploadTestImages.jpeg(width: 1200, height: 900, quality: 0.5), filename: "a.jpg")
+
+        let thumbnail = try #require(model.photos.first?.thumbnail)
+        #expect(min(thumbnail.size.width, thumbnail.size.height) * thumbnail.scale >= 264, "\(thumbnail.size)")
+    }
+
     @Test func atMostFivePhotos() async {
         let model = await shopReady()
         for index in 0..<6 {
