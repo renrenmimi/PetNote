@@ -82,7 +82,7 @@ struct MeetupsView: View {
             } else {
                 ForEach(model.items) { meetup in
                     Button { onOpen(meetup.id) } label: {
-                        MeetupSummary(meetup: meetup)
+                        MeetupSummary(meetup: meetup, lookups: model.lookups)
                             .frame(maxWidth: .infinity, minHeight: Layout.minTouchTarget, alignment: .leading)
                             .contentShape(.rect)
                     }
@@ -97,6 +97,9 @@ struct MeetupsView: View {
 /// A meetup in a list: when, where, how many, and whether it is still on.
 struct MeetupSummary: View {
     let meetup: Meetup
+    /// Where the meetup is, for one at a place from Apple Maps or a typed
+    /// address: the screen's own lookups, which have already asked.
+    let lookups: PlaceLookups
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -112,7 +115,7 @@ struct MeetupSummary: View {
                     .font(Typography.caption)
                     .foregroundStyle(Palette.secondaryText)
             }
-            Text(MeetupSummary.whereLine(meetup))
+            Text(MeetupSummary.whereLine(meetup, lookups: lookups))
                 .font(Typography.caption)
                 .foregroundStyle(Palette.secondaryText)
             Text(MeetupSummary.countLine(meetup))
@@ -123,15 +126,23 @@ struct MeetupSummary: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// A participants-only meetup shows only its city, or "City hidden" —
-    /// the web's rule. The server keeps the street off the public document.
-    static func whereLine(_ meetup: Meetup) -> String {
+    /// A participants-only meetup shows only its city, or the area its
+    /// organiser named, or "City hidden" — the web's rule. The server keeps
+    /// the street off the public document. A public one shows where it is:
+    /// the web's name and city, Apple's name for a place from Apple Maps, or
+    /// the organiser's words for a typed address.
+    static func whereLine(_ meetup: Meetup, lookups: PlaceLookups) -> String {
         if meetup.isAddressPrivate {
             let city = meetup.place.cityLine
             return city.isEmpty ? String(localized: "City hidden") : city
         }
-        let city = meetup.place.cityLine
-        return [meetup.place.name, city].filter { !$0.isEmpty }.joined(separator: " · ")
+        switch meetup.place.shape {
+        case .stored:
+            let city = meetup.place.cityLine
+            return [meetup.place.name, city].filter { !$0.isEmpty }.joined(separator: " · ")
+        case .apple, .typed:
+            return lookups.name(of: meetup.place)
+        }
     }
 
     static func countLine(_ meetup: Meetup) -> String {
