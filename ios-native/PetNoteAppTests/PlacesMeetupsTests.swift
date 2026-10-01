@@ -255,6 +255,8 @@ struct PlacesMeetupsTests {
         #expect(!model.hasJoined)
     }
 
+    /// The organiser is on the guest list too, and still does not leave:
+    /// they cancel, as on the web.
     @Test func leavingIsOnlyForAParticipantAndCancellingOnlyForTheOrganiser() async {
         let source = FakeMeetups()
         source.stored["m1"] = Self.meetup()
@@ -270,8 +272,11 @@ struct PlacesMeetupsTests {
         await model.leave()
         #expect(source.left.map(\.1) == ["me"])
 
+        source.participantList = [Self.participant("u-org")]
         let organiser = detail(source, viewer: "u-org")
         await organiser.load()
+        await organiser.leave()
+        #expect(source.left.map(\.1) == ["me"], "the organiser left their own meetup")
         await organiser.cancel()
         #expect(source.cancelled == ["m1"])
     }
