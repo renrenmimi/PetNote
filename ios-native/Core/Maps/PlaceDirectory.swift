@@ -18,6 +18,13 @@ struct PlaceDetails: Sendable, Equatable {
     let longitude: Double
 }
 
+/// A place Apple Maps found for a search: its identifier, which is all a
+/// place of ours keeps, and what Apple says about it now.
+struct PlaceSearchHit: Sendable, Equatable {
+    let applePlaceID: String
+    let details: PlaceDetails
+}
+
 /// Where the app looks places up: Apple Maps in the app, a fixed table in UI
 /// tests, a counting fake in unit tests.
 protocol PlaceDirectory: Sendable {
@@ -26,6 +33,9 @@ protocol PlaceDirectory: Sendable {
     func details(forApplePlaceID id: String) async throws -> PlaceDetails?
     /// Where an address someone typed is, or nil when Apple cannot find it.
     func locate(address: String) async throws -> PlaceDetails?
+    /// The places Apple Maps finds for `text`, most relevant first. Only
+    /// those with an identifier: a place of ours can keep nothing else.
+    func search(_ text: String) async throws -> [PlaceSearchHit]
     /// Drops everything looked up so far, at sign-out: the terms' "temporary",
     /// and nothing of one person's browsing left for the next.
     func forget() async
@@ -48,6 +58,7 @@ actor MapKitPlaceDirectory: PlaceDirectory {
     struct Lookups: Sendable {
         var place: @Sendable (String) async throws -> PlaceDetails?
         var address: @Sendable (String) async throws -> PlaceDetails?
+        var search: @Sendable (String) async throws -> [PlaceSearchHit]
     }
 
     private let lookups: Lookups
@@ -72,6 +83,19 @@ actor MapKitPlaceDirectory: PlaceDirectory {
         guard !text.isEmpty else { return nil }
         if let known = addresses[text] { return known }
         return try await lookUp(.address(text))
+    }
+
+    /// Asked afresh each time, since what is most relevant changes; what it
+    /// says about each place is kept as that place's answer, so the rows a
+    /// search turns into, and the place opened from one, need not ask again.
+    func search(_ text: String) async throws -> [PlaceSearchHit] {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return [] }
+        let started = generation
+        let hits = try await lookups.search(text)
+        guard generation == started else { return hits }
+        for hit in hits { places.updateValue(hit.details, forKey: hit.applePlaceID) }
+        return hits
     }
 
     func forget() {
@@ -146,6 +170,21 @@ extension MapKitPlaceDirectory.Lookups {
                 } catch let error as CLError where error.code == .geocodeFoundNoResult {
                     return nil
                 }
+            }
+        },
+        search: { text in
+            let request = MKLocalSearch.Request()
+            request.naturalLanguageQuery = text
+            // Places, not street addresses: an address has no identifier to
+            // keep.
+            request.resultTypes = .pointOfInterest
+            do {
+                let response = try await MKLocalSearch(request: request).start()
+                return response.mapItems.compactMap { item in
+                    item.identifier.map { PlaceSearchHit(applePlaceID: $0.rawValue, details: PlaceDetails(item)) }
+                }
+            } catch let error as MKError where error.code == .placemarkNotFound {
+                return []
             }
         }
     )
@@ -233,6 +272,18 @@ struct StandInPlaceDirectory: PlaceDirectory {
         let text = address.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
         return PlaceDetails(name: text, address: text, latitude: 42.3876, longitude: -71.0995)
+    }
+
+    /// The table's places with every word of `text` somewhere in their
+    /// names, whatever the case, in the table's order: a search for a place
+    /// by what it is called.
+    func search(_ text: String) async throws -> [PlaceSearchHit] {
+        let words = text.lowercased().split(whereSeparator: \.isWhitespace)
+        guard !words.isEmpty else { return [] }
+        return Self.places
+            .filter { _, details in words.allSatisfy { details.name.lowercased().contains($0) } }
+            .sorted { $0.key < $1.key }
+            .map { PlaceSearchHit(applePlaceID: $0.key, details: $0.value) }
     }
 
     func forget() async {}

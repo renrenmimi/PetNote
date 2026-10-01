@@ -19,6 +19,7 @@ import Testing
         var addresses: [String: PlaceDetails] = [:]
         func details(forApplePlaceID id: String) async throws -> PlaceDetails? { places[id] }
         func locate(address: String) async throws -> PlaceDetails? { addresses[address] }
+        func search(_ text: String) async throws -> [PlaceSearchHit] { [] }
         func forget() async {}
     }
 

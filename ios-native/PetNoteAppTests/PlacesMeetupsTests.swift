@@ -456,6 +456,7 @@ struct PlacesMeetupsTests {
             lock.withLock { _searches.append(prefix) }
             return found
         }
+        func places(applePlaceIDs ids: [String]) async throws -> [Place] { [] }
         func place(id: String) async throws -> Place? { nil }
         func reviews(placeID: String, limit: Int) async throws -> [PlaceReview] { [] }
         func checkins(placeID: String, limit: Int) async throws -> [PlaceCheckin] { [] }
