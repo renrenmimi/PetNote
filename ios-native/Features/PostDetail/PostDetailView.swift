@@ -7,6 +7,17 @@ extension URL: @retroactive Identifiable {
 
 /// A post and its comments, with the composer pinned above the keyboard.
 struct PostDetailView: View {
+    /// Read out next to the comment field: how far under or over the limit,
+    /// in words that read right for one.
+    static func lengthLabel(remaining: Int) -> String {
+        switch remaining {
+        case ..<(-1): String(localized: "\(-remaining) characters too many")
+        case -1: String(localized: "1 character too many")
+        case 1: String(localized: "1 character remaining")
+        default: String(localized: "\(remaining) characters remaining")
+        }
+    }
+
     @State private var model: PostDetailViewModel
     @State private var fullImageURL: URL?
     /// The comment whose delete is waiting on the confirmation.
@@ -443,11 +454,7 @@ struct PostDetailView: View {
                     // conventional way to show being over a limit and stays;
                     // read out, "minus three characters remaining" is a
                     // sentence nobody can act on.
-                    .accessibilityLabel(
-                        model.isOverLength
-                            ? "\(-model.remainingCharacters) characters too many"
-                            : "\(model.remainingCharacters) characters remaining"
-                    )
+                    .accessibilityLabel(Self.lengthLabel(remaining: model.remainingCharacters))
             }
         }
         // Breathing room without a dead zone: the web client once reserved

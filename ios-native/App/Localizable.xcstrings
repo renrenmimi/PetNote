@@ -23,6 +23,16 @@
         }
       }
     },
+    "%@ (1 review)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@（1 条评价）"
+          }
+        }
+      }
+    },
     "%@ (you)": {
       "localizations": {
         "zh-Hans": {
@@ -292,12 +302,62 @@
         }
       }
     },
+    "1 character left": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还可输入 1 个字符"
+          }
+        }
+      }
+    },
+    "1 character remaining": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还可输入 1 个字符"
+          }
+        }
+      }
+    },
+    "1 character too many": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超出 1 个字符"
+          }
+        }
+      }
+    },
+    "1 check-in": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 次打卡"
+          }
+        }
+      }
+    },
     "1 follower": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "1 位粉丝"
+          }
+        }
+      }
+    },
+    "1 like": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 个赞"
           }
         }
       }
@@ -318,6 +378,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "1 只宠物"
+          }
+        }
+      }
+    },
+    "1 photo": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 张照片"
           }
         }
       }
@@ -4618,6 +4688,16 @@
         }
       }
     },
+    "Requires at least 1 followed pet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要至少关注 1 只宠物。"
+          }
+        }
+      }
+    },
     "Resend email": {
       "localizations": {
         "zh-Hans": {
@@ -6890,6 +6970,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "最多 %lld 只宠物。"
+          }
+        }
+      }
+    },
+    "Up to 1 pet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多 1 只宠物。"
           }
         }
       }

@@ -114,11 +114,21 @@ struct Place: Identifiable, Equatable, Sendable {
         PlaceDetails(name: name, address: address, latitude: latitude, longitude: longitude)
     }
 
-    /// "4.5 (2 reviews)", or nil with no reviews — the web's line.
+    /// "4.5 (2 reviews)", or nil with no reviews — the web's line, with
+    /// "(1 review)" for one, where the web says "1 reviews".
     var ratingLine: String? {
         guard totalRatings > 0 else { return nil }
         let average = averageRating.formatted(.number.precision(.fractionLength(1)))
-        return String(localized: "\(average) (\(totalRatings) reviews)")
+        return totalRatings == 1
+            ? String(localized: "\(average) (1 review)")
+            : String(localized: "\(average) (\(totalRatings) reviews)")
+    }
+
+    /// "2 check-ins", or nil with none — the web's line, with "1 check-in"
+    /// for one.
+    var checkinsLine: String? {
+        guard totalCheckins > 0 else { return nil }
+        return totalCheckins == 1 ? String(localized: "1 check-in") : String(localized: "\(totalCheckins) check-ins")
     }
 
     /// Apple Maps, where the web opened Google Maps, from what the place

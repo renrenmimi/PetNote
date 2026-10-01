@@ -7,6 +7,11 @@ import SwiftUI
 /// reachable. The test of that is behavioural — "with VoiceOver on and the
 /// screen off, can you like this post and open its comments" — not structural.
 struct PostCard: View {
+    /// Read out on the like button: "1 like", "3 likes".
+    static func likeCount(_ count: Int) -> String {
+        count == 1 ? String(localized: "1 like") : String(localized: "\(count) likes")
+    }
+
     let post: Post
     let isLiked: Bool
     let onLike: () -> Void
@@ -331,7 +336,7 @@ struct PostCard: View {
             .buttonStyle(.borderless)
             .accessibilityIdentifier("post.like")
             .accessibilityLabel(isLiked ? "Unlike" : "Like")
-            .accessibilityValue("\(post.likeCount) likes")
+            .accessibilityValue(Self.likeCount(post.likeCount))
 
             Button(action: onOpenComments) {
                 Label {
