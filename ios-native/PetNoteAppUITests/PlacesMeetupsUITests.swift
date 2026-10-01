@@ -416,6 +416,10 @@ final class PlacesMeetupsUITests: XCTestCase {
         row.tap()
         let cancel = app.buttons["meetupDetail.cancel"]
         XCTAssertTrue(waitUntilHittable(cancel, in: app, timeout: 20), "no Cancel for the organiser\n\(app.debugDescription)")
+        // On the guest list, as the create callable puts them, and still
+        // offered neither Leave nor Join: the web's rule.
+        XCTAssertFalse(app.buttons["meetupDetail.leave"].exists, "the organiser is offered Leave")
+        XCTAssertFalse(app.buttons["meetupDetail.join"].exists, "the organiser is offered Join")
         cancel.tap()
         try confirm("Cancel Meetup", besides: "meetupDetail.cancel", in: app)
         var status: String?
