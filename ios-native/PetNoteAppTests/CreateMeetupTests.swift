@@ -84,7 +84,11 @@ import Testing
         #expect(payload["description"] as? String == "Bring a ball.")
         #expect(payload["duration"] as? Int == 90)
         #expect(payload["dateMillis"] as? Int == Int(model.draft.date.timeIntervalSince1970 * 1000))
-        #expect((payload["requirements"] as? [String: Any])?.isEmpty == true, "the server's defaults until requirements come")
+        let requirements = try #require(payload["requirements"] as? [String: Any])
+        #expect(requirements as NSDictionary == [
+            "petType": "any", "dogSize": "any", "maxPets": 0, "mustHavePosts": false,
+            "mustHavePetProfile": false, "minFollowers": 0, "additionalNotes": "",
+        ] as NSDictionary, "the web's defaults: any pet, any number")
         #expect(payload["organizerPetId"] as? String == "pet-1", "the web brings the organiser's first pet")
     }
 
@@ -204,6 +208,82 @@ import Testing
         }
         #expect(found.map(\.id) == ["I1"] && found[0].placeID == nil)
         #expect(places.readsByAppleID == 0)
+    }
+
+    @Test func whoMayJoinIsSentAsTheWebsFormSetsIt() throws {
+        var draft = MeetupDraft(date: Self.now)
+        draft.requirements.petType = "dog"
+        draft.requirements.dogSize = "small"
+        draft.requirements.maxPets = 4
+        draft.requirements.mustHavePosts = true
+        draft.requirements.minFollowers = 2
+        draft.requirements.notes = "  Bring water.  "
+
+        let requirements = try #require(draft.payload["requirements"] as? [String: Any])
+
+        #expect(requirements as NSDictionary == [
+            "petType": "dog", "dogSize": "small", "maxPets": 4, "mustHavePosts": true,
+            "mustHavePetProfile": false, "minFollowers": 2, "additionalNotes": "Bring water.",
+        ] as NSDictionary)
+    }
+
+    /// A size is for dogs and a kind of pet for "other": one set before the
+    /// type changed is not sent with another.
+    @Test func aSizeIsForDogsAndAKindForOtherPets() throws {
+        var draft = MeetupDraft(date: Self.now)
+        draft.requirements.dogSize = "small"
+        draft.requirements.customPetType = " Birds "
+        draft.requirements.petType = "cat"
+        let cats = try #require(draft.payload["requirements"] as? [String: Any])
+        #expect(cats["dogSize"] as? String == "any" && cats["customPetType"] == nil)
+
+        draft.requirements.petType = "other"
+        let other = try #require(draft.payload["requirements"] as? [String: Any])
+        #expect(other["customPetType"] as? String == "Birds" && other["dogSize"] as? String == "any")
+    }
+
+    @Test func aKindOfPetAndTheNotesKeepToTheServersLimits() async {
+        let model = model()
+        await ready(model)
+        model.draft.requirements.petType = "other"
+        model.draft.requirements.customPetType = String(repeating: "a", count: 31)
+        #expect(!model.canSave, "a kind over 30")
+        model.draft.requirements.petType = "dog"
+        #expect(model.canSave, "a kind is only for other pets")
+        model.draft.requirements.notes = String(repeating: "a", count: 201)
+        #expect(!model.canSave, "notes over 200")
+    }
+
+    /// What the organiser set, as the meetup then says it: the web's "Size",
+    /// and the organiser's own word for an other pet.
+    @Test func whatTheOrganiserSetIsWhatTheMeetupSays() throws {
+        var draft = MeetupDraft(date: Self.now)
+        draft.requirements.petType = "dog"
+        draft.requirements.dogSize = "small_medium"
+        draft.requirements.maxPets = 4
+        draft.requirements.mustHavePosts = true
+        draft.requirements.minFollowers = 2
+        let dogs = MeetupRequirements.decode(try #require(draft.payload["requirements"] as? [String: Any]))
+        #expect(dogs.lines == [
+            "Dogs only.", "Size: Small & Medium.", "Up to 4 pets.",
+            "Must have posted at least once.", "Requires at least 2 followed pets.",
+        ])
+
+        draft.requirements = MeetupDraft.Requirements()
+        draft.requirements.petType = "other"
+        draft.requirements.customPetType = "Birds"
+        let birds = MeetupRequirements.decode(try #require(draft.payload["requirements"] as? [String: Any]))
+        #expect(birds.lines == ["Birds only."])
+        #expect(MeetupRequirements.decode(["petType": "other"]).lines == ["Other pets only."])
+    }
+
+    @Test func theSteppersSayWhatTheyAreSetTo() {
+        #expect(CreateMeetupSheet.maxPetsLine(0) == "Any number of pets")
+        #expect(CreateMeetupSheet.maxPetsLine(1) == "Up to 1 pet")
+        #expect(CreateMeetupSheet.maxPetsLine(5) == "Up to 5 pets")
+        #expect(CreateMeetupSheet.minFollowersLine(0) == "No followed pets needed")
+        #expect(CreateMeetupSheet.minFollowersLine(1) == "At least 1 followed pet")
+        #expect(CreateMeetupSheet.minFollowersLine(3) == "At least 3 followed pets")
     }
 
     @Test func itStartsTomorrowAtTenForAnHour() {

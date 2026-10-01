@@ -106,6 +106,8 @@ struct MeetupPlace: Equatable, Sendable {
 struct MeetupRequirements: Equatable, Sendable {
     /// The server's `petType`: any, dog, cat, any_dog, any_cat, other.
     let petType: String
+    /// The organiser's word for an `other` pet type: "Birds".
+    var customPetType = ""
     let dogSize: String
     let maxPets: Int
     let mustHavePosts: Bool
@@ -117,6 +119,7 @@ struct MeetupRequirements: Equatable, Sendable {
         let data = data ?? [:]
         return MeetupRequirements(
             petType: data["petType"] as? String ?? "any",
+            customPetType: (data["customPetType"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
             dogSize: data["dogSize"] as? String ?? "any",
             maxPets: (data["maxPets"] as? NSNumber)?.intValue ?? 0,
             mustHavePosts: data["mustHavePosts"] as? Bool ?? false,
@@ -131,9 +134,15 @@ struct MeetupRequirements: Equatable, Sendable {
     var lines: [String] {
         var lines: [String] = []
         switch petType {
-        case "dog", "any_dog": lines.append(String(localized: "Dogs only."))
+        case "dog", "any_dog":
+            lines.append(String(localized: "Dogs only."))
+            // The web's "Size: …", for dogs only.
+            if dogSize != "any" { lines.append(String(localized: "Size: \(Self.dogSizeLabel(dogSize)).")) }
         case "cat", "any_cat": lines.append(String(localized: "Cats only."))
-        case "other": lines.append(String(localized: "Other pets only."))
+        case "other":
+            lines.append(customPetType.isEmpty
+                ? String(localized: "Other pets only.")
+                : String(localized: "\(customPetType) only."))
         default: break
         }
         if maxPets > 0 {
@@ -147,6 +156,22 @@ struct MeetupRequirements: Equatable, Sendable {
                 : String(localized: "Requires at least \(minFollowers) followed pets."))
         }
         return lines
+    }
+
+    /// The web's sizes, in its order, and its words for them.
+    static let dogSizes = ["any", "small", "medium", "large", "small_medium", "medium_large"]
+
+    /// Keys of their own: "Medium" alone is already a password's strength
+    /// (PasswordPolicy), and a dog's size reads differently in Chinese.
+    static func dogSizeLabel(_ size: String) -> String {
+        switch size {
+        case "small": String(localized: "dogSize.small", defaultValue: "Small")
+        case "medium": String(localized: "dogSize.medium", defaultValue: "Medium")
+        case "large": String(localized: "dogSize.large", defaultValue: "Large")
+        case "small_medium": String(localized: "dogSize.small_medium", defaultValue: "Small & Medium")
+        case "medium_large": String(localized: "dogSize.medium_large", defaultValue: "Medium & Large")
+        default: String(localized: "dogSize.any", defaultValue: "Any Size")
+        }
     }
 }
 

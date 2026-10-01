@@ -16,12 +16,22 @@ final class PlacesMeetupsUITests: XCTestCase {
     /// Accounts whose notifications to remove: the meetup triggers write
     /// them under ids of their own, so they are found by recipient.
     private var inboxes: [String] = []
+    /// Accounts whose meetups to remove, found by organiser: a test that
+    /// fails between creating one and reading its id back would otherwise
+    /// leave it in everyone's list.
+    private var organisers: [String] = []
 
     override func setUpWithError() throws {
         continueAfterFailure = false
     }
 
     override func tearDown() {
+        for organiser in organisers {
+            for name in (try? JourneyAdmin.documentNames(in: "meetups", field: "organizerId", equals: organiser)) ?? [] {
+                let id = String(name.split(separator: "/").last ?? "")
+                cleanup += ["meetups/\(id)", "meetups/\(id)/private/address", "meetups/\(id)/participants/\(organiser)"]
+            }
+        }
         for path in cleanup.reversed() { JourneyAdmin.deleteDocument(path: path) }
         for inbox in inboxes {
             for name in (try? JourneyAdmin.documentNames(in: "notifications", field: "userId", equals: inbox)) ?? [] {
@@ -474,38 +484,72 @@ final class PlacesMeetupsUITests: XCTestCase {
     }
 
     /// Creating a meetup at an address typed here, which only those who
-    /// join may see: the server keeps the organiser's words in the private
-    /// copy and the area they named in the public one, makes no place, and
-    /// puts the organiser and their pet on the guest list. Its page shows its
-    /// organiser where it is.
+    /// join may see, for small dogs: the server keeps the organiser's words
+    /// in the private copy and the area they named in the public one, makes
+    /// no place, keeps who may join, and puts the organiser and their pet on
+    /// the guest list. Its page shows its organiser where it is, and everyone
+    /// who may join.
     func testCreatingAMeetupAtATypedAddressOnlyThoseWhoJoinSee() throws {
         let (app, me) = try signInAsNewAccount("createmeetup-\(run)@petnote.test")
         uid = me
         inboxes.append(me)
+        organisers.append(me)
         let petName = "Juniper \(run)"
         try givePet(named: petName, to: me)
         let title = "TEST CONTENT Yard games \(run)"
 
         app.tabBars.buttons["Meetups"].tap()
         try openCreateMeetup(in: app)
-        try type(title, into: "createMeetup.title", in: app)
+        try type(title + "\n", into: "createMeetup.title", in: app)
         try type("TEST CONTENT A fenced yard.", into: "createMeetup.description", in: app)
         let whereChoice = app.segmentedControls["createMeetup.where"]
-        for _ in 0..<6 where !(whereChoice.exists && whereChoice.isHittable) { app.swipeUp() }
+        reveal(whereChoice, in: app)
         XCTAssertTrue(waitUntilHittable(whereChoice, in: app, timeout: 10), "\(app.debugDescription)")
         whereChoice.buttons["An address"].tap()
-        try type("5 Oak Ave, Medford, MA", into: "createMeetup.address", in: app)
-        try type("TEST CONTENT Oak yard", into: "createMeetup.label", in: app)
-        try type("Medford", into: "createMeetup.area", in: app)
+        try type("5 Oak Ave, Medford, MA\n", into: "createMeetup.address", in: app)
+        try type("TEST CONTENT Oak yard\n", into: "createMeetup.label", in: app)
+        try type("Medford\n", into: "createMeetup.area", in: app)
+
+        // Who may join: small dogs, four at most, whose people have posted.
+        for id in ["createMeetup.petType.dog", "createMeetup.dogSize.small"] {
+            let chip = app.buttons[id]
+            reveal(chip, in: app)
+            XCTAssertTrue(waitUntilHittable(chip, in: app, timeout: 10), "no \(id)\n\(app.debugDescription)")
+            chip.tap()
+        }
+        let maxPets = app.steppers["createMeetup.maxPets"]
+        reveal(maxPets, in: app)
+        XCTAssertTrue(waitUntilHittable(maxPets, in: app, timeout: 10), "\(app.debugDescription)")
+        // SwiftUI names the stepper's buttons after it: "<identifier>-Increment".
+        let more = maxPets.buttons.matching(NSPredicate(format: "identifier ENDSWITH %@", "-Increment")).firstMatch
+        for _ in 0..<4 { more.tap() }
+        let posts = app.switches["createMeetup.mustHavePosts"]
+        reveal(posts, in: app)
+        XCTAssertTrue(waitUntilHittable(posts, in: app, timeout: 10), "\(app.debugDescription)")
+        // The switch itself, at the right of the row, as SettingsUITests taps one.
+        posts.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        if posts.value as? String != "1" {
+            Thread.sleep(forTimeInterval: 0.5)
+            posts.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        }
+        XCTAssertEqual(posts.value as? String, "1", "the switch for having posted did not turn on")
+        try type("TEST CONTENT Bring water.", into: "createMeetup.notes", in: app)
         let create = app.buttons["createMeetup.save"]
         XCTAssertTrue(waitUntilHittable(create, in: app, timeout: 10), "Create stayed off")
         create.tap()
 
-        // Its page, as its organiser sees it: the private address.
+        // Its page, as its organiser sees it: the private address, and who
+        // may join.
         let shownTitle = app.staticTexts["meetupDetail.title"]
         XCTAssertTrue(waitForExistence(of: shownTitle, in: app, timeout: 30), "the meetup did not open\n\(app.debugDescription)")
         XCTAssertEqual(shownTitle.label, title)
         assertMeetupPlace(["TEST CONTENT Oak yard", "5 Oak Ave, Medford, MA"], in: app)
+        let rules = app.descendants(matching: .any)["meetupDetail.requirements"]
+        for _ in 0..<4 where !rules.exists { app.swipeUp() }
+        XCTAssertTrue(waitForExistence(of: rules, in: app, timeout: 10), "no requirements\n\(app.debugDescription)")
+        for line in ["Dogs only.", "Size: Small.", "Up to 4 pets.", "Must have posted at least once.", "TEST CONTENT Bring water."] {
+            XCTAssertTrue(rules.label.contains(line), "no \"\(line)\": \(rules.label)")
+        }
 
         // What the server keeps.
         let id = try createdMeetup(by: me)
@@ -518,6 +562,13 @@ final class PlacesMeetupsUITests: XCTestCase {
         XCTAssertEqual(Self.strings(of: hidden), ["address": "5 Oak Ave, Medford, MA", "label": "TEST CONTENT Oak yard"])
         let organiser = try XCTUnwrap(try JourneyAdmin.fields(path: "meetups/\(id)/participants/\(me)"), "the organiser is not on the guest list")
         XCTAssertEqual(JourneyAdmin.string(organiser["petName"]), petName)
+        let rulesStored = ((stored["requirements"] as? [String: Any])?["mapValue"] as? [String: Any])?["fields"] as? [String: Any] ?? [:]
+        XCTAssertEqual(JourneyAdmin.string(rulesStored["petType"]), "dog")
+        XCTAssertEqual(JourneyAdmin.string(rulesStored["dogSize"]), "small")
+        XCTAssertEqual(Self.number(rulesStored["maxPets"]), 4)
+        XCTAssertEqual(JourneyAdmin.bool(rulesStored["mustHavePosts"]), true)
+        XCTAssertEqual(JourneyAdmin.bool(rulesStored["mustHavePetProfile"]), false)
+        XCTAssertEqual(JourneyAdmin.string(rulesStored["additionalNotes"]), "TEST CONTENT Bring water.")
     }
 
     /// Creating a public meetup at a place from Apple Maps: the server keeps
@@ -531,10 +582,11 @@ final class PlacesMeetupsUITests: XCTestCase {
         let (app, me) = try signInAsNewAccount("applemeetup-\(run)@petnote.test")
         uid = me
         inboxes.append(me)
+        organisers.append(me)
 
         app.tabBars.buttons["Meetups"].tap()
         try openCreateMeetup(in: app)
-        try type("TEST CONTENT Fetch at the run \(run)", into: "createMeetup.title", in: app)
+        try type("TEST CONTENT Fetch at the run \(run)\n", into: "createMeetup.title", in: app)
         try type("TEST CONTENT Bring a ball.", into: "createMeetup.description", in: app)
         try type("dog run\n", into: "applePlace.search", in: app)
         let result = app.buttons["applePlace.result.TESTAPPLEDOGRUN01"]
@@ -542,7 +594,7 @@ final class PlacesMeetupsUITests: XCTestCase {
         result.tap()
         XCTAssertTrue(app.descendants(matching: .any)["applePlace.chosen"].waitForExistence(timeout: 10))
         let everyone = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Everyone")).firstMatch
-        for _ in 0..<6 where !(everyone.exists && everyone.isHittable) { app.swipeUp() }
+        reveal(everyone, in: app)
         XCTAssertTrue(waitUntilHittable(everyone, in: app, timeout: 10), "\(app.debugDescription)")
         everyone.tap()
         let create = app.buttons["createMeetup.save"]
@@ -575,17 +627,62 @@ final class PlacesMeetupsUITests: XCTestCase {
     }
 
     /// Types into a field of a form, scrolled to first: one below the
-    /// keyboard is not hittable.
+    /// keyboard is not hittable. A swipe can also leave a field under the
+    /// navigation bar, which then takes the tap ("Neither element nor any
+    /// descendant has keyboard focus"); it is pulled back down and tapped
+    /// again. Safe here: a sheet with something written closes only on
+    /// Cancel.
     private func type(_ text: String, into identifier: String, in app: XCUIApplication) throws {
         let field = app.descendants(matching: .any)[identifier]
-        for _ in 0..<6 where !(field.exists && field.isHittable) { app.swipeUp() }
+        reveal(field, in: app)
         XCTAssertTrue(waitUntilHittable(field, in: app, timeout: 10), "no \(identifier)\n\(app.debugDescription)")
         field.tap()
+        if !Self.hasKeyboardFocus(field) {
+            drag(app, from: 0.2, to: 0.45)
+            XCTAssertTrue(waitUntilHittable(field, in: app, timeout: 10), "no \(identifier)\n\(app.debugDescription)")
+            field.tap()
+        }
+        XCTAssertTrue(Self.hasKeyboardFocus(field), "\(identifier) did not take the keyboard\n\(app.debugDescription)")
         field.typeText(text)
     }
 
-    /// The meetup this account created, which tearDown then removes with its
-    /// guest list and private address.
+    /// Scrolls a form until `element` is well inside what can be tapped:
+    /// below the sheet's bar and clear of the keyboard. "Hittable" is not
+    /// enough. A field just under the bar took a tap meant for it, and a
+    /// segmented control a few points above the keyboard lost one to it.
+    /// Up a quarter of the screen at a time, which is less than the band is
+    /// tall, so nothing is carried past it; back down a little when too high.
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<14 {
+            if element.exists, element.isHittable {
+                let keyboard = app.keyboards.firstMatch
+                let bottom = keyboard.exists ? keyboard.frame.minY - 44 : app.frame.maxY - 120
+                let frame = element.frame
+                if frame.minY < 200 {
+                    drag(app, from: 0.25, to: 0.35)
+                    continue
+                }
+                if frame.maxY <= bottom { return }
+            }
+            drag(app, from: 0.45, to: 0.2)
+        }
+    }
+
+    /// Held still at the end, so the form does not coast: a tap on a list
+    /// still scrolling only stops it, and a switch tapped then stays off.
+    private func drag(_ app: XCUIApplication, from start: CGFloat, to end: CGFloat) {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: start)).press(
+            forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: end)),
+            withVelocity: .slow, thenHoldForDuration: 0.3
+        )
+    }
+
+    private static func hasKeyboardFocus(_ element: XCUIElement) -> Bool {
+        (element.value(forKey: "hasKeyboardFocus") as? Bool) == true
+    }
+
+    /// The meetup this account created. tearDown removes it, with its guest
+    /// list and private address, by its organiser.
     private func createdMeetup(by organiser: String) throws -> String {
         var names: [String] = []
         for _ in 0..<20 {
@@ -595,9 +692,6 @@ final class PlacesMeetupsUITests: XCTestCase {
         }
         let id = try XCTUnwrap(names.first.map { String($0.split(separator: "/").last ?? "") }, "the server has no meetup by \(organiser)")
         XCTAssertEqual(names.count, 1, "more than one meetup was created")
-        cleanup.append("meetups/\(id)")
-        cleanup.append("meetups/\(id)/private/address")
-        cleanup.append("meetups/\(id)/participants/\(organiser)")
         return id
     }
 
