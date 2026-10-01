@@ -57,7 +57,10 @@ protocol PlaceAdding: Sendable {
 @Observable
 final class AddPlaceModel {
     enum Outcome: Equatable {
-        case added(AddedPlace)
+        /// Added, or there already; `rated` when a rating went with it.
+        case added(AddedPlace, rated: Bool)
+        /// The place is there and the rating did not go, in the server's words.
+        case notRated(AddedPlace, String)
         case failed(String)
     }
 
@@ -71,15 +74,23 @@ final class AddPlaceModel {
     private(set) var isSaving = false
     private(set) var outcome: Outcome?
 
+    /// The web's optional rating, sent as a review once the place is in.
+    var rating = 0
+    var space = 0
+    var safety = 0
+    var cleanliness = 0
+
     private let adder: any PlaceAdding
+    private let reviewer: any PlaceReviewing
     private let log = Logger(subsystem: "dev.local.petnote.native", category: "places")
 
     init(
-        query: String = "", places: any PlacesReading, adder: any PlaceAdding,
+        query: String = "", places: any PlacesReading, adder: any PlaceAdding, reviewer: any PlaceReviewing,
         directory: any PlaceDirectory = PlaceDirectories.shared
     ) {
         self.finder = ApplePlaceFinder(query: query, places: places, marksAdded: true, directory: directory)
         self.adder = adder
+        self.reviewer = reviewer
     }
 
     var draft: ApplePlaceDraft? {
@@ -92,8 +103,10 @@ final class AddPlaceModel {
 
     var canSave: Bool {
         guard draft?.canSubmit == true, !isSaving else { return false }
-        if case .added = outcome { return false }
-        return true
+        switch outcome {
+        case .added, .notRated: return false
+        case .failed, nil: return true
+        }
     }
 
     /// For a place nobody has added yet: the view opens the others.
@@ -120,16 +133,38 @@ final class AddPlaceModel {
     /// One submission at a time, taken before any suspension, as a review is.
     /// The server's words are what is shown when it refuses: an unverified
     /// email, a ban, too many places at once.
+    ///
+    /// With a rating, the web's order: the place, then the rating as a review
+    /// of it, which goes to a place someone else added meanwhile too. A
+    /// rating that fails leaves the place added, as it is.
     func save() async {
         guard canSave, let draft else { return }
         isSaving = true
         outcome = nil
         defer { isSaving = false }
+        let added: AddedPlace
         do {
-            outcome = .added(try await adder.addPlace(draft))
+            added = try await adder.addPlace(draft)
         } catch {
             log.error("add place failed: \(String(describing: error), privacy: .public)")
             outcome = .failed(GatheringWords.message(for: error, fallback: String(localized: "Failed to add place.")))
+            return
+        }
+        guard rating > 0 else {
+            outcome = .added(added, rated: false)
+            return
+        }
+        var review = PlaceReviewDraft(placeID: added.placeID, meetupID: nil)
+        review.rating = rating
+        review.space = space
+        review.safety = safety
+        review.cleanliness = cleanliness
+        do {
+            try await reviewer.submitReview(review)
+            outcome = .added(added, rated: true)
+        } catch {
+            log.error("rating a place just added failed: \(String(describing: error), privacy: .public)")
+            outcome = .notRated(added, GatheringWords.message(for: error, fallback: String(localized: "Failed to submit review.")))
         }
     }
 }
@@ -191,6 +226,17 @@ struct AddPlaceSheet: View {
                         }
                     }
                 }
+                Section {
+                    StarRatingRow(title: String(localized: "Rate this place"), value: $model.rating, identifier: "addPlace.rating")
+                    // The scores are a rating's: shown once there is one.
+                    if model.rating > 0 {
+                        StarRatingRow(title: String(localized: "🐾 Space for pets"), value: $model.space, identifier: "addPlace.space")
+                        StarRatingRow(title: String(localized: "🛡️ Safety"), value: $model.safety, identifier: "addPlace.safety")
+                        StarRatingRow(title: String(localized: "✨ Cleanliness"), value: $model.cleanliness, identifier: "addPlace.cleanliness")
+                    }
+                } header: {
+                    Text("Your Rating (optional)")
+                }
                 if case .failed(let message) = model.outcome {
                     Section {
                         Text(message)
@@ -220,16 +266,16 @@ struct AddPlaceSheet: View {
             }
         }
         .alert(
-            "This place is already on PetNote",
+            notice?.title ?? "",
             // Closed only by its button, which opens the place.
-            isPresented: Binding(get: { alreadyThere != nil }, set: { _ in })
+            isPresented: Binding(get: { notice != nil }, set: { _ in })
         ) {
-            Button("Open it") { openAlreadyThere() }
+            Button("Open it") { openFromNotice() }
         } message: {
-            Text("Someone added it while you were writing, so what you wrote was not added. You can review it instead.")
+            Text(notice?.message ?? "")
         }
         .onChange(of: model.outcome) { _, outcome in
-            if case .added(let place) = outcome, !place.alreadyExisted { open(place.placeID) }
+            if case .added(let place, let rated) = outcome, rated || !place.alreadyExisted { open(place.placeID) }
         }
         // Opened from a search that found nothing: Apple Maps is asked for
         // the same words straight away.
@@ -240,15 +286,29 @@ struct AddPlaceSheet: View {
         }
     }
 
-    /// Added already by someone else, in the moments since the search said it
-    /// was not: the server keeps theirs and ignores this.
-    private var alreadyThere: String? {
-        if case .added(let place) = model.outcome, place.alreadyExisted { return place.placeID }
-        return nil
+    /// What to say before opening the place. Added already by someone else,
+    /// in the moments since the search said it was not: the server keeps
+    /// theirs and ignores what was written here. Or added, with the rating
+    /// refused.
+    private var notice: (placeID: String, title: String, message: String)? {
+        switch model.outcome {
+        case .added(let place, rated: false) where place.alreadyExisted:
+            return (
+                place.placeID, String(localized: "This place is already on PetNote"),
+                String(localized: "Someone added it while you were writing, so what you wrote was not added. You can review it instead.")
+            )
+        case .notRated(let place, let reason):
+            return (
+                place.placeID, String(localized: "The place is saved"),
+                String(localized: "Your rating didn't go through: \(reason) You can rate it from the place.")
+            )
+        default:
+            return nil
+        }
     }
 
-    private func openAlreadyThere() {
-        guard let placeID = alreadyThere else { return }
+    private func openFromNotice() {
+        guard let placeID = notice?.placeID else { return }
         model.clearOutcome()
         open(placeID)
     }

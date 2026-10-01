@@ -239,6 +239,7 @@ final class PlacesMeetupsUITests: XCTestCase {
         XCTAssertNil(try JourneyAdmin.fields(path: added), "the pet shop is on the server already; an earlier run left it")
         let (app, me) = try signInAsNewAccount("addplace-\(run)@petnote.test")
         uid = me
+        cleanup.append("\(added)/reviews/\(me)")
 
         app.tabBars.buttons["Places"].tap()
         try openAddPlace(in: app)
@@ -267,6 +268,10 @@ final class PlacesMeetupsUITests: XCTestCase {
         XCTAssertTrue(waitUntilHittable(description, in: app, timeout: 10), "\(app.debugDescription)")
         description.tap()
         description.typeText("TEST CONTENT Treats at the counter.")
+        // And four stars, which go as a review of the place once it is in.
+        let rating = app.descendants(matching: .any)["addPlace.rating"]
+        reveal(rating, in: app)
+        rating.buttons["4 out of 5"].tap()
         XCTAssertTrue(waitUntilHittable(save, in: app, timeout: 10), "Add stayed off")
         save.tap()
 
@@ -287,6 +292,8 @@ final class PlacesMeetupsUITests: XCTestCase {
         for field in ["name", "address", "lat", "lng", "city", "state"] {
             XCTAssertNil(stored[field], "the server holds the \(field) of a place from Apple Maps")
         }
+        let review = try XCTUnwrap(try JourneyAdmin.fields(path: "\(added)/reviews/\(me)"), "the rating did not go as a review")
+        XCTAssertEqual(Self.number(review["rating"]), 4)
 
         // Back on the list, which has it now, named from Apple Maps.
         app.navigationBars.buttons["BackButton"].firstMatch.tap()

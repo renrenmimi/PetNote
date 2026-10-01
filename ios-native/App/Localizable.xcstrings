@@ -6734,6 +6734,16 @@
         }
       }
     },
+    "The place is saved": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点已保存"
+          }
+        }
+      }
+    },
     "The post, its comments and its likes are removed. This cannot be undone.": {
       "localizations": {
         "zh-Hans": {
@@ -8586,6 +8596,16 @@
         }
       }
     },
+    "Your Rating (optional)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的评分（可不填）"
+          }
+        }
+      }
+    },
     "Your account has been deleted.": {
       "localizations": {
         "zh-Hans": {
@@ -8652,6 +8672,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "你的个人主页"
+          }
+        }
+      }
+    },
+    "Your rating didn't go through: %@ You can rate it from the place.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "评分没有提交上：%@ 可以在地点页里再评。"
           }
         }
       }
