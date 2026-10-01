@@ -40,6 +40,41 @@ import Testing
         func forget() async {}
     }
 
+    /// Apple Maps taking its time: every question waits until `answer()`.
+    private final class SlowDirectory: PlaceDirectory, @unchecked Sendable {
+        private let lock = NSLock()
+        private var waiting: [CheckedContinuation<Void, Never>] = []
+        private var answered = false
+        private let table: [String: PlaceDetails]
+
+        init(_ table: [String: PlaceDetails]) { self.table = table }
+
+        var isAsked: Bool { lock.withLock { !waiting.isEmpty } }
+
+        func details(forApplePlaceID id: String) async throws -> PlaceDetails? {
+            await withCheckedContinuation { continuation in
+                let now = lock.withLock { () -> Bool in
+                    if answered { return true }
+                    waiting.append(continuation)
+                    return false
+                }
+                if now { continuation.resume() }
+            }
+            return table[id]
+        }
+        func locate(address: String) async throws -> PlaceDetails? { nil }
+        func forget() async {}
+
+        func answer() {
+            let held = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
+                answered = true
+                defer { waiting = [] }
+                return waiting
+            }
+            held.forEach { $0.resume() }
+        }
+    }
+
     private func place(_ id: String, apple: String? = nil, name: String = "") -> Place {
         Place(
             id: id, name: name, address: apple == nil ? "2 Harbor Way" : "", city: "", state: "",
@@ -136,13 +171,57 @@ import Testing
         #expect(model.lookups.name(of: model.items[0]) == "Fenway Dog Run")
     }
 
+    /// While Apple is being asked about a place, the rest of its page comes
+    /// in: Apple's answer is for the name, address and map only.
+    @Test func aSlowAppleHoldsUpOnlyWhatAppleIsAskedFor() async {
+        let directory = SlowDirectory(["I1": Self.dogRun])
+        let run = place("apple_I1", apple: "I1")
+        let review = PlaceReview.decode(id: "r1", ["userId": "u1", "rating": 4, "comment": "Shady"])
+        let model = PlaceDetailModel(
+            placeID: run.id, viewerID: "me", places: Places(places: [run], reviews: [review]),
+            reviewer: PlacesMeetupsTests.FakeReviews(), meetups: PlacesMeetupsTests.FakeMeetups(),
+            lookups: PlaceLookups(directory: directory)
+        )
+
+        let loading = Task { await model.load() }
+        #expect(await eventuallyTrue { directory.isAsked })
+        #expect(await eventuallyTrue { model.reviews.map(\.id) == ["r1"] && model.hasReviewed == false },
+                "the reviews waited for Apple")
+        #expect(model.lookups.shown(run) == .looking)
+
+        directory.answer()
+        await loading.value
+        #expect(model.lookups.name(of: run) == "Fenway Dog Run")
+    }
+
+    @Test func theNextPageNeedNotWaitForAppleToNameThisOne() async {
+        let directory = SlowDirectory(["I1": Self.dogRun])
+        let source = PlacesMeetupsTests.FakePlaces()
+        source.pages = [
+            (0..<PlacesModel.pageSize).map { place("web-\($0)", name: "Cafe \($0)") },
+            [place("apple_I1", apple: "I1")],
+        ]
+        let model = PlacesModel(source: source, lookups: PlaceLookups(directory: directory))
+        await model.load()
+
+        let loading = Task { await model.loadMore() }
+        #expect(await eventuallyTrue { directory.isAsked })
+        #expect(model.items.count == PlacesModel.pageSize + 1)
+        #expect(!model.isLoadingMore, "the list still said it was loading while Apple was asked")
+
+        directory.answer()
+        await loading.value
+        #expect(model.items.last.map { model.lookups.name(of: $0) } == "Fenway Dog Run")
+    }
+
     /// The list's source, answering with a fixed page.
     private struct Places: PlacesReading {
         let places: [Place]
+        var reviews: [PlaceReview] = []
         func places(category: PlaceCategory?, sort: PlaceSort, after last: String?, limit: Int) async throws -> [Place] { places }
         func search(prefix: String) async throws -> [Place] { [] }
         func place(id: String) async throws -> Place? { places.first { $0.id == id } }
-        func reviews(placeID: String, limit: Int) async throws -> [PlaceReview] { [] }
+        func reviews(placeID: String, limit: Int) async throws -> [PlaceReview] { reviews }
         func checkins(placeID: String, limit: Int) async throws -> [PlaceCheckin] { [] }
     }
 }

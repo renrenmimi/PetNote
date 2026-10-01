@@ -105,6 +105,14 @@ final class PlacesModel {
 
     func loadMore() async {
         guard hasMore, !isLoadingMore, searchText.isEmpty, let last = items.last?.id else { return }
+        // Apple is asked once the page is in, so the page after it need not
+        // wait for Apple to answer about this one.
+        guard let next = await nextPage(after: last) else { return }
+        await lookups.lookUp(next)
+    }
+
+    /// The page after `last`, added to the list; nil when it could not be read.
+    private func nextPage(after last: String) async -> [Place]? {
         isLoadingMore = true
         defer { isLoadingMore = false }
         do {
@@ -112,10 +120,11 @@ final class PlacesModel {
             let known = Set(items.map(\.id))
             items += next.filter { !known.contains($0.id) }
             hasMore = next.count == Self.pageSize
-            await lookups.lookUp(next)
+            return next
         } catch {
             log.error("places page failed: \(String(describing: error), privacy: .public)")
             hasMore = false
+            return nil
         }
     }
 }
@@ -179,19 +188,24 @@ final class PlaceDetailModel {
     }
 
     func load() async {
+        let place: Place
         do {
-            guard let place = try await places.place(id: placeID) else {
+            guard let found = try await places.place(id: placeID) else {
                 state = .missing
                 return
             }
-            state = .loaded(place)
-            await lookups.lookUp([place])
+            place = found
+            state = .loaded(found)
         } catch {
             log.error("place read failed: \(String(describing: error), privacy: .public)")
             if case .loaded = state { return }
             state = .failed(GatheringWords.message(for: error, fallback: String(localized: "Failed to load location details.")))
             return
         }
+        // Apple is asked about the place while its reviews, check-ins and
+        // meetups are read: none of them waits for Apple's answer.
+        let lookups = lookups
+        async let lookedUp: Void = lookups.lookUp([place])
         failedSections = []
         async let reviews = places.reviews(placeID: placeID, limit: Self.reviewLimit)
         async let checkins = places.checkins(placeID: placeID, limit: Self.checkinLimit)
@@ -203,5 +217,6 @@ final class PlaceDetailModel {
         if !failedSections.isEmpty {
             log.error("place sections failed: \(self.failedSections.sorted().joined(separator: ","), privacy: .public)")
         }
+        await lookedUp
     }
 }
