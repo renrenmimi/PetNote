@@ -80,7 +80,7 @@ final class PlacesModel {
                 found = try await source.places(category: category, sort: sort, after: nil, limit: Self.pageSize)
                 hasMore = found.count == Self.pageSize
             } else {
-                found = try await source.search(prefix: search)
+                found = try await searchResults(for: search)
                 hasMore = false
             }
             // A newer choice has been made while this one was reading.
@@ -93,6 +93,27 @@ final class PlacesModel {
             log.error("places read failed: \(String(describing: error), privacy: .public)")
             if items.isEmpty { state = .failed(GatheringWords.message(for: error, fallback: GatheringWords.listFailure)) }
         }
+    }
+
+    /// The places from Apple Maps that Apple finds for `text` and that are
+    /// ours, in Apple's order, then the places from the web whose names
+    /// start with it, the web's search. An Apple Maps place stores no name
+    /// for the web's search to find. When Apple cannot be asked, the web's
+    /// matches are still shown.
+    private func searchResults(for text: String) async throws -> [Place] {
+        async let named = source.search(prefix: text)
+        let ids: [String]
+        do {
+            ids = try await lookups.search(text)
+        } catch {
+            log.error("Apple Maps search failed: \(String(describing: error), privacy: .public)")
+            ids = []
+        }
+        let ours = ids.isEmpty ? [] : try await source.places(applePlaceIDs: ids)
+        let rank = Dictionary(ids.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        let fromApple = ours.sorted { (rank[$0.applePlaceID ?? ""] ?? .max) < (rank[$1.applePlaceID ?? ""] ?? .max) }
+        var seen: Set<String> = []
+        return (fromApple + (try await named)).filter { seen.insert($0.id).inserted }
     }
 
     func search(_ text: String) {

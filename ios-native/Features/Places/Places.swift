@@ -316,6 +316,9 @@ protocol PlacesReading: Sendable {
     /// Names starting with `prefix` — the web's search, which is a prefix
     /// match and case-sensitive.
     func search(prefix: String) async throws -> [Place]
+    /// The places added from Apple Maps under these identifiers, in no
+    /// particular order; none for an identifier no place has.
+    func places(applePlaceIDs ids: [String]) async throws -> [Place]
     func place(id: String) async throws -> Place?
     func reviews(placeID: String, limit: Int) async throws -> [PlaceReview]
     func checkins(placeID: String, limit: Int) async throws -> [PlaceCheckin]
@@ -358,6 +361,22 @@ actor FirestorePlacesSource: PlacesReading, PlaceReviewing {
             .limit(to: 20)
             .getDocuments()
         return snapshot.documents.map { Place.decode(id: $0.documentID, $0.data()) }
+    }
+
+    /// By the identifier each keeps, not by document: a place the server
+    /// added is `apple_<identifier>`, but one seeded for the UI tests is not.
+    /// Thirty at a time, the most Firestore's `in` takes.
+    func places(applePlaceIDs ids: [String]) async throws -> [Place] {
+        var found: [Place] = []
+        let unique = Array(Set(ids)).sorted()
+        for start in stride(from: 0, to: unique.count, by: 30) {
+            let batch = Array(unique[start..<min(start + 30, unique.count)])
+            let snapshot = try await db.collection("locations")
+                .whereField("applePlaceId", in: batch)
+                .getDocuments()
+            found += snapshot.documents.map { Place.decode(id: $0.documentID, $0.data()) }
+        }
+        return found
     }
 
     func place(id: String) async throws -> Place? {

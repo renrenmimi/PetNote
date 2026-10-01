@@ -164,6 +164,45 @@ final class PlacesMeetupsUITests: XCTestCase {
         assertShown(newest, of: places, in: app, sortedBy: "Newest, chosen again")
     }
 
+    /// A name search asks Apple Maps too, and lists the places Apple finds
+    /// that someone has added here, named from what Apple says: the server
+    /// holds no name for the web's search to find. The stand-in finds the
+    /// Apple place for "dog run", and the pet shop, which nobody has added,
+    /// for "pet shop". Common words, so the keyboard has nothing to correct.
+    func testSearchingFindsAPlaceFromAppleMapsByWhatAppleCallsIt() throws {
+        let apple = try landmark("place_apple")
+        let park = try landmark("place_reviewed")
+        let (app, me) = try signInAsNewAccount("applesearch-\(run)@petnote.test")
+        uid = me
+
+        app.tabBars.buttons["Places"].tap()
+        XCTAssertTrue(waitForExistence(of: app.buttons["place.\(park)"], in: app, timeout: 30), "\(app.debugDescription)")
+        let field = app.searchFields.firstMatch
+        for _ in 0..<3 where !(field.exists && field.isHittable) { app.swipeDown() }
+        XCTAssertTrue(waitUntilHittable(field, in: app, timeout: 10), "no search field\n\(app.debugDescription)")
+        field.tap()
+        field.typeText("dog run\n")
+
+        let row = app.buttons["place.\(apple)"]
+        XCTAssertTrue(waitForExistence(of: row, in: app, timeout: 20), "the place from Apple Maps is not found\n\(app.debugDescription)")
+        assertLabel(of: row, contains: "TEST CONTENT Fenway Dog Run")
+        XCTAssertTrue(waitForDisappearance(of: app.buttons["place.\(park)"], timeout: 20), "the park is listed for \"dog run\"")
+
+        // Apple knows the pet shop, but nobody has added it here.
+        field.tap()
+        let clear = field.buttons["Clear text"]
+        if clear.waitForExistence(timeout: 5) {
+            clear.tap()
+        } else {
+            let typed = (field.value as? String) ?? ""
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: typed.count))
+        }
+        field.typeText("pet shop\n")
+        let empty = app.descendants(matching: .any)["places.empty"]
+        XCTAssertTrue(waitForExistence(of: empty, in: app, timeout: 20), "a place nobody has added is listed\n\(app.debugDescription)")
+        XCTAssertFalse(row.exists)
+    }
+
     /// A name search is a prefix of the name, as the web's: the places whose
     /// names start with what was typed, and no others; clearing it brings the
     /// list back.

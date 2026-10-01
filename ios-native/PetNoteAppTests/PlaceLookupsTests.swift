@@ -22,10 +22,17 @@ import Testing
         private var asked: [String] = []
         private let table: [String: PlaceDetails]
         private var failing: Set<String>
+        private let hits: [PlaceSearchHit]
+        private let searchFails: Bool
 
-        init(_ table: [String: PlaceDetails] = [:], failing: Set<String> = []) {
+        init(
+            _ table: [String: PlaceDetails] = [:], failing: Set<String> = [],
+            hits: [PlaceSearchHit] = [], searchFails: Bool = false
+        ) {
             self.table = table
             self.failing = failing
+            self.hits = hits
+            self.searchFails = searchFails
         }
 
         var questions: [String] { lock.withLock { asked } }
@@ -40,6 +47,10 @@ import Testing
             return table[id]
         }
         func locate(address: String) async throws -> PlaceDetails? { nil }
+        func search(_ text: String) async throws -> [PlaceSearchHit] {
+            if searchFails { throw URLError(.notConnectedToInternet) }
+            return hits
+        }
         func forget() async {}
     }
 
@@ -66,6 +77,7 @@ import Testing
             return table[id]
         }
         func locate(address: String) async throws -> PlaceDetails? { nil }
+        func search(_ text: String) async throws -> [PlaceSearchHit] { [] }
         func forget() async {}
 
         func answer() {
@@ -224,12 +236,55 @@ import Testing
         #expect(model.items.last.map { model.lookups.name(of: $0) } == "Fenway Dog Run")
     }
 
+    /// A name search shows the places Apple finds that are ours, in Apple's
+    /// order, then the web's places whose names start with the text, each
+    /// once. A place Apple finds that nobody has added is not shown, and what
+    /// Apple said about each place names its row without asking again.
+    @Test func aSearchListsOurPlacesFromAppleMapsInApplesOrderThenTheWebs() async {
+        let directory = Directory(hits: [
+            PlaceSearchHit(applePlaceID: "I2", details: Self.petShop),
+            PlaceSearchHit(applePlaceID: "I9", details: Self.dogRun),
+            PlaceSearchHit(applePlaceID: "I1", details: Self.dogRun),
+        ])
+        let cafe = place("web-cafe", name: "Harbor Cafe")
+        let run = place("apple_I1", apple: "I1", name: "Harbor Dog Run")
+        // The run has a name of its own as well, so the web's search finds it
+        // too.
+        let source = Places(places: [run, place("apple_I2", apple: "I2"), cafe], named: [cafe, run])
+        let model = PlacesModel(source: source, lookups: PlaceLookups(directory: directory))
+
+        model.search("Harbor")
+
+        #expect(await eventuallyTrue { model.items.count == 3 })
+        #expect(model.items.map(\.id) == ["apple_I2", "apple_I1", "web-cafe"])
+        #expect(model.items.map { model.lookups.name(of: $0) } == ["Corner Pet Shop", "Fenway Dog Run", "Harbor Cafe"])
+        #expect(directory.questions.isEmpty, "a place the search named was asked about again")
+    }
+
+    @Test func aSearchAppleCannotAnswerStillListsTheWebsMatches() async {
+        let cafe = place("web-cafe", name: "Harbor Cafe")
+        let model = PlacesModel(
+            source: Places(places: [cafe], named: [cafe]),
+            lookups: PlaceLookups(directory: Directory(searchFails: true))
+        )
+
+        model.search("Harbor")
+
+        #expect(await eventuallyTrue { model.items.map(\.id) == ["web-cafe"] })
+        #expect(model.state == .loaded)
+    }
+
     /// The list's source, answering with a fixed page.
     private struct Places: PlacesReading {
         let places: [Place]
         var reviews: [PlaceReview] = []
+        /// What the web's search finds.
+        var named: [Place] = []
         func places(category: PlaceCategory?, sort: PlaceSort, after last: String?, limit: Int) async throws -> [Place] { places }
-        func search(prefix: String) async throws -> [Place] { [] }
+        func search(prefix: String) async throws -> [Place] { named }
+        func places(applePlaceIDs ids: [String]) async throws -> [Place] {
+            places.filter { $0.applePlaceID.map(ids.contains) ?? false }
+        }
         func place(id: String) async throws -> Place? { places.first { $0.id == id } }
         func reviews(placeID: String, limit: Int) async throws -> [PlaceReview] { reviews }
         func checkins(placeID: String, limit: Int) async throws -> [PlaceCheckin] { [] }
