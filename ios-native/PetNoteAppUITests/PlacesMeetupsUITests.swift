@@ -16,12 +16,22 @@ final class PlacesMeetupsUITests: XCTestCase {
     /// Accounts whose notifications to remove: the meetup triggers write
     /// them under ids of their own, so they are found by recipient.
     private var inboxes: [String] = []
+    /// Accounts whose meetups to remove, found by organiser: a test that
+    /// fails between creating one and reading its id back would otherwise
+    /// leave it in everyone's list.
+    private var organisers: [String] = []
 
     override func setUpWithError() throws {
         continueAfterFailure = false
     }
 
     override func tearDown() {
+        for organiser in organisers {
+            for name in (try? JourneyAdmin.documentNames(in: "meetups", field: "organizerId", equals: organiser)) ?? [] {
+                let id = String(name.split(separator: "/").last ?? "")
+                cleanup += ["meetups/\(id)", "meetups/\(id)/private/address", "meetups/\(id)/participants/\(organiser)"]
+            }
+        }
         for path in cleanup.reversed() { JourneyAdmin.deleteDocument(path: path) }
         for inbox in inboxes {
             for name in (try? JourneyAdmin.documentNames(in: "notifications", field: "userId", equals: inbox)) ?? [] {
@@ -483,6 +493,7 @@ final class PlacesMeetupsUITests: XCTestCase {
         let (app, me) = try signInAsNewAccount("createmeetup-\(run)@petnote.test")
         uid = me
         inboxes.append(me)
+        organisers.append(me)
         let petName = "Juniper \(run)"
         try givePet(named: petName, to: me)
         let title = "TEST CONTENT Yard games \(run)"
@@ -517,6 +528,11 @@ final class PlacesMeetupsUITests: XCTestCase {
         XCTAssertTrue(waitUntilHittable(posts, in: app, timeout: 10), "\(app.debugDescription)")
         // The switch itself, at the right of the row, as SettingsUITests taps one.
         posts.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        if posts.value as? String != "1" {
+            Thread.sleep(forTimeInterval: 0.5)
+            posts.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        }
+        XCTAssertEqual(posts.value as? String, "1", "the switch for having posted did not turn on")
         try type("TEST CONTENT Bring water.", into: "createMeetup.notes", in: app)
         let create = app.buttons["createMeetup.save"]
         XCTAssertTrue(waitUntilHittable(create, in: app, timeout: 10), "Create stayed off")
@@ -566,6 +582,7 @@ final class PlacesMeetupsUITests: XCTestCase {
         let (app, me) = try signInAsNewAccount("applemeetup-\(run)@petnote.test")
         uid = me
         inboxes.append(me)
+        organisers.append(me)
 
         app.tabBars.buttons["Meetups"].tap()
         try openCreateMeetup(in: app)
@@ -629,24 +646,43 @@ final class PlacesMeetupsUITests: XCTestCase {
         field.typeText(text)
     }
 
-    /// Scrolls a form up a quarter of the screen at a time, above where the
-    /// keyboard would be, until `element` can be tapped. A full swipe can
-    /// carry a field past the top and under the navigation bar.
+    /// Scrolls a form until `element` is well inside what can be tapped:
+    /// below the sheet's bar and clear of the keyboard. "Hittable" is not
+    /// enough. A field just under the bar took a tap meant for it, and a
+    /// segmented control a few points above the keyboard lost one to it.
+    /// Up a quarter of the screen at a time, which is less than the band is
+    /// tall, so nothing is carried past it; back down a little when too high.
     private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
-        for _ in 0..<12 where !(element.exists && element.isHittable) { drag(app, from: 0.45, to: 0.2) }
+        for _ in 0..<14 {
+            if element.exists, element.isHittable {
+                let keyboard = app.keyboards.firstMatch
+                let bottom = keyboard.exists ? keyboard.frame.minY - 44 : app.frame.maxY - 120
+                let frame = element.frame
+                if frame.minY < 200 {
+                    drag(app, from: 0.25, to: 0.35)
+                    continue
+                }
+                if frame.maxY <= bottom { return }
+            }
+            drag(app, from: 0.45, to: 0.2)
+        }
     }
 
+    /// Held still at the end, so the form does not coast: a tap on a list
+    /// still scrolling only stops it, and a switch tapped then stays off.
     private func drag(_ app: XCUIApplication, from start: CGFloat, to end: CGFloat) {
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: start))
-            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: end)))
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: start)).press(
+            forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: end)),
+            withVelocity: .slow, thenHoldForDuration: 0.3
+        )
     }
 
     private static func hasKeyboardFocus(_ element: XCUIElement) -> Bool {
         (element.value(forKey: "hasKeyboardFocus") as? Bool) == true
     }
 
-    /// The meetup this account created, which tearDown then removes with its
-    /// guest list and private address.
+    /// The meetup this account created. tearDown removes it, with its guest
+    /// list and private address, by its organiser.
     private func createdMeetup(by organiser: String) throws -> String {
         var names: [String] = []
         for _ in 0..<20 {
@@ -656,9 +692,6 @@ final class PlacesMeetupsUITests: XCTestCase {
         }
         let id = try XCTUnwrap(names.first.map { String($0.split(separator: "/").last ?? "") }, "the server has no meetup by \(organiser)")
         XCTAssertEqual(names.count, 1, "more than one meetup was created")
-        cleanup.append("meetups/\(id)")
-        cleanup.append("meetups/\(id)/private/address")
-        cleanup.append("meetups/\(id)/participants/\(organiser)")
         return id
     }
 
