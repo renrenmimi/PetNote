@@ -192,10 +192,7 @@ function sanitizePlaceDraft(value: unknown): {
     throw new HttpsError("invalid-argument", "Place name, address, and coordinates are required.");
   }
 
-  const category =
-    typeof data.category === "string" && allowedPlaceCategories.has(data.category)
-      ? data.category
-      : "other";
+  const category = placeCategory(data.category);
   const description = optionalTrimmedString(
     data.description,
     VALIDATION_LIMITS.placeDescription,
@@ -203,16 +200,7 @@ function sanitizePlaceDraft(value: unknown): {
   );
   const city = optionalTrimmedString(data.city, VALIDATION_LIMITS.city, "City");
   const state = optionalTrimmedString(data.state, VALIDATION_LIMITS.state, "State");
-  const features = Array.isArray(data.features)
-    ? Array.from(
-        new Set(
-          data.features.filter(
-            (feature): feature is string =>
-              typeof feature === "string" && allowedPlaceFeatures.has(feature)
-          )
-        )
-      )
-    : [];
+  const features = placeFeatures(data.features);
   const photos = sanitizePhotoUrls(data.photos, 5, "Photo URL");
   const source = data.source === "meetup" ? "meetup" : "user";
 
@@ -228,6 +216,76 @@ function sanitizePlaceDraft(value: unknown): {
     features,
     photos,
     source,
+  };
+}
+
+function placeCategory(value: unknown): string {
+  return typeof value === "string" && allowedPlaceCategories.has(value) ? value : "other";
+}
+
+function placeFeatures(value: unknown): string[] {
+  return Array.isArray(value)
+    ? Array.from(
+        new Set(
+          value.filter(
+            (feature): feature is string =>
+              typeof feature === "string" && allowedPlaceFeatures.has(feature)
+          )
+        )
+      )
+    : [];
+}
+
+/**
+ * Apple's place identifiers as MapKit hands them out: 16 or 17 ASCII letters
+ * and digits when measured on 2026-09-30. The range leaves Apple room to
+ * change the length without our refusing real places; the alphabet is what
+ * keeps `apple_<id>` a valid document id.
+ */
+const APPLE_PLACE_ID = /^[A-Za-z0-9]{8,64}$/;
+
+/** The document id of the place an Apple identifier names: one per place. */
+export function applePlaceLocationId(applePlaceId: string): string {
+  return `apple_${applePlaceId}`;
+}
+
+/**
+ * A place found on Apple Maps: its identifier and our own fields. A name,
+ * address or coordinates sent with it are refused, not dropped. Keeping them
+ * is what Apple's terms forbid (Attachment 6, 2.2 and 2.5), so a client that
+ * sends them has a bug worth hearing about.
+ */
+function sanitizeApplePlaceDraft(data: Record<string, unknown>): {
+  applePlaceId: string;
+  category: string;
+  description: string;
+  features: string[];
+  photos: string[];
+  source: "user";
+} {
+  const applePlaceId = typeof data.applePlaceId === "string" ? data.applePlaceId.trim() : "";
+  if (!APPLE_PLACE_ID.test(applePlaceId)) {
+    throw new HttpsError("invalid-argument", "That is not an Apple Maps place.");
+  }
+  for (const field of ["name", "address", "lat", "lng", "city", "state"]) {
+    if (data[field] !== undefined) {
+      throw new HttpsError(
+        "invalid-argument",
+        "An Apple Maps place is saved by its identifier only."
+      );
+    }
+  }
+  return {
+    applePlaceId,
+    category: placeCategory(data.category),
+    description: optionalTrimmedString(
+      data.description,
+      VALIDATION_LIMITS.placeDescription,
+      "Place description"
+    ),
+    features: placeFeatures(data.features),
+    photos: sanitizePhotoUrls(data.photos, 5, "Photo URL"),
+    source: "user",
   };
 }
 
@@ -498,8 +556,57 @@ export const addPlaceCallable = onCall(async (request) => {
   await assertCallerAccountActive(callerUid, caller);
   await assertRateLimit(callerUid, "addPlace", RATE_LIMITS.strictWrite);
 
-  const place = sanitizePlaceDraft(requestData(request.data));
-  const locationId = buildLocationId(place.lat, place.lng, place.name);
+  const data = requestData(request.data);
+  // Two shapes. A place found on Apple Maps comes as its identifier and our
+  // own fields only: Apple's terms let us keep the identifier, not the name,
+  // address or coordinates that come with it, so the app looks those up each
+  // time it shows the place. The web's shape carries them, from Geoapify.
+  if (data.applePlaceId !== undefined) {
+    const place = sanitizeApplePlaceDraft(data);
+    return createPlaceUnlessPresent(
+      applePlaceLocationId(place.applePlaceId),
+      { applePlaceId: place.applePlaceId },
+      place,
+      callerUid,
+      caller.fromUserName
+    );
+  }
+
+  const place = sanitizePlaceDraft(data);
+  return createPlaceUnlessPresent(
+    buildLocationId(place.lat, place.lng, place.name),
+    {
+      name: place.name,
+      address: place.address,
+      lat: place.lat,
+      lng: place.lng,
+      city: place.city,
+      state: place.state,
+    },
+    place,
+    callerUid,
+    caller.fromUserName
+  );
+});
+
+/**
+ * Writes a new place unless one is there already, and records its photos.
+ * `where` is what says where the place is; the rest is ours and the same for
+ * both shapes.
+ */
+async function createPlaceUnlessPresent(
+  locationId: string,
+  where: Record<string, unknown>,
+  place: {
+    category: string;
+    description: string;
+    features: string[];
+    photos: string[];
+    source: "user" | "meetup";
+  },
+  callerUid: string,
+  callerName: string
+): Promise<{ locationId: string; alreadyExisted: boolean }> {
   const locationRef = db.doc(`locations/${locationId}`);
   let alreadyExisted = false;
 
@@ -513,19 +620,14 @@ export const addPlaceCallable = onCall(async (request) => {
     transaction.set(
       locationRef,
       {
-        name: place.name,
+        ...where,
         category: place.category,
         description: place.description,
-        address: place.address,
-        lat: place.lat,
-        lng: place.lng,
-        city: place.city,
-        state: place.state,
         features: place.features,
         locationPhotos: place.photos,
         photos: place.photos,
         addedBy: callerUid,
-        addedByName: caller.fromUserName,
+        addedByName: callerName,
         averageRating: 0,
         totalRatings: 0,
         totalPhotos: place.photos.length,
@@ -545,7 +647,7 @@ export const addPlaceCallable = onCall(async (request) => {
   }
 
   return { locationId, alreadyExisted };
-});
+}
 
 export const addLocationPhotosCallable = onCall(async (request) => {
   const callerAuth = request.auth;
