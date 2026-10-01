@@ -468,6 +468,26 @@
         }
       }
     },
+    "Add": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加"
+          }
+        }
+      }
+    },
+    "Add a Place": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加地点"
+          }
+        }
+      }
+    },
     "Add a birthday": {
       "localizations": {
         "zh-Hans": {
@@ -538,12 +558,32 @@
         }
       }
     },
+    "Adding…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加中…"
+          }
+        }
+      }
+    },
     "All": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "全部"
+          }
+        }
+      }
+    },
+    "Already on PetNote": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已在 PetNote 上"
           }
         }
       }
@@ -991,6 +1031,16 @@
         }
       }
     },
+    "Category": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分类"
+          }
+        }
+      }
+    },
     "Cats": {
       "localizations": {
         "zh-Hans": {
@@ -1127,6 +1177,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "请选择种类。"
+          }
+        }
+      }
+    },
+    "Choose another place": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "换一个地点"
           }
         }
       }
@@ -1811,6 +1871,16 @@
         }
       }
     },
+    "Couldn't search Apple Maps. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "苹果地图搜索失败，请再试一次。"
+          }
+        }
+      }
+    },
     "Couldn't send the report.": {
       "localizations": {
         "zh-Hans": {
@@ -2051,6 +2121,16 @@
         }
       }
     },
+    "Description": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "介绍"
+          }
+        }
+      }
+    },
     "Details: %@": {
       "localizations": {
         "zh-Hans": {
@@ -2287,6 +2367,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 小时 %lld 分钟后过期"
+          }
+        }
+      }
+    },
+    "Failed to add place.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加地点失败。"
           }
         }
       }
@@ -3747,6 +3837,16 @@
         }
       }
     },
+    "Nothing found on Apple Maps.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "苹果地图上没有找到。"
+          }
+        }
+      }
+    },
     "Nothing was changed.": {
       "localizations": {
         "zh-Hans": {
@@ -3836,6 +3936,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开 %@ 的主页"
+          }
+        }
+      }
+    },
+    "Open it": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开"
           }
         }
       }
@@ -4889,6 +4999,16 @@
         }
       }
     },
+    "Search Apple Maps": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在苹果地图上搜索"
+          }
+        }
+      }
+    },
     "Search could not run. Check your connection and try again.": {
       "localizations": {
         "zh-Hans": {
@@ -5355,6 +5475,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "部分数据可能已被删除，在删除完成之前无法再做更改。"
+          }
+        }
+      }
+    },
+    "Someone added it while you were writing, so what you wrote was not added. You can review it instead.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你填写的时候有人先添加了它，所以你写的内容没有加上。你可以去给它写评价。"
           }
         }
       }
@@ -6534,6 +6664,16 @@
         }
       }
     },
+    "This place is already on PetNote": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个地点已经在 PetNote 上了"
+          }
+        }
+      }
+    },
     "This place is no longer on PetNote.": {
       "localizations": {
         "zh-Hans": {
@@ -7421,6 +7561,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "欢迎加入 %@ 的家庭！"
+          }
+        }
+      }
+    },
+    "What is it like for pets?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这里对宠物来说怎么样？"
           }
         }
       }

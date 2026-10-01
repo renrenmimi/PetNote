@@ -324,7 +324,7 @@ protocol PlacesReading: Sendable {
     func checkins(placeID: String, limit: Int) async throws -> [PlaceCheckin]
 }
 
-actor FirestorePlacesSource: PlacesReading, PlaceReviewing {
+actor FirestorePlacesSource: PlacesReading, PlaceReviewing, PlaceAdding {
     private let db: Firestore
     private var cursors: [String: DocumentSnapshot] = [:]
 
@@ -392,6 +392,16 @@ actor FirestorePlacesSource: PlacesReading, PlaceReviewing {
             .getDocuments()
         return snapshot.documents.map { PlaceReview.decode(id: $0.documentID, $0.data()) }
     }
+
+    /// `addPlaceCallable`, which answers with the place, new or already there.
+    func addPlace(_ draft: ApplePlaceDraft) async throws -> AddedPlace {
+        let result = try await CallableClient.call(Callables.addPlace, draft.payload)
+        guard let placeID = result["locationId"] as? String, !placeID.isEmpty else { throw NoPlaceInAnswer() }
+        return AddedPlace(placeID: placeID, alreadyExisted: result["alreadyExisted"] as? Bool ?? false)
+    }
+
+    /// The server said it added a place and did not say which.
+    private struct NoPlaceInAnswer: Error {}
 
     func submitReview(_ draft: PlaceReviewDraft) async throws {
         try await CallableClient.callIgnoringResult(Callables.submitReview, draft.payload)

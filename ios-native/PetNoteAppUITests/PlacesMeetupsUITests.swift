@@ -203,6 +203,94 @@ final class PlacesMeetupsUITests: XCTestCase {
         XCTAssertFalse(row.exists)
     }
 
+    /// Adding a place found on Apple Maps: the pet shop, which the stand-in
+    /// knows and nobody has added. The server keeps Apple's identifier and
+    /// what was written here, and none of Apple's words; the place's page
+    /// shows Apple's name and address. Found again, it is opened, not added
+    /// twice.
+    func testAddingAPlaceFromAppleMaps() throws {
+        let added = "locations/apple_TESTAPPLEPETSHOP1"
+        // Cleaned up even when this run finds one left by an earlier one.
+        cleanup.append(added)
+        XCTAssertNil(try JourneyAdmin.fields(path: added), "the pet shop is on the server already; an earlier run left it")
+        let (app, me) = try signInAsNewAccount("addplace-\(run)@petnote.test")
+        uid = me
+
+        app.tabBars.buttons["Places"].tap()
+        try openAddPlace(in: app)
+        let search = app.textFields["addPlace.search"]
+        search.typeText("pet shop\n")
+        let shop = app.buttons["addPlace.result.TESTAPPLEPETSHOP1"]
+        XCTAssertTrue(waitForExistence(of: shop, in: app, timeout: 20), "Apple Maps found no pet shop\n\(app.debugDescription)")
+        XCTAssertFalse(shop.label.contains("Already on PetNote"), shop.label)
+        let save = app.buttons["addPlace.save"]
+        XCTAssertFalse(save.isEnabled, "Add before a place is chosen")
+        shop.tap()
+
+        let chosen = app.descendants(matching: .any)["addPlace.chosen"]
+        XCTAssertTrue(waitForExistence(of: chosen, in: app, timeout: 10), "\(app.debugDescription)")
+        XCTAssertTrue(chosen.label.contains("TEST CONTENT Corner Pet Shop"), chosen.label)
+        XCTAssertTrue(app.descendants(matching: .any)["place.map"].exists, "no map with Apple's address")
+        for id in ["addPlace.category.pet_store", "addPlace.feature.parking"] {
+            let chip = app.buttons[id]
+            for _ in 0..<6 where !(chip.exists && chip.isHittable) { app.swipeUp() }
+            XCTAssertTrue(waitUntilHittable(chip, in: app, timeout: 10), "no \(id)\n\(app.debugDescription)")
+            chip.tap()
+        }
+        XCTAssertFalse(save.isEnabled, "Add without a description, which the web asks for")
+        let description = app.descendants(matching: .any)["addPlace.description"]
+        for _ in 0..<6 where !(description.exists && description.isHittable) { app.swipeDown() }
+        XCTAssertTrue(waitUntilHittable(description, in: app, timeout: 10), "\(app.debugDescription)")
+        description.tap()
+        description.typeText("TEST CONTENT Treats at the counter.")
+        XCTAssertTrue(waitUntilHittable(save, in: app, timeout: 10), "Add stayed off")
+        save.tap()
+
+        // The place's own page, named from Apple Maps.
+        let name = app.staticTexts["place.name"]
+        XCTAssertTrue(waitForExistence(of: name, in: app, timeout: 30), "the added place did not open\n\(app.debugDescription)")
+        XCTAssertEqual(name.label, "TEST CONTENT Corner Pet Shop")
+        XCTAssertEqual(app.staticTexts["place.address"].label, "20 Elm St, Somerville, MA 02144")
+
+        // What the server keeps.
+        let stored = try XCTUnwrap(try JourneyAdmin.fields(path: added), "nothing at \(added)")
+        XCTAssertEqual(JourneyAdmin.string(stored["applePlaceId"]), "TESTAPPLEPETSHOP1")
+        XCTAssertEqual(JourneyAdmin.string(stored["category"]), "pet_store")
+        XCTAssertEqual(JourneyAdmin.string(stored["description"]), "TEST CONTENT Treats at the counter.")
+        XCTAssertEqual(JourneyAdmin.string(stored["addedBy"]), me)
+        let features = ((stored["features"] as? [String: Any])?["arrayValue"] as? [String: Any])?["values"] as? [Any]
+        XCTAssertEqual(features?.compactMap(JourneyAdmin.string), ["parking"])
+        for field in ["name", "address", "lat", "lng", "city", "state"] {
+            XCTAssertNil(stored[field], "the server holds the \(field) of a place from Apple Maps")
+        }
+
+        // Back on the list, which has it now, named from Apple Maps.
+        app.navigationBars.buttons["BackButton"].firstMatch.tap()
+        let row = app.buttons["place.apple_TESTAPPLEPETSHOP1"]
+        XCTAssertTrue(waitForExistence(of: row, in: app, timeout: 20), "the list does not have the place just added\n\(app.debugDescription)")
+        assertLabel(of: row, contains: "TEST CONTENT Corner Pet Shop")
+
+        // Found again: there already, and opened rather than added.
+        try openAddPlace(in: app)
+        app.textFields["addPlace.search"].typeText("pet shop\n")
+        XCTAssertTrue(waitForExistence(of: shop, in: app, timeout: 20), "\(app.debugDescription)")
+        assertLabel(of: shop, contains: "Already on PetNote")
+        shop.tap()
+        XCTAssertTrue(waitForExistence(of: name, in: app, timeout: 20), "the place there already did not open\n\(app.debugDescription)")
+        XCTAssertEqual(name.label, "TEST CONTENT Corner Pet Shop")
+    }
+
+    /// The Add button on the places list, and the sheet's search field ready
+    /// for typing.
+    private func openAddPlace(in app: XCUIApplication) throws {
+        let add = app.buttons["places.add"]
+        XCTAssertTrue(waitUntilHittable(add, in: app, timeout: 30), "no Add\n\(app.debugDescription)")
+        add.tap()
+        let search = app.textFields["addPlace.search"]
+        XCTAssertTrue(waitUntilHittable(search, in: app, timeout: 10), "no search in Add a Place\n\(app.debugDescription)")
+        search.tap()
+    }
+
     /// A name search is a prefix of the name, as the web's: the places whose
     /// names start with what was typed, and no others; clearing it brings the
     /// list back.

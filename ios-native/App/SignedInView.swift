@@ -498,6 +498,9 @@ struct SignedInView: View {
         NavigationStack(path: $placesPath) {
             PlacesView(
                 model: PlacesModel(source: repositories.places),
+                makeAddPlace: { query in
+                    AddPlaceModel(query: query, places: repositories.places, adder: repositories.placeAdding)
+                },
                 onOpen: { placesPath.append(.place(placeID: $0)) }
             )
             .suspendedBanner(isSuspended)
@@ -992,6 +995,7 @@ struct Repositories {
     let notifications: any NotificationsReading
     let places: any PlacesReading
     let placeReviews: any PlaceReviewing
+    let placeAdding: any PlaceAdding
     let meetups: any MeetupsReading
     /// The spotlight row's candidates. The search repository's own read — see
     /// `PopularPostsReading`.
@@ -1028,6 +1032,7 @@ struct Repositories {
             notifications: FirestoreNotificationsSource(),
             places: places,
             placeReviews: places,
+            placeAdding: places,
             meetups: FirestoreMeetupsSource(),
             popularPosts: search,
             petBirthdays: FirestorePetBirthdaySource()

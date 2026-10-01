@@ -1,13 +1,18 @@
 import SwiftUI
 
-/// The Places tab: places by category, sorted, or searched by name.
+/// The Places tab: places by category, sorted, or searched by name, and a
+/// place added from Apple Maps.
 struct PlacesView: View {
     @State private var model: PlacesModel
     @State private var query = ""
+    @State private var isAdding = false
+    /// Adding a place, starting from what was searched for, if anything.
+    private let makeAddPlace: (String) -> AddPlaceModel
     private let onOpen: (String) -> Void
 
-    init(model: PlacesModel, onOpen: @escaping (String) -> Void) {
+    init(model: PlacesModel, makeAddPlace: @escaping (String) -> AddPlaceModel, onOpen: @escaping (String) -> Void) {
         _model = State(initialValue: model)
+        self.makeAddPlace = makeAddPlace
         self.onOpen = onOpen
     }
 
@@ -31,6 +36,15 @@ struct PlacesView: View {
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                Button { isAdding = true } label: {
+                    Image(systemName: "plus")
+                        .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget)
+                        .contentShape(.rect)
+                }
+                .accessibilityLabel("Add a Place")
+                .accessibilityIdentifier("places.add")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Picker("Sort by", selection: $model.sort) {
                         ForEach(PlaceSort.allCases, id: \.self) { sort in
@@ -51,6 +65,16 @@ struct PlacesView: View {
         }
         .task { if model.items.isEmpty { await model.load() } }
         .refreshable { await model.load() }
+        .sheet(isPresented: $isAdding) {
+            NavigationStack {
+                AddPlaceSheet(model: makeAddPlace(query)) { placeID in
+                    onOpen(placeID)
+                    // So that back from it, the list has it: first, as the
+                    // newest.
+                    Task { await model.load() }
+                }
+            }
+        }
     }
 
     private var categories: some View {
@@ -98,19 +122,27 @@ struct PlacesView: View {
                 .accessibilityIdentifier("places.error")
         default:
             if model.items.isEmpty {
-                VStack(spacing: Spacing.s) {
-                    Text("No places found")
-                        .font(Typography.sectionTitle)
-                        .foregroundStyle(Palette.primaryText)
-                    Text("Be the first to recommend one!")
-                        .font(Typography.body)
-                        .foregroundStyle(Palette.secondaryText)
+                VStack(spacing: Spacing.m) {
+                    VStack(spacing: Spacing.s) {
+                        Text("No places found")
+                            .font(Typography.sectionTitle)
+                            .foregroundStyle(Palette.primaryText)
+                        Text("Be the first to recommend one!")
+                            .font(Typography.body)
+                            .foregroundStyle(Palette.secondaryText)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("places.empty")
+                    // The web's action, outside the words so it is its own
+                    // button.
+                    Button("Add a Place") { isAdding = true }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Palette.brandPrimary)
+                        .accessibilityIdentifier("places.empty.add")
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, Spacing.xl)
                 .listRowSeparator(.hidden)
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("places.empty")
             } else {
                 ForEach(model.items) { place in
                     PlaceRow(place: place, name: model.lookups.name(of: place)) { onOpen(place.id) }
