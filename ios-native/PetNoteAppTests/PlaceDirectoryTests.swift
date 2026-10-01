@@ -39,6 +39,8 @@ import Testing
     private func directory(
         asked: Asked,
         gate: Gate? = nil,
+        searchGate: Gate? = nil,
+        hits: [PlaceSearchHit] = [],
         place: @escaping @Sendable (String) throws -> PlaceDetails? = { _ in park }
     ) -> MapKitPlaceDirectory {
         MapKitPlaceDirectory(lookups: .init(
@@ -50,6 +52,11 @@ import Testing
             address: { text in
                 asked.record("address \(text)")
                 return PlaceDetails(name: text, address: text, latitude: 42.39, longitude: -71.1)
+            },
+            search: { text in
+                asked.record("search \(text)")
+                await searchGate?.pass()
+                return hits
             }
         ))
     }
@@ -126,6 +133,49 @@ import Testing
         _ = try await directory.details(forApplePlaceID: "I1")
         #expect(asked.all == ["place I1", "place I1"], "an answer from before forget() must not be cached")
     }
+
+    /// A search is asked each time; what it says about each place it finds
+    /// is kept, so the place it turns into is not asked about again.
+    @Test func aSearchKeepsWhatAppleSaidAboutEachPlaceItFound() async throws {
+        let asked = Asked()
+        let directory = directory(asked: asked, hits: [PlaceSearchHit(applePlaceID: "I1", details: Self.park)])
+
+        #expect(try await directory.search("  dog park ").map(\.applePlaceID) == ["I1"])
+        #expect(try await directory.details(forApplePlaceID: "I1") == Self.park)
+        _ = try await directory.search("dog park")
+        #expect(try await directory.search("   ").isEmpty)
+
+        #expect(asked.all == ["search dog park", "search dog park"])
+    }
+
+    @Test func aSearchAnsweredWhenForgottenIsGivenButNotKept() async throws {
+        let asked = Asked()
+        let gate = Gate()
+        let directory = directory(asked: asked, searchGate: gate, hits: [PlaceSearchHit(applePlaceID: "I1", details: Self.park)])
+
+        async let found = directory.search("dog park")
+        #expect(await eventuallyTrueAnywhere { asked.all.count == 1 })
+        await directory.forget()
+        await gate.open()
+
+        #expect(try await found.map(\.applePlaceID) == ["I1"], "the caller that searched still gets its answer")
+        _ = try await directory.details(forApplePlaceID: "I1")
+        #expect(asked.all == ["search dog park", "place I1"], "a search answered after forget() must not be kept")
+    }
+
+    #if PETNOTE_FAULT_INJECTION
+    /// The emulator build's table, as UI tests search it: by the words of a
+    /// place's name, whatever the case.
+    @Test func theStandInFindsATablePlaceByTheWordsOfItsName() async throws {
+        let standIn = StandInPlaceDirectory()
+
+        #expect(try await standIn.search("fenway DOG").map(\.applePlaceID) == ["TESTAPPLEDOGRUN01"])
+        #expect(try await standIn.search("dog fenway").map(\.applePlaceID) == ["TESTAPPLEDOGRUN01"], "words in any order")
+        #expect(try await standIn.search("TEST CONTENT").map(\.applePlaceID) == ["TESTAPPLEDOGRUN01", "TESTAPPLEPETSHOP1"])
+        #expect(try await standIn.search("TEST CONTENT Hi").isEmpty, "the web's search test would find it")
+        #expect(try await standIn.search("  ").isEmpty)
+    }
+    #endif
 
     @Test func anAddressIsTrimmedAndAnEmptyOneIsNotAsked() async throws {
         let asked = Asked()

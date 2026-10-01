@@ -53,6 +53,15 @@ final class PlaceLookups {
         })
     }
 
+    /// The identifiers of the places Apple Maps finds for `text`, most
+    /// relevant first. What Apple said about each is kept as its answer, so
+    /// the rows they become are named without asking again.
+    func search(_ text: String) async throws -> [String] {
+        let hits = try await directory.search(text)
+        for hit in hits { answers[.apple(hit.applePlaceID)] = .found(hit.details) }
+        return hits.map(\.applePlaceID)
+    }
+
     private func ask(_ questions: [Question]) async {
         let pending = Set(questions).filter { question in
             switch answers[question] {
