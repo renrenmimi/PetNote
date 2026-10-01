@@ -73,12 +73,12 @@ struct PlaceReviewSheet: View {
                 Text(model.placeName)
                     .font(Typography.sectionTitle)
                     .foregroundStyle(Palette.primaryText)
-                stars(String(localized: "Rate this place"), value: $model.draft.rating, identifier: "review.rating")
+                StarRatingRow(title: String(localized: "Rate this place"), value: $model.draft.rating, identifier: "review.rating")
             }
             Section("Pet-friendly scores") {
-                stars(String(localized: "🐾 Space for pets"), value: $model.draft.space, identifier: "review.space")
-                stars(String(localized: "🛡️ Safety"), value: $model.draft.safety, identifier: "review.safety")
-                stars(String(localized: "✨ Cleanliness"), value: $model.draft.cleanliness, identifier: "review.cleanliness")
+                StarRatingRow(title: String(localized: "🐾 Space for pets"), value: $model.draft.space, identifier: "review.space")
+                StarRatingRow(title: String(localized: "🛡️ Safety"), value: $model.draft.safety, identifier: "review.safety")
+                StarRatingRow(title: String(localized: "✨ Cleanliness"), value: $model.draft.cleanliness, identifier: "review.cleanliness")
             }
             Section("Tags") {
                 FlowTags(options: PlaceReviewDraft.tagOptions, selected: model.draft.tags) { model.toggle(tag: $0) }
@@ -125,23 +125,31 @@ struct PlaceReviewSheet: View {
         }
         .interactiveDismissDisabled(model.isSubmitting)
     }
+}
 
-    private func stars(_ title: String, value: Binding<Int>, identifier: String) -> some View {
+/// One to five stars, each a button: a review's rating and its pet-friendly
+/// scores, and the rating that can go with a place being added.
+struct StarRatingRow: View {
+    let title: String
+    @Binding var value: Int
+    let identifier: String
+
+    var body: some View {
         HStack {
             Text(title)
                 .font(Typography.body)
                 .foregroundStyle(Palette.primaryText)
             Spacer(minLength: Spacing.s)
             ForEach(1...5, id: \.self) { score in
-                Button { value.wrappedValue = score } label: {
-                    Image(systemName: score <= value.wrappedValue ? "star.fill" : "star")
-                        .foregroundStyle(score <= value.wrappedValue ? Palette.warning : Palette.tertiaryText)
+                Button { value = score } label: {
+                    Image(systemName: score <= value ? "star.fill" : "star")
+                        .foregroundStyle(score <= value ? Palette.warning : Palette.tertiaryText)
                         .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget)
                         .contentShape(.rect)
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel(String(localized: "\(score) out of 5"))
-                .accessibilityAddTraits(score == value.wrappedValue ? .isSelected : [])
+                .accessibilityAddTraits(score == value ? .isSelected : [])
             }
         }
         .accessibilityElement(children: .contain)

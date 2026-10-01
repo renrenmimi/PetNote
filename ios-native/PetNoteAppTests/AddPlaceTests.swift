@@ -93,8 +93,10 @@ import Testing
     }
 
     /// The shop chosen and described, ready to add.
-    private func shopReady(adder: Adder = Adder()) async -> AddPlaceModel {
-        let model = AddPlaceModel(query: "pet", places: Places(), adder: adder, directory: Directory())
+    private func shopReady(
+        adder: Adder = Adder(), reviewer: PlacesMeetupsTests.FakeReviews = PlacesMeetupsTests.FakeReviews()
+    ) async -> AddPlaceModel {
+        let model = AddPlaceModel(query: "pet", places: Places(), adder: adder, reviewer: reviewer, directory: Directory())
         await model.finder.search()
         if let shop = found(model).first(where: { $0.id == "I2" }) { model.choose(shop) }
         model.description = "Treats at the counter."
@@ -102,7 +104,7 @@ import Testing
     }
 
     @Test func aSearchMarksThePlacesSomeoneHasAddedAlready() async {
-        let model = AddPlaceModel(query: "  pet  ", places: Places(), adder: Adder(), directory: Directory())
+        let model = AddPlaceModel(query: "  pet  ", places: Places(), adder: Adder(), reviewer: PlacesMeetupsTests.FakeReviews(), directory: Directory())
 
         await model.finder.search()
 
@@ -111,7 +113,7 @@ import Testing
     }
 
     @Test func aPlaceSomeoneAddedAlreadyIsNotChosenToBeAddedAgain() async {
-        let model = AddPlaceModel(query: "pet", places: Places(), adder: Adder(), directory: Directory())
+        let model = AddPlaceModel(query: "pet", places: Places(), adder: Adder(), reviewer: PlacesMeetupsTests.FakeReviews(), directory: Directory())
         await model.finder.search()
 
         model.choose(found(model)[0])
@@ -131,7 +133,7 @@ import Testing
 
         await model.save()
 
-        #expect(model.outcome == .added(AddedPlace(placeID: "apple_I2", alreadyExisted: false)))
+        #expect(model.outcome == .added(AddedPlace(placeID: "apple_I2", alreadyExisted: false), rated: false))
         let payload = try #require(adder.sent.first).payload
         #expect(Set(payload.keys) == ["applePlaceId", "category", "description", "features"])
         #expect(payload["applePlaceId"] as? String == "I2")
@@ -141,7 +143,7 @@ import Testing
     }
 
     @Test func aPlaceNeedsAChosenPlaceAndADescriptionOfAtMost500() async {
-        let empty = AddPlaceModel(query: "pet", places: Places(), adder: Adder(), directory: Directory())
+        let empty = AddPlaceModel(query: "pet", places: Places(), adder: Adder(), reviewer: PlacesMeetupsTests.FakeReviews(), directory: Directory())
         empty.description = "Shady."
         #expect(!empty.canSave, "nothing chosen")
 
@@ -177,12 +179,71 @@ import Testing
 
         await model.save()
 
-        #expect(model.outcome == .added(AddedPlace(placeID: "apple_I2", alreadyExisted: true)))
+        #expect(model.outcome == .added(AddedPlace(placeID: "apple_I2", alreadyExisted: true), rated: false))
         #expect(!model.canSave, "added, if not by this person: nothing more to send")
     }
 
+    /// The web's order: the place, then the rating as a review of it, with
+    /// only the scores given (the server fills the rest in with the rating).
+    @Test func aRatingGoesAsAReviewOfThePlaceJustAdded() async throws {
+        let reviewer = PlacesMeetupsTests.FakeReviews()
+        let model = await shopReady(reviewer: reviewer)
+        model.rating = 4
+        model.space = 5
+
+        await model.save()
+
+        #expect(model.outcome == .added(AddedPlace(placeID: "apple_I2", alreadyExisted: false), rated: true))
+        let review = try #require(reviewer.submitted.first)
+        #expect(review.placeID == "apple_I2" && review.meetupID == nil)
+        #expect(review.rating == 4 && review.space == 5 && review.safety == 0 && review.cleanliness == 0)
+    }
+
+    @Test func aRatingGoesToAPlaceSomeoneElseAddedMeanwhile() async {
+        let adder = Adder()
+        adder.answer = .success(AddedPlace(placeID: "apple_I2", alreadyExisted: true))
+        let reviewer = PlacesMeetupsTests.FakeReviews()
+        let model = await shopReady(adder: adder, reviewer: reviewer)
+        model.rating = 5
+
+        await model.save()
+
+        #expect(model.outcome == .added(AddedPlace(placeID: "apple_I2", alreadyExisted: true), rated: true))
+        #expect(reviewer.submitted.map(\.placeID) == ["apple_I2"])
+    }
+
+    @Test func aRefusedRatingLeavesThePlaceAddedAndSaysWhy() async {
+        let reviewer = PlacesMeetupsTests.FakeReviews()
+        // A place someone added meanwhile, which this person had reviewed.
+        reviewer.error = NSError(
+            domain: FunctionsErrorDomain, code: FunctionsErrorCode.alreadyExists.rawValue,
+            userInfo: [NSLocalizedDescriptionKey: "You have already reviewed this location."]
+        )
+        let model = await shopReady(reviewer: reviewer)
+        model.rating = 3
+
+        await model.save()
+
+        #expect(model.outcome == .notRated(AddedPlace(placeID: "apple_I2", alreadyExisted: false), "You have already reviewed this location."))
+        #expect(!model.canSave, "the place is in: nothing more to add")
+    }
+
+    @Test func noRatingSendsNoReviewAndAPlaceRefusedSendsNoRating() async {
+        let reviewer = PlacesMeetupsTests.FakeReviews()
+        let unrated = await shopReady(reviewer: reviewer)
+        await unrated.save()
+        #expect(reviewer.submitted.isEmpty, "a review without a rating")
+
+        let adder = Adder()
+        adder.answer = .failure(URLError(.notConnectedToInternet))
+        let refused = await shopReady(adder: adder, reviewer: reviewer)
+        refused.rating = 4
+        await refused.save()
+        #expect(reviewer.submitted.isEmpty, "a rating for a place that was not added")
+    }
+
     @Test func aSearchAppleCannotAnswerSaysSo() async {
-        let model = AddPlaceModel(query: "pet", places: Places(), adder: Adder(), directory: Directory(fails: true))
+        let model = AddPlaceModel(query: "pet", places: Places(), adder: Adder(), reviewer: PlacesMeetupsTests.FakeReviews(), directory: Directory(fails: true))
 
         await model.finder.search()
 
@@ -192,7 +253,7 @@ import Testing
     /// A slow answer to the first search must not replace the second's.
     @Test func anOlderSearchDoesNotReplaceANewerOne() async {
         let directory = Directory([[PlaceSearchHit(applePlaceID: "I1", details: Self.run)], [PlaceSearchHit(applePlaceID: "I2", details: Self.shop)]], holdFirst: true)
-        let model = AddPlaceModel(query: "dog run", places: Places(), adder: Adder(), directory: directory)
+        let model = AddPlaceModel(query: "dog run", places: Places(), adder: Adder(), reviewer: PlacesMeetupsTests.FakeReviews(), directory: directory)
 
         let first = Task { await model.finder.search() }
         #expect(await eventuallyTrue { directory.isHolding })
