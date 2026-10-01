@@ -520,7 +520,7 @@ struct SignedInView: View {
                 makeCreateMeetup: {
                     MeetupFormModel(
                         uid: user.uid, creator: repositories.meetupCreating,
-                        places: repositories.places, pets: repositories.petChoices
+                        places: repositories.places, pets: repositories.petChoices, uploader: repositories.media
                     )
                 },
                 onOpen: { meetupsPath.append(.meetup(meetupID: $0)) }
@@ -762,7 +762,7 @@ struct SignedInView: View {
                 makeEditMeetup: { meetup, place, details in
                     MeetupFormModel(
                         editing: meetup, place: place, details: details,
-                        editor: repositories.meetupEditing, places: repositories.places
+                        editor: repositories.meetupEditing, places: repositories.places, uploader: repositories.media
                     )
                 },
                 onOpenPlace: { stack.wrappedValue.append(.place(placeID: $0)) }

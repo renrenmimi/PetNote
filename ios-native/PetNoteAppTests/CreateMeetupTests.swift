@@ -10,6 +10,8 @@ import Testing
 @MainActor
 @Suite struct CreateMeetupTests {
     private nonisolated static let now = Date(timeIntervalSince1970: 1_790_000_000)
+    /// What `FakeUploader` answers for the first upload.
+    private nonisolated static let firstUpload = "https://res.cloudinary.com/petnote/image/upload/v1/u/1.jpg"
     private nonisolated static let run = PlaceSearchHit(
         applePlaceID: "I1",
         details: PlaceDetails(name: "Fenway Dog Run", address: "1 Park Dr, Boston, MA", latitude: 42.3434, longitude: -71.095)
@@ -50,9 +52,11 @@ import Testing
         }
     }
 
-    private func model(creator: Creator = Creator(), places: Places = Places(), pets: [Pet] = []) -> MeetupFormModel {
+    private func model(
+        creator: Creator = Creator(), places: Places = Places(), pets: [Pet] = [], uploader: FakeUploader = FakeUploader()
+    ) -> MeetupFormModel {
         MeetupFormModel(
-            uid: "me", creator: creator, places: places, pets: FixedPets(pets: pets),
+            uid: "me", creator: creator, places: places, pets: FixedPets(pets: pets), uploader: uploader,
             directory: Directory(), now: { Self.now }
         )
     }
@@ -191,6 +195,85 @@ import Testing
 
         #expect(creator.sent.count == 1)
         #expect(!model.canSave)
+    }
+
+    /// The web's order: the cover first, prepared as the composer prepares a
+    /// photo, then the meetup with its address.
+    @Test func aCoverGoesFirstAndItsAddressWithTheMeetup() async throws {
+        let creator = Creator()
+        let uploader = FakeUploader()
+        let model = model(creator: creator, uploader: uploader)
+        await ready(model)
+        model.chooseCover(data: UploadTestImages.jpeg(width: 400, height: 300, quality: 0.5), filename: "c.jpg")
+
+        await model.submit()
+
+        #expect(model.outcome == .created("m-new"))
+        #expect(uploader.sentItems.map(\.resourceType) == [.image])
+        #expect(uploader.sentItems.first?.mimeType == "image/jpeg")
+        let payload = try #require(creator.sent.first).payload
+        #expect(payload["coverImage"] as? String == Self.firstUpload)
+    }
+
+    /// A cover alone is something a swipe down would lose.
+    @Test func aCoverChosenKeepsTheFormOpen() {
+        let model = model()
+        #expect(!model.hasInput)
+        model.chooseCover(data: UploadTestImages.jpeg(width: 200, height: 200, quality: 0.5), filename: "c.jpg")
+        #expect(model.hasInput)
+        model.removeCover()
+        #expect(!model.hasInput)
+    }
+
+    @Test func aCoverThatDoesNotGoCreatesNothing() async {
+        let creator = Creator()
+        let uploader = FakeUploader()
+        uploader.fail(atSend: [1])
+        let model = model(creator: creator, uploader: uploader)
+        await ready(model)
+        model.chooseCover(data: UploadTestImages.jpeg(width: 200, height: 200, quality: 0.5), filename: "c.jpg")
+
+        await model.submit()
+
+        #expect(model.outcome == .failed("The cover upload timed out. The meetup was not created."))
+        #expect(creator.sent.isEmpty, "a meetup created without the cover meant for it")
+        #expect(model.canSave, "a failed cover left Create off")
+    }
+
+    /// Refused once the cover is up: trying again sends the same address and
+    /// does not upload the cover a second time.
+    @Test func tryingAgainDoesNotSendTheCoverTwice() async {
+        let creator = Creator()
+        creator.answer = .failure(NSError(
+            domain: FunctionsErrorDomain, code: FunctionsErrorCode.resourceExhausted.rawValue,
+            userInfo: [NSLocalizedDescriptionKey: "Too many requests."]
+        ))
+        let uploader = FakeUploader()
+        let model = model(creator: creator, uploader: uploader)
+        await ready(model)
+        model.chooseCover(data: UploadTestImages.jpeg(width: 200, height: 200, quality: 0.5), filename: "c.jpg")
+        await model.submit()
+        creator.answer = .success("m-new")
+
+        await model.submit()
+
+        #expect(model.outcome == .created("m-new"))
+        #expect(uploader.sendCount == 1)
+        #expect(creator.sent.map { $0.payload["coverImage"] as? String } == [Self.firstUpload, Self.firstUpload])
+    }
+
+    @Test func aCoverTakenOutIsNotSent() async throws {
+        let creator = Creator()
+        let uploader = FakeUploader()
+        let model = model(creator: creator, uploader: uploader)
+        await ready(model)
+        model.chooseCover(data: UploadTestImages.jpeg(width: 200, height: 200, quality: 0.5), filename: "c.jpg")
+        model.removeCover()
+
+        await model.submit()
+
+        #expect(uploader.sendCount == 0)
+        #expect(try #require(creator.sent.first).payload["coverImage"] == nil)
     }
 
     /// Any place can hold a meetup, so a search for one does not look for
