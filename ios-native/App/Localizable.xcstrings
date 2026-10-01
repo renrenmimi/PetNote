@@ -3615,12 +3615,42 @@
         }
       }
     },
+    "Map": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地图"
+          }
+        }
+      }
+    },
     "Map of %@": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "%@的地图"
+          }
+        }
+      }
+    },
+    "Map of %lld places": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个地点的地图"
+          }
+        }
+      }
+    },
+    "Map of 1 place": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 个地点的地图"
           }
         }
       }
@@ -4153,6 +4183,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "还没有人报名。"
+          }
+        }
+      }
+    },
+    "None of these places has a position to show.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这些地点都没有可以显示的位置。"
           }
         }
       }
