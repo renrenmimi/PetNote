@@ -182,7 +182,19 @@ struct MeetupDetailView: View {
     private func actions(_ meetup: Meetup) -> some View {
         VStack(alignment: .leading, spacing: Spacing.s) {
             if meetup.status == .upcoming {
-                if model.hasJoined {
+                if model.isOrganizer {
+                    // The web's rule: an organiser cancels their meetup, and
+                    // is offered neither Join nor Leave. They are on its guest
+                    // list from the start, and leaving would take them off it.
+                    Button(role: .destructive) { isConfirmingCancel = true } label: {
+                        Text(model.working == .cancelling ? String(localized: "Cancelling…") : String(localized: "Cancel Meetup"))
+                            .frame(maxWidth: .infinity, minHeight: Layout.minTouchTarget)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!model.canAct)
+                    .accessibilityIdentifier("meetupDetail.cancel")
+                } else if model.hasJoined {
                     Label("You're going", systemImage: "checkmark.circle.fill")
                         .font(Typography.body.weight(.semibold))
                         .foregroundStyle(Palette.success)
@@ -205,16 +217,6 @@ struct MeetupDetailView: View {
                     .tint(Palette.brandPrimary)
                     .disabled(!model.canAct)
                     .accessibilityIdentifier("meetupDetail.join")
-                }
-                if model.isOrganizer {
-                    Button(role: .destructive) { isConfirmingCancel = true } label: {
-                        Text(model.working == .cancelling ? String(localized: "Cancelling…") : String(localized: "Cancel Meetup"))
-                            .frame(maxWidth: .infinity, minHeight: Layout.minTouchTarget)
-                            .contentShape(.rect)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(!model.canAct)
-                    .accessibilityIdentifier("meetupDetail.cancel")
                 }
             } else {
                 Text(meetup.status == .cancelled
