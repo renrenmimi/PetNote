@@ -219,8 +219,10 @@ final class MeetupDetailModel {
         }
     }
 
+    /// For a participant who is not the organiser: an organiser cancels
+    /// instead, as on the web.
     func leave() async {
-        guard canAct, hasJoined else { return }
+        guard canAct, hasJoined, !isOrganizer else { return }
         working = .leaving
         actionMessage = nil
         defer { working = nil }
