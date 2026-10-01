@@ -94,9 +94,10 @@ import Testing
 
     /// The shop chosen and described, ready to add.
     private func shopReady(
-        adder: Adder = Adder(), reviewer: PlacesMeetupsTests.FakeReviews = PlacesMeetupsTests.FakeReviews()
+        adder: Adder = Adder(), reviewer: PlacesMeetupsTests.FakeReviews = PlacesMeetupsTests.FakeReviews(),
+        uploader: FakeUploader = FakeUploader()
     ) async -> AddPlaceModel {
-        let model = AddPlaceModel(query: "pet", places: Places(), adder: adder, reviewer: reviewer, directory: Directory())
+        let model = AddPlaceModel(query: "pet", places: Places(), adder: adder, reviewer: reviewer, uploader: uploader, directory: Directory())
         await model.finder.search()
         if let shop = found(model).first(where: { $0.id == "I2" }) { model.choose(shop) }
         model.description = "Treats at the counter."
@@ -104,7 +105,7 @@ import Testing
     }
 
     @Test func aSearchMarksThePlacesSomeoneHasAddedAlready() async {
-        let model = AddPlaceModel(query: "  pet  ", places: Places(), adder: Adder(), reviewer: PlacesMeetupsTests.FakeReviews(), directory: Directory())
+        let model = AddPlaceModel(query: "  pet  ", places: Places(), adder: Adder(), reviewer: PlacesMeetupsTests.FakeReviews(), uploader: FakeUploader(), directory: Directory())
 
         await model.finder.search()
 
@@ -113,7 +114,7 @@ import Testing
     }
 
     @Test func aPlaceSomeoneAddedAlreadyIsNotChosenToBeAddedAgain() async {
-        let model = AddPlaceModel(query: "pet", places: Places(), adder: Adder(), reviewer: PlacesMeetupsTests.FakeReviews(), directory: Directory())
+        let model = AddPlaceModel(query: "pet", places: Places(), adder: Adder(), reviewer: PlacesMeetupsTests.FakeReviews(), uploader: FakeUploader(), directory: Directory())
         await model.finder.search()
 
         model.choose(found(model)[0])
@@ -143,7 +144,7 @@ import Testing
     }
 
     @Test func aPlaceNeedsAChosenPlaceAndADescriptionOfAtMost500() async {
-        let empty = AddPlaceModel(query: "pet", places: Places(), adder: Adder(), reviewer: PlacesMeetupsTests.FakeReviews(), directory: Directory())
+        let empty = AddPlaceModel(query: "pet", places: Places(), adder: Adder(), reviewer: PlacesMeetupsTests.FakeReviews(), uploader: FakeUploader(), directory: Directory())
         empty.description = "Shady."
         #expect(!empty.canSave, "nothing chosen")
 
@@ -242,8 +243,63 @@ import Testing
         #expect(reviewer.submitted.isEmpty, "a rating for a place that was not added")
     }
 
+    /// The web's order: the photos first, each prepared as the composer
+    /// prepares one, then the place with their addresses.
+    @Test func thePhotosGoFirstAndTheirAddressesWithThePlace() async throws {
+        let adder = Adder()
+        let uploader = FakeUploader()
+        let model = await shopReady(adder: adder, uploader: uploader)
+        model.addPhoto(data: UploadTestImages.jpeg(width: 400, height: 300, quality: 0.5), filename: "a.jpg")
+        model.addPhoto(data: UploadTestImages.jpeg(width: 300, height: 400, quality: 0.5), filename: "b.jpg")
+
+        await model.save()
+
+        #expect(uploader.sentItems.map(\.resourceType) == [.image, .image])
+        #expect(uploader.sentItems.allSatisfy { $0.mimeType == "image/jpeg" })
+        let draft = try #require(adder.sent.first)
+        #expect(draft.photos.map(\.lastPathComponent) == ["1.jpg", "2.jpg"], "in the order picked")
+        #expect((draft.payload["photos"] as? [String])?.allSatisfy { $0.hasPrefix("https://res.cloudinary.com/") } == true)
+    }
+
+    @Test func aPhotoThatDoesNotGoAddsNothing() async {
+        let adder = Adder()
+        let uploader = FakeUploader()
+        uploader.fail(atSend: [2])
+        let model = await shopReady(adder: adder, uploader: uploader)
+        model.addPhoto(data: UploadTestImages.jpeg(width: 200, height: 200, quality: 0.5), filename: "a.jpg")
+        model.addPhoto(data: UploadTestImages.jpeg(width: 200, height: 200, quality: 0.5), filename: "b.jpg")
+
+        await model.save()
+
+        #expect(model.outcome == .failed("The photo upload timed out. The place was not added."))
+        #expect(adder.sent.isEmpty, "a place added without a photo meant for it")
+        #expect(model.canSave, "a failed photo left Submit off")
+    }
+
+    @Test func atMostFivePhotos() async {
+        let model = await shopReady()
+        for index in 0..<6 {
+            model.addPhoto(data: UploadTestImages.jpeg(width: 100, height: 100, quality: 0.5), filename: "\(index).jpg")
+        }
+        #expect(model.photos.count == 5 && model.photosLeft == 0)
+
+        model.removePhoto(model.photos[0].id)
+        #expect(model.photos.count == 4 && model.photosLeft == 1)
+    }
+
+    @Test func noPhotosNoUploads() async throws {
+        let adder = Adder()
+        let uploader = FakeUploader()
+        let model = await shopReady(adder: adder, uploader: uploader)
+
+        await model.save()
+
+        #expect(uploader.sendCount == 0)
+        #expect(try #require(adder.sent.first).payload["photos"] == nil)
+    }
+
     @Test func aSearchAppleCannotAnswerSaysSo() async {
-        let model = AddPlaceModel(query: "pet", places: Places(), adder: Adder(), reviewer: PlacesMeetupsTests.FakeReviews(), directory: Directory(fails: true))
+        let model = AddPlaceModel(query: "pet", places: Places(), adder: Adder(), reviewer: PlacesMeetupsTests.FakeReviews(), uploader: FakeUploader(), directory: Directory(fails: true))
 
         await model.finder.search()
 
@@ -253,7 +309,7 @@ import Testing
     /// A slow answer to the first search must not replace the second's.
     @Test func anOlderSearchDoesNotReplaceANewerOne() async {
         let directory = Directory([[PlaceSearchHit(applePlaceID: "I1", details: Self.run)], [PlaceSearchHit(applePlaceID: "I2", details: Self.shop)]], holdFirst: true)
-        let model = AddPlaceModel(query: "dog run", places: Places(), adder: Adder(), reviewer: PlacesMeetupsTests.FakeReviews(), directory: directory)
+        let model = AddPlaceModel(query: "dog run", places: Places(), adder: Adder(), reviewer: PlacesMeetupsTests.FakeReviews(), uploader: FakeUploader(), directory: directory)
 
         let first = Task { await model.finder.search() }
         #expect(await eventuallyTrue { directory.isHolding })

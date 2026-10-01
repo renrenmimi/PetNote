@@ -237,7 +237,11 @@ final class PlacesMeetupsUITests: XCTestCase {
         // Cleaned up even when this run finds one left by an earlier one.
         cleanup.append(added)
         XCTAssertNil(try JourneyAdmin.fields(path: added), "the pet shop is on the server already; an earlier run left it")
-        let (app, me) = try signInAsNewAccount("addplace-\(run)@petnote.test")
+        // Photos go to the upload stand-in (scripts/upload-standin.py), which
+        // answers as Cloudinary would.
+        let (app, me) = try signInAsNewAccount(
+            "addplace-\(run)@petnote.test", extraArguments: ["-petnote-upload-standin", "http://127.0.0.1:8766"]
+        )
         uid = me
         cleanup.append("\(added)/reviews/\(me)")
 
@@ -249,7 +253,7 @@ final class PlacesMeetupsUITests: XCTestCase {
         XCTAssertTrue(waitForExistence(of: shop, in: app, timeout: 20), "Apple Maps found no pet shop\n\(app.debugDescription)")
         XCTAssertFalse(shop.label.contains("Already on PetNote"), shop.label)
         let save = app.buttons["addPlace.save"]
-        XCTAssertFalse(save.isEnabled, "Add before a place is chosen")
+        XCTAssertFalse(save.isEnabled, "Submit before a place is chosen")
         shop.tap()
 
         let chosen = app.descendants(matching: .any)["applePlace.chosen"]
@@ -262,7 +266,14 @@ final class PlacesMeetupsUITests: XCTestCase {
             XCTAssertTrue(waitUntilHittable(chip, in: app, timeout: 10), "no \(id)\n\(app.debugDescription)")
             chip.tap()
         }
-        XCTAssertFalse(save.isEnabled, "Add without a description, which the web asks for")
+        XCTAssertFalse(save.isEnabled, "Submit without a description, which the web asks for")
+        // A photo from the library.
+        let addPhotos = app.buttons["addPlace.photos.add"]
+        reveal(addPhotos, in: app)
+        XCTAssertTrue(waitUntilHittable(addPhotos, in: app, timeout: 10), "no Add photos\n\(app.debugDescription)")
+        addPhotos.tap()
+        try pickFirstPhoto(app)
+        XCTAssertTrue(app.descendants(matching: .any)["addPlace.photo.0"].waitForExistence(timeout: 20), "the photo was not picked")
         let description = app.descendants(matching: .any)["addPlace.description"]
         for _ in 0..<6 where !(description.exists && description.isHittable) { app.swipeDown() }
         XCTAssertTrue(waitUntilHittable(description, in: app, timeout: 10), "\(app.debugDescription)")
@@ -272,7 +283,7 @@ final class PlacesMeetupsUITests: XCTestCase {
         let rating = app.descendants(matching: .any)["addPlace.rating"]
         reveal(rating, in: app)
         rating.buttons["4 out of 5"].tap()
-        XCTAssertTrue(waitUntilHittable(save, in: app, timeout: 10), "Add stayed off")
+        XCTAssertTrue(waitUntilHittable(save, in: app, timeout: 10), "Submit stayed off")
         save.tap()
 
         // The place's own page, named from Apple Maps.
@@ -294,6 +305,10 @@ final class PlacesMeetupsUITests: XCTestCase {
         }
         let review = try XCTUnwrap(try JourneyAdmin.fields(path: "\(added)/reviews/\(me)"), "the rating did not go as a review")
         XCTAssertEqual(Self.number(review["rating"]), 4)
+        let photos = ((stored["photos"] as? [String: Any])?["arrayValue"] as? [String: Any])?["values"] as? [Any]
+        let photo = try XCTUnwrap(photos?.compactMap(JourneyAdmin.string).first, "the photo was not kept with the place")
+        XCTAssertTrue(photo.hasPrefix("https://res.cloudinary.com/"), photo)
+        XCTAssertEqual(photos?.count, 1)
 
         // Back on the list, which has it now, named from Apple Maps.
         app.navigationBars.buttons["BackButton"].firstMatch.tap()

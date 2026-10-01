@@ -558,16 +558,6 @@
         }
       }
     },
-    "Add": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "添加"
-          }
-        }
-      }
-    },
     "Add a Place": {
       "localizations": {
         "zh-Hans": {
@@ -608,6 +598,16 @@
         }
       }
     },
+    "Add more photos": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再加几张"
+          }
+        }
+      }
+    },
     "Add pet": {
       "localizations": {
         "zh-Hans": {
@@ -628,6 +628,16 @@
         }
       }
     },
+    "Add photos": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加照片"
+          }
+        }
+      }
+    },
     "Add tags (e.g. cat, cute)": {
       "localizations": {
         "zh-Hans": {
@@ -644,16 +654,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "先添加宠物资料，再回到这里。"
-          }
-        }
-      }
-    },
-    "Adding…": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "添加中…"
           }
         }
       }
@@ -4735,6 +4735,16 @@
         }
       }
     },
+    "Photo %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第 %lld 张照片"
+          }
+        }
+      }
+    },
     "Photo, cropped to fit": {
       "localizations": {
         "zh-Hans": {
@@ -4751,6 +4761,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "照片，完整尺寸"
+          }
+        }
+      }
+    },
+    "Photos": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片"
           }
         }
       }
@@ -5134,6 +5154,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "取消收藏"
+          }
+        }
+      }
+    },
+    "Remove photo %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除第 %lld 张照片"
           }
         }
       }
@@ -6071,6 +6101,16 @@
         }
       }
     },
+    "Submit": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提交"
+          }
+        }
+      }
+    },
     "Submit Review": {
       "localizations": {
         "zh-Hans": {
@@ -6704,6 +6744,16 @@
         }
       }
     },
+    "The photo could not be uploaded. The place was not added.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片没能上传，地点没有加上。"
+          }
+        }
+      }
+    },
     "The photo could not be uploaded. Try again.": {
       "localizations": {
         "zh-Hans": {
@@ -6730,6 +6780,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "照片上传超时，宠物资料没有改动。"
+          }
+        }
+      }
+    },
+    "The photo upload timed out. The place was not added.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片上传超时，地点没有加上。"
           }
         }
       }
@@ -7590,6 +7650,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "最多 %lld 只宠物。"
+          }
+        }
+      }
+    },
+    "Up to %lld. They help others find the place.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多 %lld 张，能帮别人找到这个地方。"
           }
         }
       }
