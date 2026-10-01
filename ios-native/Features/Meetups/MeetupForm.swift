@@ -357,7 +357,7 @@ final class MeetupFormModel {
 
     func chooseCover(data: Data, filename: String) {
         guard !isSaving else { return }
-        let preview = UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 1200, height: 1200))
+        let preview = PickedPreview.image(from: data, covering: MeetupCoverPreview.widest)
         cover = Cover(data: data, filename: filename, preview: preview)
     }
 
@@ -764,6 +764,9 @@ struct MeetupFormSheet: View {
 /// A meetup's cover as the form shows it: the one just chosen, else the one
 /// it has, else the web's paw on the brand gradient. The detail page's shape.
 private struct MeetupCoverPreview: View {
+    /// The form's row on the widest phone, in the preview's shape.
+    static let widest = CGSize(width: 400, height: 225)
+
     let picked: UIImage?
     let current: URL?
 
