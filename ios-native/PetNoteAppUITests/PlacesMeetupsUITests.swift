@@ -474,10 +474,11 @@ final class PlacesMeetupsUITests: XCTestCase {
     }
 
     /// Creating a meetup at an address typed here, which only those who
-    /// join may see: the server keeps the organiser's words in the private
-    /// copy and the area they named in the public one, makes no place, and
-    /// puts the organiser and their pet on the guest list. Its page shows its
-    /// organiser where it is.
+    /// join may see, for small dogs: the server keeps the organiser's words
+    /// in the private copy and the area they named in the public one, makes
+    /// no place, keeps who may join, and puts the organiser and their pet on
+    /// the guest list. Its page shows its organiser where it is, and everyone
+    /// who may join.
     func testCreatingAMeetupAtATypedAddressOnlyThoseWhoJoinSee() throws {
         let (app, me) = try signInAsNewAccount("createmeetup-\(run)@petnote.test")
         uid = me
@@ -488,24 +489,51 @@ final class PlacesMeetupsUITests: XCTestCase {
 
         app.tabBars.buttons["Meetups"].tap()
         try openCreateMeetup(in: app)
-        try type(title, into: "createMeetup.title", in: app)
+        try type(title + "\n", into: "createMeetup.title", in: app)
         try type("TEST CONTENT A fenced yard.", into: "createMeetup.description", in: app)
         let whereChoice = app.segmentedControls["createMeetup.where"]
-        for _ in 0..<6 where !(whereChoice.exists && whereChoice.isHittable) { app.swipeUp() }
+        reveal(whereChoice, in: app)
         XCTAssertTrue(waitUntilHittable(whereChoice, in: app, timeout: 10), "\(app.debugDescription)")
         whereChoice.buttons["An address"].tap()
-        try type("5 Oak Ave, Medford, MA", into: "createMeetup.address", in: app)
-        try type("TEST CONTENT Oak yard", into: "createMeetup.label", in: app)
-        try type("Medford", into: "createMeetup.area", in: app)
+        try type("5 Oak Ave, Medford, MA\n", into: "createMeetup.address", in: app)
+        try type("TEST CONTENT Oak yard\n", into: "createMeetup.label", in: app)
+        try type("Medford\n", into: "createMeetup.area", in: app)
+
+        // Who may join: small dogs, four at most, whose people have posted.
+        for id in ["createMeetup.petType.dog", "createMeetup.dogSize.small"] {
+            let chip = app.buttons[id]
+            reveal(chip, in: app)
+            XCTAssertTrue(waitUntilHittable(chip, in: app, timeout: 10), "no \(id)\n\(app.debugDescription)")
+            chip.tap()
+        }
+        let maxPets = app.steppers["createMeetup.maxPets"]
+        reveal(maxPets, in: app)
+        XCTAssertTrue(waitUntilHittable(maxPets, in: app, timeout: 10), "\(app.debugDescription)")
+        // SwiftUI names the stepper's buttons after it: "<identifier>-Increment".
+        let more = maxPets.buttons.matching(NSPredicate(format: "identifier ENDSWITH %@", "-Increment")).firstMatch
+        for _ in 0..<4 { more.tap() }
+        let posts = app.switches["createMeetup.mustHavePosts"]
+        reveal(posts, in: app)
+        XCTAssertTrue(waitUntilHittable(posts, in: app, timeout: 10), "\(app.debugDescription)")
+        // The switch itself, at the right of the row, as SettingsUITests taps one.
+        posts.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        try type("TEST CONTENT Bring water.", into: "createMeetup.notes", in: app)
         let create = app.buttons["createMeetup.save"]
         XCTAssertTrue(waitUntilHittable(create, in: app, timeout: 10), "Create stayed off")
         create.tap()
 
-        // Its page, as its organiser sees it: the private address.
+        // Its page, as its organiser sees it: the private address, and who
+        // may join.
         let shownTitle = app.staticTexts["meetupDetail.title"]
         XCTAssertTrue(waitForExistence(of: shownTitle, in: app, timeout: 30), "the meetup did not open\n\(app.debugDescription)")
         XCTAssertEqual(shownTitle.label, title)
         assertMeetupPlace(["TEST CONTENT Oak yard", "5 Oak Ave, Medford, MA"], in: app)
+        let rules = app.descendants(matching: .any)["meetupDetail.requirements"]
+        for _ in 0..<4 where !rules.exists { app.swipeUp() }
+        XCTAssertTrue(waitForExistence(of: rules, in: app, timeout: 10), "no requirements\n\(app.debugDescription)")
+        for line in ["Dogs only.", "Size: Small.", "Up to 4 pets.", "Must have posted at least once.", "TEST CONTENT Bring water."] {
+            XCTAssertTrue(rules.label.contains(line), "no \"\(line)\": \(rules.label)")
+        }
 
         // What the server keeps.
         let id = try createdMeetup(by: me)
@@ -518,6 +546,13 @@ final class PlacesMeetupsUITests: XCTestCase {
         XCTAssertEqual(Self.strings(of: hidden), ["address": "5 Oak Ave, Medford, MA", "label": "TEST CONTENT Oak yard"])
         let organiser = try XCTUnwrap(try JourneyAdmin.fields(path: "meetups/\(id)/participants/\(me)"), "the organiser is not on the guest list")
         XCTAssertEqual(JourneyAdmin.string(organiser["petName"]), petName)
+        let rulesStored = ((stored["requirements"] as? [String: Any])?["mapValue"] as? [String: Any])?["fields"] as? [String: Any] ?? [:]
+        XCTAssertEqual(JourneyAdmin.string(rulesStored["petType"]), "dog")
+        XCTAssertEqual(JourneyAdmin.string(rulesStored["dogSize"]), "small")
+        XCTAssertEqual(Self.number(rulesStored["maxPets"]), 4)
+        XCTAssertEqual(JourneyAdmin.bool(rulesStored["mustHavePosts"]), true)
+        XCTAssertEqual(JourneyAdmin.bool(rulesStored["mustHavePetProfile"]), false)
+        XCTAssertEqual(JourneyAdmin.string(rulesStored["additionalNotes"]), "TEST CONTENT Bring water.")
     }
 
     /// Creating a public meetup at a place from Apple Maps: the server keeps
@@ -534,7 +569,7 @@ final class PlacesMeetupsUITests: XCTestCase {
 
         app.tabBars.buttons["Meetups"].tap()
         try openCreateMeetup(in: app)
-        try type("TEST CONTENT Fetch at the run \(run)", into: "createMeetup.title", in: app)
+        try type("TEST CONTENT Fetch at the run \(run)\n", into: "createMeetup.title", in: app)
         try type("TEST CONTENT Bring a ball.", into: "createMeetup.description", in: app)
         try type("dog run\n", into: "applePlace.search", in: app)
         let result = app.buttons["applePlace.result.TESTAPPLEDOGRUN01"]
@@ -542,7 +577,7 @@ final class PlacesMeetupsUITests: XCTestCase {
         result.tap()
         XCTAssertTrue(app.descendants(matching: .any)["applePlace.chosen"].waitForExistence(timeout: 10))
         let everyone = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Everyone")).firstMatch
-        for _ in 0..<6 where !(everyone.exists && everyone.isHittable) { app.swipeUp() }
+        reveal(everyone, in: app)
         XCTAssertTrue(waitUntilHittable(everyone, in: app, timeout: 10), "\(app.debugDescription)")
         everyone.tap()
         let create = app.buttons["createMeetup.save"]
@@ -575,13 +610,39 @@ final class PlacesMeetupsUITests: XCTestCase {
     }
 
     /// Types into a field of a form, scrolled to first: one below the
-    /// keyboard is not hittable.
+    /// keyboard is not hittable. A swipe can also leave a field under the
+    /// navigation bar, which then takes the tap ("Neither element nor any
+    /// descendant has keyboard focus"); it is pulled back down and tapped
+    /// again. Safe here: a sheet with something written closes only on
+    /// Cancel.
     private func type(_ text: String, into identifier: String, in app: XCUIApplication) throws {
         let field = app.descendants(matching: .any)[identifier]
-        for _ in 0..<6 where !(field.exists && field.isHittable) { app.swipeUp() }
+        reveal(field, in: app)
         XCTAssertTrue(waitUntilHittable(field, in: app, timeout: 10), "no \(identifier)\n\(app.debugDescription)")
         field.tap()
+        if !Self.hasKeyboardFocus(field) {
+            drag(app, from: 0.2, to: 0.45)
+            XCTAssertTrue(waitUntilHittable(field, in: app, timeout: 10), "no \(identifier)\n\(app.debugDescription)")
+            field.tap()
+        }
+        XCTAssertTrue(Self.hasKeyboardFocus(field), "\(identifier) did not take the keyboard\n\(app.debugDescription)")
         field.typeText(text)
+    }
+
+    /// Scrolls a form up a quarter of the screen at a time, above where the
+    /// keyboard would be, until `element` can be tapped. A full swipe can
+    /// carry a field past the top and under the navigation bar.
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<12 where !(element.exists && element.isHittable) { drag(app, from: 0.45, to: 0.2) }
+    }
+
+    private func drag(_ app: XCUIApplication, from start: CGFloat, to end: CGFloat) {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: start))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: end)))
+    }
+
+    private static func hasKeyboardFocus(_ element: XCUIElement) -> Bool {
+        (element.value(forKey: "hasKeyboardFocus") as? Bool) == true
     }
 
     /// The meetup this account created, which tearDown then removes with its

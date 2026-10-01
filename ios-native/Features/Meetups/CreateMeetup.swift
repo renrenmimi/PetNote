@@ -24,6 +24,70 @@ struct MeetupDraft: Equatable, Sendable {
         case address
     }
 
+    /// Who may join, as the web's form sets it. `sanitizeMeetupRequirements`
+    /// (functions/src/meetups.ts) keeps these, and the join callable checks
+    /// them.
+    struct Requirements: Equatable, Sendable {
+        /// The server's limits, in its units.
+        static let maxCustomPetType = 30
+        static let maxNotes = 200
+        /// The web's slider: none to twenty, none meaning any number.
+        static let maxPetsRange = 0...20
+        static let minFollowersRange = 0...100
+        /// The web's choices, in its order.
+        static let petTypes = ["any", "dog", "cat", "other"]
+
+        var petType = "any"
+        /// For `other`: "Birds".
+        var customPetType = ""
+        var dogSize = "any"
+        var maxPets = 0
+        var mustHavePosts = false
+        var mustHavePetProfile = false
+        var minFollowers = 0
+        var notes = ""
+
+        var isValid: Bool {
+            (petType != "other" || MeetupDraft.length(customPetType) <= Self.maxCustomPetType)
+                && MeetupDraft.length(notes) <= Self.maxNotes
+        }
+
+        var payload: [String: Any] {
+            var payload: [String: Any] = [
+                "petType": petType,
+                // A size is for dogs: one chosen before the type changed is
+                // not sent, where the web sends it all the same.
+                "dogSize": petType == "dog" ? dogSize : "any",
+                "maxPets": maxPets,
+                "mustHavePosts": mustHavePosts,
+                "mustHavePetProfile": mustHavePetProfile,
+                "minFollowers": minFollowers,
+                "additionalNotes": MeetupDraft.trimmed(notes),
+            ]
+            if petType == "other" { payload["customPetType"] = MeetupDraft.trimmed(customPetType) }
+            return payload
+        }
+
+        /// The web's chips.
+        static func petTypeLabel(_ type: String) -> String {
+            switch type {
+            case "dog": String(localized: "Dogs Only")
+            case "cat": String(localized: "Cats Only")
+            case "other": String(localized: "Other")
+            default: String(localized: "Any Pet")
+            }
+        }
+
+        static func petTypeSymbol(_ type: String) -> String {
+            switch type {
+            case "dog": "🐕"
+            case "cat": "🐱"
+            case "other": "📝"
+            default: "🐾"
+            }
+        }
+    }
+
     var title = ""
     var description = ""
     var date: Date
@@ -37,6 +101,7 @@ struct MeetupDraft: Equatable, Sendable {
     /// The web's default: only those who join see where.
     var isAddressPrivate = true
     var area = ""
+    var requirements = Requirements()
     /// On the guest list with the organiser from the start, as the web sends
     /// it; none, and the organiser goes alone.
     var organizerPetID: String?
@@ -68,7 +133,7 @@ struct MeetupDraft: Equatable, Sendable {
     func canSubmit(now: Date) -> Bool {
         let title = Self.length(title), description = Self.length(description)
         guard title > 0, title <= Self.maxTitle, description > 0, description <= Self.maxDescription,
-              date > now else { return false }
+              date > now, requirements.isValid else { return false }
         if isAddressPrivate, Self.length(area) > Self.maxArea { return false }
         switch whereKind {
         case .applePlace:
@@ -95,9 +160,7 @@ struct MeetupDraft: Equatable, Sendable {
             "duration": duration,
             "location": location,
             "locationVisibility": isAddressPrivate ? "participants_only" : "everyone",
-            // Who may join comes next; until then, the server's defaults:
-            // any pet, any number.
-            "requirements": [String: Any](),
+            "requirements": requirements.payload,
         ]
         if let organizerPetID { payload["organizerPetId"] = organizerPetID }
         return payload
@@ -300,6 +363,7 @@ struct CreateMeetupSheet: View {
                      ? "People who have not joined see only the area."
                      : "Best for public parks or community spots.")
             }
+            requirementsSection
             if case .failed(let message) = model.outcome {
                 Section {
                     Text(message)
@@ -332,6 +396,72 @@ struct CreateMeetupSheet: View {
                 dismiss()
                 onOpen(meetupID)
             }
+        }
+    }
+
+    /// The web's Requirements: what the server checks when someone joins.
+    private var requirementsSection: some View {
+        Section {
+            FlowLayout {
+                ForEach(MeetupDraft.Requirements.petTypes, id: \.self) { type in
+                    ChoiceChip(
+                        title: MeetupDraft.Requirements.petTypeLabel(type),
+                        symbol: MeetupDraft.Requirements.petTypeSymbol(type),
+                        isSelected: model.draft.requirements.petType == type
+                    ) { model.draft.requirements.petType = type }
+                    .accessibilityIdentifier("createMeetup.petType.\(type)")
+                }
+            }
+            if model.draft.requirements.petType == "other" {
+                TextField("What kind? Birds, rabbits, hamsters…", text: $model.draft.requirements.customPetType)
+                    .accessibilityIdentifier("createMeetup.customPetType")
+            }
+            if model.draft.requirements.petType == "dog" {
+                FlowLayout {
+                    ForEach(MeetupRequirements.dogSizes, id: \.self) { size in
+                        ChoiceChip(
+                            title: MeetupRequirements.dogSizeLabel(size),
+                            isSelected: model.draft.requirements.dogSize == size
+                        ) { model.draft.requirements.dogSize = size }
+                        .accessibilityIdentifier("createMeetup.dogSize.\(size)")
+                    }
+                }
+            }
+            Stepper(value: $model.draft.requirements.maxPets, in: MeetupDraft.Requirements.maxPetsRange) {
+                Text(Self.maxPetsLine(model.draft.requirements.maxPets))
+            }
+            .accessibilityIdentifier("createMeetup.maxPets")
+            Toggle("Must have posted at least once", isOn: $model.draft.requirements.mustHavePosts)
+                .accessibilityIdentifier("createMeetup.mustHavePosts")
+            Toggle("Must have a pet profile", isOn: $model.draft.requirements.mustHavePetProfile)
+                .accessibilityIdentifier("createMeetup.mustHavePetProfile")
+            Stepper(value: $model.draft.requirements.minFollowers, in: MeetupDraft.Requirements.minFollowersRange) {
+                Text(Self.minFollowersLine(model.draft.requirements.minFollowers))
+            }
+            .accessibilityIdentifier("createMeetup.minFollowers")
+            TextField("Notes, like: please bring water bowls and bags", text: $model.draft.requirements.notes, axis: .vertical)
+                .lineLimit(2...5)
+                .accessibilityIdentifier("createMeetup.notes")
+        } header: {
+            Text("Requirements")
+        } footer: {
+            counter(MeetupDraft.length(model.draft.requirements.notes), of: MeetupDraft.Requirements.maxNotes)
+        }
+    }
+
+    static func maxPetsLine(_ count: Int) -> String {
+        switch count {
+        case 0: String(localized: "Any number of pets")
+        case 1: String(localized: "Up to 1 pet")
+        default: String(localized: "Up to \(count) pets")
+        }
+    }
+
+    static func minFollowersLine(_ count: Int) -> String {
+        switch count {
+        case 0: String(localized: "No followed pets needed")
+        case 1: String(localized: "At least 1 followed pet")
+        default: String(localized: "At least \(count) followed pets")
         }
     }
 

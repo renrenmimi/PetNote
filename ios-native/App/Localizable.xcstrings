@@ -93,6 +93,16 @@
         }
       }
     },
+    "%@ only.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅限%@。"
+          }
+        }
+      }
+    },
     "%@ was already no longer an owner.": {
       "localizations": {
         "zh-Hans": {
@@ -729,6 +739,26 @@
         }
       }
     },
+    "Any Pet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不限宠物"
+          }
+        }
+      }
+    },
+    "Any number of pets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不限宠物数量"
+          }
+        }
+      }
+    },
     "Anything posted about this pet shows up here.": {
       "localizations": {
         "zh-Hans": {
@@ -765,6 +795,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "向宠物的任意一位主人索取 %lld 位邀请码，它显示在对方的「主人」页面上。"
+          }
+        }
+      }
+    },
+    "At least %lld followed pets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "至少关注 %lld 只宠物"
+          }
+        }
+      }
+    },
+    "At least 1 followed pet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "至少关注 1 只宠物"
           }
         }
       }
@@ -1187,6 +1237,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "猫"
+          }
+        }
+      }
+    },
+    "Cats Only": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅限猫"
           }
         }
       }
@@ -2407,6 +2467,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "狗"
+          }
+        }
+      }
+    },
+    "Dogs Only": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅限狗"
           }
         }
       }
@@ -3667,12 +3737,32 @@
         }
       }
     },
+    "Must have a pet profile": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要有宠物主页"
+          }
+        }
+      }
+    },
     "Must have a pet profile.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "需要有宠物主页。"
+          }
+        }
+      }
+    },
+    "Must have posted at least once": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要至少发过一条帖子"
           }
         }
       }
@@ -3833,6 +3923,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "网络不可用，没有做任何更改。请重试。"
+          }
+        }
+      }
+    },
+    "No followed pets needed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不要求关注宠物"
           }
         }
       }
@@ -4053,6 +4153,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "一分钟还没收到？看一下垃圾邮件文件夹。"
+          }
+        }
+      }
+    },
+    "Notes, like: please bring water bowls and bags": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "补充说明，比如：请带上水碗和拾便袋"
           }
         }
       }
@@ -5705,6 +5815,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "姐姐"
+          }
+        }
+      }
+    },
+    "Size: %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "体型：%@。"
           }
         }
       }
@@ -7374,12 +7494,32 @@
         }
       }
     },
+    "Up to %lld pets": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多 %lld 只宠物"
+          }
+        }
+      }
+    },
     "Up to %lld pets.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "最多 %lld 只宠物。"
+          }
+        }
+      }
+    },
+    "Up to 1 pet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多 1 只宠物"
           }
         }
       }
@@ -7841,6 +7981,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "这里对宠物来说怎么样？"
+          }
+        }
+      }
+    },
+    "What kind? Birds, rabbits, hamsters…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "哪种宠物？比如鸟、兔子、仓鼠…"
           }
         }
       }
@@ -8489,6 +8639,102 @@
           "stringUnit": {
             "state": "translated",
             "value": "Share"
+          }
+        }
+      }
+    },
+    "dogSize.any": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不限体型"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Any Size"
+          }
+        }
+      }
+    },
+    "dogSize.large": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "大型"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Large"
+          }
+        }
+      }
+    },
+    "dogSize.medium": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中型"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Medium"
+          }
+        }
+      }
+    },
+    "dogSize.medium_large": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中型和大型"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Medium & Large"
+          }
+        }
+      }
+    },
+    "dogSize.small": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "小型"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Small"
+          }
+        }
+      }
+    },
+    "dogSize.small_medium": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "小型和中型"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Small & Medium"
           }
         }
       }
