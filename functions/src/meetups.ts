@@ -21,7 +21,12 @@ import {
   VALIDATION_LIMITS,
   wasCountedAtCreate,
 } from "./shared";
-import { getOrCreatePublicMeetupLocation, releaseMeetupPlaceIfUnused } from "./places";
+import {
+  getOrCreateAppleMeetupLocation,
+  getOrCreatePublicMeetupLocation,
+  releaseMeetupPlaceIfUnused,
+  requiredApplePlaceId,
+} from "./places";
 
 const allowedMeetupDogSizes = new Set([
   "any",
@@ -50,18 +55,70 @@ function normalizeMeetupDuration(value: unknown): number {
   return Math.min(1440, Math.max(5, Math.round(raw)));
 }
 
-function sanitizeMeetupLocation(value: unknown): {
-  name: string;
-  address: string;
-  lat: number;
-  lng: number;
-  city?: string;
-  state?: string;
-} {
+/**
+ * Where a meetup is held, in one of three shapes.
+ *
+ * - No `kind`: the web's, a name, address and coordinates from Geoapify.
+ * - `kind: "applePlace"`: a place found on Apple Maps, by its identifier
+ *   only. Apple's terms let us keep the identifier and not what comes with
+ *   it, so the app looks the rest up when it shows the meetup.
+ * - `kind: "address"`: an address the organiser typed, and an optional label
+ *   for it ("Alex's backyard"). It is the organiser's own words, so it can be
+ *   kept; the app finds it on a map when it shows the meetup.
+ *
+ * `area` is for a participants_only meetup in the last two shapes: what the
+ * public may see instead of where, chosen by the organiser ("Somerville").
+ * The owner chose on 2026-09-30 that the organiser names it, because a city
+ * from Apple could not be kept either.
+ */
+type MeetupLocationInput =
+  | {
+      kind: "coordinates";
+      name: string;
+      address: string;
+      lat: number;
+      lng: number;
+      city?: string;
+      state?: string;
+    }
+  | { kind: "applePlace"; applePlaceId: string; area: string }
+  | { kind: "address"; address: string; label: string; area: string };
+
+function sanitizeMeetupLocation(value: unknown): MeetupLocationInput {
   const location =
     value && typeof value === "object"
       ? (value as Record<string, unknown>)
       : {};
+
+  if (location.kind !== undefined) {
+    // Neither new shape carries coordinates, a name or a city: the first
+    // because they would be Apple's, the second because the organiser gave
+    // none. A client that sends them has the shapes mixed up.
+    for (const field of ["name", "lat", "lng", "city", "state"]) {
+      if (location[field] !== undefined) {
+        throw new HttpsError("invalid-argument", "Meetup location is invalid.");
+      }
+    }
+    const area = optionalTrimmedString(location.area, VALIDATION_LIMITS.city, "Area");
+    if (location.kind === "applePlace") {
+      if (location.address !== undefined || location.label !== undefined) {
+        throw new HttpsError("invalid-argument", "Meetup location is invalid.");
+      }
+      return { kind: "applePlace", applePlaceId: requiredApplePlaceId(location.applePlaceId), area };
+    }
+    if (location.kind === "address") {
+      if (location.applePlaceId !== undefined) {
+        throw new HttpsError("invalid-argument", "Meetup location is invalid.");
+      }
+      return {
+        kind: "address",
+        address: requiredTrimmedString(location.address, VALIDATION_LIMITS.address, "Location address"),
+        label: optionalTrimmedString(location.label, VALIDATION_LIMITS.placeName, "Location label"),
+        area,
+      };
+    }
+    throw new HttpsError("invalid-argument", "Meetup location is invalid.");
+  }
 
   const name = requiredTrimmedString(
     location.name,
@@ -87,7 +144,76 @@ function sanitizeMeetupLocation(value: unknown): {
     optionalTrimmedString(location.state, VALIDATION_LIMITS.state, "State") ||
     undefined;
 
-  return { name, address, lat, lng, city, state };
+  return { kind: "coordinates", name, address, lat, lng, city, state };
+}
+
+/**
+ * What a meetup's location becomes: the copy on the public document, the
+ * copy in private/address (participants_only only), and the place it links
+ * to (only when public and at a place). The owner chose on 2026-09-30 that a
+ * meetup at a typed address makes no place, so that nobody's home becomes a
+ * place everyone can see.
+ */
+async function planMeetupLocation(
+  location: MeetupLocationInput,
+  isPrivate: boolean,
+  organizer: { organizerId: string; organizerName: string }
+): Promise<{
+  publicLocation: Record<string, unknown>;
+  privateAddress?: Record<string, unknown>;
+  locationId?: string;
+}> {
+  switch (location.kind) {
+    case "coordinates": {
+      if (isPrivate) {
+        return {
+          publicLocation: toStoredMeetupLocation({
+            name: publicMeetupLocationName(location),
+            address: "",
+            lat: 0,
+            lng: 0,
+            city: location.city,
+            state: location.state,
+          }),
+          privateAddress: toStoredMeetupLocation(location),
+        };
+      }
+      return {
+        publicLocation: toStoredMeetupLocation(location),
+        locationId: await getOrCreatePublicMeetupLocation({ ...organizer, location }),
+      };
+    }
+    case "applePlace": {
+      if (isPrivate) {
+        return {
+          publicLocation: { name: publicMeetupAreaName(location.area), area: location.area },
+          privateAddress: { applePlaceId: location.applePlaceId },
+        };
+      }
+      return {
+        publicLocation: { applePlaceId: location.applePlaceId },
+        locationId: await getOrCreateAppleMeetupLocation({
+          ...organizer,
+          applePlaceId: location.applePlaceId,
+        }),
+      };
+    }
+    case "address": {
+      const where = { address: location.address, label: location.label };
+      if (isPrivate) {
+        return {
+          publicLocation: { name: publicMeetupAreaName(location.area), area: location.area },
+          privateAddress: where,
+        };
+      }
+      return { publicLocation: where };
+    }
+  }
+}
+
+/** The public name of a participants_only meetup whose organiser named an area. */
+function publicMeetupAreaName(area: string): string {
+  return area ? `Meetup near ${area}` : "Private meetup";
 }
 
 /**
@@ -282,25 +408,11 @@ export const createMeetupCallable = onCall(async (request) => {
   const requirements = sanitizeMeetupRequirements(data.requirements);
   const isPrivate = locationVisibility === "participants_only";
 
-  let locationId: string | undefined;
-  if (!isPrivate) {
-    locationId = await getOrCreatePublicMeetupLocation({
-      organizerId: callerUid,
-      organizerName: caller.fromUserName,
-      location,
-    });
-  }
-
-  const publicLocation = isPrivate
-    ? toStoredMeetupLocation({
-        name: publicMeetupLocationName(location),
-        address: "",
-        lat: 0,
-        lng: 0,
-        city: location.city,
-        state: location.state,
-      })
-    : toStoredMeetupLocation(location);
+  const { publicLocation, privateAddress, locationId } = await planMeetupLocation(
+    location,
+    isPrivate,
+    { organizerId: callerUid, organizerName: caller.fromUserName }
+  );
 
   // Resolve the organizer's pet info up front so the main doc, the
   // private/address doc, and the organizer participant doc all commit
@@ -387,15 +499,8 @@ export const createMeetupCallable = onCall(async (request) => {
     })
   );
 
-  if (isPrivate) {
-    batch.set(db.doc(`meetups/${meetupRef.id}/private/address`), {
-      address: location.address,
-      lat: location.lat,
-      lng: location.lng,
-      name: location.name,
-      city: location.city || "",
-      state: location.state || "",
-    });
+  if (privateAddress) {
+    batch.set(db.doc(`meetups/${meetupRef.id}/private/address`), privateAddress);
   }
 
   batch.set(
@@ -490,25 +595,11 @@ export const updateMeetupCallable = onCall(async (request) => {
   const isPrivate = locationVisibility === "participants_only";
   const organizerActor = await getNotificationActor(organizerId);
 
-  let locationId: string | undefined;
-  if (!isPrivate) {
-    locationId = await getOrCreatePublicMeetupLocation({
-      organizerId,
-      organizerName: organizerActor.fromUserName,
-      location,
-    });
-  }
-
-  const publicLocation = isPrivate
-    ? toStoredMeetupLocation({
-        name: publicMeetupLocationName(location),
-        address: "",
-        lat: 0,
-        lng: 0,
-        city: location.city,
-        state: location.state,
-      })
-    : toStoredMeetupLocation(location);
+  const { publicLocation, privateAddress, locationId } = await planMeetupLocation(
+    location,
+    isPrivate,
+    { organizerId, organizerName: organizerActor.fromUserName }
+  );
 
   const updates = stripUndefined({
     title,
@@ -531,9 +622,11 @@ export const updateMeetupCallable = onCall(async (request) => {
     organizerAvatar:
       organizerActor.fromUserAvatar || getDefaultAvatar(organizerId),
     updatedAt: FieldValue.serverTimestamp(),
-    ...(isPrivate
-      ? { locationId: FieldValue.delete() }
-      : { locationId }),
+    // Private, or public at a typed address: no place to link, and any link
+    // from before goes.
+    ...(locationId
+      ? { locationId }
+      : { locationId: FieldValue.delete() }),
   });
 
   // Atomic update: main doc and private/address subdoc commit together so a
@@ -541,15 +634,8 @@ export const updateMeetupCallable = onCall(async (request) => {
   const privateRef = db.doc(`meetups/${meetupId}/private/address`);
   const batch = db.batch();
   batch.update(meetupRef, updates);
-  if (isPrivate) {
-    batch.set(privateRef, {
-      address: location.address,
-      lat: location.lat,
-      lng: location.lng,
-      name: location.name,
-      city: location.city || "",
-      state: location.state || "",
-    });
+  if (privateAddress) {
+    batch.set(privateRef, privateAddress);
   } else {
     // batch.delete is a no-op if the doc doesn't exist, so we don't need
     // the previous .catch(() => undefined) error swallowing.
