@@ -19,6 +19,7 @@ struct PetProfileHost: View {
     private let onEdit: (String) -> Void
     private let onDeleted: () -> Void
     private let onOpenPost: (String) -> Void
+    private let onOpenPlace: ((String) -> Void)?
     private let socialRow: ((Pet, PetOwnership?) -> AnyView)?
     /// Bumped by the shell after the pet is edited, so the page re-reads the
     /// server's version rather than trusting what was typed.
@@ -34,22 +35,26 @@ struct PetProfileHost: View {
         onEdit: @escaping (String) -> Void,
         onDeleted: @escaping () -> Void,
         onOpenPost: @escaping (String) -> Void,
+        places: (any PlacesByID)? = nil,
+        onOpenPlace: ((String) -> Void)? = nil,
         socialRow: ((Pet, PetOwnership?) -> AnyView)? = nil
     ) {
         _model = State(initialValue: PetProfileViewModel(
-            petID: petID, repository: repository, likes: likes, postLookup: postLookup, viewerID: viewerID
+            petID: petID, repository: repository, likes: likes, postLookup: postLookup, viewerID: viewerID,
+            places: places
         ))
         self.reloadToken = reloadToken
         self.onEdit = onEdit
         self.onDeleted = onDeleted
         self.onOpenPost = onOpenPost
+        self.onOpenPlace = onOpenPlace
         self.socialRow = socialRow
     }
 
     var body: some View {
         PetProfileView(
             model: model, onEdit: onEdit, onDeleted: onDeleted, onOpenPost: onOpenPost,
-            socialRow: socialRow
+            onOpenPlace: onOpenPlace, socialRow: socialRow
         )
         .onChange(of: reloadToken) { Task { await model.load() } }
     }

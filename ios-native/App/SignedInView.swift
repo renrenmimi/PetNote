@@ -682,6 +682,8 @@ struct SignedInView: View {
                     }
                 },
                 onOpenPost: { stack.wrappedValue.append(.postDetail(postID: $0)) },
+                places: repositories.checkinHistory,
+                onOpenPlace: { stack.wrappedValue.append(.place(placeID: $0)) },
                 socialRow: { pet, ownership in
                     AnyView(PetSocialActions(
                         pet: pet,

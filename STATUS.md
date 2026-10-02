@@ -498,7 +498,7 @@ UI 测试里的上传一律走**本地替身**（`ios-native/scripts/upload-stan
 | 功能 | 等级 | 证据 / 环境 | 未验证、阻塞 |
 | --- | --- | --- | --- |
 | 创建 / 编辑宠物 | ③ | `JourneyUITests`：建宠物后服务端有这只宠物，创建者在它的 family 里；`ProfileEditsUITests`：宠物页菜单 → Edit → 改名保存，宠物页标题、服务端 `name`、「我的」里的宠物行三处都是新名字 | 宠物头像 UI 未验；编辑保存失败的界面未验 |
-| 宠物主页 | ③ | `JourneyUITests`：保存后打开新宠物的主页。**本轮修了一个闪退**：宠物主页用首页的帖子卡片列出帖子，视频卡片要从上层拿播放协调器，而宠物页没有，所以打开任何一只有视频帖子的宠物，App 直接退出（`1a61171`；这个缺陷从 `7a3ed35`（09-22）起就在，已审计的安装包 `4437966` 里也有）。`PetPageUITests`：不修时按同样的崩溃失败，修后通过 | 签到分栏的界面没验；宠物页的打卡不显示地点名、不能点开（网页可以） |
+| 宠物主页 | ③ | `JourneyUITests`：保存后打开新宠物的主页。**本轮修了一个闪退**：宠物主页用首页的帖子卡片列出帖子，视频卡片要从上层拿播放协调器，而宠物页没有，所以打开任何一只有视频帖子的宠物，App 直接退出（`1a61171`；这个缺陷从 `7a3ed35`（09-22）起就在，已审计的安装包 `4437966` 里也有）。`PetPageUITests`：不修时按同样的崩溃失败，修后通过 | 宠物页的打卡写出地点名，点开就是那个地点，和网页一样（#275）：`PetPageUITests.testAPetsCheckinNamesItsPlaceAndOpensIt`、`PetCheckinPlacesTests` |
 | 删除宠物（最后一位主人） | ③ | `PetDeletionUITests`（`6782012`）：唯一主人从宠物页菜单删除，服务端宠物、家庭记录和删除任务都没了，「我的宠物」变空。两位主人时两边都不给删除、服务端拒绝：这条前两次跑时，测试自己关菜单的点击点到了菜单里的「编辑」，已改（`2cc7eea`），改后在 `2cc7eea` 完整回归里通过 | 客户端按「成员且最多一位主人」决定显示删除，和网页 `canDeletePet` 一致（原来这里写的「只按 isPrimary」已过时） |
 | 关注 / 取消关注、关注列表 | ③ | `SocialJourneyUITests`：访客从搜索打开宠物，点关注，服务端出现 `users/{uid}/followingPets/{pet}`；再点取消，文档消失。`SocialListsUITests`（`6782012`）：宠物的粉丝列表和「我关注的宠物」逐个和服务端对上，从粉丝打开他的主页 | 取消关注后列表会不会过时，没测 |
 | 共同主人：邀请、兑换、撤销、移除、退出、转让 | ③ | `SocialJourneyUITests`：邀请、兑换、B 退出。`FamilyManageUITests`（两个账号）：A 生成邀请码后撤销，服务端标记为已撤销；B 输入被撤销的码被拒、不出现加入选项；A 的第二个码 B 能用，role 是 `member`；A 把主人转给 B，服务端 B 是 `primary`、A 是 `member`，A 的页面上「移除」按钮随即消失；B 作为新主人移除 A，服务端 A 的 family 文档消失、B 仍是 `primary`。授权规则没改 | 测试云上邀请码仍被缺失的索引阻塞；三个及以上主人的情况未走界面 |
@@ -516,7 +516,7 @@ UI 测试里的上传一律走**本地替身**（`ios-native/scripts/upload-stan
 | 点赞 | ⑤ @`4ba1c57` | 真机 `Like/0 → Unlike/1`，云端 `counted=True`；`LikeUITests` 在 Tab 栏下 7/7（`98bd1b7`） | 此前那条失败已查明：点击落在离屏幕底边 3.7pt 处，App 没收到，不是点赞逻辑的问题 |
 | 评论（写） | ⑤ @`4ba1c57` | `CommentUITests`；真机中文输入 | — |
 | 删除评论（自己的，或自己帖子下别人的） | ③ + ④（服务端规则） | `fc3ef9f`：评论作者和帖子作者才有删除按钮，先确认，服务端回了才从列表拿掉，两个页面的评论数一起减。`CommentDeleteTests` 9 条；`CommentUITests`：在 emulator 上删掉自己的评论，核对列表、文档、`commentCount` 和 Feed 卡片。测试云上客户端权限验收：别人删被拒、作者删、帖子作者删、重复删仍成功、计数 3 → 0 | App 自己连测试云删评论未走过；真机未验 |
-| 收藏 | ③（收藏 / 取消收藏） | `ProfileEditsUITests`：详情页菜单写着「Save」，点后服务端出现 `users/{me}/bookmarks/{post}`；菜单随即改成「Remove from saved」，再点文档消失 | 旧版在 Feed 卡片上就有收藏按钮，这里只在详情页菜单里 |
+| 收藏 | ③（收藏 / 取消收藏） | `ProfileEditsUITests`：详情页菜单写着「Save」，点后服务端出现 `users/{me}/bookmarks/{post}`；菜单随即改成「Remove from saved」，再点文档消失。卡片上也有，和网页一样在操作行的最右边（09-26，`097db4f`）：`PostRowAndAccountUITests.testSavingFromThePostRowIsWhatTheMenuAndAFreshLaunchSay`，在卡片上收藏后，详情页和它的菜单都显示已收藏，从菜单取消后卡片跟着变，重新打开 App 读回来也一样 | — |
 | 发帖（图片 / 视频、选宠物、标签） | ③（图片，**上传替身**） | `JourneyUITests`：系统相册选图 → 带签名的 multipart 上传到本地替身 → `createPostCallable`（emulator 里 URL 校验真实执行）→ Feed 第一条就是它；服务端的 `authorId`、`petId` 和媒体 URL 都核对过 | **不是**真实 Cloudinary（替身不校验签名，返回的 URL 在 CDN 上不存在，所以图片不显示）；视频、标签的 UI 未验；**真实 Cloudinary 待授权** |
 | 发帖草稿 | ③ | `ComposeDraftUITests` 3 条（`6782012`）：离开再回来会提示恢复，恢复后正文和标签都在，丢弃后不再提示，恢复后发出去的帖子带着草稿内容。**修了两个缺陷**：① 提示还没选「恢复/丢弃」时打一个字就会覆盖旧草稿，而旧草稿里存着没发完的帖子的操作编号和已上传的图片，再发可能重复发帖（网页在提示期间不自动保存）；`ComposeDraftOfferTests`。② 先选了照片再点「恢复」，草稿里已上传的图会顶替掉一部分新选的照片发出去；发布失败后再点「恢复」，操作编号会被换掉，再发可能多一条。现在这两种情况「恢复」不可点，并说明原因（`9cf1927`，单元测试 3 条） | 网页在有内容时恢复会先问一句，iPhone 不问 |
 | 发帖滤镜 | ③（**上传替身**） | `1bbf195`…`656e8a9`：网页的 10 个滤镜，同样的名字和参数，照片上传前按滤镜重新编码（视频、GIF 不加）；「柔和」的模糊强度按网页实际上传的文件来定；上传渲染改用 CPU（App 在后台时系统不给用 GPU），这一条模拟器上验证不了。发布那一步失败、结果未知时，已上传照片的滤镜不能再改（否则再按「发布」会多发一条）。`PhotoFilterTests`；`PhotoFilterUITests`：选黑白后替身收到的图和原图不同 | 真实 Cloudinary 待 B1；真机未看 |
