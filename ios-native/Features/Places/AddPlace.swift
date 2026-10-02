@@ -1,7 +1,6 @@
 import Foundation
 import Observation
 import OSLog
-import PhotosUI
 import SwiftUI
 
 /// What is sent to add a place found on Apple Maps: its identifier and our
@@ -79,19 +78,11 @@ final class AddPlaceModel {
     private(set) var isSaving = false
     private(set) var outcome: Outcome?
 
-    /// A photo picked to go with the place, uploaded when it is added; its
-    /// thumbnail made once, as it is picked.
-    struct Photo: Identifiable, Equatable {
-        let id = UUID()
-        let data: Data
-        let filename: String
-        let thumbnail: UIImage?
-    }
-
     /// The server's limit, and the web's.
     static let maxPhotos = 5
 
-    private(set) var photos: [Photo] = []
+    /// Picked to go with the place, and sent before it.
+    let photos = PickedPhotos(limit: AddPlaceModel.maxPhotos)
 
     /// The web's optional rating, sent as a review once the place is in.
     var rating = 0
@@ -112,20 +103,6 @@ final class AddPlaceModel {
         self.adder = adder
         self.reviewer = reviewer
         self.uploader = uploader
-    }
-
-    var photosLeft: Int { Self.maxPhotos - photos.count }
-
-    func addPhoto(data: Data, filename: String) {
-        guard photosLeft > 0, !isSaving else { return }
-        let side = PickedPhotoThumb.side
-        let thumbnail = PickedPreview.image(from: data, covering: CGSize(width: side, height: side))
-        photos.append(Photo(data: data, filename: filename, thumbnail: thumbnail))
-    }
-
-    func removePhoto(_ id: Photo.ID) {
-        guard !isSaving else { return }
-        photos.removeAll { $0.id == id }
     }
 
     var draft: ApplePlaceDraft? {
@@ -175,12 +152,16 @@ final class AddPlaceModel {
     func save() async {
         guard canSave, var draft else { return }
         isSaving = true
+        photos.isLocked = true
         outcome = nil
-        defer { isSaving = false }
+        defer {
+            isSaving = false
+            photos.isLocked = false
+        }
         // The web's order: the photos first, so a place is never added
         // without the ones that were meant to come with it.
         do {
-            draft.photos = try await uploadPhotos()
+            draft.photos = try await photos.upload(with: uploader)
         } catch {
             log.error("photos for a new place failed: \(String(describing: error), privacy: .public)")
             outcome = .failed(Self.photoWording(for: error))
@@ -212,25 +193,6 @@ final class AddPlaceModel {
         }
     }
 
-    /// Each photo prepared as the composer prepares one, off the main actor,
-    /// and sent; their addresses, in the order picked. One that fails stops
-    /// the add. Like the composer's, nothing here deletes an upload: one sent
-    /// before a later one failed is left behind, as the composer leaves one.
-    private func uploadPhotos() async throws -> [URL] {
-        var urls: [URL] = []
-        for photo in photos {
-            let picked = photo
-            let prepared = try await Task.detached(priority: .userInitiated) {
-                try UploadPreparation.prepareImage(picked.data, filename: picked.filename)
-            }.value
-            let asset = try await uploader.upload(UploadItem(
-                data: prepared.data, filename: prepared.filename, mimeType: prepared.mimeType, resourceType: .image
-            ))
-            urls.append(asset.url)
-        }
-        return urls
-    }
-
     /// The pet editor's words for a photo that did not go, with the place in
     /// them where those name the pet: nothing was added.
     static func photoWording(for error: Error) -> String {
@@ -251,7 +213,6 @@ final class AddPlaceModel {
 /// the web takes a name and an address.
 struct AddPlaceSheet: View {
     @State private var model: AddPlaceModel
-    @State private var photoSelection: [PhotosPickerItem] = []
     @Environment(\.dismiss) private var dismiss
     /// Opens a place: the one just added, or one found that is here already.
     private let onOpen: (String) -> Void
@@ -404,85 +365,11 @@ struct AddPlaceSheet: View {
     /// place.
     private var photosSection: some View {
         Section {
-            if !model.photos.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: Spacing.s) {
-                        ForEach(Array(model.photos.enumerated()), id: \.element.id) { index, photo in
-                            PickedPhotoThumb(photo: photo, number: index + 1) { model.removePhoto(photo.id) }
-                                .accessibilityIdentifier("addPlace.photo.\(index)")
-                        }
-                    }
-                }
-            }
-            if model.photosLeft > 0 {
-                PhotosPicker(
-                    selection: $photoSelection, maxSelectionCount: model.photosLeft,
-                    matching: .images, photoLibrary: .shared()
-                ) {
-                    HStack(spacing: Spacing.s) {
-                        // Decoration: the words say it.
-                        Image(systemName: "photo.on.rectangle").accessibilityHidden(true)
-                        Text(model.photos.isEmpty ? String(localized: "Add photos") : String(localized: "Add more photos"))
-                    }
-                    .frame(minHeight: Layout.minTouchTarget)
-                    .contentShape(.rect)
-                }
-                .disabled(model.isSaving)
-                .accessibilityIdentifier("addPlace.photos.add")
-            }
+            PickedPhotosRows(photos: model.photos)
         } header: {
             Text("Photos")
         } footer: {
             Text("Up to \(AddPlaceModel.maxPhotos). They help others find the place.")
-        }
-        .onChange(of: photoSelection) { _, items in
-            Task { await loadPhotos(items) }
-        }
-    }
-
-    private func loadPhotos(_ items: [PhotosPickerItem]) async {
-        guard !items.isEmpty else { return }
-        for item in items {
-            guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
-            model.addPhoto(data: data, filename: "photo.jpg")
-        }
-        photoSelection = []
-    }
-}
-
-/// One picked photo, with the way to take it out again.
-private struct PickedPhotoThumb: View {
-    static let side: CGFloat = 88
-    let photo: AddPlaceModel.Photo
-    let number: Int
-    let onRemove: () -> Void
-
-    var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Group {
-                if let thumbnail = photo.thumbnail {
-                    Image(uiImage: thumbnail).resizable().scaledToFill()
-                } else {
-                    Palette.secondaryBackground
-                }
-            }
-            .frame(width: Self.side, height: Self.side)
-            .clipShape(.rect(cornerRadius: Radius.control))
-            .accessibilityElement()
-            .accessibilityLabel(String(localized: "Photo \(number)"))
-            Button(action: onRemove) {
-                // Over a photo, so on the scrim, as the full-size image's
-                // close button is.
-                Image(systemName: "xmark")
-                    .font(Typography.caption.weight(.bold))
-                    .foregroundStyle(Palette.textOnBrand)
-                    .padding(Spacing.xs)
-                    .controlScrim()
-                    .frame(width: Layout.minTouchTarget, height: Layout.minTouchTarget)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(.borderless)
-            .accessibilityLabel(String(localized: "Remove photo \(number)"))
         }
     }
 }

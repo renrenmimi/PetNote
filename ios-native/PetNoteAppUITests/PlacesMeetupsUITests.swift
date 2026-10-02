@@ -268,12 +268,12 @@ final class PlacesMeetupsUITests: XCTestCase {
         }
         XCTAssertFalse(save.isEnabled, "Submit without a description, which the web asks for")
         // A photo from the library.
-        let addPhotos = app.buttons["addPlace.photos.add"]
+        let addPhotos = app.buttons["photos.add"]
         reveal(addPhotos, in: app)
         XCTAssertTrue(waitUntilHittable(addPhotos, in: app, timeout: 10), "no Add photos\n\(app.debugDescription)")
         addPhotos.tap()
         try pickFirstPhoto(app)
-        XCTAssertTrue(app.descendants(matching: .any)["addPlace.photo.0"].waitForExistence(timeout: 20), "the photo was not picked")
+        XCTAssertTrue(app.descendants(matching: .any)["photos.photo.0"].waitForExistence(timeout: 20), "the photo was not picked")
         let description = app.descendants(matching: .any)["addPlace.description"]
         for _ in 0..<6 where !(description.exists && description.isHittable) { app.swipeDown() }
         XCTAssertTrue(waitUntilHittable(description, in: app, timeout: 10), "\(app.debugDescription)")
