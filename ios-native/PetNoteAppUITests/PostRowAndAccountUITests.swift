@@ -283,7 +283,8 @@ final class PostRowAndAccountUITests: XCTestCase {
 
         heart.tap()
         XCTAssertTrue(waitForLabel(heart, "Unlike"), "the heart did not fill")
-        XCTAssertTrue(eventually { (heart.value as? String) == "1 likes" }, "the count did not move: \(String(describing: heart.value))")
+        // One reads in the singular since #256 (PostCard, "1 like").
+        XCTAssertTrue(eventually { (heart.value as? String) == "1 like" }, "the count did not move: \(String(describing: heart.value))")
         XCTAssertTrue(eventually { Self.rest("GET", "posts/\(id)/likes/\(uid)") == 200 },
                       "no like on the server")
 
