@@ -175,25 +175,36 @@ struct StarRatingRow: View {
     let identifier: String
 
     var body: some View {
-        HStack {
-            Text(title)
-                .font(Typography.body)
-                .foregroundStyle(Palette.primaryText)
-            Spacer(minLength: Spacing.s)
-            ForEach(1...5, id: \.self) { score in
-                Button { value = score } label: {
-                    Image(systemName: score <= value ? "star.fill" : "star")
-                        .foregroundStyle(score <= value ? Palette.warning : Palette.tertiaryText)
-                        .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel(String(localized: "\(score) out of 5"))
-                .accessibilityAddTraits(score == value ? .isSelected : [])
-            }
+        // The title above the stars, every row alike. Beside them, five
+        // 44-point targets left it so little room that it broke inside a
+        // word ("Cleanli-ness"); putting only the long ones above mixed the
+        // two in one card.
+        VStack(alignment: .leading, spacing: 0) {
+            titleText
+            HStack { stars }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(identifier)
+    }
+
+    private var titleText: some View {
+        Text(title)
+            .font(Typography.body)
+            .foregroundStyle(Palette.primaryText)
+    }
+
+    private var stars: some View {
+        ForEach(1...5, id: \.self) { score in
+            Button { value = score } label: {
+                Image(systemName: score <= value ? "star.fill" : "star")
+                    .foregroundStyle(score <= value ? Palette.warning : Palette.tertiaryText)
+                    .frame(minWidth: Layout.minTouchTarget, minHeight: Layout.minTouchTarget)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(String(localized: "\(score) out of 5"))
+            .accessibilityAddTraits(score == value ? .isSelected : [])
+        }
     }
 }
 
