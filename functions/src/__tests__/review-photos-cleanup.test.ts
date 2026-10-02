@@ -98,6 +98,7 @@ describe("a deleted review's photos", () => {
 
     expect(await fieldOf<string[]>(`locations/${LOC}`, "photos")).toEqual([OWN]);
     expect(await fieldOf<string[]>(`locations/${LOC}`, "locationPhotos")).toEqual([OWN]);
+    expect((await db.doc(entryPath(OWN)).get()).exists).toBe(true);
   });
 
   it("are taken out once when the delete arrives twice", async () => {
