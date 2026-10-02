@@ -5,8 +5,10 @@
  * 2026-09-22 for account, pets, posting, follows and families — each audited
  * first for secrets (none), network calls (none), schedules (none) and side
  * effects outside Firestore (Firebase Auth updateUser in the two profile
- * callables). Nothing that binds a secret, runs on a schedule, or deletes
- * media belongs here; the guards below refuse the first two.
+ * callables); 5 more on 2026-10-01 for places and meetups, audited the same
+ * way (no secrets, no network calls, no schedules, Firestore only). Nothing
+ * that binds a secret, runs on a schedule, or deletes media belongs here; the
+ * guards below refuse the first two.
  *
  * Why this file exists at all
  * ---------------------------
@@ -53,6 +55,7 @@ const notifications = require("./lib/notifications");
 const users = require("./lib/users");
 const pets = require("./lib/pets");
 const places = require("./lib/places");
+const meetups = require("./lib/meetups");
 const cleanup = require("./lib/cleanup");
 const invitations = require("./lib/invitations");
 const family = require("./lib/family");
@@ -101,6 +104,18 @@ const EXPORTS = {
   revokeInvitationCallable: invitations.revokeInvitationCallable,
   removeFamilyMemberCallable: family.removeFamilyMemberCallable,
   transferPetPrimaryCallable: family.transferPetPrimaryCallable,
+
+  // Places and meetups, authorized by the owner on 2026-10-01: the callables
+  // that the server changes #245, #246, #249 and #250 touch, so that adding a
+  // place found on Apple Maps, and creating, editing, joining and cancelling
+  // a meetup, work on the test project. Not deleteUserAccount, which #246
+  // touches too: it has never been here, and deleting accounts is not what
+  // was authorized.
+  addPlaceCallable: places.addPlaceCallable,
+  createMeetupCallable: meetups.createMeetupCallable,
+  updateMeetupCallable: meetups.updateMeetupCallable,
+  joinMeetupCallable: meetups.joinMeetupCallable,
+  cancelMeetupCallable: meetups.cancelMeetupCallable,
 };
 
 // The test project never resolves to production's Cloudinary account. With
@@ -126,7 +141,7 @@ if (testAccount) {
 
 // Exactly the authorized set: a name added here by accident is a deployment
 // nobody approved.
-const EXPECTED_COUNT = 34 + (testAccount ? MEDIA_FUNCTIONS.length : 0);
+const EXPECTED_COUNT = 39 + (testAccount ? MEDIA_FUNCTIONS.length : 0);
 if (Object.keys(EXPORTS).length !== EXPECTED_COUNT) {
   throw new Error(`testcloud entry: ${Object.keys(EXPORTS).length} exports, ${EXPECTED_COUNT} authorized`);
 }
