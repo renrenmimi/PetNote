@@ -54,14 +54,20 @@ fi
 
 xcrun devicectl device capture screenshot --device "$UDID" --destination "$OUT" >/dev/null
 
-# Device screenshots are 16-bit and the pixel reader needs 8. sips refuses the
-# conversion on a file that is already 8-bit, which is a success for our
-# purposes, so its exit code is not a failure here.
-DEPTH=$(sips -g bitsPerSample "$OUT" 2>/dev/null | awk -F': ' '/bitsPerSample/ {print $2}')
-if [ "${DEPTH:-16}" != "8" ]; then
-  sips -s format png --setProperty bitsPerSample 8 "$OUT" --out "$OUT" >/dev/null 2>&1 || {
+# Device screenshots are 16-bit and the pixel reader needs 8. On an iOS 27
+# screenshot (16-bit Display P3), `sips --setProperty bitsPerSample 8` writes
+# nothing and still exits 0, so sips's exit code says nothing either way.
+# Matching the image to its own colour profile writes it at 8 bits without
+# changing its colours; the depth is read back to know whether that worked.
+depth() { sips -g bitsPerSample "$1" 2>/dev/null | awk -F': ' '/bitsPerSample/ {print $2}'; }
+if [ "$(depth "$OUT")" != "8" ]; then
+  PROFILE=$(sips -g profile "$OUT" 2>/dev/null | awk -F': ' '/profile/ {print $2}')
+  ICC="/System/Library/ColorSync/Profiles/${PROFILE}.icc"
+  [ -n "$PROFILE" ] && [ -f "$ICC" ] || ICC="/System/Library/ColorSync/Profiles/Display P3.icc"
+  sips --matchTo "$ICC" "$OUT" --out "$OUT" >/dev/null 2>&1 || true
+  if [ "$(depth "$OUT")" != "8" ]; then
     echo "Could not reduce $OUT to 8-bit; sample-pixels.py will say so." >&2
-  }
+  fi
 fi
 
 echo "wrote $OUT"
