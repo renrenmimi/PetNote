@@ -91,6 +91,17 @@ describe("a deleted review's photos", () => {
     expect((await db.doc(entryPath(SHARED)).get()).exists).toBe(true);
   });
 
+  /** The later review wrote the entry last, so it is the one named on it. */
+  it("stay when the review that wrote the entry last goes and an earlier one carries it", async () => {
+    await review("reviewer-a", [SHARED]);
+    const pathB = await review("reviewer-b", [SHARED]);
+
+    await removeReview(pathB, "reviewer-b");
+
+    expect(await fieldOf<string[]>(`locations/${LOC}`, "photos")).toContain(SHARED);
+    expect((await db.doc(entryPath(SHARED)).get()).exists).toBe(true);
+  });
+
   it("leave the place's own photo where it is", async () => {
     const path = await review("reviewer-a", [OWN]);
 
