@@ -47,7 +47,8 @@ protocol PlaceDirectory: Sendable {
 /// the same place at the same moment share one request. Apple may limit how
 /// many requests an app makes (Attachment 6, 2.7) without saying how many: a
 /// list of twenty places asked at once was fine on 2026-09-30, measured on a
-/// Mac, with the slowest answer in 0.26s.
+/// Mac, with the slowest answer in 0.26s; twenty-six on an iPhone on
+/// 2026-10-01 took 0.26s all told (`AppleMapsDeviceProbeTests`).
 ///
 /// "Apple no longer knows it" is remembered too, so a list does not ask again
 /// for a place that is gone. A failure is not: the next look tries again.
