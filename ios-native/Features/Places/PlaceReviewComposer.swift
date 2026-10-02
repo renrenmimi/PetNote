@@ -14,15 +14,22 @@ final class PlaceReviewModel {
     var draft: PlaceReviewDraft
     private(set) var isSubmitting = false
     private(set) var outcome: Outcome?
+    /// The web's photos, sent before the review.
+    let photos = PickedPhotos(limit: PlaceReviewDraft.maxPhotos)
 
     let placeName: String
     private let source: any PlaceReviewing
+    private let uploader: any MediaUploading
     private let log = Logger(subsystem: "dev.local.petnote.native", category: "places")
 
-    init(placeID: String, placeName: String, meetupID: String? = nil, source: any PlaceReviewing) {
+    init(
+        placeID: String, placeName: String, meetupID: String? = nil, source: any PlaceReviewing,
+        uploader: any MediaUploading
+    ) {
         self.draft = PlaceReviewDraft(placeID: placeID, meetupID: meetupID)
         self.placeName = placeName
         self.source = source
+        self.uploader = uploader
     }
 
     var canSubmit: Bool { draft.canSubmit && !isSubmitting && outcome != .submitted }
@@ -38,12 +45,24 @@ final class PlaceReviewModel {
     /// One submission at a time, taken before any suspension: a second tap
     /// arrives before the redraw that disables the button. The server also
     /// refuses a second review of the same place (`already-exists`), and its
-    /// words are what is shown.
+    /// words are what is shown. The web's order: the photos first, so a
+    /// review is never sent without the ones meant to go with it.
     func submit() async {
         guard canSubmit else { return }
         isSubmitting = true
+        photos.isLocked = true
         outcome = nil
-        defer { isSubmitting = false }
+        defer {
+            isSubmitting = false
+            photos.isLocked = false
+        }
+        do {
+            draft.photos = try await photos.upload(with: uploader)
+        } catch {
+            log.error("photos for a review failed: \(String(describing: error), privacy: .public)")
+            outcome = .failed(Self.photoWording(for: error))
+            return
+        }
         do {
             try await source.submitReview(draft)
             outcome = .submitted
@@ -52,11 +71,25 @@ final class PlaceReviewModel {
             outcome = .failed(GatheringWords.message(for: error, fallback: String(localized: "Failed to submit review.")))
         }
     }
+
+    /// The pet editor's words for a photo that did not go, with the review in
+    /// them where those name the pet: nothing was sent.
+    static func photoWording(for error: Error) -> String {
+        if let upload = error as? UploadError {
+            switch upload {
+            case .timedOut: return String(localized: "The photo upload timed out. Your review was not sent.")
+            case .transport: return String(localized: "The photo could not be uploaded. Your review was not sent.")
+            default: break
+            }
+        } else if !(error is UploadPreparation.PreparationError) {
+            return String(localized: "The photo could not be uploaded. Your review was not sent.")
+        }
+        return PetEditorViewModel.photoWording(for: error)
+    }
 }
 
 /// The web's rating sheet: an overall rating (required), three pet-friendly
-/// scores, tags and a comment. No photos yet — they need the test Cloudinary
-/// account.
+/// scores, tags, up to three photos and a comment.
 struct PlaceReviewSheet: View {
     @State private var model: PlaceReviewModel
     @Environment(\.dismiss) private var dismiss
@@ -82,6 +115,13 @@ struct PlaceReviewSheet: View {
             }
             Section("Tags") {
                 FlowTags(options: PlaceReviewDraft.tagOptions, selected: model.draft.tags) { model.toggle(tag: $0) }
+            }
+            Section {
+                PickedPhotosRows(photos: model.photos)
+            } header: {
+                Text("Add photos (optional)")
+            } footer: {
+                Text(verbatim: "\(model.photos.items.count)/\(PlaceReviewDraft.maxPhotos)")
             }
             Section {
                 TextField("Share your experience about this location...", text: $model.draft.comment, axis: .vertical)

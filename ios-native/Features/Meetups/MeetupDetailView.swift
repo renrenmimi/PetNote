@@ -13,14 +13,18 @@ struct MeetupDetailView: View {
     /// Editing the meetup as its organiser sees it: where it is, and what
     /// Apple says about a place from Apple Maps.
     private let makeEditMeetup: ((Meetup, MeetupPlace?, PlaceDetails?) -> MeetupFormModel)?
+    /// Rating the place a meetup was held at, once it has ended.
+    private let makeReview: ((_ placeID: String, _ placeName: String, _ meetupID: String) -> PlaceReviewModel)?
 
     init(
         model: MeetupDetailModel,
         makeEditMeetup: ((Meetup, MeetupPlace?, PlaceDetails?) -> MeetupFormModel)? = nil,
+        makeReview: ((_ placeID: String, _ placeName: String, _ meetupID: String) -> PlaceReviewModel)? = nil,
         onOpenPlace: @escaping (String) -> Void
     ) {
         _model = State(initialValue: model)
         self.makeEditMeetup = makeEditMeetup
+        self.makeReview = makeReview
         self.onOpenPlace = onOpenPlace
     }
 
@@ -49,14 +53,10 @@ struct MeetupDetailView: View {
         .task { await model.load() }
         .refreshable { await model.load() }
         .sheet(isPresented: $isRating) {
-            if let meetup = model.meetup, let placeID = meetup.locationID, let reviewer = model.reviewer {
+            if let meetup = model.meetup, let placeID = meetup.locationID, let makeReview {
                 NavigationStack {
                     PlaceReviewSheet(
-                        model: PlaceReviewModel(
-                            placeID: placeID,
-                            placeName: model.lookups.name(of: model.shownPlace ?? meetup.place),
-                            meetupID: meetup.id, source: reviewer
-                        ),
+                        model: makeReview(placeID, model.lookups.name(of: model.shownPlace ?? meetup.place), meetup.id),
                         onSubmitted: { Task { await model.load() } }
                     )
                 }

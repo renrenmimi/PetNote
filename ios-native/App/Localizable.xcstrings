@@ -648,6 +648,16 @@
         }
       }
     },
+    "Add photos (optional)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加照片（可不加）"
+          }
+        }
+      }
+    },
     "Add tags (e.g. cat, cute)": {
       "localizations": {
         "zh-Hans": {
@@ -6944,6 +6954,16 @@
         }
       }
     },
+    "The photo could not be uploaded. Your review was not sent.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片没能上传，评价没有发出。"
+          }
+        }
+      }
+    },
     "The photo upload did not complete. Try again.": {
       "localizations": {
         "zh-Hans": {
@@ -6980,6 +7000,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "照片上传超时，没有打卡。"
+          }
+        }
+      }
+    },
+    "The photo upload timed out. Your review was not sent.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片上传超时，评价没有发出。"
           }
         }
       }

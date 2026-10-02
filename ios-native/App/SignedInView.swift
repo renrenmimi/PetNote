@@ -751,6 +751,12 @@ struct SignedInView: View {
                     reviewer: repositories.placeReviews, checker: repositories.placeCheckins,
                     meetups: repositories.meetups
                 ),
+                makeReview: { placeID, placeName in
+                    PlaceReviewModel(
+                        placeID: placeID, placeName: placeName, source: repositories.placeReviews,
+                        uploader: repositories.media
+                    )
+                },
                 makeCheckIn: { placeID, placeName in
                     CheckInModel(
                         placeID: placeID, placeName: placeName, uid: user.uid,
@@ -771,6 +777,12 @@ struct SignedInView: View {
                     MeetupFormModel(
                         editing: meetup, place: place, details: details,
                         editor: repositories.meetupEditing, places: repositories.places, uploader: repositories.media
+                    )
+                },
+                makeReview: { placeID, placeName, meetupID in
+                    PlaceReviewModel(
+                        placeID: placeID, placeName: placeName, meetupID: meetupID,
+                        source: repositories.placeReviews, uploader: repositories.media
                     )
                 },
                 onOpenPlace: { stack.wrappedValue.append(.place(placeID: $0)) }
