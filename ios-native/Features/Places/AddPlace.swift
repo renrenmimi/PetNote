@@ -224,7 +224,7 @@ struct AddPlaceSheet: View {
 
     var body: some View {
         Form {
-            Section("Place") {
+            Section {
                 ApplePlacePicker(
                     finder: model.finder, chosen: model.chosen,
                     onSelect: { found in
@@ -232,6 +232,13 @@ struct AddPlaceSheet: View {
                     },
                     onChange: { model.changePlace() }
                 )
+            } header: {
+                Text("Place")
+            } footer: {
+                // Not under "nothing found", which says it at more length.
+                if model.chosen == nil, model.finder.state != .found([]) {
+                    Text("Parks, cafés, vets and other spots on Apple Maps. A home address can't be added.")
+                }
             }
             if model.chosen != nil {
                 Section("Category") {

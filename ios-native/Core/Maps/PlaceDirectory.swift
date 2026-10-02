@@ -36,9 +36,19 @@ protocol PlaceDirectory: Sendable {
     /// The places Apple Maps finds for `text`, most relevant first. Only
     /// those with an identifier: a place of ours can keep nothing else.
     func search(_ text: String) async throws -> [PlaceSearchHit]
+    /// The street addresses Apple Maps finds for `text`, most relevant first:
+    /// where a meetup can be, as a place of ours cannot. A meetup keeps only
+    /// the words of the one chosen, as if they had been typed.
+    func searchAddresses(_ text: String) async throws -> [PlaceDetails]
     /// Drops everything looked up so far, at sign-out: the terms' "temporary",
     /// and nothing of one person's browsing left for the next.
     func forget() async
+}
+
+extension PlaceDirectory {
+    /// None, for a directory that has no addresses to find: the unit tests'
+    /// own. The app's two find them.
+    func searchAddresses(_ text: String) async throws -> [PlaceDetails] { [] }
 }
 
 /// Apple Maps, through MapKit, with the temporary cache the terms allow.
@@ -60,6 +70,7 @@ actor MapKitPlaceDirectory: PlaceDirectory {
         var place: @Sendable (String) async throws -> PlaceDetails?
         var address: @Sendable (String) async throws -> PlaceDetails?
         var search: @Sendable (String) async throws -> [PlaceSearchHit]
+        var searchAddresses: @Sendable (String) async throws -> [PlaceDetails] = { _ in [] }
     }
 
     private let lookups: Lookups
@@ -97,6 +108,20 @@ actor MapKitPlaceDirectory: PlaceDirectory {
         guard generation == started else { return hits }
         for hit in hits { places.updateValue(hit.details, forKey: hit.applePlaceID) }
         return hits
+    }
+
+    /// Asked afresh each time, as places are. Each address is kept as the
+    /// answer for its own words, so a meetup saved at one shows its map
+    /// without asking again.
+    func searchAddresses(_ text: String) async throws -> [PlaceDetails] {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return [] }
+        let started = generation
+        var seen = Set<String>()
+        let found = try await lookups.searchAddresses(text).filter { !$0.address.isEmpty && seen.insert($0.address).inserted }
+        guard generation == started else { return found }
+        for details in found { addresses.updateValue(details, forKey: details.address) }
+        return found
     }
 
     func forget() {
@@ -184,6 +209,18 @@ extension MapKitPlaceDirectory.Lookups {
                 return response.mapItems.compactMap { item in
                     item.identifier.map { PlaceSearchHit(applePlaceID: $0.rawValue, details: PlaceDetails(item)) }
                 }
+            } catch let error as MKError where error.code == .placemarkNotFound {
+                return []
+            }
+        },
+        searchAddresses: { text in
+            let request = MKLocalSearch.Request()
+            request.naturalLanguageQuery = text
+            // Street addresses, which the places search leaves out: a home,
+            // say, which can hold a meetup and never a place.
+            request.resultTypes = .address
+            do {
+                return try await MKLocalSearch(request: request).start().mapItems.map(PlaceDetails.init)
             } catch let error as MKError where error.code == .placemarkNotFound {
                 return []
             }
@@ -285,6 +322,17 @@ struct StandInPlaceDirectory: PlaceDirectory {
             .filter { _, details in words.allSatisfy { details.name.lowercased().contains($0) } }
             .sorted { $0.key < $1.key }
             .map { PlaceSearchHit(applePlaceID: $0.key, details: $0.value) }
+    }
+
+    /// Words with a number in them are a street address, where `locate`
+    /// finds it; a town is added when they name none. Words without a number,
+    /// the way a place is searched for, find no address.
+    func searchAddresses(_ text: String) async throws -> [PlaceDetails] {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.contains(where: \.isNumber) else { return [] }
+        let street = String(text.split(separator: ",").first ?? Substring(text))
+        let address = text.contains(",") ? text : "\(text), Medford, MA 02155"
+        return [PlaceDetails(name: street, address: address, latitude: 42.3876, longitude: -71.0995)]
     }
 
     func forget() async {}

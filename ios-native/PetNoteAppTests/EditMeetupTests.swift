@@ -92,6 +92,30 @@ import Testing
         #expect(location as NSDictionary == Self.webPark as NSDictionary, "the web's shape, no kind, no area")
     }
 
+    /// Off to search somewhere else, and back: where it was, in the web's
+    /// shape, as if never left.
+    @Test func aMeetupMadeOnTheWebCanStayWhereItWasAfterASearch() throws {
+        let model = model(meetup(Self.webPark))
+
+        model.changePlace()
+        #expect(model.draft.whereKind == .applePlace && model.draft.place == nil)
+        model.keepWhereItWas()
+
+        #expect(model.draft.whereKind == .unchanged)
+        let location = try #require(model.draft.payload["location"] as? [String: Any])
+        #expect(location as NSDictionary == Self.webPark as NSDictionary)
+    }
+
+    /// A meetup made here has no "where it was" to go back to.
+    @Test func aMeetupMadeHereHasNoWhereItWasToKeep() {
+        let model = model(meetup(["address": "5 Oak Ave, Medford, MA", "label": "Oak yard"]))
+
+        model.changePlace()
+        model.keepWhereItWas()
+
+        #expect(model.draft.whereKind == .applePlace, "nothing to go back to")
+    }
+
     @Test func choosingSomewhereElseLeavesTheWebsPlaceBehind() throws {
         let model = model(meetup(Self.webPark))
         model.draft.whereKind = .address

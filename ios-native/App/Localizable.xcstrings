@@ -515,12 +515,12 @@
         }
       }
     },
-    "A place": {
+    "A place on PetNote is a spot on Apple Maps, like a park, a café or a vet. A home or street address can't be added here, but a meetup can be at one.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "一个地点"
+            "value": "PetNote 上的地点，是苹果地图上的公园、咖啡店、宠物医院这类地方。住家和门牌地址不能加在这里，但聚会可以办在那里。"
           }
         }
       }
@@ -688,6 +688,16 @@
         }
       }
     },
+    "Addresses": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地址"
+          }
+        }
+      }
+    },
     "All": {
       "localizations": {
         "zh-Hans": {
@@ -724,16 +734,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "选一个公开、光线好的地方，比如狗公园、社区公园或宠物友好的咖啡馆"
-          }
-        }
-      }
-    },
-    "An address": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "一个地址"
           }
         }
       }
@@ -805,16 +805,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "所有人都能看到的区域，比如 Somerville"
-          }
-        }
-      }
-    },
-    "As it was": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保持原样"
           }
         }
       }
@@ -1487,6 +1477,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "换一个地点"
+          }
+        }
+      }
+    },
+    "Choose somewhere else": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "换个地方"
           }
         }
       }
@@ -3454,6 +3454,16 @@
         }
       }
     },
+    "Keep where it was": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还用原来的地点"
+          }
+        }
+      }
+    },
     "Language": {
       "localizations": {
         "zh-Hans": {
@@ -4357,12 +4367,22 @@
         }
       }
     },
-    "Nothing found on Apple Maps.": {
+    "Nothing on Apple Maps by that name.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "苹果地图上没有找到。"
+            "value": "苹果地图上没有叫这个名字的地方。"
+          }
+        }
+      }
+    },
+    "Nothing on Apple Maps matches that.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "苹果地图上没有找到相符的结果。"
           }
         }
       }
@@ -4620,6 +4640,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "公园"
+          }
+        }
+      }
+    },
+    "Parks, cafés, vets and other spots on Apple Maps. A home address can't be added.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "苹果地图上的公园、咖啡店、宠物医院等地方。住家地址不能添加。"
           }
         }
       }
@@ -5605,6 +5635,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "搜索失败，请检查网络后重试。"
+          }
+        }
+      }
+    },
+    "Search for a place or an address": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索地点或地址"
           }
         }
       }
@@ -7970,6 +8010,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "使用宠物主人给你的邀请码"
+          }
+        }
+      }
+    },
+    "Use “%@” as the address": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用「%@」作为地址"
           }
         }
       }

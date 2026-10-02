@@ -7,12 +7,14 @@ import SwiftUI
 /// What is sent to create or edit a meetup (`createMeetupCallable`,
 /// `updateMeetupCallable`, functions/src/meetups.ts): its words, when and for
 /// how long, and where, in one of the two shapes the app can find. A place
-/// from Apple Maps goes by its identifier only; an address the organiser types
-/// goes with what to call it, and makes no place (the owner's choice on
-/// 2026-09-30). When only those who join may see where, everyone else sees the
-/// area the organiser names. A meetup made on the web, at a place with a name,
-/// address and position of its own, is sent back where it was unless the
-/// organiser chooses somewhere else.
+/// from Apple Maps goes by its identifier only; an address goes as the
+/// organiser's words, typed or taken from an address Apple Maps found, with
+/// what to call it, and makes no place (the owner's choice on 2026-09-30).
+/// Nothing else Apple said about the address goes with it. When only those
+/// who join may see where, everyone else sees the area the organiser names. A
+/// meetup made on the web, at a place with a name, address and position of
+/// its own, is sent back where it was unless the organiser chooses somewhere
+/// else.
 struct MeetupDraft: Equatable, Sendable {
     /// The server's limits, in its units: UTF-16, as JavaScript counts.
     static let maxTitle = 60
@@ -117,9 +119,13 @@ struct MeetupDraft: Equatable, Sendable {
     var whereKind: Where = .applePlace
     /// For `.applePlace`: the place chosen from what Apple Maps found.
     var place: PlaceSearchHit?
-    /// For `.address`: the organiser's own words.
+    /// For `.address`: the organiser's own words, typed or taken from an
+    /// address Apple Maps found.
     var address = ""
     var label = ""
+    /// For `.address` taken from what Apple Maps found: what Apple said about
+    /// it, for its map while the words are still Apple's. Never sent.
+    var foundAddress: PlaceDetails?
     /// The web's default: only those who join see where.
     var isAddressPrivate = true
     var area = ""
@@ -289,8 +295,8 @@ final class MeetupFormModel {
     private(set) var cover: Cover?
 
     var draft: MeetupDraft
-    /// Apple Maps, searched for the place. Any place can hold a meetup, so
-    /// none is marked.
+    /// Apple Maps, searched for where: a place or a street address. Any place
+    /// can hold a meetup, so none is marked.
     let finder: ApplePlaceFinder
     private(set) var isSaving = false
     private(set) var outcome: Outcome?
@@ -318,7 +324,7 @@ final class MeetupFormModel {
         self.uploader = uploader
         self.now = now
         self.draft = MeetupDraft(date: MeetupDraft.defaultDate(now: now()))
-        self.finder = ApplePlaceFinder(places: places, marksAdded: false, directory: directory)
+        self.finder = ApplePlaceFinder(places: places, marksAdded: false, findsAddresses: true, directory: directory)
     }
 
     /// A meetup that is, as its organiser sees it.
@@ -337,7 +343,7 @@ final class MeetupFormModel {
         self.uploader = uploader
         self.now = now
         self.draft = MeetupDraft(editing: meetup, place: place, details: details)
-        self.finder = ApplePlaceFinder(places: places, marksAdded: false, directory: directory)
+        self.finder = ApplePlaceFinder(places: places, marksAdded: false, findsAddresses: true, directory: directory)
     }
 
     var canSave: Bool {
@@ -378,11 +384,33 @@ final class MeetupFormModel {
     }
 
     func choose(_ found: ApplePlaceFinder.Found) {
+        draft.whereKind = .applePlace
         draft.place = found.hit
     }
 
-    func changePlace() {
+    /// An address: one Apple Maps found, with what it said for the map, or
+    /// the words searched for, as typed.
+    func choose(address: String, found: PlaceDetails?) {
+        draft.whereKind = .address
+        draft.address = address
+        draft.foundAddress = found
         draft.place = nil
+    }
+
+    /// Back to the search, with nothing chosen.
+    func changePlace() {
+        draft.whereKind = .applePlace
+        draft.place = nil
+        draft.address = ""
+        draft.label = ""
+        draft.foundAddress = nil
+    }
+
+    /// For a meetup made on the web: where it was, after all.
+    func keepWhereItWas() {
+        guard draft.unchangedPlace != nil else { return }
+        changePlace()
+        draft.whereKind = .unchanged
     }
 
     /// One at a time, taken before any suspension. The server's words when it
@@ -524,33 +552,27 @@ struct MeetupFormSheet: View {
                 .accessibilityIdentifier("createMeetup.safety")
             }
             Section {
-                Picker("Where", selection: $model.draft.whereKind) {
-                    if model.draft.unchangedPlace != nil {
-                        Text("As it was").tag(MeetupDraft.Where.unchanged)
-                    }
-                    Text("A place").tag(MeetupDraft.Where.applePlace)
-                    Text("An address").tag(MeetupDraft.Where.address)
-                }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("createMeetup.where")
                 switch model.draft.whereKind {
                 case .unchanged:
                     if let kept = model.draft.unchangedPlace { unchangedPlace(kept) }
+                    somewhereElse
                 case .applePlace:
                     ApplePlacePicker(
                         finder: model.finder, chosen: model.draft.place,
-                        onSelect: { model.choose($0) }, onChange: { model.changePlace() }
+                        onSelect: { model.choose($0) }, onChange: { model.changePlace() },
+                        onChooseAddress: { model.choose(address: $0, found: $1) }
                     )
+                    if model.draft.place == nil, model.draft.unchangedPlace != nil {
+                        Button { model.keepWhereItWas() } label: {
+                            Text("Keep where it was")
+                                .frame(minHeight: Layout.minTouchTarget)
+                                .contentShape(.rect)
+                        }
+                        .accessibilityIdentifier("createMeetup.keepUnchanged")
+                    }
                 case .address:
-                    // Street and place names, which a dictionary would
-                    // "correct".
-                    TextField("Address", text: $model.draft.address)
-                        .textContentType(.fullStreetAddress)
-                        .autocorrectionDisabled()
-                        .accessibilityIdentifier("createMeetup.address")
-                    TextField("What to call it (optional)", text: $model.draft.label)
-                        .autocorrectionDisabled()
-                        .accessibilityIdentifier("createMeetup.label")
+                    chosenAddress
+                    somewhereElse
                 }
             } header: {
                 Text("Where")
@@ -665,6 +687,35 @@ struct MeetupFormSheet: View {
         case (.edit, false): String(localized: "Save")
         case (.edit, true): String(localized: "Saving…")
         }
+    }
+
+    /// The address chosen, in words that can still be changed (a flat
+    /// number, say), and, while they are still the words Apple Maps found,
+    /// its map, as Apple's terms ask wherever an address of theirs is shown.
+    @ViewBuilder
+    private var chosenAddress: some View {
+        // Street and place names, which a dictionary would "correct".
+        TextField("Address", text: $model.draft.address)
+            .textContentType(.fullStreetAddress)
+            .autocorrectionDisabled()
+            .accessibilityIdentifier("createMeetup.address")
+        if let found = model.draft.foundAddress, found.address == MeetupDraft.trimmed(model.draft.address),
+           found.directionsURL != nil {
+            PlaceMap(details: found)
+        }
+        TextField("What to call it (optional)", text: $model.draft.label)
+            .autocorrectionDisabled()
+            .accessibilityIdentifier("createMeetup.label")
+    }
+
+    /// Back to the search.
+    private var somewhereElse: some View {
+        Button { model.changePlace() } label: {
+            Text("Choose somewhere else")
+                .frame(minHeight: Layout.minTouchTarget)
+                .contentShape(.rect)
+        }
+        .accessibilityIdentifier("createMeetup.changeWhere")
     }
 
     /// Where a meetup made on the web is, as it keeps it: its name, address

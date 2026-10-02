@@ -41,6 +41,7 @@ import Testing
         gate: Gate? = nil,
         searchGate: Gate? = nil,
         hits: [PlaceSearchHit] = [],
+        streets: [PlaceDetails] = [],
         place: @escaping @Sendable (String) throws -> PlaceDetails? = { _ in park }
     ) -> MapKitPlaceDirectory {
         MapKitPlaceDirectory(lookups: .init(
@@ -57,6 +58,10 @@ import Testing
                 asked.record("search \(text)")
                 await searchGate?.pass()
                 return hits
+            },
+            searchAddresses: { text in
+                asked.record("addresses \(text)")
+                return streets
             }
         ))
     }
@@ -163,6 +168,24 @@ import Testing
         #expect(asked.all == ["search dog park", "place I1"], "a search answered after forget() must not be kept")
     }
 
+    /// Asked each time, as a search for places is. Each address found is
+    /// kept as the answer for its own words, so a meetup saved at one does
+    /// not ask Apple again to show it; one Apple gave twice, or with no
+    /// words, is shown once, or not at all.
+    @Test func anAddressSearchKeepsEachAddressForItsOwnWords() async throws {
+        let asked = Asked()
+        let elm = PlaceDetails(name: "12 Elm St", address: "12 Elm St, Somerville, MA 02144", latitude: 42.39, longitude: -71.12)
+        let blank = PlaceDetails(name: "Somewhere", address: "", latitude: 42.4, longitude: -71.1)
+        let directory = directory(asked: asked, streets: [elm, blank, elm])
+
+        #expect(try await directory.searchAddresses("  12 elm st ") == [elm])
+        #expect(try await directory.locate(address: "12 Elm St, Somerville, MA 02144") == elm)
+        _ = try await directory.searchAddresses("12 elm st")
+        #expect(try await directory.searchAddresses("   ").isEmpty)
+
+        #expect(asked.all == ["addresses 12 elm st", "addresses 12 elm st"])
+    }
+
     #if PETNOTE_FAULT_INJECTION
     /// The emulator build's table, as UI tests search it: by the words of a
     /// place's name, whatever the case.
@@ -174,6 +197,19 @@ import Testing
         #expect(try await standIn.search("TEST CONTENT").map(\.applePlaceID) == ["TESTAPPLEDOGRUN01", "TESTAPPLEPETSHOP1"])
         #expect(try await standIn.search("TEST CONTENT Hi").isEmpty, "the web's search test would find it")
         #expect(try await standIn.search("  ").isEmpty)
+    }
+
+    /// Its addresses, as UI tests search for one: words with a street number
+    /// are one, in the town they name or else in Medford; a place's name is
+    /// not.
+    @Test func theStandInFindsAStreetAddressForWordsWithANumber() async throws {
+        let standIn = StandInPlaceDirectory()
+
+        let elm = try await standIn.searchAddresses(" 12 Elm St ")
+        #expect(elm.map(\.name) == ["12 Elm St"] && elm.map(\.address) == ["12 Elm St, Medford, MA 02155"])
+        let oak = try await standIn.searchAddresses("5 Oak Ave, Medford, MA")
+        #expect(oak.map(\.name) == ["5 Oak Ave"] && oak.map(\.address) == ["5 Oak Ave, Medford, MA"])
+        #expect(try await standIn.searchAddresses("dog run").isEmpty)
     }
     #endif
 
