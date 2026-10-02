@@ -99,6 +99,8 @@ export function PrivacyPolicy() {
           <p className="font-medium text-slate-900 dark:text-white">Apple Maps (iPhone app):</p>
           <ul className="space-y-1">
             <li>• On iPhone, what you type when you search for a place is sent to Apple Maps</li>
+            <li>• To show a place from Apple Maps, the app sends Apple Maps that place&apos;s identifier</li>
+            <li>• To show where a meetup is, the address its organizer typed is sent to Apple Maps</li>
           </ul>
           <p className="font-medium text-slate-900 dark:text-white">DiceBear:</p>
           <ul className="space-y-1">

@@ -105,7 +105,8 @@ iOS App 在登录页（`Features/Auth/LoginView.swift:58`）、注册页（`Feat
 - `api.dicebear.com`：默认头像，只在部分页面加载，见 P22
 - Apple 地图：10-01 起地点搜索改用苹果地图（`Core/Maps/PlaceDirectory.swift`）。搜地点时输入的字、要显示的苹果地点的编号、聚会里手填的地址，都会发给苹果去查。点「导航」时打开 Apple 地图，带过去的是地点的坐标和名字。App 不发送你自己的位置。
   - 10-01 你批准后，隐私政策第 3 节加了一句：「On iPhone, what you type when you search for a place is sent to Apple Maps」。
-  - 查地点编号、查手填地址这两样还没写进隐私政策，要不要加由你定。下面英文草稿里的 Apple Maps 一段，是改用苹果地图之前写的，要照现在的做法改。
+  - 10-01 晚你让我定，查地点编号、查手填地址这两样也写进去了：「To show a place from Apple Maps, the app sends Apple Maps that place's identifier」「To show where a meetup is, the address its organizer typed is sent to Apple Maps」。
+  - 下面英文草稿里的 Apple Maps 一段已照现在的做法改写。
 - `petnote.vercel.app`：打开两份法律页面时连
 - Google 登录：目前只在测试包里有（`Core/Auth/GoogleSignInService.swift:50-55`）
 - 分享帖子：生成的链接指向网页上的帖子页（`Features/Share/PostSharing.swift:17`、`:22-23`），分享图片是在手机上当场画出来、交给系统分享面板的。App 自己不把内容发给任何别的服务，发到哪里由你在分享面板里选。地点也能分享，分享的只是一条指向网页地点页 `…/location/{地点 ID}` 的链接（`Features/Places/PlaceDetailView.swift:117`）；测试包里，帖子和地点的链接都改用 App 自己的 `petnote://` 开头（`7e020ac`，`Features/Share/PostSharing.swift:19-35`）
@@ -392,7 +393,7 @@ Geoapify (website only): address search, and turning coordinates into a city nam
 
 DiceBear: generates default avatars for people and pets without a photo. Your name, email address and content are not sent to DiceBear. The avatar's web address contains the account's or pet's internal ID, and, as with any image, DiceBear can see the IP address of the device that loads it.
 
-Apple Maps (iPhone): only when you tap Directions, the app opens Apple Maps with the place's coordinates and name. PetNote does not send your own location.
+Apple Maps (iPhone): the app sends Apple Maps what you type when you search for a place, the identifier of each Apple Maps place it shows, and the address of a meetup whose organizer typed one. When you tap Directions, the app opens Apple Maps with the place's coordinates and name. PetNote does not send your own location.
 
 Vercel: hosts the website, including the Privacy Policy and Terms pages that the iPhone app opens. It serves web pages only and does not store your account data. Like any web host, it can see the IP address of the device loading a page.
 
