@@ -103,7 +103,9 @@ iOS App 在登录页（`Features/Auth/LoginView.swift:58`）、注册页（`Feat
 - Firebase（登录、数据库、我们的服务器代码）
 - Cloudinary：照片视频直接从手机传上去，显示时也从那里加载
 - `api.dicebear.com`：默认头像，只在部分页面加载，见 P22
-- Apple 地图：只有你点"导航"时才打开，带过去的是地点的坐标和名字（`Features/Places/Places.swift:113-121`、`Features/Meetups/Meetups.swift:52-60`）。App 不发送你自己的位置
+- Apple 地图：10-01 起地点搜索改用苹果地图（`Core/Maps/PlaceDirectory.swift`）。搜地点时输入的字、要显示的苹果地点的编号、聚会里手填的地址，都会发给苹果去查。点「导航」时打开 Apple 地图，带过去的是地点的坐标和名字。App 不发送你自己的位置。
+  - 10-01 你批准后，隐私政策第 3 节加了一句：「On iPhone, what you type when you search for a place is sent to Apple Maps」。
+  - 查地点编号、查手填地址这两样还没写进隐私政策，要不要加由你定。下面英文草稿里的 Apple Maps 一段，是改用苹果地图之前写的，要照现在的做法改。
 - `petnote.vercel.app`：打开两份法律页面时连
 - Google 登录：目前只在测试包里有（`Core/Auth/GoogleSignInService.swift:50-55`）
 - 分享帖子：生成的链接指向网页上的帖子页（`Features/Share/PostSharing.swift:17`、`:22-23`），分享图片是在手机上当场画出来、交给系统分享面板的。App 自己不把内容发给任何别的服务，发到哪里由你在分享面板里选。地点也能分享，分享的只是一条指向网页地点页 `…/location/{地点 ID}` 的链接（`Features/Places/PlaceDetailView.swift:117`）；测试包里，帖子和地点的链接都改用 App 自己的 `petnote://` 开头（`7e020ac`，`Features/Share/PostSharing.swift:19-35`）
