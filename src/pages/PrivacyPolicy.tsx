@@ -96,6 +96,10 @@ export function PrivacyPolicy() {
             <li>• Address search and geocoding</li>
             <li>• Location data is sent to their servers for processing</li>
           </ul>
+          <p className="font-medium text-slate-900 dark:text-white">Apple Maps (iPhone app):</p>
+          <ul className="space-y-1">
+            <li>• On iPhone, what you type when you search for a place is sent to Apple Maps</li>
+          </ul>
           <p className="font-medium text-slate-900 dark:text-white">DiceBear:</p>
           <ul className="space-y-1">
             <li>• Random avatar generation</li>
@@ -188,7 +192,7 @@ export function PrivacyPolicy() {
         </section>
 
         <p className="pt-2 text-xs text-gray-500 dark:text-gray-400">
-          Last updated: February 2026
+          Last updated: October 2026
         </p>
       </main>
     </div>
