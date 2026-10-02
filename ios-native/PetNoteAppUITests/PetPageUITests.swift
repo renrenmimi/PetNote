@@ -57,4 +57,39 @@ final class PetPageUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["pet.name"].exists || app.navigationBars.buttons["BackButton"].exists,
                       "the pet page is gone\n\(app.debugDescription)")
     }
+
+    /// The seed's Mochi checked in at the reviewed park (`seed-ios-native.mjs`,
+    /// `seedGatherings`). Its pet page names the place, as the web's does, and
+    /// the row opens it.
+    func testAPetsCheckinNamesItsPlaceAndOpensIt() throws {
+        let (app, me) = try signInAsNewAccount("pet-checkin-\(run)@petnote.test")
+        uid = me
+
+        let search = app.buttons["feed.search"]
+        XCTAssertTrue(waitUntilHittable(search, in: app, timeout: 30), "no search on the feed")
+        search.tap()
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(waitUntilHittable(field, in: app, timeout: 20), "no search field\n\(app.debugDescription)")
+        field.tap()
+        field.typeText("Mochi\n")
+        let result = app.buttons["search.pet.ios-pet-latin"]
+        XCTAssertTrue(waitUntilHittable(result, in: app, timeout: 30), "search did not find the seeded Mochi\n\(app.debugDescription)")
+        result.tap()
+        XCTAssertTrue(waitForExistence(of: app.staticTexts["pet.name"], in: app, timeout: 30), "the pet page did not open")
+
+        let checkinsTab = app.segmentedControls["pet.tabs"].buttons["Check-ins"]
+        for _ in 0..<4 where !(checkinsTab.exists && checkinsTab.isHittable) { app.swipeUp() }
+        XCTAssertTrue(waitUntilHittable(checkinsTab, in: app, timeout: 10), "no Check-ins tab\n\(app.debugDescription)")
+        checkinsTab.tap()
+
+        let park = "TEST CONTENT Riverside Dog Park"
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'pet.checkin.' AND label CONTAINS %@", park)).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 30), "the check-in does not name its place\n\(app.debugDescription)")
+        for _ in 0..<4 where !row.isHittable { app.swipeUp() }
+        row.tap()
+
+        let name = app.staticTexts["place.name"]
+        XCTAssertTrue(waitForExistence(of: name, in: app, timeout: 30), "the place did not open\n\(app.debugDescription)")
+        XCTAssertEqual(name.label, park)
+    }
 }

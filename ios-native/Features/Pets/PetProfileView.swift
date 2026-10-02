@@ -17,6 +17,8 @@ struct PetProfileView: View {
     var onEdit: ((String) -> Void)?
     var onDeleted: (() -> Void)?
     var onOpenPost: ((String) -> Void)?
+    /// Opens the place a check-in is at, as the web's rows do.
+    var onOpenPlace: ((String) -> Void)?
     /// Follow, followers and the way into the family, supplied by the shell:
     /// they belong to the social batch, and this screen does not need to know
     /// its repositories to show them.
@@ -322,32 +324,54 @@ struct PetProfileView: View {
             )
         case .loaded:
             ForEach(model.checkins) { checkin in
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    if checkin.photoURL != nil {
-                        RemoteImage(
-                            url: checkin.photoURL, aspectRatio: 1,
-                            cornerRadius: Radius.card, size: .thumbnail
-                        )
-                        .frame(height: Layout.checkinThumbnail)
-                    }
-                    if !checkin.caption.isEmpty {
-                        Text(checkin.caption)
-                            .font(Typography.body)
-                            .foregroundStyle(Palette.primaryText)
-                    }
-                    if let createdAt = checkin.createdAt {
-                        Text(createdAt.formatted(date: .abbreviated, time: .shortened))
-                            .font(Typography.caption)
-                            .foregroundStyle(Palette.secondaryText)
-                    }
+                // The web's row opens the place (`PetProfile.tsx`); one with
+                // no place has nowhere to go, and an empty id must never
+                // reach a document read.
+                if let onOpenPlace, !checkin.locationID.isEmpty {
+                    Button { onOpenPlace(checkin.locationID) } label: { checkinCard(checkin) }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("pet.checkin.\(checkin.id)")
+                } else {
+                    checkinCard(checkin)
+                        .accessibilityIdentifier("pet.checkin.\(checkin.id)")
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(Spacing.m)
-                .background(Palette.cardBackground)
-                .clipShape(RoundedRectangle(cornerRadius: Radius.card))
-                .accessibilityElement(children: .combine)
             }
         }
+    }
+
+    /// A check-in: its photo, the place it is at, the pet's words, and when,
+    /// as long ago as the web says it.
+    private func checkinCard(_ checkin: PetCheckin) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            if checkin.photoURL != nil {
+                RemoteImage(
+                    url: checkin.photoURL, aspectRatio: 1,
+                    cornerRadius: Radius.card, size: .thumbnail
+                )
+                .frame(height: Layout.checkinThumbnail)
+            }
+            if let placeName = model.placeName(for: checkin) {
+                Text(placeName)
+                    .font(Typography.body.weight(.semibold))
+                    .foregroundStyle(Palette.primaryText)
+            }
+            if !checkin.caption.isEmpty {
+                Text(checkin.caption)
+                    .font(Typography.body)
+                    .foregroundStyle(Palette.primaryText)
+            }
+            if let createdAt = checkin.createdAt {
+                Text(createdAt, format: .relative(presentation: .named))
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.secondaryText)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: Layout.minTouchTarget, alignment: .leading)
+        .padding(Spacing.m)
+        .background(Palette.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.card))
+        .contentShape(.rect)
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Actions

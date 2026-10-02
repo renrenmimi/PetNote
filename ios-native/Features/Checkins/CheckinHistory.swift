@@ -58,12 +58,17 @@ struct CheckinHistoryRow: Identifiable, Equatable, Sendable {
     var placePhoto: URL? { place?.photos.first }
 }
 
-protocol CheckinHistoryReading: Sendable {
-    /// The person's newest `limit` check-ins, newest first.
-    func checkins(uid: String, limit: Int) async throws -> [CheckinHistoryEntry]
+/// Places by id, for lists of check-ins that name them: a person's own, and a
+/// pet's.
+protocol PlacesByID: Sendable {
     /// The places with these ids that still exist, by id. One that is gone is
     /// simply not in the answer.
     func places(ids: [String]) async throws -> [String: Place]
+}
+
+protocol CheckinHistoryReading: PlacesByID {
+    /// The person's newest `limit` check-ins, newest first.
+    func checkins(uid: String, limit: Int) async throws -> [CheckinHistoryEntry]
 }
 
 actor FirestoreCheckinHistorySource: CheckinHistoryReading {

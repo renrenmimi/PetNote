@@ -84,6 +84,12 @@ final class PetProfileViewModel {
     private let viewerIsAdmin: Bool
     private let postPageSize: Int
     private let checkinLimit: Int
+    private let places: (any PlacesByID)?
+    /// Where the check-ins are, for those at a place from Apple Maps.
+    let lookups: PlaceLookups
+    /// The check-ins' places, by id, once read; nil until then, or when the
+    /// read failed.
+    private(set) var checkinPlaces: [String: Place]?
     private let log = Logger(subsystem: "dev.local.petnote.native", category: "pet")
 
     init(
@@ -97,7 +103,9 @@ final class PetProfileViewModel {
         // The server caps this at 100 whatever is asked for
         // (`PET_CHECKIN_MAX_PAGE_SIZE`); asking for the cap is what the web
         // page does.
-        checkinLimit: Int = 100
+        checkinLimit: Int = 100,
+        places: (any PlacesByID)? = nil,
+        lookups: PlaceLookups = PlaceLookups()
     ) {
         self.petID = petID
         self.repository = repository
@@ -111,6 +119,8 @@ final class PetProfileViewModel {
         self.viewerIsAdmin = viewerIsAdmin
         self.postPageSize = postPageSize
         self.checkinLimit = checkinLimit
+        self.places = places
+        self.lookups = lookups
     }
 
     // MARK: - Loading
@@ -205,7 +215,40 @@ final class PetProfileViewModel {
             checkinsState = .loaded
         } catch {
             checkinsState = .failed(Self.wording(for: error, doing: .loadingCheckins))
+            return
         }
+        await loadCheckinPlaces()
+    }
+
+    /// The web's `batchGetLocations` for the check-ins (`PetProfile.tsx`):
+    /// each place once, after the check-ins are on screen, and Apple asked
+    /// about those from Apple Maps. A failed read leaves the check-ins shown
+    /// without names, not called unknown.
+    private func loadCheckinPlaces() async {
+        guard let places else { return }
+        var seen: Set<String> = []
+        let ids = checkins.map(\.locationID).filter { !$0.isEmpty && seen.insert($0).inserted }
+        guard !ids.isEmpty else {
+            checkinPlaces = [:]
+            return
+        }
+        do {
+            let found = try await places.places(ids: ids)
+            checkinPlaces = found
+            await lookups.lookUp(Array(found.values))
+        } catch {
+            log.error("places of a pet's check-ins failed: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    /// The name a check-in shows: its place's, Apple's for one from Apple
+    /// Maps, or the web's "Unknown location" for a place that is gone. Nil
+    /// while the places are not known.
+    func placeName(for checkin: PetCheckin) -> String? {
+        guard let checkinPlaces else { return nil }
+        guard let place = checkinPlaces[checkin.locationID] else { return String(localized: "Unknown location") }
+        if place.applePlaceID != nil { return lookups.name(of: place) }
+        return place.name.isEmpty ? String(localized: "Unknown location") : place.name
     }
 
     func retryPosts() async { await postList.reload() }

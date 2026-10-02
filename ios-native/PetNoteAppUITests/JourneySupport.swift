@@ -129,6 +129,11 @@ extension XCTestCase {
         dismissOnboardingIfShown(app)
         XCTAssertTrue(reachedFeed(app), "did not reach the feed", file: file, line: line)
         settleSavePasswordPrompt(app)
+        // Once more, briefly: when the system's save-password prompt comes
+        // up first, it hides onboarding until it is answered, the wait above
+        // runs out, and onboarding then opens over the feed (10-01, a pet
+        // page test that never found the feed's search).
+        dismissOnboardingIfShown(app, timeout: 2)
         return (app, uid)
     }
 
