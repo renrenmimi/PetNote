@@ -51,6 +51,14 @@ import Testing
         }
         func forget() async {}
 
+        /// Apple has addresses too, if asked: adding a place never asks.
+        private var addressSearches = 0
+        var addressSearchCount: Int { lock.withLock { addressSearches } }
+        func searchAddresses(_ text: String) async throws -> [PlaceDetails] {
+            lock.withLock { addressSearches += 1 }
+            return [PlaceDetails(name: "12 Elm St", address: "12 Elm St, Somerville, MA", latitude: 42.39, longitude: -71.12)]
+        }
+
         func release() {
             let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
                 defer { held = nil }
@@ -111,6 +119,19 @@ import Testing
 
         #expect(found(model).map(\.id) == ["I1", "I2"])
         #expect(found(model).map(\.placeID) == ["apple_I1", nil])
+    }
+
+    /// A home or street address can't be a place of ours, so adding a place
+    /// does not look for addresses at all.
+    @Test func addingAPlaceDoesNotLookForStreetAddresses() async {
+        let directory = Directory()
+        let model = AddPlaceModel(query: "12 Elm St", places: Places(), adder: Adder(), reviewer: PlacesMeetupsTests.FakeReviews(), uploader: FakeUploader(), directory: directory)
+
+        await model.finder.search()
+
+        #expect(!model.finder.findsAddresses)
+        #expect(model.finder.addresses.isEmpty)
+        #expect(directory.addressSearchCount == 0)
     }
 
     @Test func aPlaceSomeoneAddedAlreadyIsNotChosenToBeAddedAgain() async {

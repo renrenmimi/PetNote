@@ -17,10 +17,21 @@ import Testing
         details: PlaceDetails(name: "Fenway Dog Run", address: "1 Park Dr, Boston, MA", latitude: 42.3434, longitude: -71.095)
     )
 
+    private nonisolated static let elm = PlaceDetails(
+        name: "12 Elm St", address: "12 Elm St, Somerville, MA 02144", latitude: 42.3967, longitude: -71.122
+    )
+
+    /// Apple Maps finding the dog run for any search, and an address too,
+    /// unless it cannot be asked for addresses.
     private struct Directory: PlaceDirectory {
+        var addressesFail = false
         func details(forApplePlaceID id: String) async throws -> PlaceDetails? { nil }
         func locate(address: String) async throws -> PlaceDetails? { nil }
         func search(_ text: String) async throws -> [PlaceSearchHit] { [CreateMeetupTests.run] }
+        func searchAddresses(_ text: String) async throws -> [PlaceDetails] {
+            if addressesFail { throw URLError(.notConnectedToInternet) }
+            return [CreateMeetupTests.elm]
+        }
         func forget() async {}
     }
 
@@ -53,11 +64,12 @@ import Testing
     }
 
     private func model(
-        creator: Creator = Creator(), places: Places = Places(), pets: [Pet] = [], uploader: FakeUploader = FakeUploader()
+        creator: Creator = Creator(), places: Places = Places(), pets: [Pet] = [], uploader: FakeUploader = FakeUploader(),
+        directory: Directory = Directory()
     ) -> MeetupFormModel {
         MeetupFormModel(
             uid: "me", creator: creator, places: places, pets: FixedPets(pets: pets), uploader: uploader,
-            directory: Directory(), now: { Self.now }
+            directory: directory, now: { Self.now }
         )
     }
 
@@ -301,6 +313,100 @@ import Testing
         }
         #expect(found.map(\.id) == ["I1"] && found[0].placeID == nil)
         #expect(places.readsByAppleID == 0)
+    }
+
+    /// A meetup can be at a street address, a home say, where a place of
+    /// ours cannot: one search finds both, and keeps what was searched for.
+    @Test func aSearchForWhereFindsStreetAddressesToo() async {
+        let model = model()
+        model.finder.query = "  12 Elm St "
+
+        await model.finder.search()
+
+        #expect(model.finder.addresses == [Self.elm])
+        #expect(model.finder.searched == "12 Elm St")
+        guard case .found(let found) = model.finder.state else {
+            Issue.record("no results: \(model.finder.state)")
+            return
+        }
+        #expect(found.map(\.id) == ["I1"])
+    }
+
+    /// Apple asked for places and not for addresses: the places still show,
+    /// and the words can still be taken as they are.
+    @Test func anAddressSearchThatFailsLeavesThePlaces() async {
+        let model = model(directory: Directory(addressesFail: true))
+        model.finder.query = "12 Elm St"
+
+        await model.finder.search()
+
+        #expect(model.finder.addresses.isEmpty)
+        #expect(model.finder.searched == "12 Elm St")
+        guard case .found(let found) = model.finder.state else {
+            Issue.record("the place search was lost with the address one: \(model.finder.state)")
+            return
+        }
+        #expect(found.map(\.id) == ["I1"])
+    }
+
+    /// An address Apple found goes as the organiser's words, as if typed:
+    /// none of the rest of what Apple said, its position above all.
+    @Test func anAddressAppleFoundIsSentAsWordsAndNothingElseOfApples() async throws {
+        let creator = Creator()
+        let model = model(creator: creator)
+        model.draft.title = "Yard games"
+        model.draft.description = "Fenced yard."
+        model.finder.query = "12 Elm St"
+        await model.finder.search()
+        let address = try #require(model.finder.addresses.first)
+
+        model.choose(address: address.address, found: address)
+        #expect(model.draft.whereKind == .address)
+        #expect(model.draft.foundAddress == Self.elm, "kept for the form's map")
+        await model.submit()
+
+        let payload = try #require(creator.sent.first).payload
+        #expect(payload["location"] as? [String: String] == [
+            "kind": "address", "address": "12 Elm St, Somerville, MA 02144", "label": "", "area": "",
+        ])
+    }
+
+    /// For an address Apple does not know: the words searched for, as typed.
+    @Test func theWordsSearchedForCanBeTheAddressAsTheyAre() async throws {
+        let creator = Creator()
+        let model = model(creator: creator)
+        model.draft.title = "Yard games"
+        model.draft.description = "Fenced yard."
+        model.finder.query = " 5 Oak Ave, Medford, MA "
+        await model.finder.search()
+
+        model.choose(address: model.finder.searched, found: nil)
+        model.draft.label = "Oak yard"
+        await model.submit()
+
+        #expect(model.draft.foundAddress == nil)
+        let payload = try #require(creator.sent.first).payload
+        #expect(payload["location"] as? [String: String] == [
+            "kind": "address", "address": "5 Oak Ave, Medford, MA", "label": "Oak yard", "area": "",
+        ])
+    }
+
+    /// Somewhere else: back to the search, with nothing of the address left
+    /// to be sent with a place chosen next.
+    @Test func choosingSomewhereElseStartsAgainWithNothingChosen() async {
+        let model = model()
+        model.draft.title = "Yard games"
+        model.draft.description = "Fenced yard."
+        model.choose(address: Self.elm.address, found: Self.elm)
+        model.draft.label = "Elm yard"
+        #expect(model.canSave)
+
+        model.changePlace()
+
+        #expect(model.draft.whereKind == .applePlace)
+        #expect(model.draft.place == nil && model.draft.address.isEmpty && model.draft.label.isEmpty)
+        #expect(model.draft.foundAddress == nil)
+        #expect(!model.canSave, "nothing chosen")
     }
 
     @Test func whoMayJoinIsSentAsTheWebsFormSetsIt() throws {

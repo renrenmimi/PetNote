@@ -538,11 +538,11 @@ final class PlacesMeetupsUITests: XCTestCase {
         try openCreateMeetup(in: app)
         try type(title + "\n", into: "createMeetup.title", in: app)
         try type("TEST CONTENT A fenced yard.", into: "createMeetup.description", in: app)
-        let whereChoice = app.segmentedControls["createMeetup.where"]
-        reveal(whereChoice, in: app)
-        XCTAssertTrue(waitUntilHittable(whereChoice, in: app, timeout: 10), "\(app.debugDescription)")
-        whereChoice.buttons["An address"].tap()
-        try type("5 Oak Ave, Medford, MA\n", into: "createMeetup.address", in: app)
+        // One search for where it is, and the words as typed taken as the
+        // address.
+        try type("5 Oak Ave, Medford, MA\n", into: "applePlace.search", in: app)
+        try tapButton("applePlace.asTyped", in: app)
+        XCTAssertEqual(app.textFields["createMeetup.address"].value as? String, "5 Oak Ave, Medford, MA")
         try type("TEST CONTENT Oak yard\n", into: "createMeetup.label", in: app)
         try type("Medford\n", into: "createMeetup.area", in: app)
 
@@ -605,6 +605,50 @@ final class PlacesMeetupsUITests: XCTestCase {
         XCTAssertEqual(JourneyAdmin.bool(rulesStored["mustHavePosts"]), true)
         XCTAssertEqual(JourneyAdmin.bool(rulesStored["mustHavePetProfile"]), false)
         XCTAssertEqual(JourneyAdmin.string(rulesStored["additionalNotes"]), "TEST CONTENT Bring water.")
+    }
+
+    /// Creating a meetup at a street address Apple Maps found, a home say:
+    /// one search finds it among the addresses, the form shows it on Apple's
+    /// map while the words are still Apple's and not once they are changed,
+    /// and the server keeps the organiser's words and makes no place.
+    func testCreatingAMeetupAtAnAddressAppleMapsFound() throws {
+        let (app, me) = try signInAsNewAccount("addressmeetup-\(run)@petnote.test")
+        uid = me
+        inboxes.append(me)
+        organisers.append(me)
+        let title = "TEST CONTENT Backyard fetch \(run)"
+
+        app.tabBars.buttons["Meetups"].tap()
+        try openCreateMeetup(in: app)
+        try type(title + "\n", into: "createMeetup.title", in: app)
+        try type("TEST CONTENT A fenced yard.", into: "createMeetup.description", in: app)
+        try type("12 Elm St\n", into: "applePlace.search", in: app)
+        try tapButton("applePlace.address.0", in: app)
+        let address = app.textFields["createMeetup.address"]
+        XCTAssertTrue(address.waitForExistence(timeout: 10), "the address was not chosen\n\(app.debugDescription)")
+        XCTAssertEqual(address.value as? String, "12 Elm St, Medford, MA 02155")
+        let map = app.descendants(matching: .any)["place.map"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10), "no map for the address Apple found\n\(app.debugDescription)")
+
+        // A flat number: the organiser's words now, so Apple's map goes.
+        reveal(address, in: app)
+        address.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
+        XCTAssertTrue(Self.hasKeyboardFocus(address), "the address did not take the keyboard")
+        address.typeText(", Apt 2\n")
+        XCTAssertTrue(waitForDisappearance(of: map, timeout: 10), "Apple's map stayed for words that are no longer Apple's")
+        try type("Medford\n", into: "createMeetup.area", in: app)
+        let create = app.buttons["createMeetup.save"]
+        XCTAssertTrue(waitUntilHittable(create, in: app, timeout: 10), "Create stayed off")
+        create.tap()
+
+        let shownTitle = app.staticTexts["meetupDetail.title"]
+        XCTAssertTrue(waitForExistence(of: shownTitle, in: app, timeout: 30), "the meetup did not open\n\(app.debugDescription)")
+        let id = try createdMeetup(by: me)
+        let stored = try XCTUnwrap(try JourneyAdmin.fields(path: "meetups/\(id)"))
+        XCTAssertEqual(JourneyAdmin.string(stored["locationVisibility"]), "participants_only", "an address is private unless chosen otherwise")
+        XCTAssertNil(stored["locationId"], "a meetup at an address made a place")
+        let hidden = try XCTUnwrap(try JourneyAdmin.fields(path: "meetups/\(id)/private/address"))
+        XCTAssertEqual(Self.strings(of: hidden), ["address": "12 Elm St, Medford, MA 02155, Apt 2", "label": ""])
     }
 
     /// Creating a public meetup at a place from Apple Maps, with a cover: the
@@ -712,7 +756,7 @@ final class PlacesMeetupsUITests: XCTestCase {
         reveal(kept, in: app)
         XCTAssertTrue(kept.exists, "where it was is not shown as kept\n\(app.debugDescription)")
         XCTAssertTrue(kept.label.contains(lot), kept.label)
-        XCTAssertTrue(app.segmentedControls["createMeetup.where"].buttons["As it was"].isSelected)
+        XCTAssertTrue(app.buttons["createMeetup.changeWhere"].exists, "no way to choose somewhere else\n\(app.debugDescription)")
         try save(in: app)
         // The server first, and the place it made noted for cleanup before
         // anything that can fail: a run that stopped on the title below left
@@ -733,10 +777,9 @@ final class PlacesMeetupsUITests: XCTestCase {
 
         // Moved to a typed address.
         try openEdit(in: app)
-        let whereChoice = app.segmentedControls["createMeetup.where"]
-        reveal(whereChoice, in: app)
-        whereChoice.buttons["An address"].tap()
-        try type("5 Oak Ave, Medford, MA\n", into: "createMeetup.address", in: app)
+        try tapButton("createMeetup.changeWhere", in: app)
+        try type("5 Oak Ave, Medford, MA\n", into: "applePlace.search", in: app)
+        try tapButton("applePlace.asTyped", in: app)
         try save(in: app)
         assertMeetupPlace(["5 Oak Ave, Medford, MA"], in: app)
         var moved: [String: Any] = [:]
@@ -757,6 +800,14 @@ final class PlacesMeetupsUITests: XCTestCase {
         edit.tap()
         XCTAssertTrue(waitForExistence(of: app.descendants(matching: .any)["createMeetup.title"], in: app, timeout: 10),
                       "no Edit Meetup\n\(app.debugDescription)")
+    }
+
+    /// A button of the form, scrolled to and tapped once it can be.
+    private func tapButton(_ identifier: String, in app: XCUIApplication) throws {
+        let button = app.buttons[identifier]
+        reveal(button, in: app)
+        XCTAssertTrue(waitUntilHittable(button, in: app, timeout: 20), "no \(identifier)\n\(app.debugDescription)")
+        button.tap()
     }
 
     private func save(in app: XCUIApplication) throws {
