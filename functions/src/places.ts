@@ -461,6 +461,68 @@ function readReviewTags(data: admin.firestore.DocumentData): string[] {
   );
 }
 
+function readReviewPhotos(data: admin.firestore.DocumentData): string[] {
+  if (!Array.isArray(data.photos)) return [];
+  return (data.photos as unknown[]).filter(
+    (photo): photo is string => typeof photo === "string" && photo.length > 0
+  );
+}
+
+/**
+ * Of a deleted review's photos, those no other review at the location still
+ * carries. Read on the caller's transaction, before any of its writes.
+ */
+async function photosNoOtherReviewCarries(
+  t: admin.firestore.Transaction,
+  locationId: string,
+  photos: string[]
+): Promise<string[]> {
+  const unused: string[] = [];
+  for (const url of photos) {
+    const others = await t.get(
+      db
+        .collection(`locations/${locationId}/reviews`)
+        .where("photos", "array-contains", url)
+        .limit(1)
+    );
+    if (others.empty) unused.push(url);
+  }
+  return unused;
+}
+
+/**
+ * The photo entries a deleted review wrote (writeLocationPhotoEntries), gone
+ * with it, unless the address is still in use: among the location's own
+ * photos, or on another review there. Outside the counting, as they were
+ * written outside it, and harmless when run twice.
+ */
+async function releaseReviewPhotoEntries(
+  locationId: string,
+  photos: string[],
+  reviewerId: string
+): Promise<void> {
+  if (photos.length === 0 || !reviewerId) return;
+  const location = await db.doc(`locations/${locationId}`).get();
+  const ownPhotos = location.data()?.locationPhotos;
+  const own = new Set(Array.isArray(ownPhotos) ? ownPhotos : []);
+  for (const url of photos) {
+    if (own.has(url)) continue;
+    const others = await db
+      .collection(`locations/${locationId}/reviews`)
+      .where("photos", "array-contains", url)
+      .limit(1)
+      .get();
+    if (!others.empty) continue;
+    const entryRef = db.doc(
+      `locations/${locationId}/photoEntries/${locationPhotoEntryId(url)}`
+    );
+    const entry = await entryRef.get();
+    if (entry.exists && entry.get("source") === "review" && entry.get("addedBy") === reviewerId) {
+      await entryRef.delete();
+    }
+  }
+}
+
 export const onReviewCreated = onDocumentCreated(
   "locations/{locationId}/reviews/{reviewId}",
   async (event) => {
@@ -480,11 +542,7 @@ export const onReviewCreated = onDocumentCreated(
     }
     const rating = typeof reviewData.rating === "number" ? reviewData.rating : 0;
     const tagList = readReviewTags(reviewData);
-    const photosToAdd = Array.isArray(reviewData.photos)
-      ? (reviewData.photos as unknown[]).filter(
-          (photo): photo is string => typeof photo === "string" && photo.length > 0
-        )
-      : [];
+    const photosToAdd = readReviewPhotos(reviewData);
     const subscores = readReviewSubscores(reviewData, rating);
     const tagCountsDelta: Record<string, number> = {};
     for (const tag of tagList) {
@@ -518,12 +576,17 @@ export const onReviewCreated = onDocumentCreated(
         return true;
       }),
       // Photo entries key off a hash of the URL and merge, so replaying them
-      // is already harmless.
-      writeLocationPhotoEntries(
-        event.params.locationId,
-        photosToAdd,
-        "review",
-        typeof reviewData.userId === "string" ? reviewData.userId : undefined
+      // is already harmless. Not for a review gone again already: its delete
+      // event takes its entries back, and may have run first.
+      reviewRef.get().then((snap) =>
+        snap.exists
+          ? writeLocationPhotoEntries(
+              event.params.locationId,
+              photosToAdd,
+              "review",
+              typeof reviewData.userId === "string" ? reviewData.userId : undefined
+            )
+          : undefined
       ),
     ]);
   }
@@ -544,20 +607,33 @@ export const onReviewDeleted = onDocumentDeleted(
     // arrayRemove on delete would drop tags other remaining reviews still
     // reference, so we only update the histogram (tagCounts / topTags).
     // The recompute callable refreshes both whenever it runs.
-    if (!wasCountedAtCreate(reviewData)) return;
-
-    await runEventOnce(event.id, (t) =>
-      applyReviewAggregationDelta(t, event.params.locationId, {
-        ratingSum: -rating,
-        count: -1,
-        petFriendlySumDelta: {
-          space: -subscores.space,
-          safety: -subscores.safety,
-          cleanliness: -subscores.cleanliness,
-        },
-        tagCountsDelta,
-      })
-    );
+    //
+    // A review's photos go with it: out of the location's preview list and
+    // its photo entries, both of which onReviewCreated put them in. Someone
+    // who deletes their review should not find its photos still on the
+    // place. An address another review there still carries, or that the
+    // place's own photos hold, stays.
+    const photos = readReviewPhotos(reviewData);
+    const reviewerId = typeof reviewData.userId === "string" ? reviewData.userId : "";
+    if (wasCountedAtCreate(reviewData)) {
+      await runEventOnce(event.id, async (t) => {
+        const photosToRemove = await photosNoOtherReviewCarries(t, event.params.locationId, photos);
+        return applyReviewAggregationDelta(t, event.params.locationId, {
+          ratingSum: -rating,
+          count: -1,
+          petFriendlySumDelta: {
+            space: -subscores.space,
+            safety: -subscores.safety,
+            cleanliness: -subscores.cleanliness,
+          },
+          tagCountsDelta,
+          photosToRemove,
+        });
+      });
+    }
+    // Written whether or not the review was counted (onReviewCreated writes
+    // them beside the counting), so released the same way.
+    await releaseReviewPhotoEntries(event.params.locationId, photos, reviewerId);
   }
 );
 

@@ -531,6 +531,11 @@ export type ReviewAggregationDelta = {
   count: number;
   tagsToAdd?: string[];
   photosToAdd?: string[];
+  // On delete: the review's photos, taken back out of the location's preview
+  // list. The caller passes only those no other review there carries; an
+  // address the location's own photos (locationPhotos) hold stays, as the
+  // place itself put it there.
+  photosToRemove?: string[];
   // Per-dimension sum delta (positive on create, negative on delete). The
   // location doc maintains both petFriendlySum (raw) and petFriendlyAvg
   // (sum / totalRatings) so the UI can render the subscores without
@@ -630,6 +635,14 @@ export async function applyReviewAggregationDelta(
       delta.photosToAdd,
       LOCATION_PHOTO_PREVIEW_LIMIT
     );
+  }
+  if (delta.photosToRemove && delta.photosToRemove.length > 0 && Array.isArray(data.photos)) {
+    const own = new Set(Array.isArray(data.locationPhotos) ? data.locationPhotos : []);
+    const drop = new Set(delta.photosToRemove.filter((url) => !own.has(url)));
+    const kept = (data.photos as unknown[]).filter(
+      (url) => !(typeof url === "string" && drop.has(url))
+    );
+    if (kept.length !== data.photos.length) update.photos = kept;
   }
 
   if (delta.petFriendlySumDelta) {
