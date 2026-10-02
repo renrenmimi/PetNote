@@ -512,102 +512,110 @@ struct MeetupFormSheet: View {
     }
 
     var body: some View {
-        Form {
-            coverSection
-            Section {
-                TextField("Title", text: $model.draft.title)
-                    .accessibilityIdentifier("createMeetup.title")
-            } header: {
-                Text("Title")
-            } footer: {
-                counter(MeetupDraft.length(model.draft.title), of: MeetupDraft.maxTitle)
-            }
-            Section {
-                TextField("What will you do, and who is it for?", text: $model.draft.description, axis: .vertical)
-                    .lineLimit(3...8)
-                    .accessibilityIdentifier("createMeetup.description")
-            } header: {
-                Text("Description")
-            } footer: {
-                counter(MeetupDraft.length(model.draft.description), of: MeetupDraft.maxDescription)
-            }
-            Section("When") {
-                DatePicker("Starts", selection: $model.draft.date, in: Date()..., displayedComponents: [.date, .hourAndMinute])
-                    .accessibilityIdentifier("createMeetup.date")
-                Picker("Duration", selection: $model.draft.duration) {
-                    ForEach(MeetupDraft.durationChoices(including: model.draft.duration), id: \.self) { minutes in
-                        Text(MeetupDraft.durationLabel(minutes)).tag(minutes)
-                    }
-                }
-                .accessibilityIdentifier("createMeetup.duration")
-            }
-            Section {
-                DisclosureGroup("Safety Tips for Meetup Organizers", isExpanded: $showsSafetyTips) {
-                    ForEach(Self.safetyTips, id: \.self) { tip in
-                        Label(tip, systemImage: "checkmark.shield")
-                            .font(Typography.caption)
-                            .foregroundStyle(Palette.secondaryText)
-                    }
-                }
-                .accessibilityIdentifier("createMeetup.safety")
-            }
-            Section {
-                switch model.draft.whereKind {
-                case .unchanged:
-                    if let kept = model.draft.unchangedPlace { unchangedPlace(kept) }
-                    somewhereElse
-                case .applePlace:
-                    ApplePlacePicker(
-                        finder: model.finder, chosen: model.draft.place,
-                        onSelect: { model.choose($0) }, onChange: { model.changePlace() },
-                        onChooseAddress: { model.choose(address: $0, found: $1) }
-                    )
-                    if model.draft.place == nil, model.draft.unchangedPlace != nil {
-                        Button { model.keepWhereItWas() } label: {
-                            Text("Keep where it was")
-                                .frame(minHeight: Layout.minTouchTarget)
-                                .contentShape(.rect)
-                        }
-                        .accessibilityIdentifier("createMeetup.keepUnchanged")
-                    }
-                case .address:
-                    chosenAddress
-                    somewhereElse
-                }
-            } header: {
-                Text("Where")
-            } footer: {
-                if model.draft.whereKind == .address {
-                    Text("A meetup at an address is not added to Places.")
-                }
-            }
-            Section {
-                Picker("Who sees the address", selection: $model.draft.isAddressPrivate) {
-                    Text("🔒 Only people who join").tag(true)
-                    Text("🌍 Everyone").tag(false)
-                }
-                .pickerStyle(.inline)
-                .labelsHidden()
-                .accessibilityIdentifier("createMeetup.visibility")
-                if model.draft.isAddressPrivate {
-                    TextField("Area everyone sees, like Somerville", text: $model.draft.area)
-                        .autocorrectionDisabled()
-                        .accessibilityIdentifier("createMeetup.area")
-                }
-            } header: {
-                Text("Who sees the address")
-            } footer: {
-                Text(model.draft.isAddressPrivate
-                     ? "People who have not joined see only the area."
-                     : "Best for public parks or community spots.")
-            }
-            requirementsSection
-            if case .failed(let message) = model.outcome {
+        ScrollViewReader { scroller in
+            Form {
+                coverSection
                 Section {
-                    Text(message)
-                        .foregroundStyle(Palette.danger)
-                        .accessibilityIdentifier("createMeetup.error")
+                    TextField("Title", text: $model.draft.title)
+                        .accessibilityIdentifier("createMeetup.title")
+                } header: {
+                    Text("Title")
+                } footer: {
+                    counter(MeetupDraft.length(model.draft.title), of: MeetupDraft.maxTitle)
                 }
+                Section {
+                    TextField("What will you do, and who is it for?", text: $model.draft.description, axis: .vertical)
+                        .lineLimit(3...8)
+                        .accessibilityIdentifier("createMeetup.description")
+                } header: {
+                    Text("Description")
+                } footer: {
+                    counter(MeetupDraft.length(model.draft.description), of: MeetupDraft.maxDescription)
+                }
+                Section("When") {
+                    DatePicker("Starts", selection: $model.draft.date, in: Date()..., displayedComponents: [.date, .hourAndMinute])
+                        .accessibilityIdentifier("createMeetup.date")
+                    Picker("Duration", selection: $model.draft.duration) {
+                        ForEach(MeetupDraft.durationChoices(including: model.draft.duration), id: \.self) { minutes in
+                            Text(MeetupDraft.durationLabel(minutes)).tag(minutes)
+                        }
+                    }
+                    .accessibilityIdentifier("createMeetup.duration")
+                }
+                Section {
+                    DisclosureGroup("Safety Tips for Meetup Organizers", isExpanded: $showsSafetyTips) {
+                        ForEach(Self.safetyTips, id: \.self) { tip in
+                            Label(tip, systemImage: "checkmark.shield")
+                                .font(Typography.caption)
+                                .foregroundStyle(Palette.secondaryText)
+                        }
+                    }
+                    .accessibilityIdentifier("createMeetup.safety")
+                }
+                Section {
+                    switch model.draft.whereKind {
+                    case .unchanged:
+                        if let kept = model.draft.unchangedPlace { unchangedPlace(kept) }
+                        somewhereElse
+                    case .applePlace:
+                        ApplePlacePicker(
+                            finder: model.finder, chosen: model.draft.place,
+                            onSelect: { model.choose($0) }, onChange: { model.changePlace() },
+                            onChooseAddress: { model.choose(address: $0, found: $1) }
+                        )
+                        if model.draft.place == nil, model.draft.unchangedPlace != nil {
+                            Button { model.keepWhereItWas() } label: {
+                                Text("Keep where it was")
+                                    .frame(minHeight: Layout.minTouchTarget)
+                                    .contentShape(.rect)
+                            }
+                            .accessibilityIdentifier("createMeetup.keepUnchanged")
+                        }
+                    case .address:
+                        chosenAddress
+                        somewhereElse
+                    }
+                } header: {
+                    Text("Where")
+                } footer: {
+                    if model.draft.whereKind == .address {
+                        Text("A meetup at an address is not added to Places.")
+                    }
+                }
+                Section {
+                    Picker("Who sees the address", selection: $model.draft.isAddressPrivate) {
+                        Text("🔒 Only people who join").tag(true)
+                        Text("🌍 Everyone").tag(false)
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                    .accessibilityIdentifier("createMeetup.visibility")
+                    if model.draft.isAddressPrivate {
+                        TextField("Area everyone sees, like Somerville", text: $model.draft.area)
+                            .autocorrectionDisabled()
+                            .accessibilityIdentifier("createMeetup.area")
+                    }
+                } header: {
+                    Text("Who sees the address")
+                } footer: {
+                    Text(model.draft.isAddressPrivate
+                         ? "People who have not joined see only the area."
+                         : "Best for public parks or community spots.")
+                }
+                requirementsSection
+                if case .failed(let message) = model.outcome {
+                    Section {
+                        Text(message)
+                            .foregroundStyle(Palette.danger)
+                            .accessibilityIdentifier("createMeetup.error")
+                    }
+                }
+            }
+            // Apple's suggestions come under the search field, low in the
+            // form: it goes to the top, so they show above the keyboard.
+            .onChange(of: model.finder.suggestions.isEmpty) { _, isEmpty in
+                guard !isEmpty else { return }
+                withAnimation { scroller.scrollTo(ApplePlacePicker.fieldID, anchor: .top) }
             }
         }
         .scrollDismissesKeyboard(.interactively)

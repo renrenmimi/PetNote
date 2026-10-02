@@ -236,7 +236,7 @@ struct AddPlaceSheet: View {
                 Text("Place")
             } footer: {
                 // Not under "nothing found", which says it at more length.
-                if model.chosen == nil, model.finder.state != .found([]) {
+                if model.chosen == nil, !(model.finder.showsResults && model.finder.state == .found([])) {
                     Text("Parks, cafés, vets and other spots on Apple Maps. A home address can't be added.")
                 }
             }

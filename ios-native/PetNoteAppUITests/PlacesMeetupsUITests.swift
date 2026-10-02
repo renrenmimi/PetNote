@@ -651,6 +651,33 @@ final class PlacesMeetupsUITests: XCTestCase {
         XCTAssertEqual(Self.strings(of: hidden), ["address": "12 Elm St, Medford, MA 02155, Apt 2", "label": ""])
     }
 
+    /// Apple's suggestions while typing, before Return: a place suggested is
+    /// chosen with one tap, and so is a street address, which then shows on
+    /// Apple's map. Nothing is saved.
+    func testSuggestionsWhileTypingChooseAPlaceOrAnAddress() throws {
+        let (app, me) = try signInAsNewAccount("suggestions-\(run)@petnote.test")
+        uid = me
+        inboxes.append(me)
+
+        app.tabBars.buttons["Meetups"].tap()
+        try openCreateMeetup(in: app)
+        try type("fenway", into: "applePlace.search", in: app)
+        try tapButton("applePlace.suggestion.place.0", in: app)
+        let chosen = app.descendants(matching: .any)["applePlace.chosen"]
+        XCTAssertTrue(chosen.waitForExistence(timeout: 20), "the place suggested was not chosen\n\(app.debugDescription)")
+        XCTAssertTrue(chosen.label.contains("Fenway Dog Run"), chosen.label)
+        app.buttons["createMeetup.cancel"].tap()
+
+        try openCreateMeetup(in: app)
+        try type("12 Elm", into: "applePlace.search", in: app)
+        try tapButton("applePlace.suggestion.address.0", in: app)
+        let address = app.textFields["createMeetup.address"]
+        XCTAssertTrue(address.waitForExistence(timeout: 20), "the address suggested was not chosen\n\(app.debugDescription)")
+        XCTAssertEqual(address.value as? String, "12 Elm, Medford, MA 02155")
+        XCTAssertTrue(app.descendants(matching: .any)["place.map"].waitForExistence(timeout: 10), "no map for Apple's address")
+        app.buttons["createMeetup.cancel"].tap()
+    }
+
     /// Creating a public meetup at a place from Apple Maps, with a cover: the
     /// server keeps the identifier and links the meetup to the place it makes
     /// for it, which holds none of Apple's words either, and keeps the

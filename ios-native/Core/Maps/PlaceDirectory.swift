@@ -313,13 +313,17 @@ struct StandInPlaceDirectory: PlaceDirectory {
     }
 
     /// The table's places with every word of `text` somewhere in their
-    /// names, whatever the case, in the table's order: a search for a place
-    /// by what it is called.
+    /// names or addresses, whatever the case, in the table's order: a search
+    /// for a place by what it is called, or by a suggestion's name and
+    /// address, as `StandInPlaceSuggester` makes them.
     func search(_ text: String) async throws -> [PlaceSearchHit] {
-        let words = text.lowercased().split(whereSeparator: \.isWhitespace)
+        let words = text.lowercased().split { $0.isWhitespace || $0 == "," }
         guard !words.isEmpty else { return [] }
         return Self.places
-            .filter { _, details in words.allSatisfy { details.name.lowercased().contains($0) } }
+            .filter { _, details in
+                let said = "\(details.name) \(details.address)".lowercased()
+                return words.allSatisfy { said.contains($0) }
+            }
             .sorted { $0.key < $1.key }
             .map { PlaceSearchHit(applePlaceID: $0.key, details: $0.value) }
     }

@@ -4,7 +4,8 @@ import OSLog
 import SwiftUI
 
 /// Finding a place on Apple Maps to choose: how adding a place and creating a
-/// meetup both start. Apple is asked on Return, once per search. When asked
+/// meetup both start. While someone types, Apple's suggestions for the words
+/// so far, as Apple Maps shows them; on Return, a search, once. When asked
 /// to, the places someone has added here already are marked, by the
 /// identifier each keeps; and street addresses are found as well, for a
 /// meetup, which can be at one where a place of ours cannot.
@@ -26,6 +27,14 @@ final class ApplePlaceFinder {
         case failed(String)
     }
 
+    /// What a suggestion turned out to be once searched for.
+    enum Choice: Equatable {
+        case place(Found)
+        /// The words to use, and what Apple said about them when it found
+        /// the address.
+        case address(String, PlaceDetails?)
+    }
+
     var query: String
     private(set) var state: State = .idle
     /// The street addresses the last search found, when it looks for them;
@@ -36,28 +45,103 @@ final class ApplePlaceFinder {
     private(set) var searched = ""
     /// Whether a search finds street addresses too.
     let findsAddresses: Bool
+    /// Apple's suggestions for the words typed, until they are searched for.
+    private(set) var suggestions: [PlaceSuggestion] = []
+    /// The suggestion being searched for, once chosen.
+    private(set) var choosing: PlaceSuggestion.ID?
 
     private let directory: any PlaceDirectory
     private let places: any PlacesReading
     private let marksAdded: Bool
+    private let suggester: any PlaceSuggesting
+    /// How long the words must stay as they are before Apple is asked about
+    /// them: a word typed at speed is asked about once.
+    private let typingPause: Duration
+    private var typing: Task<Void, Never>?
     /// Bumped by each search, so an older answer does not replace a newer one.
     private var searches = 0
     private let log = Logger(subsystem: "dev.local.petnote.native", category: "places")
 
     init(
         query: String = "", places: any PlacesReading, marksAdded: Bool, findsAddresses: Bool = false,
-        directory: any PlaceDirectory = PlaceDirectories.shared
+        directory: any PlaceDirectory = PlaceDirectories.shared, suggester: (any PlaceSuggesting)? = nil,
+        typingPause: Duration = .milliseconds(150)
     ) {
         self.query = query
         self.places = places
         self.marksAdded = marksAdded
         self.findsAddresses = findsAddresses
         self.directory = directory
+        self.suggester = suggester ?? PlaceSuggesters.make()
+        self.typingPause = typingPause
+    }
+
+    /// The words as typed, without the spaces around them.
+    var typed: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// Whether what is typed is what was last searched for: its results
+    /// show then, and suggestions until it is.
+    var showsResults: Bool { !typed.isEmpty && typed == searched }
+
+    /// The words changed: Apple's suggestions for them, after a pause. None
+    /// for nothing typed, or for words already searched for.
+    func wordsChanged() {
+        typing?.cancel()
+        let text = typed
+        guard !text.isEmpty, text != searched else {
+            suggestions = []
+            return
+        }
+        let pause = typingPause
+        typing = Task { [weak self] in
+            if pause > .zero { try? await Task.sleep(for: pause) }
+            guard !Task.isCancelled, let self else { return }
+            let found = await self.suggester.suggestions(for: text, addresses: self.findsAddresses)
+            guard !Task.isCancelled, self.typed == text else { return }
+            self.suggestions = found
+        }
+    }
+
+    /// What a suggestion is, found by searching for its words: the place it
+    /// names, marked when ours, or the address as Apple writes it, else as it
+    /// was suggested. A place search that finds none of it searches for the
+    /// words instead, so its results show; nil then, and when Apple could not
+    /// be asked, which is said as a search's failure is.
+    func choose(_ suggestion: PlaceSuggestion) async -> Choice? {
+        guard choosing == nil else { return nil }
+        choosing = suggestion.id
+        defer { choosing = nil }
+        do {
+            switch suggestion.kind {
+            case .place:
+                let hits = try await directory.search(suggestion.searchText)
+                guard let hit = hits.first(where: { $0.details.name == suggestion.title }) ?? hits.first else {
+                    query = suggestion.title
+                    await search()
+                    return nil
+                }
+                let ours = marksAdded ? try await places.places(applePlaceIDs: [hit.applePlaceID]) : []
+                let placeID = ours.first { $0.applePlaceID == hit.applePlaceID }?.id
+                return .place(Found(hit: hit, placeID: placeID))
+            case .address:
+                let found = try await directory.searchAddresses(suggestion.searchText).first
+                return .address(found?.address ?? suggestion.searchText, found)
+            }
+        } catch {
+            log.error("Apple Maps search for a suggestion failed: \(String(describing: error), privacy: .public)")
+            typing?.cancel()
+            suggestions = []
+            searched = typed
+            state = .failed(String(localized: "Couldn't search Apple Maps. Try again."))
+            return nil
+        }
     }
 
     func search() async {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        typing?.cancel()
+        suggestions = []
         searches += 1
         let mine = searches
         state = .searching
@@ -123,10 +207,15 @@ struct ApplePlacePicker: View {
                 // Street names, which a dictionary would "correct".
                 .autocorrectionDisabled(finder.findsAddresses)
                 .onSubmit { Task { await finder.search() } }
+                .onChange(of: finder.query) { finder.wordsChanged() }
                 .accessibilityIdentifier("applePlace.search")
-            results
+                .id(Self.fieldID)
+            if finder.showsResults { results } else { suggested }
         }
     }
+
+    /// The search field's row, for a form to scroll to.
+    static let fieldID = "applePlace.searchField"
 
     private var prompt: String {
         finder.findsAddresses ? String(localized: "Search for a place or an address") : String(localized: "Search Apple Maps")
@@ -145,7 +234,7 @@ struct ApplePlacePicker: View {
             Text(message)
                 .foregroundStyle(Palette.danger)
                 .accessibilityIdentifier("applePlace.searchError")
-            if finder.findsAddresses { asTyped }
+            if finder.findsAddresses { asTyped(finder.searched) }
         case .found(let found) where finder.findsAddresses:
             if found.isEmpty, finder.addresses.isEmpty {
                 Text("Nothing on Apple Maps matches that.")
@@ -162,7 +251,7 @@ struct ApplePlacePicker: View {
                     addressRow(address, index: index)
                 }
             }
-            asTyped
+            asTyped(finder.searched)
         case .found(let found) where found.isEmpty:
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text("Nothing on Apple Maps by that name.")
@@ -229,13 +318,69 @@ struct ApplePlacePicker: View {
         .accessibilityIdentifier("applePlace.address.\(index)")
     }
 
+    /// While typing: Apple's suggestions for the words so far, in the
+    /// results' groups. Return still searches.
+    @ViewBuilder
+    private var suggested: some View {
+        let places = finder.suggestions.filter { $0.kind == .place }
+        let streets = finder.suggestions.filter { $0.kind == .address }
+        if !places.isEmpty {
+            if finder.findsAddresses { heading(String(localized: "Places")) }
+            ForEach(Array(places.enumerated()), id: \.element.id) { index, suggestion in
+                suggestionRow(suggestion, tag: "place.\(index)")
+            }
+        }
+        if !streets.isEmpty {
+            heading(String(localized: "Addresses"))
+            ForEach(Array(streets.enumerated()), id: \.element.id) { index, suggestion in
+                suggestionRow(suggestion, tag: "address.\(index)")
+            }
+        }
+        if finder.findsAddresses { asTyped(finder.typed) }
+    }
+
+    /// One of Apple's suggestions: searched for when chosen, and what that
+    /// finds is chosen.
+    private func suggestionRow(_ suggestion: PlaceSuggestion, tag: String) -> some View {
+        Button {
+            Task {
+                switch await finder.choose(suggestion) {
+                case .place(let found)?: onSelect(found)
+                case .address(let address, let details)?: onChooseAddress(address, details)
+                case nil: break
+                }
+            }
+        } label: {
+            ResultRow(
+                symbol: suggestion.kind == .place ? "mappin.circle.fill" : "house.circle.fill",
+                tint: suggestion.kind == .place ? Palette.brandPrimary : Palette.secondaryText
+            ) {
+                Text(suggestion.title)
+                    .font(Typography.body.weight(.semibold))
+                    .foregroundStyle(Palette.primaryText)
+                if !suggestion.subtitle.isEmpty {
+                    Text(suggestion.subtitle)
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.secondaryText)
+                }
+            }
+            .overlay(alignment: .trailing) {
+                if finder.choosing == suggestion.id { ProgressView() }
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(finder.choosing != nil)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("applePlace.suggestion.\(tag)")
+    }
+
     /// For an address Apple does not know, or knows by other words.
     @ViewBuilder
-    private var asTyped: some View {
-        if !finder.searched.isEmpty {
-            Button { onChooseAddress(finder.searched, nil) } label: {
+    private func asTyped(_ words: String) -> some View {
+        if !words.isEmpty {
+            Button { onChooseAddress(words, nil) } label: {
                 ResultRow(symbol: "pencil.circle.fill", tint: Palette.secondaryText) {
-                    Text("Use “\(finder.searched)” as the address")
+                    Text("Use “\(words)” as the address")
                         .font(Typography.body)
                         .foregroundStyle(Palette.primaryText)
                 }
