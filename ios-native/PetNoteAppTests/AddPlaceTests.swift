@@ -95,7 +95,7 @@ import Testing
     /// The shop chosen and described, ready to add.
     private func shopReady(
         adder: Adder = Adder(), reviewer: PlacesMeetupsTests.FakeReviews = PlacesMeetupsTests.FakeReviews(),
-        uploader: FakeUploader = FakeUploader()
+        uploader: any MediaUploading = FakeUploader()
     ) async -> AddPlaceModel {
         let model = AddPlaceModel(query: "pet", places: Places(), adder: adder, reviewer: reviewer, uploader: uploader, directory: Directory())
         await model.finder.search()
@@ -249,8 +249,8 @@ import Testing
         let adder = Adder()
         let uploader = FakeUploader()
         let model = await shopReady(adder: adder, uploader: uploader)
-        model.addPhoto(data: UploadTestImages.jpeg(width: 400, height: 300, quality: 0.5), filename: "a.jpg")
-        model.addPhoto(data: UploadTestImages.jpeg(width: 300, height: 400, quality: 0.5), filename: "b.jpg")
+        model.photos.add(data: UploadTestImages.jpeg(width: 400, height: 300, quality: 0.5), filename: "a.jpg")
+        model.photos.add(data: UploadTestImages.jpeg(width: 300, height: 400, quality: 0.5), filename: "b.jpg")
 
         await model.save()
 
@@ -266,35 +266,75 @@ import Testing
         let uploader = FakeUploader()
         uploader.fail(atSend: [2])
         let model = await shopReady(adder: adder, uploader: uploader)
-        model.addPhoto(data: UploadTestImages.jpeg(width: 200, height: 200, quality: 0.5), filename: "a.jpg")
-        model.addPhoto(data: UploadTestImages.jpeg(width: 200, height: 200, quality: 0.5), filename: "b.jpg")
+        model.photos.add(data: UploadTestImages.jpeg(width: 200, height: 200, quality: 0.5), filename: "a.jpg")
+        model.photos.add(data: UploadTestImages.jpeg(width: 200, height: 200, quality: 0.5), filename: "b.jpg")
 
         await model.save()
 
         #expect(model.outcome == .failed("The photo upload timed out. The place was not added."))
         #expect(adder.sent.isEmpty, "a place added without a photo meant for it")
         #expect(model.canSave, "a failed photo left Submit off")
+        model.photos.remove(model.photos.items[1].id)
+        #expect(model.photos.items.count == 1, "the photos stayed locked after the failure")
+    }
+
+    /// While the place is being added, its photos stay as they are being sent.
+    @Test(.timeLimit(.minutes(1))) func thePhotosStayAsTheyAreWhileThePlaceIsAdded() async {
+        let uploader = HeldUploader()
+        let model = await shopReady(uploader: uploader)
+        model.photos.add(data: UploadTestImages.jpeg(width: 200, height: 200, quality: 0.5), filename: "a.jpg")
+
+        let first = model.photos.items[0].id
+
+        let saving = Task { await model.save() }
+        #expect(await eventuallyTrue { uploader.isHolding })
+        model.photos.add(data: UploadTestImages.jpeg(width: 200, height: 200, quality: 0.5), filename: "b.jpg")
+        model.photos.remove(first)
+        #expect(model.photos.items.map(\.id) == [first], "the photos changed while they were being sent")
+        uploader.release()
+        await saving.value
     }
 
     /// Sharp in its square on a phone: a 4:3 photo's short side at three
     /// pixels a point.
     @Test func aPickedPhotosThumbnailCoversItsSquare() async throws {
         let model = await shopReady()
-        model.addPhoto(data: UploadTestImages.jpeg(width: 1200, height: 900, quality: 0.5), filename: "a.jpg")
+        model.photos.add(data: UploadTestImages.jpeg(width: 1200, height: 900, quality: 0.5), filename: "a.jpg")
 
-        let thumbnail = try #require(model.photos.first?.thumbnail)
+        let thumbnail = try #require(model.photos.items.first?.thumbnail)
         #expect(min(thumbnail.size.width, thumbnail.size.height) * thumbnail.scale >= 264, "\(thumbnail.size)")
+    }
+
+    /// Refused once the photos are up: the next try adds the place with the
+    /// same addresses and sends no photo again.
+    @Test func aRefusedPlaceIsTriedAgainWithThePhotosAlreadyUp() async throws {
+        let adder = Adder()
+        adder.answer = .failure(NSError(
+            domain: FunctionsErrorDomain, code: FunctionsErrorCode.resourceExhausted.rawValue,
+            userInfo: [NSLocalizedDescriptionKey: "Too many requests."]
+        ))
+        let uploader = FakeUploader()
+        let model = await shopReady(adder: adder, uploader: uploader)
+        model.photos.add(data: UploadTestImages.jpeg(width: 200, height: 200, quality: 0.5), filename: "a.jpg")
+        model.photos.add(data: UploadTestImages.jpeg(width: 200, height: 200, quality: 0.5), filename: "b.jpg")
+        await model.save()
+        adder.answer = .success(AddedPlace(placeID: "apple_I2", alreadyExisted: false))
+
+        await model.save()
+
+        #expect(uploader.sendCount == 2)
+        #expect(adder.sent.map { $0.photos.map(\.lastPathComponent) } == [["1.jpg", "2.jpg"], ["1.jpg", "2.jpg"]])
     }
 
     @Test func atMostFivePhotos() async {
         let model = await shopReady()
         for index in 0..<6 {
-            model.addPhoto(data: UploadTestImages.jpeg(width: 100, height: 100, quality: 0.5), filename: "\(index).jpg")
+            model.photos.add(data: UploadTestImages.jpeg(width: 100, height: 100, quality: 0.5), filename: "\(index).jpg")
         }
-        #expect(model.photos.count == 5 && model.photosLeft == 0)
+        #expect(model.photos.items.count == 5 && model.photos.left == 0)
 
-        model.removePhoto(model.photos[0].id)
-        #expect(model.photos.count == 4 && model.photosLeft == 1)
+        model.photos.remove(model.photos.items[0].id)
+        #expect(model.photos.items.count == 4 && model.photos.left == 1)
     }
 
     @Test func noPhotosNoUploads() async throws {
