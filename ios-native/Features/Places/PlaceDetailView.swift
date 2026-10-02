@@ -11,15 +11,18 @@ struct PlaceDetailView: View {
     @State private var model: PlaceDetailModel
     @State private var isReviewing = false
     @State private var isCheckingIn = false
+    /// A review of this place, by its id and the name it is shown with.
+    private let makeReview: (String, String) -> PlaceReviewModel
     /// A check-in at this place, by its id and the name it is shown with.
     private let makeCheckIn: (String, String) -> CheckInModel
     private let onOpenMeetup: (String) -> Void
 
     init(
-        model: PlaceDetailModel, makeCheckIn: @escaping (String, String) -> CheckInModel,
-        onOpenMeetup: @escaping (String) -> Void
+        model: PlaceDetailModel, makeReview: @escaping (String, String) -> PlaceReviewModel,
+        makeCheckIn: @escaping (String, String) -> CheckInModel, onOpenMeetup: @escaping (String) -> Void
     ) {
         _model = State(initialValue: model)
+        self.makeReview = makeReview
         self.makeCheckIn = makeCheckIn
         self.onOpenMeetup = onOpenMeetup
     }
@@ -52,9 +55,7 @@ struct PlaceDetailView: View {
             if case .loaded(let place) = model.state {
                 NavigationStack {
                     PlaceReviewSheet(
-                        model: PlaceReviewModel(
-                            placeID: place.id, placeName: model.lookups.name(of: place), source: model.reviewer
-                        ),
+                        model: makeReview(place.id, model.lookups.name(of: place)),
                         onSubmitted: { Task { await model.load() } }
                     )
                 }

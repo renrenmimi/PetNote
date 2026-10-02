@@ -364,7 +364,7 @@ struct PlacesMeetupsTests {
     @Test func aSecondTapWhileSubmittingSendsNothing() async {
         let reviews = FakeReviews()
         reviews.holdNext = true
-        let model = PlaceReviewModel(placeID: "p1", placeName: "Park", source: reviews)
+        let model = PlaceReviewModel(placeID: "p1", placeName: "Park", source: reviews, uploader: FakeUploader())
         model.draft.rating = 5
         let first = Task { await model.submit() }
         #expect(await eventuallyTrue { reviews.isHolding }, "the first submission never reached the server")
@@ -382,7 +382,7 @@ struct PlacesMeetupsTests {
         let reviews = FakeReviews()
         reviews.error = NSError(domain: FunctionsErrorDomain, code: FunctionsErrorCode.alreadyExists.rawValue,
                                 userInfo: [NSLocalizedDescriptionKey: "You have already reviewed this location."])
-        let model = PlaceReviewModel(placeID: "p1", placeName: "Park", source: reviews)
+        let model = PlaceReviewModel(placeID: "p1", placeName: "Park", source: reviews, uploader: FakeUploader())
         model.draft.rating = 2
         await model.submit()
         #expect(model.outcome == .failed("You have already reviewed this location."))

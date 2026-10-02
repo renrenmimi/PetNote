@@ -231,8 +231,7 @@ struct PlaceCheckin: Identifiable, Equatable, Sendable {
 }
 
 /// A review as the person writes it — the web's rating sheet
-/// (`LocationRatingModal.tsx`) without photos, which need the test
-/// Cloudinary account.
+/// (`LocationRatingModal.tsx`), its photos uploaded already.
 struct PlaceReviewDraft: Equatable, Sendable {
     /// The web's tag choices, word for word; stored as written.
     static let tagOptions = [
@@ -243,6 +242,9 @@ struct PlaceReviewDraft: Equatable, Sendable {
     /// The web's limit, in the web's units: UTF-16, which is what
     /// JavaScript's `length` and the server's check count. An emoji is two.
     static let maxComment = 300
+    /// The server's limit (`sanitizePhotoUrls(data.photos, 3, …)`), and the
+    /// web's.
+    static let maxPhotos = 3
 
     /// A tag as shown. The stored words stay the web's — other people's
     /// reviews carry them — and one this list does not know is shown as is.
@@ -274,6 +276,8 @@ struct PlaceReviewDraft: Equatable, Sendable {
     var cleanliness = 0
     var tags: [String] = []
     var comment = ""
+    /// Uploaded already: the server keeps these addresses with the review.
+    var photos: [URL] = []
 
     var commentLength: Int { comment.utf16.count }
 
@@ -287,7 +291,7 @@ struct PlaceReviewDraft: Equatable, Sendable {
             "rating": rating,
             "comment": comment.trimmingCharacters(in: .whitespacesAndNewlines),
             "tags": tags,
-            "photos": [String](),
+            "photos": photos.map(\.absoluteString),
         ]
         var friendly: [String: Any] = [:]
         if space > 0 { friendly["space"] = space }

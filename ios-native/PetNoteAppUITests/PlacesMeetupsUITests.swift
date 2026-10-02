@@ -1137,6 +1137,60 @@ final class PlacesMeetupsUITests: XCTestCase {
 
     // MARK: - Reviews
 
+    /// A review with a photo, sent to the upload stand-in first; the review
+    /// keeps its address. At a place of its own, which goes with everything
+    /// under it, so the seeded places' photos stay as the other tests expect
+    /// them.
+    func testAReviewWithAPhoto() throws {
+        let place = "ui-\(run)-reviewphoto"
+        cleanup.append("locations/\(place)")
+        try Self.write(path: "locations/\(place)", [
+            "name": "TEST CONTENT Photo corner \(run)", "category": "park", "description": "",
+            "address": "5 Corner St, Cambridge, MA", "city": "Cambridge", "state": "MA",
+            "lat": 42.3657, "lng": -71.1041, "features": [Any](), "photos": [Any](), "tags": [Any](),
+            "source": "user", "verified": false, "addedBy": "ui-test", "addedByName": "UI Test",
+            "totalPhotos": 0, "averageRating": 0, "totalRatings": 0, "totalCheckins": 0, "createdAt": Date(),
+        ])
+        let (app, me) = try signInAsNewAccount(
+            "reviewphoto-\(run)@petnote.test", extraArguments: ["-petnote-upload-standin", "http://127.0.0.1:8766"]
+        )
+        uid = me
+        cleanup.append("locations/\(place)/reviews/\(me)")
+
+        // The newest place, so first in the list.
+        app.tabBars.buttons["Places"].tap()
+        let row = app.buttons["place.\(place)"]
+        XCTAssertTrue(waitUntilHittable(row, in: app, timeout: 30), "the new place is not listed\n\(app.debugDescription)")
+        row.tap()
+        let write = app.buttons["place.writeReview"]
+        for _ in 0..<6 where !(write.exists && write.isHittable) { app.swipeUp() }
+        XCTAssertTrue(waitUntilHittable(write, in: app, timeout: 20), "no Write a review\n\(app.debugDescription)")
+        write.tap()
+
+        let submit = app.buttons["review.submit"]
+        XCTAssertTrue(submit.waitForExistence(timeout: 10))
+        app.descendants(matching: .any)["review.rating"].buttons["5 out of 5"].tap()
+        // Below the tags, in a form that builds its rows as they come into
+        // view.
+        let addPhotos = app.buttons["photos.add"]
+        for _ in 0..<6 where !(addPhotos.exists && addPhotos.isHittable) { app.swipeUp() }
+        XCTAssertTrue(waitUntilHittable(addPhotos, in: app, timeout: 10), "no Add photos\n\(app.debugDescription)")
+        addPhotos.tap()
+        try pickFirstPhoto(app)
+        XCTAssertTrue(app.descendants(matching: .any)["photos.photo.0"].waitForExistence(timeout: 20), "the photo was not picked")
+        XCTAssertTrue(waitForEnabled(submit, timeout: 5), "Submit Review stayed off")
+        submit.tap()
+
+        let review = app.descendants(matching: .any).matching(identifier: "place.review").firstMatch
+        XCTAssertTrue(review.waitForExistence(timeout: 30), "the review is not on the page\n\(app.debugDescription)")
+        let stored = try XCTUnwrap(try JourneyAdmin.fields(path: "locations/\(place)/reviews/\(me)"), "no review on the server")
+        XCTAssertEqual(Self.number(stored["rating"]), 5)
+        let photos = ((stored["photos"] as? [String: Any])?["arrayValue"] as? [String: Any])?["values"] as? [Any]
+        let photo = try XCTUnwrap(photos?.compactMap(JourneyAdmin.string).first, "the photo was not kept with the review")
+        XCTAssertTrue(photo.hasPrefix("https://res.cloudinary.com/"), photo)
+        XCTAssertEqual(photos?.count, 1)
+    }
+
     func testWritingAReviewOfAPlace() throws {
         let park = try landmark("place_reviewed")
         let (app, me) = try signInAsNewAccount("review-\(run)@petnote.test")
