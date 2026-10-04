@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSubmitGuard } from "../hooks/useSubmitGuard";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import {
@@ -18,6 +19,8 @@ const MAX_BIO = 150;
 const MAX_NAME = 30;
 
 export function EditProfile() {
+
+  const { tryAcquire, release } = useSubmitGuard();
   const navigate = useNavigate();
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -130,6 +133,9 @@ export function EditProfile() {
 
   const handleSave = async () => {
     if (!user || saving) return;
+    // Synchronous, unlike `saving`: the state update that disables the
+    // button lands a render later, and a double tap fits in the gap.
+    if (!tryAcquire()) return;
     const name = displayName.trim();
     if (name.length < 2 || name.length > 30) {
       showToast("Display name must be 2-30 characters.", "error");
@@ -185,6 +191,7 @@ export function EditProfile() {
         err instanceof Error ? err.message : "Failed to update profile.";
       showToast(message, "error");
     } finally {
+      release();
       setSaving(false);
     }
   };

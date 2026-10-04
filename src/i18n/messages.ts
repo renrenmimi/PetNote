@@ -132,6 +132,15 @@ const en = {
     "This account cannot be used to sign in right now.",
   "forgot.codeNotConfigured":
     "Code delivery is not available yet. Use the reset link instead.",
+  // The email step is shared by both flows, so its copy cannot promise a
+  // link when the build sends a code.
+  "forgot.subtitleCode": "Enter your email and we'll send you a code.",
+  "forgot.sendCode": "Send code",
+  "forgot.doneTitle": "Password updated",
+  "forgot.doneBody":
+    "Your new password is set, and anything still signed in elsewhere has been signed out.",
+  "forgot.goToLogin": "Go to login",
+  "auth.backToBrowsing": "Back to browsing",
 
   "notFound.title": "Page not found",
   "notFound.description": "This page doesn't exist or has been removed.",
@@ -417,6 +426,12 @@ const zh = {
   "forgot.codeGoogleOnly": "这个账号使用 Google 登录，请在登录页点「Continue with Google」。",
   "forgot.codeAccountUnavailable": "这个账号目前无法登录。",
   "forgot.codeNotConfigured": "验证码发送暂不可用，请改用重置链接。",
+  "forgot.subtitleCode": "输入你的邮箱，我们会发送验证码给你。",
+  "forgot.sendCode": "发送验证码",
+  "forgot.doneTitle": "密码已更新",
+  "forgot.doneBody": "新密码已生效，其他设备上的登录状态也已经退出。",
+  "forgot.goToLogin": "去登录",
+  "auth.backToBrowsing": "返回浏览",
 
   "notFound.title": "页面不存在",
   "notFound.description": "这个页面不存在，或已经被移除。",

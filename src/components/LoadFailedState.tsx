@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CloudOff } from "lucide-react";
 
 type LoadFailedStateProps = {
   title: string;
@@ -47,9 +48,12 @@ export function LoadFailedState({
       role="alert"
       className="rounded-2xl bg-white p-8 text-center shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700"
     >
-      <div className="text-4xl" aria-hidden="true">
-        📡
-      </div>
+      <CloudOff
+        size={40}
+        strokeWidth={1.6}
+        className="mx-auto text-slate-300 dark:text-slate-600"
+        aria-hidden="true"
+      />
       <h3 className="mt-3 text-base font-semibold text-slate-900 dark:text-white">
         {title}
       </h3>

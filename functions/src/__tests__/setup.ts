@@ -27,3 +27,10 @@ process.env.TRANSACTIONAL_EMAIL_FROM ||= "no-reply@example.invalid";
 process.env.FIREBASE_CONFIG ||= JSON.stringify({
   projectId: process.env.GCLOUD_PROJECT,
 });
+
+// The password-reset request handler holds every response to a floor so that
+// a deliverable address and an unknown one cannot be told apart by the clock.
+// That floor is real and ships; paying it in wall time on every request test
+// is not. Zeroed here, and the floor itself is covered by a test that sets it
+// back.
+process.env.PASSWORD_RESET_MIN_REQUEST_MS ||= "0";

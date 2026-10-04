@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Check } from "lucide-react";
 import { useModalBehavior } from "../hooks/useModalBehavior";
 import { createPortal } from "react-dom";
 import { useAuth } from "../hooks/useAuth";
@@ -121,7 +122,10 @@ export function ReportModal({
                       : "border-slate-300 text-transparent dark:border-slate-600"
                   }`}
                 >
-                  ✓
+                  {/* Inherits currentColor, so the unselected state's
+                      text-transparent keeps the circle the same size without
+                      a second branch. */}
+                  <Check size={12} strokeWidth={3} aria-hidden="true" />
                 </span>
                 {reason}
               </button>

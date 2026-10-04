@@ -15,6 +15,7 @@ import { SuspendedBanner } from "./components/SuspendedBanner";
 import PageTransition from "./components/PageTransition";
 import { SplashScreen } from "./components/SplashScreen";
 import { useAuth } from "./hooks/useAuth";
+import { useRevealOnFocus } from "./hooks/useRevealOnFocus";
 
 const Feed = lazy(() =>
   import("./pages/Feed").then((module) => ({ default: module.Feed }))
@@ -138,6 +139,27 @@ type AppContentProps = {
 
 function AppContent({ splashVisible, splashFading }: AppContentProps) {
   const location = useLocation();
+
+  /*
+   * Keeping the focused field above the keyboard is mounted once, here,
+   * rather than per page.
+   *
+   * Per page was the first attempt and it was the wrong shape: 23 files in
+   * src/ render an input or a textarea, four had been wired, and the other
+   * nineteen — AddPet, CreateMeetup with its eleven fields, Settings,
+   * Search, every modal — would have kept whatever behaviour they happened
+   * to have. That is the same divergence this was meant to remove, with a
+   * tidier name on it. Found by driving the search page in a real engine and
+   * watching the page not move.
+   *
+   * No ref, so it measures the layout viewport and scrolls the document,
+   * which is what every one of those pages does. AuthShell mounts its own
+   * against its inner scroller, because `position: fixed` leaves the
+   * document with nothing to scroll; both being active there is harmless,
+   * since the reveal computes a delta and a document that cannot scroll
+   * moves by nothing.
+   */
+  useRevealOnFocus();
 
   const wrap = (element: ReactNode) => (
     <ErrorBoundary>

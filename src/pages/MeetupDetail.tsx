@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Timestamp } from "firebase/firestore";
 import Avatar from "../components/Avatar";
+import { LoadFailedState } from "../components/LoadFailedState";
 import { LocationRatingModal } from "../components/LocationRatingModal";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../contexts/ToastContext";
@@ -104,6 +105,12 @@ const dogSizeLabels: Record<MeetupRequirements["dogSize"], string> = {
 };
 
 export function MeetupDetail() {
+  // A refused or dropped read used to render the same sentence as a
+  // genuinely missing record. Three outcomes, three answers.
+  const [loadFailure, setLoadFailure] = useState<
+    "failed" | "denied" | null
+  >(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const navigate = useNavigate();
   const { meetupId = "" } = useParams();
   const { user, profile } = useAuth();
@@ -148,6 +155,13 @@ export function MeetupDetail() {
         // Without this catch a transient read failure left the page on
         // "Loading meetup..." forever (same fix as EditMeetup/LocationDetail).
         console.error("Failed to load meetup:", error);
+        const failureCode =
+          error && typeof error === "object" && "code" in error
+            ? String((error as { code?: unknown }).code ?? "")
+            : "";
+        setLoadFailure(
+          failureCode.includes("permission-denied") ? "denied" : "failed"
+        );
       } finally {
         if (!ignore) setLoading(false);
       }
@@ -156,7 +170,8 @@ export function MeetupDetail() {
     return () => {
       ignore = true;
     };
-  }, [meetupId]);
+    // reloadToken is the retry button on the failure state.
+  }, [meetupId, reloadToken]);
 
   useEffect(() => {
     let ignore = false;
@@ -512,8 +527,30 @@ export function MeetupDetail() {
 
   if (!meetup) {
     return (
-      <div className="min-h-screen bg-slate-50 px-4 py-6 text-sm text-slate-500 dark:bg-slate-900">
-        Meetup not found.
+      <div className="min-h-screen bg-slate-50 px-4 py-6 dark:bg-slate-900">
+        <div className="mx-auto w-full max-w-md">
+          {loadFailure ? (
+            <LoadFailedState
+              title={
+                loadFailure === "denied"
+                  ? "This meetup is not visible to you"
+                  : "Could not load this meetup"
+              }
+              description={
+                loadFailure === "denied"
+                  ? "It may be private, or only visible to people who joined."
+                  : "Something went wrong reaching PetNote. Check your connection and try again."
+              }
+              retryLabel="Try again"
+              retryingLabel="Trying..."
+              onRetry={() => setReloadToken((value) => value + 1)}
+            />
+          ) : (
+            <p className="rounded-2xl bg-white p-6 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-300">
+              This meetup no longer exists.
+            </p>
+          )}
+        </div>
       </div>
     );
   }

@@ -10,33 +10,100 @@ import type { EmailSendResult } from "../email";
  * the callable's response, not in the challenge document, not in a log.
  */
 const sent: Array<{ to: string; code: string; expiresInMinutes: number }> = [];
+/** Google-only notices, captured separately: a different mail, to the same inbox. */
+const notices: Array<{ to: string }> = [];
 let nextSendResult: EmailSendResult = {
   sent: true,
   providerMessageId: "test-message",
   elapsedMs: 12,
 };
+let nextNoticeResult: EmailSendResult = {
+  sent: true,
+  providerMessageId: "test-notice",
+  elapsedMs: 9,
+};
+
+// Both senders are stubbed. Stubbing only one is not a smaller mistake: with
+// the API key and From address set in setup.ts the unstubbed one is
+// "configured", so it reaches `fetch` and the suite makes a real request to
+// the provider. That happened — a 401 from api.resend.com in the
+// google-only test — and it is why this mock lists every sender rather than
+// the one the test was thinking about.
+let transportConfigured = true;
 
 vi.mock("../email", async (importOriginal) => {
   const original = await importOriginal<typeof import("../email")>();
   return {
     ...original,
+    emailTransportConfigured: () => transportConfigured,
     sendPasswordResetCodeEmail: vi.fn(
       async (args: { to: string; code: string; expiresInMinutes: number }) => {
         sent.push(args);
         return nextSendResult;
       }
     ),
+    sendGoogleOnlyNoticeEmail: vi.fn(async (args: { to: string }) => {
+      notices.push(args);
+      return nextNoticeResult;
+    }),
   };
 });
+
+/**
+ * Cloud Tasks, captured rather than contacted.
+ *
+ * The request handler enqueues and returns; nothing is mailed until the
+ * worker runs. `drain()` is what stands in for the queue, so every test that
+ * needs a code now says explicitly where the code comes from — which is also
+ * the property under test: the request path does not send.
+ */
+/**
+ * Task payloads, as the queue would hold them.
+ *
+ * `generation` joined `challengeId` when the delivery worker gained a task
+ * identity, so a payload is no longer just an id — and the tests that build
+ * one by hand have to carry it or the worker correctly treats them as stale.
+ */
+const enqueued: Array<{ challengeId: string; generation?: number }> = [];
+let enqueueFails = false;
+
+vi.mock("firebase-admin/functions", () => ({
+  getFunctions: () => ({
+    taskQueue: () => ({
+      enqueue: async (payload: { challengeId: string; generation?: number }) => {
+        if (enqueueFails) throw new Error("queue unavailable");
+        enqueued.push(payload);
+      },
+    }),
+  }),
+}));
 
 const { admin, db } = await import("../platform");
 const { callAs, clearRateLimits, errorCodeOf } = await import("./helpers");
 const {
   confirmPasswordResetCodeCallable,
+  deliverPasswordResetCodeTask,
   requestPasswordResetCodeCallable,
 } = await import("../passwordReset");
 
+/** Runs every queued delivery task, oldest first, and empties the queue. */
+async function drain(): Promise<void> {
+  const pending = enqueued.splice(0, enqueued.length);
+  for (const data of pending) {
+    await deliverPasswordResetCodeTask.run({ data } as never);
+  }
+}
+
+/** The generation the request handler recorded, for hand-built payloads. */
+async function generationOf(challengeId: string): Promise<number> {
+  const snap = await db.doc(`passwordResetChallenges/${challengeId}`).get();
+  const value = snap.data()?.deliveryGeneration;
+  return typeof value === "number" ? value : 1;
+}
+
 const EMAIL = "reset-subject@example.com";
+/** Mirrors MAX_SENDS_PER_CHALLENGE in the handler. */
+const MAX_SENDS = 4;
 const GOOD_PASSWORD = "Str0ng!Passw0rd";
 const OTHER_PASSWORD = "An0ther!Passw0rd";
 
@@ -69,6 +136,8 @@ const confirm = (data: unknown) =>
 async function startFlow(email = EMAIL) {
   sent.length = 0;
   const result = await request({ email });
+  // The mail comes from the worker now, not from the request.
+  await drain();
   return { challengeId: result.challengeId, code: sent.at(-1)?.code ?? "" };
 }
 
@@ -80,10 +149,19 @@ async function clearChallenges() {
 describe("password reset by numeric code", () => {
   beforeEach(async () => {
     sent.length = 0;
+    notices.length = 0;
+    enqueued.length = 0;
+    enqueueFails = false;
+    transportConfigured = true;
     nextSendResult = {
       sent: true,
       providerMessageId: "test-message",
       elapsedMs: 12,
+    };
+    nextNoticeResult = {
+      sent: true,
+      providerMessageId: "test-notice",
+      elapsedMs: 9,
     };
     await clearRateLimits();
     await clearChallenges();
@@ -194,6 +272,7 @@ describe("password reset by numeric code", () => {
       .update({ lastSentAtMs: 0 });
     sent.length = 0;
     const resent = await request({ email: EMAIL, challengeId });
+    await drain();
     expect(resent.challengeId).toBe(challengeId);
     const newCode = sent.at(-1)?.code ?? "";
     expect(newCode).toMatch(/^\d{6}$/);
@@ -220,6 +299,7 @@ describe("password reset by numeric code", () => {
       .update({ lastSentAtMs: 0 });
     sent.length = 0;
     await request({ email: EMAIL, challengeId });
+    await drain();
     const secondCode = sent.at(-1)?.code ?? "";
     expect(secondCode).not.toBe(firstCode);
 
@@ -304,13 +384,21 @@ describe("password reset by numeric code", () => {
 
     expect(unknown.challengeId).toBeTypeOf("string");
     expect(unknown.expiresInSeconds).toBeGreaterThan(0);
-    // No mail, and the challenge carries nothing that could ever verify.
+    // A task was still enqueued — identical work for every address is the
+    // point — and running it sends nothing.
+    expect(enqueued).toHaveLength(1);
+    await drain();
     expect(sent).toHaveLength(0);
+    expect(notices).toHaveLength(0);
+
     const stored = await db
       .doc(`passwordResetChallenges/${unknown.challengeId}`)
       .get();
     expect(stored.data()?.uid).toBeNull();
-    expect(stored.data()?.codeDigest).toBeNull();
+    expect(stored.data()?.outcome).toBe("none");
+    // No digest is written at request time by anything, and the worker
+    // declined to write one.
+    expect(stored.data()?.codeDigest).toBeUndefined();
 
     // And a guess fails the same way a wrong code does, not a different way.
     expect(
@@ -350,9 +438,101 @@ describe("password reset by numeric code", () => {
     await ensureUser(EMAIL, { password: null });
     sent.length = 0;
     const result = await request({ email: EMAIL });
-    // Neutral at request time — no mail, no disclosure.
+    // No code is minted, so no code can ever verify against this challenge.
     expect(sent).toHaveLength(0);
     expect(result.challengeId).toBeTypeOf("string");
+  });
+
+  it("tells a Google-only account how to sign in, in the mail rather than the response", async () => {
+    // The dead end this replaces: the response promised a code, none was
+    // minted, and the only reachable outcome was "that code is not correct".
+    // The "use Google" line lived in the confirm handler, behind a correct
+    // code they could never have.
+    await ensureUser(EMAIL, { password: null });
+    sent.length = 0;
+    notices.length = 0;
+
+    const result = await request({ email: EMAIL });
+    // Nothing has been mailed yet: the request only enqueued.
+    expect(notices).toHaveLength(0);
+
+    await drain();
+    expect(sent).toHaveLength(0);
+    expect(notices).toEqual([{ to: EMAIL }]);
+    expect(result.challengeId).toBeTypeOf("string");
+    expect(result.expiresInSeconds).toBeGreaterThan(0);
+  });
+
+  it("answers a Google-only address exactly like an unknown one", async () => {
+    await ensureUser(EMAIL, { password: null });
+    const googleOnly = await request({ email: EMAIL });
+    const unknown = await request({ email: "nobody-at-all@example.com" });
+
+    // Same shape, same fields, same values apart from the opaque id.
+    expect(Object.keys(googleOnly).sort()).toEqual(Object.keys(unknown).sort());
+    expect(googleOnly.expiresInSeconds).toBe(unknown.expiresInSeconds);
+    expect(googleOnly.challengeId).not.toBe(unknown.challengeId);
+  });
+
+  it("does not report a failed Google-only notice to the caller", async () => {
+    // Saying "that send failed" would say the address exists and has no
+    // password, which is the thing the identical response protects.
+    await ensureUser(EMAIL, { password: null });
+    nextNoticeResult = { sent: false, reason: "provider-error", elapsedMs: 40 };
+
+    await expect(request({ email: EMAIL })).resolves.toMatchObject({
+      challengeId: expect.any(String),
+    });
+  });
+
+  it("refuses a challenge id that is not one it minted", async () => {
+    // The id used to go straight into a document path, so a slash addressed a
+    // nested document outside the collection that the rules and any TTL
+    // policy cover.
+    //
+    // ensureUser is not decoration: the test above leaves EMAIL as a
+    // passwordless account, so without this startFlow mints no code and the
+    // assertions below pass or fail on the wrong reason.
+    await ensureUser(EMAIL);
+    const { code } = await startFlow();
+    await expect(
+      confirm({
+        challengeId: "../../users/someone",
+        code,
+        newPassword: OTHER_PASSWORD,
+      })
+    ).rejects.toThrow();
+
+    const injected = await request({
+      email: EMAIL,
+      challengeId: "passwordResetChallenges/x/y",
+    });
+    // Treated as "no challenge supplied": a fresh, well-formed id.
+    expect(injected.challengeId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    );
+    const stray = await db.collection("passwordResetChallenges").doc("x").get();
+    expect(stray.exists).toBe(false);
+  });
+
+  it("keeps the original creation time when a code is resent", async () => {
+    await ensureUser(EMAIL);
+    const first = await request({ email: EMAIL });
+    const before = (
+      await db.doc(`passwordResetChallenges/${first.challengeId}`).get()
+    ).data()?.createdAt;
+
+    // Past the cooldown.
+    await db
+      .doc(`passwordResetChallenges/${first.challengeId}`)
+      .update({ lastSentAtMs: Date.now() - 61_000 });
+    await request({ email: EMAIL, challengeId: first.challengeId });
+
+    const after = (
+      await db.doc(`passwordResetChallenges/${first.challengeId}`).get()
+    ).data()?.createdAt;
+    // The old ternary had the same expression in both branches, so this moved.
+    expect(after?.toMillis?.()).toBe(before?.toMillis?.());
   });
 
   it("rejects a code bound to a different challenge", async () => {
@@ -424,22 +604,118 @@ describe("password reset by numeric code", () => {
     expect(stored.data()?.attempts ?? 0).toBe(0);
   });
 
-  it("reports a send failure instead of claiming a code is on its way", async () => {
+  it("no longer reports a provider failure to the caller", async () => {
+    // Deliberate change: the request returns before the provider is
+    // contacted. A transient failure is the queue's problem and gets
+    // retried, which the old inline send could never do.
     await ensureUser(EMAIL);
     nextSendResult = { sent: false, reason: "provider-error", elapsedMs: 40 };
+
+    await expect(request({ email: EMAIL })).resolves.toMatchObject({
+      challengeId: expect.any(String),
+    });
+  });
+
+  it("fails the request if the delivery task cannot be queued", async () => {
+    // The reason this is a queue and not a fire-and-forget promise: if the
+    // work was never scheduled, the person must be told the request failed
+    // rather than being sent to watch an inbox.
+    await ensureUser(EMAIL);
+    enqueueFails = true;
 
     expect(await errorCodeOf(() => request({ email: EMAIL }))).toContain(
       "unavailable"
     );
   });
 
-  it("refuses when email delivery is not configured", async () => {
+  it("throws from the worker on a transient failure, so the queue retries", async () => {
+    await ensureUser(EMAIL);
+    nextSendResult = { sent: false, reason: "timeout", elapsedMs: 10_000 };
+    await request({ email: EMAIL });
+
+    // A thrown error is what tells Cloud Tasks to try again.
+    await expect(drain()).rejects.toThrow(/code send failed/);
+  });
+
+  it("does not retry the worker when the transport is unconfigured", async () => {
+    // Retrying will not configure it, so the task comes off the queue and an
+    // operator finds out from the log instead.
     await ensureUser(EMAIL);
     nextSendResult = { sent: false, reason: "not-configured", elapsedMs: 0 };
+    await request({ email: EMAIL });
+
+    await expect(drain()).resolves.toBeUndefined();
+  });
+
+  it("stops the worker mailing past the send cap, however often it retries", async () => {
+    await ensureUser(EMAIL);
+    const first = await request({ email: EMAIL });
+    await drain();
+    sent.length = 0;
+
+    // Straight past the cap, the way a retry storm would.
+    await db
+      .doc(`passwordResetChallenges/${first.challengeId}`)
+      .update({ sendCount: MAX_SENDS + 1 });
+    enqueued.push({
+      challengeId: first.challengeId,
+      generation: await generationOf(first.challengeId),
+    });
+    await drain();
+
+    expect(sent).toHaveLength(0);
+  });
+
+  it("does not mail a code for a challenge whose clock has run out", async () => {
+    await ensureUser(EMAIL);
+    const first = await request({ email: EMAIL });
+    sent.length = 0;
+    // The task sat in the queue until the code expired.
+    await db
+      .doc(`passwordResetChallenges/${first.challengeId}`)
+      .update({ expiresAtMs: Date.now() - 1 });
+
+    await drain();
+    expect(sent).toHaveLength(0);
+  });
+
+  it("does not supersede a delivered code when the worker runs again", async () => {
+    /*
+     * This test asserted the opposite a commit ago, and the opposite was the
+     * defect. At-least-once delivery means a task whose acknowledgement was
+     * lost runs again; the worker used to mint a fresh code and overwrite the
+     * digest each time, so somebody holding a perfectly good email found it
+     * rejected. `deliveredGeneration` makes the duplicate a no-op.
+     * Reproduced and re-verified in password-reset-delivery.test.ts (B1).
+     */
+    await ensureUser(EMAIL);
+    const { challengeId, code: firstCode } = await startFlow();
+    const payload = { challengeId, generation: 1 };
+
+    sent.length = 0;
+    enqueued.push(payload);
+    await drain();
+
+    // No second mail, and the code in the inbox still works.
+    expect(sent).toHaveLength(0);
+    await expect(
+      confirm({ challengeId, code: firstCode, newPassword: GOOD_PASSWORD })
+    ).resolves.toMatchObject({ ok: true });
+  });
+
+  it("refuses up front when email delivery is not configured", async () => {
+    // Moved to the front of the handler, because the send is on a queue now
+    // and the response can no longer carry a provider failure. Safe to ask
+    // first: whether the transport is configured is a property of the
+    // environment, identical for every address.
+    await ensureUser(EMAIL);
+    transportConfigured = false;
 
     expect(await errorCodeOf(() => request({ email: EMAIL }))).toContain(
       "failed-precondition"
     );
+    // And nothing was queued, so nobody is left waiting for mail.
+    expect(enqueued).toHaveLength(0);
   });
 
   it("lets the same code finish the job when the Auth write fails first", async () => {
@@ -494,6 +770,116 @@ describe("password reset by numeric code", () => {
       confirm({ challengeId, code, newPassword: GOOD_PASSWORD })
     ).resolves.toEqual({ ok: true });
     expect((await ref.get()).data()?.status).toBe("consumed");
+  });
+
+  it("does not hand out extra guesses when the challenge record is deleted", async () => {
+    // TTL only cleans up, and deleting a challenge does reset its per-challenge
+    // attempt counter — because the counter goes with it. What matters is that
+    // it buys nothing: the code digest is deleted too, so the code that was
+    // mailed can never verify again. The budget that is actually load-bearing
+    // is somewhere else.
+    await ensureUser(EMAIL);
+    const { challengeId, code } = await startFlow();
+
+    const wrong = code === "000000" ? "111111" : "000000";
+    for (let i = 0; i < 5; i += 1) {
+      await errorCodeOf(() =>
+        confirm({ challengeId, code: wrong, newPassword: GOOD_PASSWORD })
+      );
+    }
+    // Locked, as designed.
+    expect(
+      await errorCodeOf(() =>
+        confirm({ challengeId, code, newPassword: GOOD_PASSWORD })
+      )
+    ).toContain("resource-exhausted");
+
+    // Now delete it, the way a TTL sweep would.
+    await db.doc(`passwordResetChallenges/${challengeId}`).delete();
+
+    // The counter is gone, and so is any way to use the code it guarded.
+    expect(
+      await errorCodeOf(() =>
+        confirm({ challengeId, code, newPassword: GOOD_PASSWORD })
+      )
+    ).toContain("invalid-argument");
+  });
+
+  it("keeps the per-address send budget outside the challenge record", async () => {
+    // The control that bounds brute force across challenges is a
+    // callableRateLimits document keyed by the hashed address, not a field on
+    // the challenge. Deleting challenges must not refill it.
+    await ensureUser(EMAIL);
+    const ids: string[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      ids.push((await request({ email: EMAIL })).challengeId);
+    }
+    expect(await errorCodeOf(() => request({ email: EMAIL }))).toContain(
+      "resource-exhausted"
+    );
+
+    // Wipe every challenge, as a TTL sweep eventually would.
+    await Promise.all(
+      ids.map((id) => db.doc(`passwordResetChallenges/${id}`).delete())
+    );
+
+    // Still refused: the budget was never stored on those documents.
+    expect(await errorCodeOf(() => request({ email: EMAIL }))).toContain(
+      "resource-exhausted"
+    );
+  });
+
+  it("holds the Google-only notice to the same per-address send limit", async () => {
+    // The notice is not a side channel around the anti-abuse controls: it is
+    // queued by the same handler, counted by the same limiter, and capped by
+    // the same sendCount.
+    await ensureUser(EMAIL, { password: null });
+    for (let i = 0; i < 5; i += 1) {
+      await request({ email: EMAIL });
+    }
+    expect(await errorCodeOf(() => request({ email: EMAIL }))).toContain(
+      "resource-exhausted"
+    );
+
+    await drain();
+    // Five requests, five notices, and no sixth.
+    expect(notices).toHaveLength(5);
+    expect(sent).toHaveLength(0);
+  });
+
+  it("holds the Google-only notice to the resend cooldown", async () => {
+    await ensureUser(EMAIL, { password: null });
+    const first = await request({ email: EMAIL });
+    expect(
+      await errorCodeOf(() =>
+        request({ email: EMAIL, challengeId: first.challengeId })
+      )
+    ).toContain("resource-exhausted");
+  });
+
+  it("still refuses to add a password to a Google-only account", async () => {
+    // The notice explains how to sign in. It does not turn inbox access into
+    // a way of converting the sign-in method.
+    await ensureUser(EMAIL, { password: null });
+    const result = await request({ email: EMAIL });
+    await drain();
+
+    const stored = await db
+      .doc(`passwordResetChallenges/${result.challengeId}`)
+      .get();
+    expect(stored.data()?.outcome).toBe("google-only");
+    // No digest was ever written, so no code can verify and no password can
+    // be set through this challenge.
+    expect(stored.data()?.codeDigest).toBeUndefined();
+    expect(
+      await errorCodeOf(() =>
+        confirm({
+          challengeId: result.challengeId,
+          code: "123456",
+          newPassword: GOOD_PASSWORD,
+        })
+      )
+    ).toContain("invalid-argument");
   });
 
   it("rate limits sends per address", async () => {

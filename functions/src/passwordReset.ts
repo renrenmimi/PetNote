@@ -1,13 +1,26 @@
-import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHmac,
+  hkdfSync,
+  randomBytes,
+  randomInt,
+  randomUUID,
+  timingSafeEqual,
+} from "node:crypto";
+import { getFunctions } from "firebase-admin/functions";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
+import { onTaskDispatched } from "firebase-functions/v2/tasks";
 import { logger } from "firebase-functions";
 
 import { admin, db, FieldValue, Timestamp } from "./platform";
 import { assertRateLimit, requestData, trimString } from "./shared";
 import {
+  EMAIL_SECRETS,
+  emailTransportConfigured,
   PASSWORD_RESET_CODE_SECRET,
+  sendGoogleOnlyNoticeEmail,
   sendPasswordResetCodeEmail,
-  TRANSACTIONAL_EMAIL_API_KEY,
 } from "./email";
 
 /**
@@ -41,6 +54,93 @@ const CODE_TTL_MS = 10 * 60_000;
 const MAX_ATTEMPTS = 5;
 const MAX_SENDS_PER_CHALLENGE = 4;
 const RESEND_COOLDOWN_MS = 60_000;
+
+/**
+ * A floor on how long `requestPasswordResetCode` takes, whatever it decides.
+ *
+ * This is a **mitigation of a timing side channel, not a closed hole**, and
+ * the number is small now for a reason. Originally it had to hide a whole
+ * round trip to the email provider — a deliverable address cost ~260 ms more
+ * than an unknown one, measured. Sending moved to a Cloud Tasks queue, and
+ * the request path now does exactly the same work for every address
+ * (rate limit, lookup, write the challenge, enqueue), so what is left to hide
+ * is one extra Firestore read for an account that exists.
+ *
+ * Measured on the emulator, five samples each, floor disabled:
+ *
+ *   before the queue   deliverable 268 ms (267-269), unknown   8 ms (7-14)
+ *   after the queue    deliverable  12 ms (10-27),   unknown   9 ms (7-12)
+ *
+ * So the queue removed the gap structurally — 260 ms down to 3 ms — and this
+ * floor only has to cover what is left. 400 ms rather than 3 ms because a
+ * deployed function's Auth lookup and cold starts vary far more than a local
+ * emulator's, and the margin is cheap.
+ *
+ * What remains, said plainly: this is **not constant-time and not a closed
+ * hole**. The floor bounds the eligibility read with margin, but it does not
+ * bound cold-start variance, and an attacker with enough samples may still
+ * see a difference. Closing it properly would mean doing identical work for
+ * every address — including a tombstone read for addresses with no account —
+ * which is a further change this floor does not achieve.
+ *
+ * Overridable only so the test suite can run at zero. Production never sets
+ * it, and the default is the value that ships.
+ */
+const MIN_REQUEST_MS = (() => {
+  const override = Number(process.env.PASSWORD_RESET_MIN_REQUEST_MS);
+  return Number.isFinite(override) && override >= 0 ? override : 400;
+})();
+
+/**
+ * What the delivery worker should do for a challenge.
+ *
+ * Decided in the request handler, where the account state is already in hand,
+ * and carried on the challenge document rather than in the task payload —
+ * which is also why the payload is nothing but a challenge id. No address and
+ * no code ever enter the queue.
+ */
+type DeliveryOutcome = "code" | "google-only" | "none";
+
+const DELIVERY_QUEUE = "deliverPasswordResetCodeTask";
+
+/**
+ * How many times the worker may try to mail one generation.
+ *
+ * Counted by the worker, in the challenge document, because `sendCount` is
+ * not this: `sendCount` is incremented by the request handler, so it bounds
+ * how many times a *person* asked. Checking it in the worker bounded nothing
+ * about retries — one request could produce as many emails as Cloud Tasks
+ * chose to dispatch. Reproduced in password-reset-delivery.test.ts (B4),
+ * where `sendAttempts` came back `undefined`.
+ */
+const MAX_SEND_ATTEMPTS = 3;
+
+/**
+ * How long a claimed-but-unfinished delivery blocks a resend.
+ *
+ * The generation check stops a task that is *still queued* when a newer
+ * request arrives. It cannot stop one that already passed the check and is
+ * inside the provider call — and that window is reachable, not theoretical:
+ * a task may wait up to `dispatchDeadlineSeconds` (300) in the queue, so it
+ * can start at t=55s, the 60s resend cooldown can expire at t=60, the resend
+ * can deliver at t=61, and the first task's mail can land at t=63 carrying a
+ * code the resend has already superseded. The newest thing in the inbox is
+ * then the one that does not work.
+ *
+ * Reproduced: password-reset-delivery.test.ts (B2) fails without this, both
+ * with and without the generation check, which is how I found out the
+ * generation check alone was not enough.
+ *
+ * So a resend waits for the delivery in front of it. Comfortably longer than
+ * the provider timeout (10s) so a healthy send always finishes first, and
+ * short enough that a wedged one cannot block a person for long — past it the
+ * claim is treated as abandoned and the resend proceeds, which is the same
+ * trade the retry budget makes.
+ */
+const DELIVERY_IN_FLIGHT_MS = 20_000;
+
+const CHALLENGE_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 const SEND_RATE_LIMIT = { limit: 5, windowMs: 15 * 60_000 } as const;
 const CONFIRM_RATE_LIMIT = { limit: 15, windowMs: 15 * 60_000 } as const;
@@ -87,11 +187,129 @@ function codeDigest(challengeId: string, uid: string, code: string): string {
     .digest("hex");
 }
 
+/**
+ * The code, encrypted, so a retry of the same send can re-send the same code.
+ *
+ * This is the one thing "never store the code" cost, and the cost was real: a
+ * worker that could not recover the code it had already mailed had to mint a
+ * new one on every retry, which silently invalidated the code somebody was
+ * already holding. Bounding that and making the newest code the working one
+ * made it survivable, not correct — an automatic retry must not change the
+ * answer a person is typing.
+ *
+ * Boundaries, stated because encrypting an OTP at rest is a real trade:
+ *
+ * - **Key.** Derived with HKDF-SHA256 from `PASSWORD_RESET_CODE_SECRET`, the
+ *   same secret that keys the digest, under a distinct `info` so the two uses
+ *   cannot be confused. The key is never written anywhere; it exists only in
+ *   the function's memory, and is unavailable to anyone who can read
+ *   Firestore but not Secret Manager.
+ * - **Binding.** `${PURPOSE}:${challengeId}:${generation}` is the AEAD's
+ *   additional data, so a sealed blob cannot be moved to another challenge,
+ *   or replayed against a later generation of the same one. Decryption fails
+ *   rather than returning something plausible.
+ * - **Lifetime.** The seal lives exactly as long as the code: it is deleted
+ *   in the same write that marks the challenge consumed, and a challenge that
+ *   expires unused is swept by the TTL policy. Nothing refreshes it.
+ * - **A user-initiated resend never reuses a seal.** It is a new generation,
+ *   and the AAD makes the old seal undecryptable for it — the separation is
+ *   enforced by the cryptography rather than by remembering to check.
+ * - It is never logged, never returned to a caller, and never leaves the
+ *   worker except as the body of an email.
+ *
+ * What this does not defend against: someone who holds both the Firestore
+ * document and the secret. That person could already mint their own valid
+ * code, so the seal is not the weakest link.
+ */
+const SEAL_INFO = Buffer.from("petnote-reset-code-seal-v1");
+
+function sealKey(): Buffer {
+  return Buffer.from(
+    hkdfSync(
+      "sha256",
+      PASSWORD_RESET_CODE_SECRET.value(),
+      // No salt: the secret is already high-entropy and single-purpose, and a
+      // stored salt would have to be read back before the key could be
+      // derived, which is a failure mode for no gain here.
+      Buffer.alloc(0),
+      SEAL_INFO,
+      32
+    )
+  );
+}
+
+function sealAad(challengeId: string, generation: number): Buffer {
+  return Buffer.from(`${PURPOSE}:${challengeId}:${generation}`);
+}
+
+function sealCode(
+  challengeId: string,
+  generation: number,
+  code: string
+): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", sealKey(), iv, {
+    authTagLength: 16,
+  });
+  cipher.setAAD(sealAad(challengeId, generation));
+  const ct = Buffer.concat([cipher.update(code, "utf8"), cipher.final()]);
+  return [
+    iv.toString("base64"),
+    cipher.getAuthTag().toString("base64"),
+    ct.toString("base64"),
+  ].join(".");
+}
+
+/** Null rather than throwing: a seal that will not open is a seal to replace. */
+function openSeal(
+  challengeId: string,
+  generation: number,
+  sealed: unknown
+): string | null {
+  if (typeof sealed !== "string") return null;
+  const parts = sealed.split(".");
+  if (parts.length !== 3) return null;
+  try {
+    const [iv, tag, ct] = parts.map((part) => Buffer.from(part, "base64"));
+    const decipher = createDecipheriv("aes-256-gcm", sealKey(), iv, {
+      authTagLength: 16,
+    });
+    decipher.setAAD(sealAad(challengeId, generation));
+    decipher.setAuthTag(tag);
+    const code = Buffer.concat([
+      decipher.update(ct),
+      decipher.final(),
+    ]).toString("utf8");
+    return /^\d{6}$/.test(code) ? code : null;
+  } catch {
+    // Wrong key, wrong challenge, wrong generation, or tampering. All four
+    // mean the same thing here.
+    return null;
+  }
+}
+
 function digestsMatch(a: string, b: string): boolean {
   const left = Buffer.from(a, "utf8");
   const right = Buffer.from(b, "utf8");
   if (left.length !== right.length) return false;
   return timingSafeEqual(left, right);
+}
+
+/**
+ * Holds the response back until `MIN_REQUEST_MS` has passed since `startedAt`.
+ *
+ * Loops rather than sleeping once, because `setTimeout` is allowed to fire
+ * early and does: CI caught a request returning in 399 ms against a 400 ms
+ * floor. One millisecond does not weaken the mitigation, but a floor that can
+ * undershoot is not a floor, and a test asserting one would be flaky for ever.
+ * Bounded so a clock that never advances cannot hang the handler.
+ */
+async function holdUntilFloor(startedAt: number): Promise<void> {
+  for (let i = 0; i < 8; i += 1) {
+    const remaining = MIN_REQUEST_MS - (Date.now() - startedAt);
+    if (remaining <= 0) return;
+    await new Promise((resolve) => setTimeout(resolve, remaining));
+  }
 }
 
 function generateCode(): string {
@@ -170,27 +388,57 @@ async function lookupUser(
 }
 
 export const requestPasswordResetCodeCallable = onCall(
-  { secrets: [PASSWORD_RESET_CODE_SECRET, TRANSACTIONAL_EMAIL_API_KEY] },
+  // Spread rather than listed, so this cannot bind a subset of what
+  // email.ts reads — which is exactly how the From address came to be
+  // missing, leaving the flow permanently "not configured".
+  { secrets: [PASSWORD_RESET_CODE_SECRET, ...EMAIL_SECRETS] },
   async (request) => {
+    const startedAt = Date.now();
     // No auth requirement: this exists for people who cannot sign in. There
     // is deliberately no `request.auth` check and no emailVerified gate.
+    // Asked before anything else, and safe to: whether the transport is
+    // configured is a property of the environment, identical for every
+    // address, and answered from memory. Now that the send happens on a
+    // queue the request cannot report a provider failure, so this is what
+    // stops an unconfigured deployment telling people to go and check their
+    // email for ever.
+    if (!emailTransportConfigured()) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Email delivery is not configured for this environment."
+      );
+    }
+
     const data = requestData(request.data);
     const email = normalizeEmail(data.email);
-    const existingChallengeId =
+    const rawChallengeId =
       typeof data.challengeId === "string" ? data.challengeId : null;
+    const existingChallengeId =
+      rawChallengeId && CHALLENGE_ID_PATTERN.test(rawChallengeId)
+        ? rawChallengeId
+        : null;
 
     const key = emailKey(email);
     // Keyed by the hashed address rather than a uid, because there is no
     // caller identity here. The subject slot in the shared limiter is just a
     // string; nothing reads it back as a user id.
+    // Not floored, and it does not need to be: this runs before any account
+    // lookup, so how long it takes is the same whether or not the address has
+    // an account. It is the one exit from this handler that skips the floor.
     await assertRateLimit(`pwreset_${key}`, "passwordResetSend", SEND_RATE_LIMIT);
 
     const user = await lookupUser(email);
     const eligibility = user ? await accountEligibility(user) : null;
-    // An ineligible account is treated exactly like an unknown one here. The
-    // reason is only ever disclosed at confirm time, to somebody who has
-    // already proved they received the mail.
+    // An ineligible account is treated exactly like an unknown one *in the
+    // response*. What differs is what lands in the inbox, which is a channel
+    // only the account holder can read.
     const deliverable = user !== null && eligibility === null;
+    // A Google-only account has nothing to reset, and used to be sent into a
+    // dead end: the response promised a code, none was ever minted for them,
+    // and the only reachable outcome was "that code is not correct". The
+    // "use Google" message lived in the confirm handler, which they could
+    // never reach. It is told in the mail instead.
+    const googleOnly = user !== null && eligibility === "no-password-provider";
 
     let challengeId = existingChallengeId ?? randomUUID();
     const now = Date.now();
@@ -208,15 +456,45 @@ export const requestPasswordResetCodeCallable = onCall(
         // Do not say which of those it was.
         challengeId = randomUUID();
       } else {
+        /*
+         * Is the delivery for the current generation still going?
+         *
+         * `sendAttempts > 0` means a worker claimed it; no `deliveredGeneration`
+         * for that generation means it has not finished. Within
+         * DELIVERY_IN_FLIGHT_MS that is a send in progress, and starting a
+         * second one is what lets the older mail arrive last with a dead code.
+         */
+        const claimedAt =
+          typeof existing.claimedAtMs === "number" ? existing.claimedAtMs : 0;
+        const currentGen =
+          typeof existing.deliveryGeneration === "number"
+            ? existing.deliveryGeneration
+            : 0;
+        const deliveryUnfinished =
+          (existing.sendAttempts ?? 0) > 0 &&
+          existing.deliveredGeneration !== currentGen;
+        if (deliveryUnfinished && now - claimedAt < DELIVERY_IN_FLIGHT_MS) {
+          await holdUntilFloor(startedAt);
+          throw new HttpsError(
+            "resource-exhausted",
+            "A code is already on its way. Please wait a moment."
+          );
+        }
+
         const lastSentAt =
           typeof existing.lastSentAtMs === "number" ? existing.lastSentAtMs : 0;
         if (now - lastSentAt < RESEND_COOLDOWN_MS) {
+          // Floored like every other exit: by this point an eligible account
+          // has cost one more Firestore read than an unknown one, and a
+          // refusal that returns faster for strangers is still a signal.
+          await holdUntilFloor(startedAt);
           throw new HttpsError(
             "resource-exhausted",
             "A code was just sent. Please wait a moment before asking for another."
           );
         }
         if ((existing.sendCount ?? 0) >= MAX_SENDS_PER_CHALLENGE) {
+          await holdUntilFloor(startedAt);
           throw new HttpsError(
             "resource-exhausted",
             "Too many codes requested. Start again in a few minutes."
@@ -226,9 +504,17 @@ export const requestPasswordResetCodeCallable = onCall(
     }
 
     const isResend = challengeId === existingChallengeId;
-    const code = deliverable ? generateCode() : null;
     const expiresAtMs = now + CODE_TTL_MS;
+    const outcome: DeliveryOutcome = deliverable
+      ? "code"
+      : googleOnly
+        ? "google-only"
+        : "none";
 
+    // No code is minted here any more, and none is written. The worker mints
+    // it, so the plaintext exists in one process for one send and then only
+    // in the mail — not in this document, not in the response, not in the
+    // task payload, not in a log.
     await challengeRef(challengeId).set(
       {
         emailKey: key,
@@ -236,52 +522,77 @@ export const requestPasswordResetCodeCallable = onCall(
         // Present only for a deliverable account. For anything else the
         // challenge exists and looks identical from outside, but no code can
         // ever verify against it.
-        uid: deliverable ? user!.uid : null,
-        codeDigest:
-          code && deliverable ? codeDigest(challengeId, user!.uid, code) : null,
+        uid: deliverable || googleOnly ? user!.uid : null,
+        outcome,
         status: "pending" satisfies ChallengeStatus,
         // Attempts are NOT reset on resend. Restoring the budget every time a
         // new code is mailed would make the cap meaningless.
         ...(isResend ? {} : { attempts: 0 }),
         sendCount: FieldValue.increment(1),
+        /*
+         * Which delivery this is. Incremented per request, carried in the
+         * task payload, and compared by the worker — so a task dispatched
+         * for an earlier generation knows it is stale and refuses to send.
+         * Without it there was no task identity at all and an old dispatch
+         * could mail a code against the newest challenge state
+         * (password-reset-delivery.test.ts, B5).
+         */
+        deliveryGeneration: FieldValue.increment(1),
+        // Reset per generation: a new code deserves its own attempt budget.
+        sendAttempts: 0,
         expiresAtMs,
         // Checked in code on every verify. The TTL policy is only for
         // housekeeping — expiry must not depend on a deletion running on time.
         expiresAt: Timestamp.fromMillis(expiresAtMs),
         lastSentAtMs: now,
-        createdAt: isResend ? (FieldValue.serverTimestamp() as never) : FieldValue.serverTimestamp(),
+        // Only on creation. The previous form was a ternary with the same
+        // expression in both branches, so every resend quietly reset the
+        // creation time of the challenge it was extending.
+        ...(isResend ? {} : { createdAt: FieldValue.serverTimestamp() }),
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true }
     );
 
-    if (code && deliverable) {
-      // Outside any transaction, and after the challenge is durable: an email
-      // cannot be rolled back, so it must never be sent from something that
-      // may be retried.
-      const result = await sendPasswordResetCodeEmail({
-        to: email,
-        code,
-        expiresInMinutes: Math.round(CODE_TTL_MS / 60_000),
-      });
-      if (!result.sent) {
-        // Never logs the code or the address.
-        logger.warn("Password reset code not delivered", {
-          challengeId,
-          reason: result.reason,
-        });
-        if (result.reason === "not-configured") {
-          throw new HttpsError(
-            "failed-precondition",
-            "Email delivery is not configured for this environment."
-          );
-        }
-        throw new HttpsError(
-          "unavailable",
-          "Could not send the code. Please try again."
+    // Enqueued for **every** outcome, including an address with no account.
+    // That is the point: the request path now performs identical work
+    // whatever it found, so there is no provider round trip on one branch and
+    // nothing on the other. An unknown address costs one queue operation and
+    // a worker that immediately does nothing.
+    //
+    // A durable API call, not fire-and-forget: if the enqueue fails the
+    // caller is told the request failed, rather than being sent to wait for
+    // mail that was never scheduled.
+    let generation = 1;
+    try {
+      // Read back what the increment landed on, so the payload carries the
+      // generation this request actually created rather than a guess.
+      const stored = await challengeRef(challengeId).get();
+      const value = stored.data()?.deliveryGeneration;
+      generation = typeof value === "number" ? value : 1;
+      await getFunctions()
+        .taskQueue(DELIVERY_QUEUE)
+        .enqueue(
+          { challengeId, generation },
+          // Shorter than the code's own lifetime. A task still waiting to run
+          // after the code has expired has nothing useful left to send.
+          { dispatchDeadlineSeconds: 300 }
         );
-      }
+    } catch (error) {
+      logger.error("Could not enqueue password reset delivery", {
+        challengeId,
+        error: error instanceof Error ? error.message : "unknown",
+      });
+      await holdUntilFloor(startedAt);
+      throw new HttpsError(
+        "unavailable",
+        "Could not send the code. Please try again."
+      );
     }
+
+    // Every path leaves through the same floor, including the throws above:
+    // an error that arrives faster than a success is its own signal.
+    await holdUntilFloor(startedAt);
 
     return {
       challengeId,
@@ -289,6 +600,317 @@ export const requestPasswordResetCodeCallable = onCall(
       // Deliberately identical for every address.
       status: "sent" as const,
     };
+  }
+);
+
+
+/**
+ * Sends the mail, off the request path, on a durable queue.
+ *
+ * **Persistence.** Cloud Tasks holds the task, not this process. The enqueue
+ * is an awaited API call in `requestPasswordResetCode`, so a task either
+ * exists before the caller is told "check your email" or the caller is told
+ * the request failed. That is the whole reason this is not
+ * fire-and-forget: a `void send()` left running after the response would
+ * disappear with the instance, silently, and the person would wait for mail
+ * that no longer had anything sending it.
+ *
+ * **Retries.** `retryConfig` below, with exponential backoff. A thrown error
+ * is a retry; a returned value is success. Provider timeouts and 5xx
+ * therefore get another attempt without the person having to ask again,
+ * which is what the old inline send could never do.
+ *
+ * **Duplicate delivery.** Cloud Tasks is at-least-once, so a task may run
+ * again after a send the queue did not see succeed. The worker mints a fresh
+ * code on each attempt and supersedes the stored digest, so a duplicate means
+ * two mails of which **only the newer code works** — the same situation as
+ * asking for a resend, which this flow already handles and explains. It is
+ * bounded twice: `maxAttempts` here, and the challenge's own
+ * `MAX_SENDS_PER_CHALLENGE`, which the worker re-checks so a retry storm
+ * cannot mail somebody more times than a person could have asked.
+ *
+ * **Rate limiting.** Two layers, neither of them here by accident. The
+ * request handler's per-address limit decides how many tasks can be created
+ * at all; `rateLimits` below decides how fast the queue drains, so a burst of
+ * legitimate requests cannot turn into a burst at the provider and get the
+ * sending domain throttled. The Google-only notice goes through this same
+ * queue and the same limits — it is not a side channel around them.
+ *
+ * The payload is a challenge id and nothing else. The address comes from Auth
+ * by uid, so it is never in the queue; the code is minted here, so it is
+ * never in the queue either.
+ */
+export const deliverPasswordResetCodeTask = onTaskDispatched(
+  {
+    secrets: [PASSWORD_RESET_CODE_SECRET, ...EMAIL_SECRETS],
+    retryConfig: {
+      // Three tries, not more: after ~2 minutes of provider failure the code
+      // is halfway through its ten-minute life and a fresh request is the
+      // better answer than a late mail.
+      maxAttempts: 3,
+      minBackoffSeconds: 10,
+      maxBackoffSeconds: 60,
+    },
+    rateLimits: {
+      // Sized for the provider and the domain's reputation, not for this
+      // app's peak: reset mail is low volume and being slightly slow is
+      // better than being rate limited upstream.
+      maxConcurrentDispatches: 5,
+      maxDispatchesPerSecond: 5,
+    },
+  },
+  async (request) => {
+    const challengeId =
+      typeof request.data?.challengeId === "string"
+        ? request.data.challengeId
+        : "";
+    const generation =
+      typeof request.data?.generation === "number"
+        ? request.data.generation
+        : 0;
+    if (!CHALLENGE_ID_PATTERN.test(challengeId)) {
+      // Not retryable — a malformed id will still be malformed in ten
+      // seconds. Returning rather than throwing takes it off the queue.
+      logger.error("Delivery task had no usable challenge id");
+      return;
+    }
+
+    const ref = challengeRef(challengeId);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      // The challenge was cleaned up, or never existed. Nothing to send and
+      // nothing to retry.
+      return;
+    }
+    const challenge = snap.data() ?? {};
+
+    if (challenge.purpose !== PURPOSE) return;
+    // "verifying" as well as "consumed": a confirm that is midway through
+    // setting the password has already accepted a code, so mailing another
+    // one is at best noise and at worst a second code arriving after the
+    // password changed.
+    if (challenge.status === "consumed" || challenge.status === "verifying") {
+      return;
+    }
+
+    /*
+     * Is this task still the current delivery?
+     *
+     * Cloud Tasks is at-least-once and does not order dispatches, so an old
+     * task can arrive after a newer request has already mailed a code. Before
+     * this check it would mint a fresh code, overwrite the digest, and send —
+     * which invalidated the code already sitting in somebody's inbox and made
+     * the *newest* email the one that did not work.
+     */
+    const currentGeneration =
+      typeof challenge.deliveryGeneration === "number"
+        ? challenge.deliveryGeneration
+        : 1;
+    if (generation !== currentGeneration) {
+      logger.info("Delivery task dropped: superseded by a newer request", {
+        challengeId,
+        generation,
+        currentGeneration,
+      });
+      return;
+    }
+
+    /*
+     * Already delivered this generation?
+     *
+     * This is the one that mattered most. A send can succeed and the task's
+     * acknowledgement still be lost, at which point Cloud Tasks runs the task
+     * again — and the old worker minted a *new* code every time it ran, so a
+     * person holding a perfectly good email found it rejected. Recording the
+     * delivery means a duplicate dispatch is a no-op rather than a silent
+     * invalidation. Reproduced in password-reset-delivery.test.ts (B1).
+     */
+    if (challenge.deliveredGeneration === generation) {
+      logger.info("Delivery task dropped: already delivered", {
+        challengeId,
+        generation,
+      });
+      return;
+    }
+    // Expiry is the code's own clock, checked here as well as at verify time.
+    // A task that waited out the queue has nothing worth mailing.
+    if (
+      typeof challenge.expiresAtMs !== "number" ||
+      challenge.expiresAtMs <= Date.now()
+    ) {
+      logger.info("Delivery task dropped: challenge already expired", {
+        challengeId,
+      });
+      return;
+    }
+
+    const outcome = challenge.outcome as DeliveryOutcome | undefined;
+    // An address with no account, or one that is disabled or deleted. The task
+    // exists so that the request path did identical work for every address;
+    // there is nothing to send.
+    if (outcome === "none" || outcome === undefined) return;
+
+    const sendAttempts =
+      typeof challenge.sendAttempts === "number" ? challenge.sendAttempts : 0;
+    if (sendAttempts >= MAX_SEND_ATTEMPTS) {
+      logger.warn("Delivery task dropped: attempt budget spent", {
+        challengeId,
+        generation,
+        sendAttempts,
+      });
+      return;
+    }
+
+    const uid = typeof challenge.uid === "string" ? challenge.uid : null;
+    if (uid === null) return;
+
+    // The address is read here rather than carried, so it never enters the
+    // queue. It is also the freshest answer: an account whose address changed
+    // between the request and the send gets the mail at the address it has
+    // now, which is the one its owner can read.
+    let email: string;
+    try {
+      const user = await admin.auth().getUser(uid);
+      // Re-checked at the moment of sending. A ban or a deletion that started
+      // after the request must stop the mail.
+      const eligibility = await accountEligibility(user);
+      if (!user.email) return;
+      if (outcome === "code" && eligibility !== null) {
+        logger.info("Delivery task dropped: account no longer eligible", {
+          challengeId,
+        });
+        return;
+      }
+      email = user.email;
+    } catch (error) {
+      const code = (error as { code?: string } | null)?.code ?? "";
+      // A deleted account is not a retryable condition.
+      if (code === "auth/user-not-found") return;
+      throw error;
+    }
+
+    if (outcome === "google-only") {
+      const result = await sendGoogleOnlyNoticeEmail({ to: email });
+      if (!result.sent) {
+        if (result.reason === "not-configured") {
+          // Retrying will not configure it. Logged for an operator instead.
+          logger.error("Google-only notice: transport not configured", {
+            challengeId,
+          });
+          return;
+        }
+        // Retryable.
+        throw new Error(`google-only notice failed: ${result.reason}`);
+      }
+      return;
+    }
+
+    /*
+     * outcome === "code". Minting and claiming the attempt happen together, in
+     * a transaction that re-reads the three things this decision rests on.
+     *
+     * The guards above were read outside it, so between them and here a
+     * confirm could have started, a newer request could have arrived, or
+     * another attempt of this same task could have claimed the slot. A plain
+     * `update` would have overwritten whatever those did. The transaction
+     * either claims this attempt or tells us somebody else has moved on, in
+     * which case there is nothing to send.
+     */
+    const claim = await db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(ref);
+      if (!snapshot.exists) return null;
+      const current = snapshot.data() ?? {};
+      if (current.status === "consumed" || current.status === "verifying") {
+        return null;
+      }
+      if ((current.deliveryGeneration ?? 1) !== generation) return null;
+      if (current.deliveredGeneration === generation) return null;
+      const attempts =
+        typeof current.sendAttempts === "number" ? current.sendAttempts : 0;
+      if (attempts >= MAX_SEND_ATTEMPTS) return null;
+
+      /*
+       * A retry of *this* send re-sends *this* code.
+       *
+       * The seal is bound to this generation, so it only opens for a retry of
+       * the same delivery. A user-initiated resend is a new generation, the
+       * AAD will not match, and a fresh code is minted — which is the
+       * separation you asked for, enforced by the cryptography rather than by
+       * a flag somebody has to remember to set.
+       */
+      const reused = openSeal(challengeId, generation, current.codeSealed);
+      const code = reused ?? generateCode();
+
+      transaction.update(ref, {
+        // Unchanged when the code is reused: the digest already matches it,
+        // and rewriting it would be a chance to get it wrong.
+        ...(reused
+          ? {}
+          : {
+              codeDigest: codeDigest(challengeId, uid, code),
+              codeSealed: sealCode(challengeId, generation, code),
+            }),
+        sendAttempts: attempts + 1,
+        // Wall clock, not a server timestamp: the request handler compares it
+        // against Date.now() to decide whether a delivery is still in flight,
+        // and a sentinel it cannot read is no use for that.
+        claimedAtMs: Date.now(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return { code, reused: reused !== null };
+    });
+
+    if (claim === null) {
+      logger.info("Delivery task dropped: challenge moved on before sending", {
+        challengeId,
+        generation,
+      });
+      return;
+    }
+    const code = claim.code;
+    if (claim.reused) {
+      // Worth seeing in the log: a retry that re-sent rather than replaced.
+      logger.info("Delivery retry re-sending the same code", {
+        challengeId,
+        generation,
+      });
+    }
+
+    const result = await sendPasswordResetCodeEmail({
+      to: email,
+      code,
+      expiresInMinutes: Math.round(CODE_TTL_MS / 60_000),
+    });
+    if (!result.sent) {
+      // Never logs the code or the address.
+      logger.warn("Password reset code not delivered", {
+        challengeId,
+        reason: result.reason,
+      });
+      if (result.reason === "not-configured") {
+        logger.error("Password reset code: transport not configured", {
+          challengeId,
+        });
+        return;
+      }
+      throw new Error(`code send failed: ${result.reason}`);
+    }
+
+    /*
+     * The mail is out. Recording it is what makes a duplicate dispatch
+     * harmless — and it is written *after* the send, because the only thing
+     * worth recording is a send that actually happened.
+     *
+     * If this write fails the send still happened and the task will be
+     * retried, which mints a new code and supersedes the delivered one. That
+     * is the residual case, it is much narrower than "the acknowledgement was
+     * lost", and it is bounded by MAX_SEND_ATTEMPTS.
+     */
+    await ref.update({
+      deliveredGeneration: generation,
+      deliveredAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
   }
 );
 
@@ -300,8 +922,18 @@ export const confirmPasswordResetCodeCallable = onCall(
     const code = trimString(data.code, "code").replace(/\D/g, "");
     const newPassword = assertPasswordAcceptable(data.newPassword);
 
+    // Checked before the id reaches a document path. The rate-limit key below
+    // was already being sanitised, which hid the fact that `challengeRef`
+    // next to it was not: a value with a slash addressed a nested document
+    // outside the collection the rules and the TTL policy cover. Anything
+    // that is not a UUID cannot be a challenge this server minted, so it is
+    // refused with the same message as a wrong code.
+    if (!CHALLENGE_ID_PATTERN.test(challengeId)) {
+      throw new HttpsError("invalid-argument", "That code is not correct.");
+    }
+
     await assertRateLimit(
-      `pwreset_confirm_${challengeId.replace(/[^A-Za-z0-9_-]/g, "_")}`,
+      `pwreset_confirm_${challengeId}`,
       "passwordResetConfirm",
       CONFIRM_RATE_LIMIT
     );
@@ -426,8 +1058,11 @@ export const confirmPasswordResetCodeCallable = onCall(
       status: "consumed" satisfies ChallengeStatus,
       consumedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
-      // Nothing about the password, the code or the address is recorded.
+      // Nothing about the password, the code or the address is recorded. The
+      // seal goes in the same write as the digest — it is the code, and a
+      // spent challenge has no business holding it.
       codeDigest: FieldValue.delete(),
+      codeSealed: FieldValue.delete(),
     });
 
     return { ok: true as const };

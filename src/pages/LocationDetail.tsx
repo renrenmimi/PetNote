@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { MapPin } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import Avatar from "../components/Avatar";
+import { LoadFailedState } from "../components/LoadFailedState";
 import LazyImage from "../components/LazyImage";
 import { CheckInModal } from "../components/CheckInModal";
 import { LocationRatingModal } from "../components/LocationRatingModal";
@@ -110,6 +112,12 @@ const toDate = (value: unknown): Date | null => {
 };
 
 export function LocationDetail() {
+  // A refused or dropped read used to render the same sentence as a
+  // genuinely missing record. Three outcomes, three answers.
+  const [loadFailure, setLoadFailure] = useState<
+    "failed" | "denied" | null
+  >(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const navigate = useNavigate();
   const { locationId = "" } = useParams();
   const { user, profile } = useAuth();
@@ -158,6 +166,13 @@ export function LocationDetail() {
       // "Loading location..." with no recovery — no retry button, no
       // not-found fallback path.
       console.error("Failed to load location detail:", error);
+      const failureCode =
+        error && typeof error === "object" && "code" in error
+          ? String((error as { code?: unknown }).code ?? "")
+          : "";
+      setLoadFailure(
+        failureCode.includes("permission-denied") ? "denied" : "failed"
+      );
       showToast(
         error instanceof Error
           ? error.message
@@ -181,10 +196,10 @@ export function LocationDetail() {
       ignore = true;
     };
     // refreshData closes over showToast (stable context value) and
-    // doesn't need to drive the effect — re-run only on locationId /
-    // user identity changes.
+    // doesn't need to drive the effect — re-run only on locationId, user
+    // identity, or the retry button (reloadToken).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locationId, user?.uid]);
+  }, [locationId, user?.uid, reloadToken]);
 
   useEffect(() => {
     let ignore = false;
@@ -342,8 +357,30 @@ export function LocationDetail() {
 
   if (!location) {
     return (
-      <div className="min-h-screen bg-slate-50 px-4 py-6 text-sm text-slate-500 dark:bg-slate-900">
-        Location not found.
+      <div className="min-h-screen bg-slate-50 px-4 py-6 dark:bg-slate-900">
+        <div className="mx-auto w-full max-w-md">
+          {loadFailure ? (
+            <LoadFailedState
+              title={
+                loadFailure === "denied"
+                  ? "This place is not visible to you"
+                  : "Could not load this place"
+              }
+              description={
+                loadFailure === "denied"
+                  ? "It may have been removed."
+                  : "Something went wrong reaching PetNote. Check your connection and try again."
+              }
+              retryLabel="Try again"
+              retryingLabel="Trying..."
+              onRetry={() => setReloadToken((value) => value + 1)}
+            />
+          ) : (
+            <p className="rounded-2xl bg-white p-6 text-center text-sm text-slate-500 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] dark:bg-slate-800 dark:text-slate-300">
+              This place no longer exists.
+            </p>
+          )}
+        </div>
       </div>
     );
   }
@@ -541,8 +578,11 @@ export function LocationDetail() {
                     cloudinarySize="thumbnail"
                   />
                   {item.source === "checkin" ? (
-                    <span className="absolute bottom-1 right-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
-                      📍
+                    <span
+                      className="absolute bottom-1 right-1 rounded-full bg-black/60 p-1 text-white"
+                      aria-label="From a check-in"
+                    >
+                      <MapPin size={11} strokeWidth={2.4} aria-hidden="true" />
                     </span>
                   ) : null}
                 </button>

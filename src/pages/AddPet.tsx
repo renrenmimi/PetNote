@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSubmitGuard } from "../hooks/useSubmitGuard";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { Timestamp } from "firebase/firestore";
 import { useAuth } from "../hooks/useAuth";
@@ -93,6 +94,7 @@ function RelationshipSelector({
 }
 
 export function AddPet() {
+  const { tryAcquire, release } = useSubmitGuard();
   const navigate = useNavigate();
   const location = useLocation();
   // Where the person was before being sent here to add a pet. The composer
@@ -255,6 +257,9 @@ export function AddPet() {
 
   const handleSave = async () => {
     if (!user || saving) return;
+    // Synchronous, unlike `saving`: the state update that disables the
+    // button lands a render later, and a double tap fits in the gap.
+    if (!tryAcquire()) return;
     if (!name.trim() || name.trim().length < 2) {
       showToast("Pet name must be at least 2 characters.", "error");
       return;
@@ -338,6 +343,7 @@ export function AddPet() {
         err instanceof Error ? err.message : "Failed to save pet.";
       showToast(message, "error");
     } finally {
+      release();
       setSaving(false);
     }
   };
