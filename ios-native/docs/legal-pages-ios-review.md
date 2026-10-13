@@ -155,7 +155,7 @@ iOS App 在登录页（`Features/Auth/LoginView.swift:58`）、注册页（`Feat
 - **A1**：已修，见第 4 节。
 - **A4**：
   - App 里已经能注销账号（`SettingsView.swift:175-184`），满足 App Store 审核指南 5.1.1(v)。
-  - 项目里还没有 App 自己的 `PrivacyInfo.xcprivacy`。App 用到了 UserDefaults（草稿 `ComposeDraft.swift:80-121`，还有一个"旧缓存已清"的标记 `Core/Auth/FirebaseBootstrap.swift:127-145`），要在这个文件里声明用它的理由（`CA92.1`）。发布前要补上。
+  - App 自己的隐私清单 `App/PrivacyInfo.xcprivacy` 09-28 已经加上（`1242008`，见 `app-store-readiness.md`）。App 用到的 UserDefaults（草稿 `ComposeDraft.swift:80-121`，还有一个"旧缓存已清"的标记 `Core/Auth/FirebaseBootstrap.swift:127-145`）在里面按 `CA92.1` 申报了。
   - Google 登录目前只在测试包里有。如果以后正式包也开，要先看审核指南 4.8 对第三方登录的要求。
   - App Store Connect 里的"App 隐私"问卷，可以照这一节的"谁能看到什么"和第 7 节草案的数据清单来填。
 
