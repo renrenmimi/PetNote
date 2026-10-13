@@ -476,9 +476,9 @@ describe("password reset by numeric code", () => {
     // DocumentReference for the same path, so an instance spy here never sees
     // the call. `once` lands on the only plain .update() the success path
     // makes, which is the phase-3 bookkeeping write.
-    const proto = Object.getPrototypeOf(ref) as { update: unknown };
+    const proto = Object.getPrototypeOf(ref) as { update: (...args: unknown[]) => Promise<unknown> };
     const update = vi
-      .spyOn(proto as never, "update")
+      .spyOn(proto, "update")
       .mockRejectedValueOnce(new Error("write lost"));
     await expect(
       confirm({ challengeId, code, newPassword: GOOD_PASSWORD })
