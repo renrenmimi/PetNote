@@ -654,6 +654,45 @@ async function scenarios() {
         meetup?.participantCount === CAP,
         `${rejoin.filter((j) => j.ok && j.result?.success !== false).length} got in of ${outside.length}; participantCount ${meetup?.participantCount}, room for ${CAP}`);
     }
+
+    // --- A second meetup, with room for everyone, cancelled while they are
+    // joining: whoever got in before the cancel is on the roster and counted,
+    // and nobody gets in after it.
+    const crowd = users.slice(1, Math.max(2, N - 1));
+    const late = users[N - 1];
+    const roomy = await call(users[0], "createMeetupCallable", {
+      title: `TEST CONTENT ${TAG} cancelled`, description: "TEST CONTENT cancelled while people join",
+      dateMillis: Date.now() + 4 * 86_400_000, duration: 60,
+      location: { kind: "address", address: "1 Sim St, Medford, MA", label: "" },
+      locationVisibility: "everyone",
+      requirements: { petType: "any", dogSize: "any", maxPets: N, mustHavePosts: false, mustHavePetProfile: false, minFollowers: 0, additionalNotes: "" },
+      organizerPetId: petIds[0],
+    });
+    const roomyId = roomy.result?.meetupId ?? roomy.result?.id;
+    if (!roomyId) throw new Error(`the meetup to cancel came back without an id: ${JSON.stringify(roomy).slice(0, 200)}`);
+    made.meetups.push(roomyId);
+    const joining = Promise.all(crowd.map((u) => call(u, "joinMeetupCallable", { meetupId: roomyId, petId: petIds[users.indexOf(u)] })));
+    await sleep(CLOUD ? 400 : 100);
+    const cancel = await call(users[0], "cancelMeetupCallable", { meetupId: roomyId });
+    const joinedBefore = (await joining).filter((j) => j.ok && j.result?.success !== false).length;
+    const after = await call(late, "joinMeetupCallable", { meetupId: roomyId, petId: petIds[N - 1] });
+    const [cancelled, cancelledRoster] = await Promise.all([adminGet(`meetups/${roomyId}`), adminQuery(`meetups/${roomyId}`, "participants")]);
+    check("meetup: cancelled while everyone joins, nobody gets in after",
+      cancel.ok && cancelled?.status === "cancelled" && after.ok && after.result?.success === false,
+      `cancel ${cancel.ok ? "ok" : cancel.code}; status ${cancelled?.status}; ${joinedBefore} of ${crowd.length} got in first; `
+        + `a join after the cancel: ${after.ok ? `"${after.result?.error ?? "joined"}"` : after.code}`);
+    check("meetup: and its roster and count agree",
+      cancelled?.participantCount === cancelledRoster.length && !cancelledRoster.some((r) => r.id === late.uid),
+      `participantCount ${cancelled?.participantCount}, ${cancelledRoster.length} on the roster`);
+    if (CLOUD) {
+      skip("meetup: everyone on the roster is told it is cancelled", "the test project has no onMeetupUpdated");
+    } else {
+      const toTell = cancelledRoster.filter((r) => r.id !== users[0].uid).map((r) => r.id);
+      const told = await settle(async () => new Set((await adminQuery(null, "notifications", { where: ["fromUserId", users[0].uid] }))
+        .filter((n) => n.type === "meetup_cancelled").map((n) => n.userId)), (set) => toTell.every((id) => set.has(id)));
+      check("meetup: everyone on the roster is told it is cancelled", toTell.every((id) => told.has(id)),
+        `${toTell.filter((id) => told.has(id)).length} of ${toTell.length} told`);
+    }
   }
 
   if (want("invitation")) {
@@ -668,6 +707,28 @@ async function scenarios() {
     check("invitation: one code redeemed by five at once lets in exactly one",
       redeems.filter((r) => r.ok).length === 1 && family.length === 2,
       `${redeems.filter((r) => r.ok).length} redeemed (${tally(redeems).codes}); ${family.length} in the family`);
+
+    // --- A second code, revoked while people are redeeming it: at most one
+    // gets in, and nobody after the revoke.
+    const second = await call(users[0], "createInvitationCallable", { petId: petIds[0] });
+    const code2 = second.result?.code;
+    if (code2) made.codes.push(code2);
+    const inFamily = new Set(family.map((f) => f.id));
+    const outsiders = users.filter((u) => u !== users[0] && !inFamily.has(u.uid));
+    const takers = outsiders.slice(-4, -1);
+    const lateTaker = outsiders[outsiders.length - 1];
+    const [revoke, ...takes] = await Promise.all([
+      call(users[0], "revokeInvitationCallable", { petId: petIds[0], code: code2 }),
+      ...takers.map((u) => call(u, "redeemInvitationCallable", { code: code2, relationship: "other" })),
+    ]);
+    const afterRevoke = await call(lateTaker, "redeemInvitationCallable", { code: code2, relationship: "other" });
+    const family2 = await adminQuery(`pets/${petIds[0]}`, "family");
+    const tookIt = takes.filter((t) => t.ok).length;
+    check("invitation: a code revoked while people redeem it lets in one at most, and nobody after",
+      Boolean(code2) && revoke.ok && tookIt <= 1 && family2.length === family.length + tookIt && !afterRevoke.ok,
+      `revoke ${revoke.ok ? (revoke.result?.alreadyInactive ? "found it already used" : "ok") : revoke.code}; `
+        + `${tookIt} of ${takers.length} got in first (${tally(takes).codes || "none refused"}); `
+        + `after the revoke: ${afterRevoke.ok ? "LET IN" : `${afterRevoke.code} "${afterRevoke.message}"`}; ${family2.length} in the family`);
   }
 
   if (want("places")) {
