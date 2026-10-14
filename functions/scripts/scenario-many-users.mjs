@@ -36,7 +36,8 @@
  *                 make in an hour.
  *   SIM_ONLY      a comma-separated list of what to run besides the accounts,
  *                 pets and posts the rest need: follows, likes, comments,
- *                 meetup, invitation, places, visitors, ratelimit.
+ *                 meetup, invitation, places, visitors, ratelimit, names,
+ *                 deletes, family.
  *   SIM_CLEANUP   1 to delete everything the run made, and its accounts,
  *                 then check that nothing of it is left. Always on in the
  *                 cloud.
@@ -47,6 +48,8 @@
  *
  * Exit code 0 only if every check passed.
  */
+
+import { createHash } from "node:crypto";
 
 const PRODUCTION_PROJECT = "petnote-a9dac";
 const EMULATOR_PROJECT = "petnote-test";
@@ -101,6 +104,7 @@ const CLEANUP = CLOUD || process.env.SIM_CLEANUP === "1";
 const ONLY = new Set((process.env.SIM_ONLY || "").split(",").map((x) => x.trim()).filter(Boolean));
 const want = (name) => !ONLY.size || ONLY.has(name);
 const TAG = `sim${Date.now().toString(36)}`;
+const SHORT = TAG.slice(-5);
 const TIMEOUT_MS = 120_000;
 // The triggers in the cloud take longer to catch up than the emulator's.
 const SETTLE_MS = CLOUD ? 240_000 : 60_000;
@@ -328,7 +332,7 @@ function skip(id, why) {
 }
 
 /** What this run made, for the cleanup. */
-const made = { users: [], pets: [], posts: [], meetups: [], codes: [], places: [], startedAt: new Date().toISOString() };
+const made = { users: [], pets: [], deletedPets: [], posts: [], meetups: [], codes: [], places: [], startedAt: new Date().toISOString() };
 const tally = (outcomes) => ({
   ok: outcomes.filter((o) => o.ok).length,
   refused: outcomes.filter((o) => !o.ok).length,
@@ -434,6 +438,8 @@ async function cleanup() {
     ...made.posts.map((id) => `posts/${id}`), ...made.pets.map((id) => `pets/${id}`),
     ...made.meetups.map((id) => `meetups/${id}`), ...made.codes.map((code) => `invitationCodes/${code}`),
     ...made.places.map((id) => `locations/${id}`), ...uids.map((uid) => `users/${uid}`),
+    // A deletion whose cleanup did not finish leaves a record of it.
+    ...made.deletedPets.map((id) => `petDeletionTasks/${id}`),
   ];
   const byOwner = async () => [
     ...(await namesWhereIn("usernames", "userId", uids)),
@@ -719,6 +725,210 @@ async function scenarios() {
     // waits too long is aborted.
     check("rate limit: forty comments at once from one person, never more than thirty",
       bt.ok <= 30, `${bt.ok} ok, ${bt.refused} refused ${bt.codes}`);
+  }
+
+  if (want("names")) {
+    // --- Names: one name wanted by several people at once; everyone renaming
+    // at once; one person renaming five times in a row, whose name is copied
+    // onto their posts, comments, follows, family and notifications.
+    const reservationOf = (name) => adminGet(`usernames/${createHash("sha256").update(name.toLowerCase()).digest("hex")}`);
+    const SAME = `Sim ${SHORT} same`;
+    const claimants = users.slice(1, Math.min(11, N));
+    const namesBefore = (await Promise.all(claimants.map((u) => adminGet(`users/${u.uid}`)))).map((d) => d?.displayName);
+    const claims = await Promise.all(claimants.map((u) => call(u, "updateUserProfileCallable", { displayName: SAME })));
+    const won = claims.findIndex((c) => c.ok);
+    const holder = (await reservationOf(SAME))?.userId;
+    const oldNameFreed = won < 0 ? false : !(await reservationOf(namesBefore[won]));
+    check(`names: one name wanted by ${claimants.length} at once goes to exactly one`,
+      claims.filter((c) => c.ok).length === 1 && holder === claimants[won]?.uid && oldNameFreed,
+      `${claims.filter((c) => c.ok).length} got it, ${tally(claims).refused} refused (${tally(claims).codes || "none"}); `
+        + `held by ${holder && holder === claimants[won]?.uid ? "the one who got it" : holder ? "someone else" : "nobody"}; `
+        + `their old name ${oldNameFreed ? "is free again" : "is still held"}`);
+    const kept = await Promise.all(claimants.map(async (u, i) => {
+      if (claims[i].ok) return true;
+      const [doc, held] = await Promise.all([adminGet(`users/${u.uid}`), reservationOf(namesBefore[i])]);
+      return doc?.displayName === namesBefore[i] && held?.userId === u.uid;
+    }));
+    check("names: the others keep the names they had", kept.every(Boolean), `${kept.filter(Boolean).length} of ${claimants.length}`);
+
+    const renamed = (i) => `Sim ${SHORT} r${i}`;
+    const renames = await Promise.all(users.map((u, i) => call(u, "updateUserProfileCallable", { displayName: renamed(i) })));
+    const rn = tally(renames);
+    check("names: everyone renames at once", rn.ok === N, `${rn.ok} ok, ${rn.refused} refused ${rn.codes} ${renames.find((r) => !r.ok)?.message ?? ""}`);
+    const named = await pooled(users.map((u, i) => ({ u, i })), 20, async ({ u, i }) => {
+      const [doc, held] = await Promise.all([adminGet(`users/${u.uid}`), reservationOf(renamed(i))]);
+      return doc?.displayName === renamed(i) && held?.userId === u.uid;
+    });
+    const heldNames = await namesWhereIn("usernames", "userId", users.map((u) => u.uid));
+    check("names: each new name is held by its owner, and nobody holds two",
+      named.every(Boolean) && heldNames.length === N,
+      `${named.filter(Boolean).length} of ${N} renamed and holding their name; ${heldNames.length} names held among ${N} people`);
+
+    if (N >= 3) {
+      const r = N - 2;
+      const R = users[r];
+      const followed = petIds.filter((_, i) => i !== r && i !== 0).slice(0, 10);
+      await Promise.all([
+        ...followed.map((petId) => call(R, "followPetCallable", { petId })),
+        ...[0, 1, 2].map((k) => call(R, "createCommentCallable", { postId: target, text: `TEST CONTENT ${TAG} by the renamer ${k}` })),
+      ]);
+      const FIELD = { posts: "authorName", comments: "authorName", followers: "userName", family: "userName", notifications: "fromUserName" };
+      const copies = async () => ({
+        posts: await adminQuery(null, "posts", { where: ["authorId", R.uid] }),
+        comments: await adminQuery(null, "comments", { allDescendants: true, where: ["authorId", R.uid] }),
+        followers: await adminQuery(null, "followers", { allDescendants: true, where: ["userId", R.uid] }),
+        family: await adminQuery(null, "family", { allDescendants: true, where: ["userId", R.uid] }),
+        notifications: await adminQuery(null, "notifications", { where: ["fromUserId", R.uid] }),
+      });
+      const stale = (c, name) => Object.entries(FIELD).flatMap(([kind, field]) => c[kind].filter((d) => d[field] !== name).map(() => kind));
+      // Every copy in place and saying the current name before the renames start.
+      const current = (await adminGet(`users/${R.uid}`))?.displayName;
+      await settle(copies, (c) => c.followers.length >= followed.length && stale(c, current).length === 0);
+      const steps = [];
+      // Not "r1" to "r5": names are unique whatever their case, and those are
+      // the names everyone else just took.
+      for (let k = 1; k <= 5; k += 1) steps.push(await call(R, "updateUserProfileCallable", { displayName: `Sim ${SHORT} step ${k}` }));
+      const last = `Sim ${SHORT} step 5`;
+      const end = await settle(copies, (c) => stale(c, last).length === 0);
+      const left = stale(end, last);
+      const total = Object.values(end).reduce((n, list) => n + list.length, 0);
+      const byKind = Object.entries(left.reduce((m, kind) => ({ ...m, [kind]: (m[kind] ?? 0) + 1 }), {}))
+        .map(([kind, n]) => `${n} ${kind}`).join(", ");
+      check("names: one person renames five times in a row, every copy ends with the last",
+        steps.every((s) => s.ok) && total > 0 && left.length === 0,
+        `${steps.filter((s) => s.ok).length} of 5 renames ok${steps.every((s) => s.ok) ? "" : ` (${tally(steps).codes})`}; `
+          + `${total - left.length} of ${total} copies say the last name${left.length ? ` (an older one: ${byKind})` : ""}`);
+    }
+  }
+
+  if (want("deletes")) {
+    // --- A post deleted while everyone is liking and commenting on it, and a
+    // pet deleted while everyone is following it. Nothing of either may be
+    // left: no likes or comments under the post, no notifications about it,
+    // no follows of the pet, no post still naming it.
+    const DURING_MS = CLOUD ? 400 : 100;
+    const crowd = users.slice(1);
+    const vc = await call(users[0], "createPostCallable", { text: `TEST CONTENT ${TAG} deleted while busy`, petId: petIds[0], operationId: `${TAG}-busy`, media: [] });
+    const victim = vc.result?.postId ?? vc.result?.id;
+    if (!victim) throw new Error(`the post to delete came back without an id: ${JSON.stringify(vc).slice(0, 200)}`);
+    made.posts.push(victim);
+    const busy = Promise.all([
+      Promise.all(crowd.map((u) => clientCreate(u, `posts/${victim}/likes/${u.uid}`, { userId: u.uid, postId: victim, counted: false }, { stamp: "createdAt" }))),
+      Promise.all(crowd.filter((_, i) => i % 2 === 0).map((u, i) => call(u, "createCommentCallable", { postId: victim, text: `TEST CONTENT ${TAG} while it goes ${i}` }))),
+    ]);
+    await sleep(DURING_MS);
+    const postGone = await call(users[0], "deletePostCallable", { postId: victim });
+    const [likesIn, commentsIn] = await busy;
+    const postLeft = async () => ({
+      post: Boolean(await adminGet(`posts/${victim}`)),
+      likes: (await adminQuery(`posts/${victim}`, "likes")).length,
+      comments: (await adminQuery(`posts/${victim}`, "comments")).length,
+      notifications: (await adminQuery(null, "notifications", { where: ["postId", victim] })).length,
+    });
+    const noPost = (s) => !s.post && !s.likes && !s.comments && !s.notifications;
+    const pl = await settle(postLeft, noPost, { timeout: CLOUD ? 90_000 : 30_000 });
+    check("deletes: a post deleted while everyone likes and comments on it leaves nothing",
+      postGone.ok && noPost(pl),
+      `delete ${postGone.ok ? "ok" : postGone.code}; ${likesIn.filter((x) => x.status === 200).length} likes and ${tally(commentsIn).ok} comments got in first; `
+        + `left: ${pl.post ? "the post, " : ""}${pl.likes} likes, ${pl.comments} comments, ${pl.notifications} notifications`);
+
+    const dc = await call(users[0], "createPetCallable", { name: `Simpet ${SHORT} gone`, species: "dog", relationship: "mom" });
+    const doomed = dc.result?.petId ?? dc.result?.id;
+    if (!doomed) throw new Error(`the pet to delete came back without an id: ${JSON.stringify(dc).slice(0, 200)}`);
+    made.pets.push(doomed);
+    made.deletedPets.push(doomed);
+    const ac = await call(users[0], "createPostCallable", { text: `TEST CONTENT ${TAG} about a pet about to go`, petId: doomed, operationId: `${TAG}-about`, media: [] });
+    const about = ac.result?.postId ?? ac.result?.id;
+    if (about) made.posts.push(about);
+    await Promise.all(crowd.filter((_, i) => i % 2 === 0).map((u) => call(u, "followPetCallable", { petId: doomed })));
+    const following = Promise.all(crowd.filter((_, i) => i % 2 === 1).map((u) => call(u, "followPetCallable", { petId: doomed })));
+    await sleep(DURING_MS);
+    const petGone = await call(users[0], "deletePetCallable", { petId: doomed });
+    const followsIn = await following;
+    const petLeft = async () => ({
+      pet: Boolean(await adminGet(`pets/${doomed}`)),
+      followers: (await adminQuery(`pets/${doomed}`, "followers")).length,
+      family: (await adminQuery(`pets/${doomed}`, "family")).length,
+      follows: (await adminQuery(null, "followingPets", { allDescendants: true, where: ["petId", doomed] })).length,
+      posts: (await adminQuery(null, "posts", { where: ["petId", doomed] })).length,
+      task: Boolean(await adminGet(`petDeletionTasks/${doomed}`)),
+    });
+    const noPet = (s) => !s.pet && !s.followers && !s.family && !s.follows && !s.posts && !s.task;
+    const pt = await settle(petLeft, noPet, { timeout: CLOUD ? 90_000 : 30_000 });
+    check("deletes: a pet deleted while everyone follows it leaves nothing",
+      petGone.ok && noPet(pt),
+      `delete ${petGone.ok ? "ok" : petGone.code}; ${tally(followsIn).ok} of the late follows got in first; `
+        + `left: ${pt.pet ? "the pet, " : ""}${pt.followers} follower records, ${pt.family} family, ${pt.follows} follows, `
+        + `${pt.posts} posts still naming it${pt.task ? ", its unfinished-deletion record" : ""}`);
+    const aboutDoc = about ? await adminGet(`posts/${about}`) : null;
+    check("deletes: a post about that pet stays, without the pet",
+      Boolean(aboutDoc) && aboutDoc.petId === undefined,
+      aboutDoc ? `post kept; petId ${aboutDoc.petId === undefined ? "removed" : "still there"}` : "the post is gone");
+    // Whatever was followed and unfollowed in this run, each person's own
+    // count of the pets they follow has to match their follows.
+    const countsMatch = () => pooled(users, 20, async (u) => {
+      const [doc, follows] = await Promise.all([adminGet(`users/${u.uid}`), adminQuery(`users/${u.uid}`, "followingPets")]);
+      return (doc?.followingPetsCount ?? 0) === follows.length;
+    });
+    const matching = await settle(countsMatch, (list) => list.every(Boolean), { timeout: CLOUD ? 60_000 : 20_000, every: CLOUD ? 5000 : 1000 });
+    check("deletes: everyone's count of pets they follow matches their follows",
+      matching.every(Boolean), `${matching.filter(Boolean).length} of ${N}`);
+  }
+
+  if (want("family")) {
+    if (N < 4) {
+      skip("family: all leave at once, and a hand-over against a leave", "needs at least 4 people");
+    } else {
+      // --- Everyone in one pet's family leaves at once: one has to be told to
+      // stay, and is then its primary owner. Then a hand-over and a leave at
+      // the same moment.
+      const SIZE = Math.min(5, N - 1);
+      const owner = users[1];
+      const fc = await call(owner, "createPetCallable", { name: `Simpet ${SHORT} shared`, species: "cat", relationship: "mom" });
+      const shared = fc.result?.petId ?? fc.result?.id;
+      if (!shared) throw new Error(`the shared pet came back without an id: ${JSON.stringify(fc).slice(0, 200)}`);
+      made.pets.push(shared);
+      const members = [owner];
+      for (const u of users.slice(2, SIZE + 1)) {
+        const inv = await call(owner, "createInvitationCallable", { petId: shared });
+        const code = inv.result?.code;
+        if (code) made.codes.push(code);
+        const joined = await call(u, "redeemInvitationCallable", { code, relationship: "other" });
+        if (joined.ok) members.push(u);
+      }
+      check(`family: ${SIZE} owners share one pet`, members.length === SIZE, `${members.length} of ${SIZE} in the family`);
+      const leaves = await Promise.all(members.map((u) => call(u, "removeFamilyMemberCallable", { petId: shared, targetUserId: u.uid })));
+      const stayed = members.filter((_, i) => !leaves[i].ok);
+      const [familyLeft, sharedPet] = await Promise.all([adminQuery(`pets/${shared}`, "family"), adminGet(`pets/${shared}`)]);
+      const last = familyLeft[0];
+      check("family: all leave at once, exactly one is told to stay",
+        stayed.length === 1 && leaves.every((l) => l.ok || l.code === "failed-precondition"),
+        `${leaves.filter((l) => l.ok).length} left, ${stayed.length} told to stay (${tally(leaves).codes || "none refused"})`);
+      check("family: the one who stays is its primary owner, on the pet too",
+        familyLeft.length === 1 && last?.id === stayed[0]?.uid && last?.role === "primary"
+          && sharedPet?.ownerId === last?.id && sharedPet?.primaryOwnerId === last?.id,
+        `${familyLeft.length} in the family; role ${last?.role}; the pet's owner ${sharedPet?.ownerId === last?.id ? "is them" : "is someone else"}, `
+          + `primary owner ${sharedPet?.primaryOwnerId === last?.id ? "is them" : "is someone else"}`);
+
+      const [a, b] = [users[2], users[3]];
+      const hc = await call(a, "createPetCallable", { name: `Simpet ${SHORT} handed`, species: "dog", relationship: "mom" });
+      const handed = hc.result?.petId ?? hc.result?.id;
+      if (!handed) throw new Error(`the pet to hand over came back without an id: ${JSON.stringify(hc).slice(0, 200)}`);
+      made.pets.push(handed);
+      const hinv = await call(a, "createInvitationCallable", { petId: handed });
+      if (hinv.result?.code) made.codes.push(hinv.result.code);
+      const hjoin = await call(b, "redeemInvitationCallable", { code: hinv.result?.code, relationship: "other" });
+      const [transfer, leave] = await Promise.all([
+        call(a, "transferPetPrimaryCallable", { petId: handed, targetUserId: b.uid }),
+        call(b, "removeFamilyMemberCallable", { petId: handed, targetUserId: b.uid }),
+      ]);
+      const [handedFamily, handedPet] = await Promise.all([adminQuery(`pets/${handed}`, "family"), adminGet(`pets/${handed}`)]);
+      check("family: a hand-over and a leave at the same moment leave one primary owner",
+        hjoin.ok && handedFamily.length === 1 && handedFamily[0].id === a.uid && handedFamily[0].role === "primary"
+          && handedPet?.ownerId === a.uid && handedPet?.primaryOwnerId === a.uid,
+        `joined ${hjoin.ok ? "ok" : hjoin.code}; hand-over ${transfer.ok ? "ok" : transfer.code}, leave ${leave.ok ? "ok" : leave.code}; `
+          + `${handedFamily.length} in the family, role ${handedFamily[0]?.role}`);
+    }
   }
 }
 
