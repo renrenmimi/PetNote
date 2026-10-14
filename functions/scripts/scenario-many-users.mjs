@@ -142,6 +142,11 @@ async function http(method, url, { token, body } = {}) {
     let json = null;
     try { json = text ? JSON.parse(text) : null; } catch { json = { raw: text.slice(0, 200) }; }
     return { status: res.status, json, ms: performance.now() - started };
+  } catch (error) {
+    // A connection that dropped or timed out: an answer of its own, so one
+    // among hundreds is counted rather than the end of the run. Not retried:
+    // the request may have arrived, and a comment sent twice would be two.
+    return { status: 0, json: { error: { status: "NETWORK", message: String(error?.cause?.code ?? error?.message ?? error) } }, ms: performance.now() - started };
   } finally {
     clearTimeout(timer);
     release();
@@ -185,11 +190,19 @@ async function signIn(email) {
 
 /** An account made with admin rights, its email already verified; then signed in as the app signs in. */
 async function adminCreate(email) {
-  const r = await timed("admin create account", () => http("POST", `${AUTH_BASE}/projects/${PROJECT}/accounts`, {
-    token: ADMIN.token, body: { email, password: PASSWORD, emailVerified: true },
-  }));
-  if (r.status !== 200) throw new Error(`creating ${email} failed: HTTP ${r.status} ${JSON.stringify(r.json?.error?.message)}`);
-  return { uid: r.json.localId, email };
+  for (let attempt = 0; ; attempt += 1) {
+    const r = await timed("admin create account", () => http("POST", `${AUTH_BASE}/projects/${PROJECT}/accounts`, {
+      token: ADMIN.token, body: { email, password: PASSWORD, emailVerified: true },
+    }));
+    if (r.status === 200) return { uid: r.json.localId, email };
+    // A dropped connection may still have made it: signed in, it says whose.
+    if (String(r.json?.error?.message ?? "").startsWith("EMAIL_EXISTS")) {
+      const account = await signIn(email);
+      return { uid: account.uid, email };
+    }
+    if (r.status !== 0 || attempt >= 3) throw new Error(`creating ${email} failed: HTTP ${r.status} ${JSON.stringify(r.json?.error?.message)}`);
+    await sleep(500 * (attempt + 1));
+  }
 }
 
 /** The emulator's admin update, then a fresh token that says so. */
@@ -363,6 +376,20 @@ async function treeNames(path) {
   return names;
 }
 
+/** The accounts whose emails carry this run's tag. */
+async function accountsTagged() {
+  const found = [];
+  for (let offset = 0; ; offset += 500) {
+    // The emulator lists them all at once and refuses a page size.
+    const body = CLOUD ? { returnUserInfo: true, limit: "500", offset: String(offset) } : { returnUserInfo: true };
+    const r = await http("POST", `${AUTH_BASE}/projects/${PROJECT}/accounts:query`, { token: ADMIN.token, body });
+    if (r.status !== 200) throw new Error(`listing accounts: HTTP ${r.status} ${JSON.stringify(r.json).slice(0, 200)}`);
+    const page = r.json?.userInfo ?? [];
+    found.push(...page.filter((u) => String(u.email ?? "").startsWith(`${TAG}-`)).map((u) => u.localId));
+    if (!CLOUD || page.length < 500) return found;
+  }
+}
+
 /** The document, or anything under it. */
 async function stillThere(path) {
   if (await adminGet(path)) return true;
@@ -382,7 +409,9 @@ async function deleteAll(names) {
 /** Everything the run made, by what it recorded and by whose it is, then its accounts; and a check that none of it is left. */
 async function cleanup() {
   console.log("\ncleaning up what this run made:");
-  const uids = made.users.map((u) => u.uid);
+  // Recorded, and found by this run's tag: an account made just before a
+  // stop is not always recorded.
+  const uids = [...new Set([...made.users.map((u) => u.uid), ...(await accountsTagged())])];
   const roots = [
     ...made.posts.map((id) => `posts/${id}`), ...made.pets.map((id) => `pets/${id}`),
     ...made.meetups.map((id) => `meetups/${id}`), ...made.codes.map((code) => `invitationCodes/${code}`),
@@ -419,8 +448,7 @@ async function cleanup() {
     return (r.json?.collectionIds ?? []).length ? path : null;
   })).filter(Boolean);
   const leftOwned = await byOwner();
-  const lookup = await http("POST", `${AUTH_BASE}/projects/${PROJECT}/accounts:lookup`, { token: ADMIN.token, body: { localId: uids.slice(0, 100) } });
-  const leftAccounts = lookup.json?.users?.length ?? 0;
+  const leftAccounts = (await accountsTagged()).length;
   check("cleanup: nothing the run made is left", !leftRoots.length && !leftUnder.length && !leftOwned.length && !leftAccounts,
     `${leftRoots.length} documents, ${leftUnder.length} with something under them, ${leftOwned.length} found by owner, ${leftAccounts} accounts`);
 }
@@ -443,13 +471,21 @@ async function scenarios() {
   // --- Accounts: everyone signs up at once, verifies, makes a profile.
   let users;
   if (process.env.SIM_ADMIN_ACCOUNTS === "1") {
-    const accounts = await Promise.all(Array.from({ length: N }, (_, i) => adminCreate(`${TAG}-${i}@petnote.test`)));
-    made.users.push(...accounts);
+    // Fifty at a time: making accounts is not what is being tested, and
+    // hundreds of new connections at once from one machine drop some.
+    const accounts = await pooled(Array.from({ length: N }, (_, i) => i), 50, async (i) => {
+      const account = await adminCreate(`${TAG}-${i}@petnote.test`);
+      made.users.push(account);
+      return account;
+    });
     users = await Promise.all(accounts.map((a) => timed("sign in", () => signInTimed(a.email))));
     check("accounts: everyone signs in at once (accounts made by the admin API)", users.length === N, `${users.length} of ${N}`);
   } else {
-    users = await Promise.all(Array.from({ length: N }, (_, i) => signUp(`${TAG}-${i}@petnote.test`)));
-    made.users.push(...users);
+    users = await Promise.all(Array.from({ length: N }, async (_, i) => {
+      const user = await signUp(`${TAG}-${i}@petnote.test`);
+      made.users.push(user);
+      return user;
+    }));
     check("accounts: everyone signs up at once", users.length === N, `${users.length} of ${N}`);
     users = await Promise.all(users.map(verifyEmail));
   }
