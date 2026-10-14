@@ -14,6 +14,7 @@ import {
   requestData,
   requiredDocId,
   requiredTrimmedString,
+  retryOnContention,
   runEventOnce,
   stripUndefined,
   TRUSTED_MEDIA_URL_HOSTS,
@@ -743,7 +744,12 @@ export const joinMeetupCallable = onCall(async (request) => {
     await assertNoBlockBetween(callerUid, admissionOrganizerId, "Joining this meetup");
   }
 
-  return await db.runTransaction(async (t) => {
+  // Everyone joining one meetup reads and writes the same document, and two
+  // hundred at once had two joins aborted for contention on the test project,
+  // past the client library's own retries: told "internal" rather than that
+  // the meetup was full. Running the join again is safe — someone already on
+  // the roster is answered as joined.
+  return await retryOnContention(() => db.runTransaction(async (t) => {
     const meetupSnap = await t.get(meetupRef);
     if (!meetupSnap.exists) throw new HttpsError("not-found", "Meetup not found.");
     const meetup = meetupSnap.data() as Record<string, unknown>;
@@ -884,7 +890,7 @@ export const joinMeetupCallable = onCall(async (request) => {
     });
 
     return { success: true };
-  });
+  }));
 });
 
 // Flip expired meetups to "completed" even when no user visits the detail
