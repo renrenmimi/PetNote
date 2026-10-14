@@ -383,9 +383,21 @@ export async function runEventOnce(
   // their counts aborted for contention on the test project, and these
   // triggers are not redelivered, so those likes were never counted. The
   // ledger makes another run safe, so a contended one waits and tries again.
+  return retryOnContention(once);
+}
+
+/**
+ * Runs `attempt` again, after a growing wait, while it fails for contention.
+ *
+ * The client library retries a contended transaction too, but back to back
+ * and five times at most, and a crowd on one document outlasts that. Only for
+ * work that is safe to run again: runEventOnce has its ledger, and a meetup
+ * join finds the person already on the roster.
+ */
+export async function retryOnContention<T>(attempt: () => Promise<T>): Promise<T> {
   for (let retry = 0; ; retry += 1) {
     try {
-      return await once();
+      return await attempt();
     } catch (error) {
       if (retry >= CONTENTION_RETRY.retries || !isContention(error)) throw error;
       const wait = Math.min(CONTENTION_RETRY.capMs, CONTENTION_RETRY.baseMs * 2 ** retry);
