@@ -302,6 +302,75 @@ enum MeetupJoinOutcome: Equatable, Sendable {
     case refused(String)
 }
 
+/// The server's reason for refusing a join, in the phone's language.
+///
+/// It refuses in English sentences, one or several of a meetup's rules at
+/// once. Each one it can send is either a line `MeetupRequirements.lines`
+/// already shows before joining, or one of three of its own. They are put
+/// into the phone's language one by one. A sentence this does not know is
+/// shown as the server wrote it, rather than not at all.
+enum MeetupRefusal {
+    static func localized(_ reason: String, bundle: Bundle = .main, locale: Locale = .current) -> String {
+        var words = ""
+        for sentence in sentences(of: reason) {
+            // English sentences are spaced; Chinese ones are not.
+            if words.hasSuffix(".") { words += " " }
+            words += localized(sentence: sentence, bundle: bundle, locale: locale)
+        }
+        return words
+    }
+
+    /// The server joins its reasons with a space, each ending in a full stop.
+    static func sentences(of reason: String) -> [String] {
+        var sentences: [String] = []
+        var current = ""
+        for character in reason.trimmingCharacters(in: .whitespaces) {
+            if character == " ", current.hasSuffix(".") {
+                sentences.append(current)
+                current = ""
+            } else {
+                current.append(character)
+            }
+        }
+        if !current.isEmpty { sentences.append(current) }
+        return sentences
+    }
+
+    private static func localized(sentence: String, bundle: Bundle, locale: Locale) -> String {
+        switch sentence {
+        case "Meetup is full.":
+            return String(localized: "Meetup is full.", bundle: bundle, locale: locale)
+        case "Meetup is no longer accepting participants.":
+            return String(localized: "Meetup is no longer accepting participants.", bundle: bundle, locale: locale)
+        case "Select a pet to join this meetup.":
+            return String(localized: "Select a pet to join this meetup.", bundle: bundle, locale: locale)
+        case "Must have posted at least once.":
+            return String(localized: "Must have posted at least once.", bundle: bundle, locale: locale)
+        case "Must have a pet profile.":
+            return String(localized: "Must have a pet profile.", bundle: bundle, locale: locale)
+        case "Dogs only.":
+            return String(localized: "Dogs only.", bundle: bundle, locale: locale)
+        case "Cats only.":
+            return String(localized: "Cats only.", bundle: bundle, locale: locale)
+        case "Other pets only.":
+            return String(localized: "Other pets only.", bundle: bundle, locale: locale)
+        default:
+            // "Requires at least 3 followed pets." The server says "pets"
+            // for one as well; the app does not.
+            guard let count = followedPets(in: sentence) else { return sentence }
+            return count == 1
+                ? String(localized: "Requires at least 1 followed pet.", bundle: bundle, locale: locale)
+                : String(localized: "Requires at least \(count) followed pets.", bundle: bundle, locale: locale)
+        }
+    }
+
+    private static func followedPets(in sentence: String) -> Int? {
+        let prefix = "Requires at least ", suffix = " followed pets."
+        guard sentence.hasPrefix(prefix), sentence.hasSuffix(suffix) else { return nil }
+        return Int(sentence.dropFirst(prefix.count).dropLast(suffix.count))
+    }
+}
+
 protocol MeetupsReading: Sendable {
     func upcoming(limit: Int) async throws -> [Meetup]
     func thisWeek(from now: Date, limit: Int) async throws -> [Meetup]
@@ -426,7 +495,8 @@ actor FirestoreMeetupsSource: MeetupsReading, MeetupCreating, MeetupEditing {
         if let petID { payload["petId"] = petID }
         let answer = try await CallableClient.call(Callables.joinMeetup, payload)
         if answer["success"] as? Bool == true { return .joined }
-        return .refused(answer["error"] as? String ?? String(localized: "Couldn't join this meetup."))
+        if let reason = answer["error"] as? String { return .refused(MeetupRefusal.localized(reason)) }
+        return .refused(String(localized: "Couldn't join this meetup."))
     }
 
     func leave(meetupID: String, uid: String) async throws {
