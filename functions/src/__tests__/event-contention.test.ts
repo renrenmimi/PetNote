@@ -2,7 +2,7 @@ import "./setup";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Transaction } from "firebase-admin/firestore";
 import { db, FieldValue } from "../platform";
-import { onCommentDeleted, onLikeCreated } from "../notifications";
+import { onCommentDeleted, onFollowingPetCreated, onLikeCreated } from "../notifications";
 import { CONTENTION_RETRY, nothingToCountIfGone, runEventOnce } from "../shared";
 import { captureSnapshot, clearEventLedger, deliverCreate, deliverDelete, fieldOf, newEventId, purge, serverTime } from "./helpers";
 
@@ -13,20 +13,22 @@ import { captureSnapshot, clearEventLedger, deliverCreate, deliverDelete, fieldO
 // reading it.
 
 const POST = "posts/contention-post";
+const PET = "pets/contention-pet";
 const COUNTER = "contention/counter";
 
 const aborted = () =>
   Object.assign(new Error("10 ABORTED: Aborted due to cross-transaction contention."), { code: 10 });
 
 beforeEach(async () => {
-  await purge(POST, COUNTER);
+  await purge(POST, PET, COUNTER);
   await clearEventLedger();
   await db.doc(POST).set({ authorId: "author", text: "post", likeCount: 0, commentCount: 0, petId: null });
+  await db.doc(PET).set({ name: "Crowd", ownerId: "owner", followerCount: 0, postCount: 0 });
   await db.doc(COUNTER).set({ n: 0 });
 });
 afterEach(() => vi.restoreAllMocks());
 afterAll(async () => {
-  await purge(POST, COUNTER);
+  await purge(POST, PET, COUNTER);
   await clearEventLedger();
 });
 
@@ -86,6 +88,19 @@ describe("runEventOnce under contention", () => {
   });
 });
 
+/** `path` is deleted when the next transaction starts: after a trigger's existence check, before its commit. */
+function goneBeforeTheCommit(path: string) {
+  const real = db.runTransaction.bind(db);
+  let first = true;
+  vi.spyOn(db, "runTransaction").mockImplementation((async (...args: Parameters<typeof db.runTransaction>) => {
+    if (first) {
+      first = false;
+      await db.doc(path).delete();
+    }
+    return real(...args);
+  }) as typeof db.runTransaction);
+}
+
 describe("the counting triggers without reading the post", () => {
   const like = (id: string) => `${POST}/likes/${id}`;
   const writeLike = (id: string) =>
@@ -103,13 +118,13 @@ describe("the counting triggers without reading the post", () => {
     expect(counted.every((c) => c === true)).toBe(true);
   });
 
-  it("counts nothing for a like on a post that is gone, and does not fail", async () => {
+  it("counts nothing for a like whose post goes before the count commits, and does not fail", async () => {
     await writeLike("late-liker");
-    await db.doc(POST).delete();
+    goneBeforeTheCommit(POST);
 
     await deliverCreate(onLikeCreated, like("late-liker"), { postId: "contention-post", likeId: "late-liker" }, newEventId("like"));
 
-    expect((await db.doc(POST).get()).exists).toBe(false);
+    expect((await db.doc(POST).get()).exists, "the update brought the post back").toBe(false);
     expect((await db.doc(like("late-liker")).get()).get("counted")).toBe(false);
   });
 
@@ -124,3 +139,38 @@ describe("the counting triggers without reading the post", () => {
     expect((await db.doc(POST).get()).exists).toBe(false);
   });
 });
+
+describe("following without reading the pet", () => {
+  const follow = (uid: string) => `users/${uid}/followingPets/contention-pet`;
+  const writeFollow = async (uid: string) => {
+    await db.doc(`users/${uid}`).set({ displayName: uid, followingPetsCount: 0 });
+    await db.doc(follow(uid)).set({ petId: "contention-pet", followedAt: serverTime(), counted: false });
+  };
+  afterAll(async () => {
+    await purge(...Array.from({ length: 20 }, (_, i) => `users/follower-${i}`), "users/late-follower");
+  });
+
+  it("counts many follows of one pet delivered at once, every one", async () => {
+    const followers = Array.from({ length: 20 }, (_, i) => `follower-${i}`);
+    await Promise.all(followers.map(writeFollow));
+
+    await Promise.all(followers.map((uid) =>
+      deliverCreate(onFollowingPetCreated, follow(uid), { userId: uid, petId: "contention-pet" }, newEventId("follow"))));
+
+    expect(await fieldOf(PET, "followerCount")).toBe(20);
+    expect(await fieldOf("users/follower-7", "followingPetsCount")).toBe(1);
+  });
+
+  it("counts nothing for a follow whose pet goes before the count commits, and does not fail", async () => {
+    await writeFollow("late-follower");
+    goneBeforeTheCommit(PET);
+
+    await deliverCreate(onFollowingPetCreated, follow("late-follower"), { userId: "late-follower", petId: "contention-pet" }, newEventId("follow"));
+
+    expect((await db.doc(PET).get()).exists, "the update brought the pet back").toBe(false);
+    expect(await fieldOf("users/late-follower", "followingPetsCount")).toBe(0);
+    expect((await db.doc(follow("late-follower")).get()).get("counted")).toBe(false);
+    expect((await db.doc("pets/contention-pet/followers/late-follower").get()).exists).toBe(false);
+  });
+});
+
