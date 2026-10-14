@@ -43,6 +43,9 @@ const allowedPlaceCategories = new Set([
 // stops a caller turning one rate-limited call into an unbounded dump.
 const PET_CHECKIN_PAGE_SIZE = 50;
 const PET_CHECKIN_MAX_PAGE_SIZE = 100;
+// The rate-limit bucket of everyone who is not signed in. Not a uid: those
+// never contain an underscore.
+const ANONYMOUS_BUCKET = "anon_everyone";
 
 const allowedPlaceFeatures = new Set([
   "off_leash",
@@ -1172,19 +1175,16 @@ export const getPetCheckinsCallable = onCall(async (request) => {
     Math.max(1, requested)
   );
 
-  // Signed-in callers are bucketed by uid; anonymous ones by client IP, so an
-  // unauthenticated scraper cannot get an unlimited budget just by not
-  // logging in. assertRateLimit only needs a stable string for the bucket.
+  // Signed-in callers are bucketed by uid. Everyone who is not signed in
+  // shares one bucket with a budget of its own, so not logging in does not
+  // buy an unlimited one: nothing a caller sends identifies it well enough
+  // to count it by.
   const callerUid = request.auth?.uid;
-  const forwardedFor = request.rawRequest?.headers?.["x-forwarded-for"];
-  const rawIp =
-    (Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor)
-      ?.split(",")[0]
-      ?.trim() ||
-    request.rawRequest?.ip ||
-    "unknown";
-  const bucket = callerUid ?? `anon_${rawIp.replace(/[^A-Za-z0-9_.:-]/g, "_")}`;
-  await assertRateLimit(bucket, "getPetCheckins", RATE_LIMITS.read);
+  await assertRateLimit(
+    callerUid ?? ANONYMOUS_BUCKET,
+    "getPetCheckins",
+    callerUid ? RATE_LIMITS.read : RATE_LIMITS.anonymousRead
+  );
 
   const snap = await db
     .collectionGroup("checkins")
