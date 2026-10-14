@@ -70,6 +70,12 @@ function normalizeAvatarUrl(value: unknown): string | undefined {
   );
 }
 
+/** Auth's "Exceeded quota for updating account information". */
+function isAuthQuotaExceeded(error: unknown): boolean {
+  const { code, message } = (error ?? {}) as { code?: unknown; message?: unknown };
+  return code === "auth/quota-exceeded" || (typeof message === "string" && message.includes("Exceeded quota"));
+}
+
 function usernameKey(displayNameLower: string): string {
   return createHash("sha256").update(displayNameLower).digest("hex");
 }
@@ -345,9 +351,17 @@ export const ensureUserProfileCallable = onCall(async (request) => {
         return { displayName, avatarUrl };
       });
 
+      // A copy of the profile's name and photo on the sign-in account. The
+      // app reads the profile, so when Auth's quota for account updates is
+      // exceeded — two hundred people finishing sign-up at once did it on the
+      // test project — the profile is made all the same and the copy is
+      // written by the next profile update.
       await admin.auth().updateUser(callerUid, {
         displayName: result.displayName,
         photoURL: result.avatarUrl,
+      }).catch((error: unknown) => {
+        if (!isAuthQuotaExceeded(error)) throw error;
+        console.warn(`ensureUserProfile: Auth quota exceeded, account copy of the profile skipped for ${callerUid}`);
       });
       return result;
     } catch (error) {

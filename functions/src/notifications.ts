@@ -14,6 +14,7 @@ import {
   requestData,
   requiredDocId,
   requiredTrimmedString,
+  nothingToCountIfGone,
   runEventOnce,
   TRUSTED_AVATAR_URL_HOSTS,
   VALIDATION_LIMITS,
@@ -469,10 +470,12 @@ export const onLikeCreated = onDocumentCreated(
     // is never counted. update() — never set() — on the like doc, so a
     // concurrent delete aborts the transaction rather than resurrecting the
     // like, which is the failure onFollowingPetCreated records above.
+    // The post itself is not read in the transaction: every like on it
+    // would lock it, and two hundred at once outlast the retries. Updating a
+    // post that is gone fails the commit, which is nothing to count.
     await runEventOnce(event.id, async (t) => {
       const likeSnap = await t.get(likeRef);
-      const postTxnSnap = await t.get(postRef);
-      if (!likeSnap.exists || !postTxnSnap.exists) return false;
+      if (!likeSnap.exists) return false;
       // Belt and braces for a redelivery that arrives after the ledger entry
       // has aged out: the stamp on the like doc outlives the ledger.
       if (likeSnap.data()?.counted === true) return false;
@@ -480,7 +483,7 @@ export const onLikeCreated = onDocumentCreated(
       t.update(postRef, { likeCount: FieldValue.increment(1) });
       t.update(likeRef, { counted: true });
       return true;
-    });
+    }).catch(nothingToCountIfGone);
 
     const postData = postSnap.data() as {
       authorId?: string;
@@ -545,14 +548,13 @@ export const onLikeDeleted = onDocumentDeleted(
     // instead of fixing it.
     if (!wasCountedAtCreate(event.data?.data())) return;
 
+    // As onLikeCreated: the post is updated, not read.
     await runEventOnce(event.id, async (t) => {
-      const postTxnSnap = await t.get(postRef);
-      if (!postTxnSnap.exists) return false;
       t.update(postRef, {
         likeCount: FieldValue.increment(-1),
       });
       return true;
-    });
+    }).catch(nothingToCountIfGone);
   }
 );
 
@@ -583,10 +585,10 @@ export const onCommentCreated = onDocumentCreated(
     // Same shape as onLikeCreated: dedupe on the event id, re-read the source
     // document, and stamp it so onCommentDeleted knows this comment was
     // counted.
+    // As onLikeCreated, the post is updated, not read.
     await runEventOnce(event.id, async (t) => {
       const commentSnap = await t.get(commentDocRef);
-      const postTxnSnap = await t.get(postRef);
-      if (!commentSnap.exists || !postTxnSnap.exists) return false;
+      if (!commentSnap.exists) return false;
       if (commentSnap.data()?.counted === true) return false;
 
       t.update(postRef, {
@@ -594,7 +596,7 @@ export const onCommentCreated = onDocumentCreated(
       });
       t.update(commentDocRef, { counted: true });
       return true;
-    });
+    }).catch(nothingToCountIfGone);
 
     const commentData = event.data?.data() as {
       authorId?: string;
@@ -682,14 +684,13 @@ export const onCommentDeleted = onDocumentDeleted(
     const postRef = db.doc(`posts/${event.params.postId}`);
     if (!wasCountedAtCreate(event.data?.data())) return;
 
+    // As onLikeCreated: the post is updated, not read.
     await runEventOnce(event.id, async (t) => {
-      const postTxnSnap = await t.get(postRef);
-      if (!postTxnSnap.exists) return false;
       t.update(postRef, {
         commentCount: FieldValue.increment(-1),
       });
       return true;
-    });
+    }).catch(nothingToCountIfGone);
   }
 );
 
