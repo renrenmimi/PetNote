@@ -327,8 +327,13 @@ export const onFollowingPetCreated = onDocumentCreated(
       if (event.data) {
         // Mark not-counted before deleting so onFollowingPetDeleted won't
         // decrement counts that were never incremented (we return before any).
+        // update(), never set(): a follow that is already gone — swept with
+        // the pet it followed, or unfollowed — has to stay gone. set() with
+        // merge wrote it back, which is a new follow, which set this trigger
+        // off again to find the pet still missing and do the same, for as long
+        // as the pet stayed deleted.
         await event.data.ref
-          .set({ counted: false }, { merge: true })
+          .update({ counted: false })
           .catch(() => undefined);
         await event.data.ref.delete().catch(() => undefined);
       }
