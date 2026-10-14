@@ -133,6 +133,25 @@ async function http(method, url, { token, body } = {}) {
   if (IOS_BUNDLE && url.includes("key=")) headers["X-Ios-Bundle-Identifier"] = IOS_BUNDLE;
   if (CLOUD && token === ADMIN.token) headers["X-Goog-User-Project"] = PROJECT;
   await slot();
+  try {
+    for (let attempt = 0; ; attempt += 1) {
+      const r = await once(method, url, headers, body);
+      // The name did not resolve or the connection was refused: the request
+      // was never sent, so sending it again cannot make two of anything.
+      if (r.status === 0 && NEVER_SENT.has(r.json.error.message) && attempt < 3) {
+        await sleep(300 * (attempt + 1));
+        continue;
+      }
+      return r;
+    }
+  } finally {
+    release();
+  }
+}
+
+const NEVER_SENT = new Set(["ENOTFOUND", "EAI_AGAIN", "ECONNREFUSED"]);
+
+async function once(method, url, headers, body) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   const started = performance.now();
@@ -149,7 +168,6 @@ async function http(method, url, { token, body } = {}) {
     return { status: 0, json: { error: { status: "NETWORK", message: String(error?.cause?.code ?? error?.message ?? error) } }, ms: performance.now() - started };
   } finally {
     clearTimeout(timer);
-    release();
   }
 }
 
@@ -478,7 +496,7 @@ async function scenarios() {
       made.users.push(account);
       return account;
     });
-    users = await Promise.all(accounts.map((a) => timed("sign in", () => signInTimed(a.email))));
+    users = await pooled(accounts, 50, (a) => timed("sign in", () => signInTimed(a.email)));
     check("accounts: everyone signs in at once (accounts made by the admin API)", users.length === N, `${users.length} of ${N}`);
   } else {
     users = await Promise.all(Array.from({ length: N }, async (_, i) => {
