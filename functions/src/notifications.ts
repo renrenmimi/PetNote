@@ -1,7 +1,7 @@
 import { onDocumentCreated, onDocumentDeleted, onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import { db, FieldValue, Timestamp } from "./platform";
+import { admin, db, FieldValue, Timestamp } from "./platform";
 import {
   assertRateLimit,
   batchChunked,
@@ -273,6 +273,25 @@ export async function createNotificationIfAllowed(
   return result.id;
 }
 
+/**
+ * Takes back notifications about a post that was deleted while they were
+ * being written. onPostDeleted sweeps a post's notifications once, when it
+ * runs, and one written after that sweep stayed, about a post that is gone.
+ * Each is written first and the post looked at after: still there, and the
+ * sweep is yet to come and will find it; gone, and it is taken back here.
+ */
+async function withdrawIfPostGone(
+  postRef: admin.firestore.DocumentReference,
+  ids: string[]
+): Promise<void> {
+  const written = ids.filter((id) => id.length > 0);
+  if (written.length === 0) return;
+  if ((await postRef.get()).exists) return;
+  await Promise.all(
+    written.map((id) => db.doc(`notifications/${id}`).delete().catch(() => undefined))
+  );
+}
+
 const READ_NOTIFICATION_RETENTION_DAYS = 90;
 
 export const cleanupOldReadNotifications = onSchedule(
@@ -499,7 +518,7 @@ export const onLikeCreated = onDocumentCreated(
       const recipients = await getPetFamilyRecipientIds(postData.petId, likeId);
       if (recipients.length === 0) return;
       const petName = postData.petName || "this pet";
-      await Promise.all(
+      const sent = await Promise.all(
         recipients.map((recipientId) =>
           createNotificationIfAllowed(
             {
@@ -519,11 +538,12 @@ export const onLikeCreated = onDocumentCreated(
           )
         )
       );
+      await withdrawIfPostGone(postRef, sent);
       return;
     }
 
     if (postData.authorId && postData.authorId !== likeId) {
-      await createNotificationIfAllowed(
+      const sent = await createNotificationIfAllowed(
         {
           userId: postData.authorId,
           type: "like",
@@ -536,6 +556,7 @@ export const onLikeCreated = onDocumentCreated(
         },
         { dedupeId: `like_${postData.authorId}_${likeId}_${postId}` }
       );
+      await withdrawIfPostGone(postRef, [sent]);
     }
   }
 );
@@ -617,6 +638,7 @@ export const onCommentCreated = onDocumentCreated(
     };
     const actor = await getNotificationActor(commenterId);
 
+    const sent: string[] = [];
     let replyTargetUserId: string | null = null;
     const replyCommentId = commentData?.replyTo?.commentId;
     if (replyCommentId) {
@@ -631,7 +653,7 @@ export const onCommentCreated = onDocumentCreated(
       const recipients = (await getPetFamilyRecipientIds(postData.petId, commenterId))
         .filter((recipientId) => recipientId !== replyTargetUserId);
       const petName = postData.petName || "this pet";
-      await Promise.all(
+      sent.push(...await Promise.all(
         recipients.map((recipientId) =>
           createNotificationIfAllowed({
             userId: recipientId,
@@ -645,13 +667,13 @@ export const onCommentCreated = onDocumentCreated(
             message: `${actor.fromUserName} commented on ${petName}'s post`,
           })
         )
-      );
+      ));
     } else if (
       postData.authorId &&
       postData.authorId !== commenterId &&
       replyTargetUserId !== postData.authorId
     ) {
-      await createNotificationIfAllowed({
+      sent.push(await createNotificationIfAllowed({
         userId: postData.authorId,
         type: "comment",
         fromUserId: actor.fromUserId,
@@ -661,11 +683,11 @@ export const onCommentCreated = onDocumentCreated(
         commentId,
         postImage: postData.mediaUrl,
         message: "commented on your post",
-      });
+      }));
     }
 
     if (replyTargetUserId && replyTargetUserId !== commenterId) {
-      await createNotificationIfAllowed({
+      sent.push(await createNotificationIfAllowed({
         userId: replyTargetUserId,
         type: "reply",
         fromUserId: actor.fromUserId,
@@ -675,8 +697,9 @@ export const onCommentCreated = onDocumentCreated(
         commentId,
         postImage: postData.mediaUrl,
         message: "replied to your comment",
-      });
+      }));
     }
+    await withdrawIfPostGone(postRef, sent);
   }
 );
 

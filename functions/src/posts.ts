@@ -850,6 +850,15 @@ export const createCommentCallable = onCall(async (request) => {
     ...(replyTo ? { replyTo } : {}),
   });
 
+  // The post may have been deleted while this comment was being written, its
+  // comments swept before this one landed. Written first and checked after,
+  // the comment is either taken back here or found by the last sweep of a
+  // deletion still under way (cascadeDeletePost).
+  if (!(await postRef.get()).exists) {
+    await commentRef.delete().catch(() => undefined);
+    throw new HttpsError("not-found", "Post not found.");
+  }
+
   return { id: commentRef.id };
 });
 
