@@ -70,6 +70,7 @@ export {
   createPetCallable,
   deletePetCallable,
   followPetCallable,
+  onPetUpdated,
   resumeAbandonedPetDeletions,
   unfollowPetCallable,
   updatePetCallable,

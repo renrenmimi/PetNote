@@ -1,10 +1,12 @@
+import { onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import { admin, db, FieldValue, Timestamp } from "./platform";
+import { admin, db, FieldPath, FieldValue, Timestamp } from "./platform";
 import { cascadeDeletePet } from "./cleanup";
 import { assertCallerAccountActive, getNotificationActor } from "./notifications";
 import {
   assertRateLimit,
+  FIRESTORE_BATCH_LIMIT,
   getDefaultAvatar,
   optionalTrimmedString,
   optionalTrustedHttpsUrl,
@@ -743,3 +745,139 @@ export const unfollowPetCallable = onCall(async (request) => {
   }
   return { success: true };
 });
+
+/**
+ * Keeps the copies of a pet's name and photo in step with the pet.
+ *
+ * Posts, follow lists, meetup rosters and check-ins each keep the pet's name,
+ * and all but check-ins its photo, as they were when written, and the apps
+ * show those copies. Without this, a pet renamed or given a new photo went on
+ * showing the old ones everywhere but its own page.
+ */
+export const onPetUpdated = onDocumentUpdated(
+  { document: "pets/{petId}", timeoutSeconds: 540, memory: "512MiB" },
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!before || !after) return;
+    // Most writes to a pet are its counts. Only a new name or photo has
+    // anything to copy.
+    if (before.name === after.name && before.avatarUrl === after.avatarUrl) return;
+    await syncPetCopies(event.params.petId);
+  }
+);
+
+/**
+ * Writes the pet's current name and photo onto every copy, then looks at the
+ * pet again. Two changes in quick succession can be copied at the same time,
+ * or the earlier one last; whichever finishes finds what it wrote out of date
+ * and goes round again. The values always come from the pet as it is now,
+ * never from the event.
+ */
+export async function syncPetCopies(petId: string): Promise<void> {
+  const petRef = db.doc(`pets/${petId}`);
+  let pet = await petRef.get();
+  for (let pass = 0; pass < 5 && pet.exists; pass += 1) {
+    const data = pet.data() ?? {};
+    const { name, avatar } = petIdentity(petId, data);
+    await Promise.all([
+      updateCopies(
+        db.collection("posts").where("petId", "==", petId),
+        { petName: name, petAvatarUrl: avatar }
+      ),
+      updateCopies(
+        db.collectionGroup("followingPets").where("petId", "==", petId),
+        { petName: name, petAvatar: avatar }
+      ),
+      updateRosterCopies(petId, data, { petName: name, petAvatar: avatar }),
+      updateCopies(
+        db.collectionGroup("checkins").where("petId", "==", petId),
+        { petName: name }
+      ),
+    ]);
+    pet = await petRef.get();
+    const now = petIdentity(petId, pet.data() ?? {});
+    if (now.name === name && now.avatar === avatar) return;
+  }
+}
+
+/** The name and photo a copy carries, the way the callables write them. */
+function petIdentity(
+  petId: string,
+  pet: admin.firestore.DocumentData
+): { name: string; avatar: string } {
+  return {
+    name: typeof pet.name === "string" && pet.name.trim().length > 0 ? pet.name : "Pet",
+    avatar:
+      typeof pet.avatarUrl === "string" && pet.avatarUrl.trim().length > 0
+        ? pet.avatarUrl
+        : getDefaultAvatar(petId),
+  };
+}
+
+/** Every document the query finds, a page at a time. */
+async function updateCopies(
+  query: admin.firestore.Query,
+  fields: Record<string, string>
+): Promise<void> {
+  const ordered = query.orderBy(FieldPath.documentId());
+  let last: admin.firestore.QueryDocumentSnapshot | null = null;
+  for (;;) {
+    const page: admin.firestore.QuerySnapshot = await (last ? ordered.startAfter(last) : ordered)
+      .limit(FIRESTORE_BATCH_LIMIT)
+      .get();
+    if (page.empty) return;
+    await updateEach(page.docs, fields);
+    last = page.docs[page.docs.length - 1];
+    if (page.size < FIRESTORE_BATCH_LIMIT) return;
+  }
+}
+
+/**
+ * Meetup roster entries name the person and the pet they came with, and the
+ * index there is on the person, so the pet's entries are found through its
+ * owners. An entry by someone who has since left the pet's family keeps the
+ * name it was written with.
+ */
+async function updateRosterCopies(
+  petId: string,
+  pet: admin.firestore.DocumentData,
+  fields: Record<string, string>
+): Promise<void> {
+  const family = await db.collection(`pets/${petId}/family`).limit(PET_FAMILY_READ_LIMIT).get();
+  const owners = new Set(family.docs.map((docSnap) => docSnap.id));
+  for (const field of ["ownerId", "primaryOwnerId"]) {
+    if (typeof pet[field] === "string" && pet[field]) owners.add(pet[field]);
+  }
+  const uids = Array.from(owners);
+  for (let i = 0; i < uids.length; i += 30) {
+    const entries = await db
+      .collectionGroup("participants")
+      .where("userId", "in", uids.slice(i, i + 30))
+      .get();
+    await updateEach(entries.docs.filter((docSnap) => docSnap.data().petId === petId), fields);
+  }
+}
+
+/**
+ * A hundred at a time, skipping a copy that already says it, and leaving out
+ * one that went while the copies were being written: a follow undone, a
+ * roster entry left. update() so a copy that is gone stays gone.
+ */
+async function updateEach(
+  docs: admin.firestore.QueryDocumentSnapshot[],
+  fields: Record<string, string>
+): Promise<void> {
+  const stale = docs.filter((docSnap) =>
+    Object.entries(fields).some(([key, value]) => docSnap.get(key) !== value)
+  );
+  for (let i = 0; i < stale.length; i += 100) {
+    await Promise.all(
+      stale.slice(i, i + 100).map((docSnap) =>
+        docSnap.ref.update(fields).catch((error: unknown) => {
+          if ((error as { code?: unknown })?.code !== 5) throw error;
+        })
+      )
+    );
+  }
+}
