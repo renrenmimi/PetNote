@@ -3826,6 +3826,26 @@
         }
       }
     },
+    "Meetup is full.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这场聚会已满。"
+          }
+        }
+      }
+    },
+    "Meetup is no longer accepting participants.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这场聚会已不再接受报名。"
+          }
+        }
+      }
+    },
     "Meetups": {
       "localizations": {
         "zh-Hans": {
@@ -5725,6 +5745,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "已看过"
+          }
+        }
+      }
+    },
+    "Select a pet to join this meetup.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选一只宠物来报名这场聚会。"
           }
         }
       }

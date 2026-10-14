@@ -521,3 +521,49 @@ struct PlacesMeetupsTests {
         #expect(!model.hasMore)
     }
 }
+
+/// The server refuses a join in English sentences. The app shows them in the
+/// phone's language, one sentence at a time.
+struct MeetupRefusalTests {
+    /// A bundle with no translations in it: what English gets, whatever
+    /// language the machine running the tests is set to.
+    private final class NoTranslations {}
+    private static let english = Bundle(for: NoTranslations.self)
+    private static let zh = Locale(identifier: "zh-Hans")
+
+    private static func chinese() throws -> Bundle {
+        let path = try #require(Bundle.main.path(forResource: "zh-Hans", ofType: "lproj"), "the app was built without Chinese")
+        return try #require(Bundle(path: path))
+    }
+
+    @Test func theServersOwnRefusalsComeOutInChinese() throws {
+        let bundle = try Self.chinese()
+        #expect(MeetupRefusal.localized("Meetup is full.", bundle: bundle, locale: Self.zh) == "这场聚会已满。")
+        #expect(MeetupRefusal.localized("Meetup is no longer accepting participants.", bundle: bundle, locale: Self.zh)
+            == "这场聚会已不再接受报名。")
+        #expect(MeetupRefusal.localized("Select a pet to join this meetup.", bundle: bundle, locale: Self.zh) == "选一只宠物来报名这场聚会。")
+    }
+
+    @Test func severalRulesAtOnceAreEachPutIntoChinese() throws {
+        let words = MeetupRefusal.localized(
+            "Must have posted at least once. Requires at least 3 followed pets. Dogs only.",
+            bundle: try Self.chinese(), locale: Self.zh
+        )
+        #expect(words == "需要至少发过一条帖子。需要至少关注 3 只宠物。仅限狗。")
+    }
+
+    @Test func inEnglishTheServersWordsAreUnchanged() {
+        let reason = "Must have posted at least once. Must have a pet profile. Cats only."
+        #expect(MeetupRefusal.localized(reason, bundle: Self.english) == reason)
+        #expect(MeetupRefusal.localized("Meetup is full.", bundle: Self.english) == "Meetup is full.")
+    }
+
+    /// The server says "pets" for one as well.
+    @Test func oneFollowedPetIsOnePet() {
+        #expect(MeetupRefusal.localized("Requires at least 1 followed pets.", bundle: Self.english) == "Requires at least 1 followed pet.")
+    }
+
+    @Test func aSentenceItDoesNotKnowIsShownAsTheServerWroteIt() throws {
+        #expect(MeetupRefusal.localized("Something new. Dogs only.", bundle: try Self.chinese(), locale: Self.zh) == "Something new. 仅限狗。")
+    }
+}
