@@ -19,6 +19,9 @@ export const TRUSTED_MEDIA_URL_HOSTS = ["res.cloudinary.com"] as const;
 
 export const RATE_LIMITS = {
   read: { limit: 120, windowMs: 60_000 },
+  // One budget shared by every caller who is not signed in, for the reads
+  // that allow them.
+  anonymousRead: { limit: 120, windowMs: 60_000 },
   write: { limit: 30, windowMs: 60_000 },
   strictWrite: { limit: 10, windowMs: 60_000 },
   uploadSignature: { limit: 30, windowMs: 60_000 },

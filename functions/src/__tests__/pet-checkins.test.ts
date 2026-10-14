@@ -2,6 +2,7 @@ import "./setup";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { admin, db } from "../platform";
 import { getPetCheckinsCallable } from "../places";
+import { RATE_LIMITS } from "../shared";
 import { callAs, clearRateLimits, errorCodeOf } from "./helpers";
 
 // The checkins collection group is now scoped to the requesting user, which
@@ -62,6 +63,14 @@ afterAll(wipe);
 type Res = {
   checkins: Array<Record<string, unknown>>;
 };
+
+/** As the callable runs for a caller who is not signed in, with the headers it chose to send. */
+function callAnonymously<R>(data: unknown, headers: Record<string, string>): Promise<R> {
+  const request = { data, auth: undefined, rawRequest: { headers, ip: "10.0.0.1" }, acceptsStreaming: false };
+  return Promise.resolve(
+    (getPetCheckinsCallable as unknown as { run: (r: unknown) => R | Promise<R> }).run(request)
+  );
+}
 
 describe("getPetCheckinsCallable", () => {
   it("returns a pet's check-ins without being logged in", async () => {
@@ -151,6 +160,34 @@ describe("getPetCheckinsCallable", () => {
 
   it("returns an empty list for a pet with no check-ins", async () => {
     const res = await callAs<Res>(getPetCheckinsCallable, null, { petId: PET });
+    expect(res.checkins).toEqual([]);
+  });
+
+  it("gives everyone who is not signed in one budget, whatever they send", async () => {
+    // Clear of a minute's end: the budget is counted per minute.
+    const left = 60_000 - (Date.now() % 60_000);
+    if (left < 3_000) await new Promise((resolve) => setTimeout(resolve, left + 50));
+
+    await callAnonymously<Res>({ petId: PET }, { "x-forwarded-for": "198.51.100.1" });
+    const buckets = await db
+      .collection("callableRateLimits")
+      .where("action", "==", "getPetCheckins")
+      .get();
+    expect(buckets.size).toBe(1);
+    // The rest of the minute's budget spent, as many callers would spend it.
+    await buckets.docs[0].ref.update({ count: RATE_LIMITS.anonymousRead.limit - 1 });
+
+    await callAnonymously<Res>({ petId: PET }, { "x-forwarded-for": "198.51.100.2" });
+    expect(
+      await errorCodeOf(() => callAnonymously({ petId: PET }, { "x-forwarded-for": "203.0.113.9" }))
+    ).toBe("resource-exhausted");
+    expect(await errorCodeOf(() => callAnonymously({ petId: PET }, {}))).toBe("resource-exhausted");
+    expect(
+      (await db.collection("callableRateLimits").where("action", "==", "getPetCheckins").get()).size
+    ).toBe(1);
+
+    // A signed-in caller is counted by its own budget.
+    const res = await callAs<Res>(getPetCheckinsCallable, "a-signed-in-viewer", { petId: PET });
     expect(res.checkins).toEqual([]);
   });
 });
