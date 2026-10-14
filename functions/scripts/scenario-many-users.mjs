@@ -37,7 +37,7 @@
  *   SIM_ONLY      a comma-separated list of what to run besides the accounts,
  *                 pets and posts the rest need: follows, likes, comments,
  *                 meetup, invitation, places, visitors, ratelimit, names,
- *                 deletes, family.
+ *                 deletes, family, petnames.
  *   SIM_CLEANUP   1 to delete everything the run made, and its accounts,
  *                 then check that nothing of it is left. Always on in the
  *                 cloud.
@@ -860,6 +860,56 @@ async function scenarios() {
         `${steps.filter((s) => s.ok).length} of 5 renames ok${steps.every((s) => s.ok) ? "" : ` (${tally(steps).codes})`}; `
           + `${total - left.length} of ${total} copies say the last name${left.length ? ` (an older one: ${byKind})` : ""}`);
     }
+  }
+
+  if (want("petnames")) {
+    // --- A pet renamed and given a new photo twice in a row by its owner,
+    // while everyone else follows it and it is on a meetup's roster: every
+    // copy of its name and photo ends with the last ones, and its post count
+    // does not move.
+    const owner = users[1];
+    const star = petIds[1];
+    const follows = await Promise.all(users.filter((u) => u !== owner).map((u) => call(u, "followPetCallable", { petId: star })));
+    const gathering = await call(owner, "createMeetupCallable", {
+      title: `TEST CONTENT ${TAG} with a renamed pet`, description: "TEST CONTENT the pet is renamed",
+      dateMillis: Date.now() + 5 * 86_400_000, duration: 60,
+      location: { kind: "address", address: "1 Sim St, Medford, MA", label: "" },
+      locationVisibility: "everyone",
+      requirements: { petType: "any", dogSize: "any", maxPets: 0, mustHavePosts: false, mustHavePetProfile: false, minFollowers: 0, additionalNotes: "" },
+      organizerPetId: star,
+    });
+    const gatheringId = gathering.result?.meetupId ?? gathering.result?.id;
+    if (!gatheringId) throw new Error(`the meetup came back without an id: ${JSON.stringify(gathering).slice(0, 200)}`);
+    made.meetups.push(gatheringId);
+    const petCopies = async () => ({
+      posts: await adminQuery(null, "posts", { where: ["petId", star] }),
+      follows: await adminQuery(null, "followingPets", { allDescendants: true, where: ["petId", star] }),
+      roster: (await adminQuery(`meetups/${gatheringId}`, "participants")).filter((r) => r.petId === star),
+    });
+    const outOfStep = (c, name, photo) => [
+      ...c.posts.filter((d) => d.petName !== name || d.petAvatarUrl !== photo).map(() => "posts"),
+      ...c.follows.filter((d) => d.petName !== name || d.petAvatar !== photo).map(() => "follow lists"),
+      ...c.roster.filter((d) => d.petName !== name || d.petAvatar !== photo).map(() => "roster"),
+    ];
+    // Every follow is in place before the renames start.
+    await settle(petCopies, (c) => c.follows.length === tally(follows).ok);
+    const postCount = (await adminGet(`pets/${star}`))?.postCount;
+    const photo = (k) => `https://api.dicebear.com/7.x/thumbs/svg?seed=${TAG}-${k}`;
+    const steps = [];
+    for (const k of [1, 2]) steps.push(await call(owner, "updatePetCallable", { petId: star, name: `Simpet ${SHORT} v${k}`, avatarUrl: photo(k) }));
+    const lastName = `Simpet ${SHORT} v2`;
+    const end = await settle(petCopies, (c) => outOfStep(c, lastName, photo(2)).length === 0);
+    const left = outOfStep(end, lastName, photo(2));
+    const total = end.posts.length + end.follows.length + end.roster.length;
+    const byKind = Object.entries(left.reduce((m, kind) => ({ ...m, [kind]: (m[kind] ?? 0) + 1 }), {}))
+      .map(([kind, n]) => `${n} ${kind}`).join(", ");
+    check("pets: renamed with a new photo twice in a row, every copy ends with the last",
+      steps.every((st) => st.ok) && end.follows.length === tally(follows).ok && end.roster.length === 1 && left.length === 0,
+      `${steps.filter((st) => st.ok).length} of 2 changes ok${steps.every((st) => st.ok) ? "" : ` (${tally(steps).codes})`}; `
+        + `${total - left.length} of ${total} copies say the last name and photo (${end.posts.length} posts, ${end.follows.length} follow lists, ${end.roster.length} roster)`
+        + `${left.length ? `; an older one: ${byKind}` : ""}`);
+    const renamed = await adminGet(`pets/${star}`);
+    check("pets: and its post count does not move", renamed?.postCount === postCount, `postCount ${renamed?.postCount}, before ${postCount}`);
   }
 
   if (want("deletes")) {
