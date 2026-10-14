@@ -63,6 +63,19 @@ export async function deliverDelete<E>(
   await fn.run(asEvent<E>({ id: eventId, params, data: snapshot }));
 }
 
+/**
+ * Delivers a create event carrying a snapshot captured earlier: the event of a
+ * document that was gone again by the time its trigger ran.
+ */
+export async function deliverLateCreate<E>(
+  fn: TriggerFn<E>,
+  snapshot: admin.firestore.DocumentSnapshot,
+  params: Record<string, string>,
+  eventId: string
+): Promise<void> {
+  await fn.run(asEvent<E>({ id: eventId, params, data: snapshot }));
+}
+
 /** Delivers an onDocumentWritten event with explicit before/after snapshots. */
 export async function deliverWritten<E>(
   fn: TriggerFn<E>,

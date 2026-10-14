@@ -4,7 +4,7 @@ import type { Transaction } from "firebase-admin/firestore";
 import { db, FieldValue } from "../platform";
 import { onCommentDeleted, onFollowingPetCreated, onLikeCreated } from "../notifications";
 import { CONTENTION_RETRY, nothingToCountIfGone, runEventOnce } from "../shared";
-import { captureSnapshot, clearEventLedger, deliverCreate, deliverDelete, fieldOf, newEventId, purge, serverTime } from "./helpers";
+import { captureSnapshot, clearEventLedger, deliverCreate, deliverDelete, deliverLateCreate, fieldOf, newEventId, purge, serverTime } from "./helpers";
 
 // Two hundred likes on one post at the same moment had 23 of their counting
 // transactions aborted for contention on the test project, and the triggers
@@ -147,7 +147,7 @@ describe("following without reading the pet", () => {
     await db.doc(follow(uid)).set({ petId: "contention-pet", followedAt: serverTime(), counted: false });
   };
   afterAll(async () => {
-    await purge(...Array.from({ length: 20 }, (_, i) => `users/follower-${i}`), "users/late-follower");
+    await purge(...Array.from({ length: 20 }, (_, i) => `users/follower-${i}`), "users/late-follower", "users/swept-follower");
   });
 
   it("counts many follows of one pet delivered at once, every one", async () => {
@@ -171,6 +171,28 @@ describe("following without reading the pet", () => {
     expect(await fieldOf("users/late-follower", "followingPetsCount")).toBe(0);
     expect((await db.doc(follow("late-follower")).get()).get("counted")).toBe(false);
     expect((await db.doc("pets/contention-pet/followers/late-follower").get()).exists).toBe(false);
+  });
+
+  it("does not write back a follow that went with its pet before the trigger ran", async () => {
+    // The pet is deleted and its follows swept before this follow's create
+    // trigger runs. Finding no pet, the trigger must not write the follow
+    // back: in the cloud that is a new follow, which sets the trigger off
+    // again, to find the pet still gone and do the same, for as long as the
+    // pet stays deleted. Here no second event is delivered, so what is
+    // checked is the write itself.
+    await writeFollow("swept-follower");
+    const snapshot = await captureSnapshot(follow("swept-follower"));
+    await db.doc(PET).delete();
+    await db.doc(follow("swept-follower")).delete();
+    const set = vi.spyOn(snapshot.ref, "set");
+    const create = vi.spyOn(snapshot.ref, "create");
+
+    await deliverLateCreate(onFollowingPetCreated, snapshot, { userId: "swept-follower", petId: "contention-pet" }, newEventId("follow"));
+
+    expect(set, "the follow was written back").not.toHaveBeenCalled();
+    expect(create, "the follow was written back").not.toHaveBeenCalled();
+    expect((await db.doc(follow("swept-follower")).get()).exists).toBe(false);
+    expect(await fieldOf("users/swept-follower", "followingPetsCount")).toBe(0);
   });
 });
 
