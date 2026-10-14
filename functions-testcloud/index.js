@@ -6,7 +6,8 @@
  * first for secrets (none), network calls (none), schedules (none) and side
  * effects outside Firestore (Firebase Auth updateUser in the two profile
  * callables); 5 more on 2026-10-01 for places and meetups, audited the same
- * way (no secrets, no network calls, no schedules, Firestore only). Nothing
+ * way (no secrets, no network calls, no schedules, Firestore only); 2 more on
+ * 2026-10-14 for leaving and cancelling a meetup, audited the same way. Nothing
  * that binds a secret, runs on a schedule, or deletes media belongs here; the
  * guards below refuse the first two.
  *
@@ -116,6 +117,14 @@ const EXPORTS = {
   updateMeetupCallable: meetups.updateMeetupCallable,
   joinMeetupCallable: meetups.joinMeetupCallable,
   cancelMeetupCallable: meetups.cancelMeetupCallable,
+
+  // Authorized by the owner on 2026-10-14, so that leaving and cancelling a
+  // meetup can be tested with many people at once: the trigger that takes a
+  // leaver off the count, and the one that tells everyone on the roster the
+  // meetup is cancelled. Neither binds a secret, calls out or runs on a
+  // schedule; both only read and write Firestore.
+  onParticipantDeleted: meetups.onParticipantDeleted,
+  onMeetupUpdated: notifications.onMeetupUpdated,
 };
 
 // The test project never resolves to production's Cloudinary account. With
@@ -141,7 +150,7 @@ if (testAccount) {
 
 // Exactly the authorized set: a name added here by accident is a deployment
 // nobody approved.
-const EXPECTED_COUNT = 39 + (testAccount ? MEDIA_FUNCTIONS.length : 0);
+const EXPECTED_COUNT = 41 + (testAccount ? MEDIA_FUNCTIONS.length : 0);
 if (Object.keys(EXPORTS).length !== EXPECTED_COUNT) {
   throw new Error(`testcloud entry: ${Object.keys(EXPORTS).length} exports, ${EXPECTED_COUNT} authorized`);
 }
