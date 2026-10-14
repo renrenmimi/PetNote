@@ -1,0 +1,15 @@
+{
+  "//": "Emulators for functions/scripts/scenario-many-users.mjs: the whole server, triggers included, on ports of their own, so a run never meets the iOS UI tests' emulators (8088/9099/5101) or the functions tests' (8188/9199). The project is petnote-test, the emulator; nothing here reaches a cloud project.",
+  "firestore": { "rules": "firestore.rules", "indexes": "firestore.indexes.json" },
+  "functions": [{ "source": "functions", "codebase": "default" }],
+  "emulators": {
+    "auth": { "port": 9299 },
+    "firestore": { "port": 8288, "websocketPort": 9251 },
+    "functions": { "port": 5301 },
+    "hub": { "port": 4610 },
+    "logging": { "port": 4710 },
+    "eventarc": { "port": 9399 },
+    "ui": { "enabled": false },
+    "singleProjectMode": true
+  }
+}
