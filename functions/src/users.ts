@@ -481,6 +481,11 @@ export const updateUserProfileCallable = onCall(async (request) => {
 
   // Only hit Auth when something Auth-visible actually changed. Bio-only
   // edits don't need to touch Auth, and updateUser({}) is a wasted RPC.
+  //
+  // The profile is saved by now, so Auth's quota for account updates must not
+  // turn it into an error: two hundred people renaming at once on the test
+  // project had 91 told their rename failed when every one was saved. As in
+  // ensureUserProfileCallable, the copy waits for the next update.
   if (displayName !== undefined || avatarUrl !== undefined) {
     await admin.auth().updateUser(
       callerUid,
@@ -488,7 +493,10 @@ export const updateUserProfileCallable = onCall(async (request) => {
         displayName,
         photoURL: avatarUrl,
       })
-    );
+    ).catch((error: unknown) => {
+      if (!isAuthQuotaExceeded(error)) throw error;
+      console.warn(`updateUserProfile: Auth quota exceeded, account copy of the profile skipped for ${callerUid}`);
+    });
   }
 
   return { success: true };
