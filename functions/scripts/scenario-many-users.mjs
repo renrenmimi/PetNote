@@ -623,6 +623,13 @@ async function scenarios() {
       meetup?.participantCount <= CAP && roster.length <= CAP && meetup?.participantCount === roster.length,
       `${joined} joined of ${N - 1}; participantCount ${meetup?.participantCount}, ${roster.length} on the roster, room for ${CAP}`);
     check("meetup: and it fills up", meetup?.participantCount === CAP, `participantCount ${meetup?.participantCount}, room for ${CAP}`);
+    // Everyone who did not get a place should hear that it is full, the way
+    // the app tells them, and not get an error because the crowd collided.
+    const toldFull = joins.filter((j) => j.ok && j.result?.success === false);
+    const failed = tally(joins);
+    check("meetup: the ones left out are told it is full, not given an error",
+      failed.refused === 0,
+      `${toldFull.length} told "${toldFull[0]?.result?.error ?? "-"}"; ${failed.refused} errors${failed.codes ? ` (${failed.codes})` : ""}`);
     if (CLOUD) {
       skip("meetup: five leave at once, the count follows", "the test project has no onParticipantDeleted");
       skip("meetup: the freed places go to the next ones, and no more", "the test project has no onParticipantDeleted");
