@@ -163,31 +163,65 @@ describe("getPetCheckinsCallable", () => {
     expect(res.checkins).toEqual([]);
   });
 
-  it("gives everyone who is not signed in one budget, whatever they send", async () => {
-    // Clear of a minute's end: the budget is counted per minute.
+  /** Clear of a minute's end: the budget is counted per minute. */
+  async function clearOfTheMinutesEnd(seconds: number) {
     const left = 60_000 - (Date.now() % 60_000);
-    if (left < 3_000) await new Promise((resolve) => setTimeout(resolve, left + 50));
+    if (left < seconds * 1000) await new Promise((resolve) => setTimeout(resolve, left + 50));
+  }
 
-    await callAnonymously<Res>({ petId: PET }, { "x-forwarded-for": "198.51.100.1" });
+  const SHARD_IDS = Array.from(
+    { length: RATE_LIMITS.anonymousRead.shards },
+    (_, i) => `anon_everyone_s${i}_getPetCheckins`
+  );
+  const PER_SHARD = Math.ceil(RATE_LIMITS.anonymousRead.limit / RATE_LIMITS.anonymousRead.shards);
+
+  /** Some of the shared budget spent this minute: `counts[i]` in shard i. */
+  async function spend(counts: number[]) {
+    const windowMs = RATE_LIMITS.anonymousRead.windowMs;
+    const windowStartedAt = Math.floor(Date.now() / windowMs) * windowMs;
+    await Promise.all(counts.map((count, i) =>
+      db.doc(`callableRateLimits/${SHARD_IDS[i]}`).set({
+        userId: "anon_everyone", action: "getPetCheckins", windowStartedAt, windowMs, count,
+      })
+    ));
+  }
+
+  it("counts everyone who is not signed in against one shared budget, whatever they send", async () => {
+    await clearOfTheMinutesEnd(5);
+    for (let i = 0; i < 20; i += 1) {
+      await callAnonymously<Res>({ petId: PET }, { "x-forwarded-for": `198.51.100.${i}` });
+    }
     const buckets = await db
       .collection("callableRateLimits")
       .where("action", "==", "getPetCheckins")
       .get();
-    expect(buckets.size).toBe(1);
-    // The rest of the minute's budget spent, as many callers would spend it.
-    await buckets.docs[0].ref.update({ count: RATE_LIMITS.anonymousRead.limit - 1 });
+    expect(buckets.docs.every((d) => SHARD_IDS.includes(d.id))).toBe(true);
+    expect(buckets.docs.reduce((sum, d) => sum + (d.get("count") as number), 0)).toBe(20);
+  });
 
-    await callAnonymously<Res>({ petId: PET }, { "x-forwarded-for": "198.51.100.2" });
-    expect(
-      await errorCodeOf(() => callAnonymously({ petId: PET }, { "x-forwarded-for": "203.0.113.9" }))
-    ).toBe("resource-exhausted");
-    expect(await errorCodeOf(() => callAnonymously({ petId: PET }, {}))).toBe("resource-exhausted");
-    expect(
-      (await db.collection("callableRateLimits").where("action", "==", "getPetCheckins").get()).size
-    ).toBe(1);
-
+  it("refuses everyone who is not signed in once the shared budget is spent", async () => {
+    await clearOfTheMinutesEnd(3);
+    await spend(SHARD_IDS.map(() => PER_SHARD));
+    const sent: Array<Record<string, string>> = [
+      { "x-forwarded-for": "203.0.113.9" }, { "x-forwarded-for": "198.51.100.7" }, {},
+    ];
+    for (const headers of sent) {
+      expect(await errorCodeOf(() => callAnonymously({ petId: PET }, headers))).toBe("resource-exhausted");
+    }
     // A signed-in caller is counted by its own budget.
     const res = await callAs<Res>(getPetCheckinsCallable, "a-signed-in-viewer", { petId: PET });
     expect(res.checkins).toEqual([]);
+  });
+
+  it("never lets the shared budget be overspent", async () => {
+    await clearOfTheMinutesEnd(5);
+    // Room for one more in the last shard, none in the others.
+    await spend(SHARD_IDS.map((_, i) => (i === SHARD_IDS.length - 1 ? PER_SHARD - 1 : PER_SHARD)));
+    let answered = 0;
+    for (let i = 0; i < 30; i += 1) {
+      if ((await errorCodeOf(() => callAnonymously({ petId: PET }, {}))) === null) answered += 1;
+    }
+    expect(answered).toBeLessThanOrEqual(1);
+    expect(PER_SHARD * SHARD_IDS.length).toBe(RATE_LIMITS.anonymousRead.limit);
   });
 });

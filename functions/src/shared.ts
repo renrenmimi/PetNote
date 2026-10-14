@@ -20,8 +20,8 @@ export const TRUSTED_MEDIA_URL_HOSTS = ["res.cloudinary.com"] as const;
 export const RATE_LIMITS = {
   read: { limit: 120, windowMs: 60_000 },
   // One budget shared by every caller who is not signed in, for the reads
-  // that allow them.
-  anonymousRead: { limit: 120, windowMs: 60_000 },
+  // that allow them, counted in shards so they do not queue on one document.
+  anonymousRead: { limit: 120, windowMs: 60_000, shards: 10 },
   write: { limit: 30, windowMs: 60_000 },
   strictWrite: { limit: 10, windowMs: 60_000 },
   uploadSignature: { limit: 30, windowMs: 60_000 },
@@ -424,11 +424,19 @@ export function wasCountedAtCreate(
 export async function assertRateLimit(
   callerUid: string,
   action: string,
-  options: { limit: number; windowMs: number } = RATE_LIMITS.write
+  options: { limit: number; windowMs: number; shards?: number } = RATE_LIMITS.write
 ): Promise<void> {
   const now = Date.now();
   const windowStartedAt = Math.floor(now / options.windowMs) * options.windowMs;
-  const safeUid = callerUid.replace(/\//g, "_");
+  // A bucket many callers share is split into shards, one picked at random
+  // per call, each with its share of the budget, so the total is still the
+  // limit. On one document every caller's transaction queued behind the
+  // last: on the test project 60 at once waited up to 7.6 s, against 0.3 s
+  // for one alone.
+  const shards = options.shards && options.shards > 1 ? Math.floor(options.shards) : 1;
+  const limit = shards > 1 ? Math.ceil(options.limit / shards) : options.limit;
+  const bucket = shards > 1 ? `${callerUid}_s${Math.floor(Math.random() * shards)}` : callerUid;
+  const safeUid = bucket.replace(/\//g, "_");
   const safeAction = action.replace(/[^A-Za-z0-9_-]/g, "_");
   const rateLimitRef = db.doc(`callableRateLimits/${safeUid}_${safeAction}`);
 
@@ -442,7 +450,7 @@ export async function assertRateLimit(
         ? data.count
         : 0;
 
-    if (currentCount >= options.limit) {
+    if (currentCount >= limit) {
       throw new HttpsError(
         "resource-exhausted",
         "Too many requests. Please wait a moment and try again."
