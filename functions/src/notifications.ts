@@ -348,17 +348,19 @@ export const onFollowingPetCreated = onDocumentCreated(
     // NOT stop a redelivery of the same create event — the follow doc still
     // exists the second time, so the increments ran again. The ledger closes
     // that half.
+    //
+    // The pet itself is not read in the transaction: every follower would
+    // lock it, and 199 following one pet at once on the test project had 21
+    // of their counts aborted for contention. Updating a pet that is gone
+    // fails the commit NOT_FOUND, which is nothing to count. The follower's
+    // own user document is still read: it is theirs alone.
     const counted = await runEventOnce(event.id, async (t) => {
       if (followRef) {
         const followSnap = await t.get(followRef);
         if (!followSnap.exists) return false;
         if (followSnap.data()?.counted === true) return false;
       }
-      const [userTxnSnap, petTxnSnap] = await Promise.all([
-        t.get(userRef),
-        t.get(petRef),
-      ]);
-      if (!petTxnSnap.exists) return false;
+      const userTxnSnap = await t.get(userRef);
       if (userTxnSnap.exists) {
         t.update(userRef, {
           followingPetsCount: FieldValue.increment(1),
@@ -383,7 +385,7 @@ export const onFollowingPetCreated = onDocumentCreated(
         t.update(followRef, { counted: true });
       }
       return true;
-    });
+    }).catch(nothingToCountIfGone);
     if (!counted) return;
 
     const petData = petSnap.data() ?? {};
