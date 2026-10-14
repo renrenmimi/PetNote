@@ -19,12 +19,19 @@ export async function cascadeDeletePost(postId: string): Promise<void> {
   const postSnap = await postRef.get();
   if (!postSnap.exists) return;
 
-  await Promise.all([
+  const sweep = () => Promise.all([
     deleteCollectionPath(`posts/${postId}/likes`),
     deleteCollectionPath(`posts/${postId}/comments`),
   ]);
-
+  await sweep();
   await postRef.delete();
+  // A like or comment that landed while the first sweep ran stayed under a
+  // post that is gone: 47 likes and 6 comments, with two hundred people
+  // liking and commenting as the post went. Once the post is gone no more
+  // can land — the rules refuse a like, and createCommentCallable takes back
+  // a comment it finds the post gone for — so one sweep after the delete is
+  // the last one needed.
+  await sweep();
 }
 
 export async function cascadeDeletePet(petId: string): Promise<void> {
