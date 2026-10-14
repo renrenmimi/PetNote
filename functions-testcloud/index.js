@@ -7,7 +7,8 @@
  * effects outside Firestore (Firebase Auth updateUser in the two profile
  * callables); 5 more on 2026-10-01 for places and meetups, audited the same
  * way (no secrets, no network calls, no schedules, Firestore only); 2 more on
- * 2026-10-14 for leaving and cancelling a meetup, audited the same way. Nothing
+ * 2026-10-14 for leaving and cancelling a meetup, and 1 that day for a pet's
+ * new name or photo reaching its copies, audited the same way. Nothing
  * that binds a secret, runs on a schedule, or deletes media belongs here; the
  * guards below refuse the first two.
  *
@@ -125,6 +126,12 @@ const EXPORTS = {
   // schedule; both only read and write Firestore.
   onParticipantDeleted: meetups.onParticipantDeleted,
   onMeetupUpdated: notifications.onMeetupUpdated,
+
+  // Authorized by the owner on 2026-10-14 with the change that adds it: a
+  // pet's new name or photo written onto its posts, follow lists, meetup
+  // rosters and check-ins. No secret, no call out, no schedule; Firestore
+  // only.
+  onPetUpdated: pets.onPetUpdated,
 };
 
 // The test project never resolves to production's Cloudinary account. With
@@ -150,7 +157,7 @@ if (testAccount) {
 
 // Exactly the authorized set: a name added here by accident is a deployment
 // nobody approved.
-const EXPECTED_COUNT = 41 + (testAccount ? MEDIA_FUNCTIONS.length : 0);
+const EXPECTED_COUNT = 42 + (testAccount ? MEDIA_FUNCTIONS.length : 0);
 if (Object.keys(EXPORTS).length !== EXPECTED_COUNT) {
   throw new Error(`testcloud entry: ${Object.keys(EXPORTS).length} exports, ${EXPECTED_COUNT} authorized`);
 }
