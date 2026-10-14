@@ -194,6 +194,14 @@ export const onUserUpdated = onDocumentWritten(
     if (nameChanged) checkinFields.userName = after.displayName;
     if (avatarChanged) checkinFields.userAvatar = after.avatarUrl;
 
+    // The meetups they organize carry their name and photo as well, shown as
+    // "Organized by …". updateMeetupCallable refreshed those only when the
+    // meetup itself was edited, so a renamed organizer kept the old name on
+    // every meetup they had not touched since.
+    const organizerFields: Record<string, string> = {};
+    if (nameChanged) organizerFields.organizerName = after.displayName;
+    if (avatarChanged) organizerFields.organizerAvatar = after.avatarUrl;
+
     const syncTasks: Array<[string, () => Promise<void>]> = [
       ["posts", () => syncCollection(db.collection("posts").where("authorId", "==", userId), postFields)],
       ["comments", () => syncCollection(db.collectionGroup("comments").where("authorId", "==", userId), commentFields)],
@@ -203,6 +211,7 @@ export const onUserUpdated = onDocumentWritten(
       ["family", () => syncCollection(db.collectionGroup("family").where("userId", "==", userId), familyFields)],
       ["followers", () => syncCollection(db.collectionGroup("followers").where("userId", "==", userId), followerMirrorFields)],
       ["checkins", () => syncCollection(db.collectionGroup("checkins").where("userId", "==", userId), checkinFields)],
+      ["meetups", () => syncCollection(db.collection("meetups").where("organizerId", "==", userId), organizerFields)],
     ];
 
     const syncFailures = await Promise.all(
