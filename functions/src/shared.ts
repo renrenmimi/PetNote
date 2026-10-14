@@ -361,7 +361,7 @@ export async function runEventOnce(
   }
 
   const ledgerRef = db.doc(`processedEvents/${eventLedgerId(eventId)}`);
-  return db.runTransaction(async (t) => {
+  const once = () => db.runTransaction(async (t) => {
     const seen = await t.get(ledgerRef);
     if (seen.exists) return false;
 
@@ -377,6 +377,44 @@ export async function runEventOnce(
     });
     return true;
   });
+
+  // Many events on one document at once can outlast the client library's own
+  // retries: two hundred likes on one post at the same moment had 23 of
+  // their counts aborted for contention on the test project, and these
+  // triggers are not redelivered, so those likes were never counted. The
+  // ledger makes another run safe, so a contended one waits and tries again.
+  for (let retry = 0; ; retry += 1) {
+    try {
+      return await once();
+    } catch (error) {
+      if (retry >= CONTENTION_RETRY.retries || !isContention(error)) throw error;
+      const wait = Math.min(CONTENTION_RETRY.capMs, CONTENTION_RETRY.baseMs * 2 ** retry);
+      await new Promise((resolve) => setTimeout(resolve, wait * (0.5 + Math.random())));
+    }
+  }
+}
+
+/**
+ * How long runEventOnce keeps trying a contended transaction: about twenty
+ * seconds at most, inside a trigger's minute. An object so a test can make it
+ * quick.
+ */
+export const CONTENTION_RETRY = { retries: 6, baseMs: 250, capMs: 6_000 };
+
+/** ABORTED, DEADLINE_EXCEEDED or UNAVAILABLE: worth another run when the run is idempotent. */
+function isContention(error: unknown): boolean {
+  const code = (error as { code?: unknown })?.code;
+  return code === 10 || code === 4 || code === 14;
+}
+
+/**
+ * For a trigger that updates a document without reading it first: when the
+ * document is gone the commit fails NOT_FOUND, which means there is nothing to
+ * count, as an existence check would have said. Anything else is thrown.
+ */
+export function nothingToCountIfGone(error: unknown): false {
+  if ((error as { code?: unknown })?.code === 5) return false;
+  throw error;
 }
 
 /**
