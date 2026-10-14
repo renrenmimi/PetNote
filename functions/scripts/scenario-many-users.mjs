@@ -43,8 +43,8 @@
  *                 cloud.
  *
  * Production is refused by name. On the test project, what it has not got
- * is skipped and said so: check-ins (no media account to vouch for a photo),
- * reviews, and the trigger that counts someone leaving a meetup.
+ * is skipped and said so: check-ins (no media account to vouch for a photo)
+ * and reviews.
  *
  * Exit code 0 only if every check passed.
  */
@@ -636,10 +636,7 @@ async function scenarios() {
     check("meetup: the ones left out are told it is full, not given an error",
       failed.refused === 0,
       `${toldFull.length} told "${toldFull[0]?.result?.error ?? "-"}"; ${failed.refused} errors${failed.codes ? ` (${failed.codes})` : ""}`);
-    if (CLOUD) {
-      skip("meetup: five leave at once, the count follows", "the test project has no onParticipantDeleted");
-      skip("meetup: the freed places go to the next ones, and no more", "the test project has no onParticipantDeleted");
-    } else {
+    {
       const leavers = roster.filter((r) => r.id !== users[0].uid).slice(0, 5);
       const byUid = new Map(users.map((u) => [u.uid, u]));
       await Promise.all(leavers.map((r) => clientDelete(byUid.get(r.id), `meetups/${meetupId}/participants/${r.id}`)));
@@ -655,10 +652,13 @@ async function scenarios() {
         `${rejoin.filter((j) => j.ok && j.result?.success !== false).length} got in of ${outside.length}; participantCount ${meetup?.participantCount}, room for ${CAP}`);
     }
 
-    // --- A second meetup, with room for everyone, cancelled while they are
-    // joining: whoever got in before the cancel is on the roster and counted,
-    // and nobody gets in after it.
+    // --- A second meetup, with room for everyone: half of them join, and it is
+    // cancelled while the other half are joining. Whoever got in before the
+    // cancel is on the roster and counted, nobody gets in after it, and
+    // everyone on the roster is told.
     const crowd = users.slice(1, Math.max(2, N - 1));
+    const firstHalf = crowd.slice(0, Math.ceil(crowd.length / 2));
+    const secondHalf = crowd.slice(firstHalf.length);
     const late = users[N - 1];
     const roomy = await call(users[0], "createMeetupCallable", {
       title: `TEST CONTENT ${TAG} cancelled`, description: "TEST CONTENT cancelled while people join",
@@ -671,22 +671,22 @@ async function scenarios() {
     const roomyId = roomy.result?.meetupId ?? roomy.result?.id;
     if (!roomyId) throw new Error(`the meetup to cancel came back without an id: ${JSON.stringify(roomy).slice(0, 200)}`);
     made.meetups.push(roomyId);
-    const joining = Promise.all(crowd.map((u) => call(u, "joinMeetupCallable", { meetupId: roomyId, petId: petIds[users.indexOf(u)] })));
+    const joinRoomy = (u) => call(u, "joinMeetupCallable", { meetupId: roomyId, petId: petIds[users.indexOf(u)] });
+    const firstIn = (await Promise.all(firstHalf.map(joinRoomy))).filter((j) => j.ok && j.result?.success !== false).length;
+    const joining = Promise.all(secondHalf.map(joinRoomy));
     await sleep(CLOUD ? 400 : 100);
     const cancel = await call(users[0], "cancelMeetupCallable", { meetupId: roomyId });
-    const joinedBefore = (await joining).filter((j) => j.ok && j.result?.success !== false).length;
+    const joinedBefore = firstIn + (await joining).filter((j) => j.ok && j.result?.success !== false).length;
     const after = await call(late, "joinMeetupCallable", { meetupId: roomyId, petId: petIds[N - 1] });
     const [cancelled, cancelledRoster] = await Promise.all([adminGet(`meetups/${roomyId}`), adminQuery(`meetups/${roomyId}`, "participants")]);
     check("meetup: cancelled while everyone joins, nobody gets in after",
       cancel.ok && cancelled?.status === "cancelled" && after.ok && after.result?.success === false,
-      `cancel ${cancel.ok ? "ok" : cancel.code}; status ${cancelled?.status}; ${joinedBefore} of ${crowd.length} got in first; `
+      `cancel ${cancel.ok ? "ok" : cancel.code}; status ${cancelled?.status}; ${joinedBefore} of ${crowd.length} got in first (${firstIn} before it began); `
         + `a join after the cancel: ${after.ok ? `"${after.result?.error ?? "joined"}"` : after.code}`);
     check("meetup: and its roster and count agree",
       cancelled?.participantCount === cancelledRoster.length && !cancelledRoster.some((r) => r.id === late.uid),
       `participantCount ${cancelled?.participantCount}, ${cancelledRoster.length} on the roster`);
-    if (CLOUD) {
-      skip("meetup: everyone on the roster is told it is cancelled", "the test project has no onMeetupUpdated");
-    } else {
+    {
       const toTell = cancelledRoster.filter((r) => r.id !== users[0].uid).map((r) => r.id);
       const told = await settle(async () => new Set((await adminQuery(null, "notifications", { where: ["fromUserId", users[0].uid] }))
         .filter((n) => n.type === "meetup_cancelled").map((n) => n.userId)), (set) => toTell.every((id) => set.has(id)));
