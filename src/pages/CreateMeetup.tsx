@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSubmitGuard } from "../hooks/useSubmitGuard";
 import { useNavigate } from "react-router-dom";
 import { Timestamp } from "firebase/firestore";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
@@ -29,6 +30,7 @@ const durations = [
 ];
 
 export function CreateMeetup() {
+  const { tryAcquire, release } = useSubmitGuard();
   const navigate = useNavigate();
   const { user, emailVerified, profile } = useAuth();
   const { showToast } = useToast();
@@ -145,6 +147,9 @@ export function CreateMeetup() {
 
   const handleCreate = async () => {
     if (!user || saving) return;
+    // Synchronous, unlike `saving`: the state update that disables the
+    // button lands a render later, and a double tap fits in the gap.
+    if (!tryAcquire()) return;
     if (requiresEmailVerification) {
       showToast("Please verify your email before creating meetups", "warning");
       return;
@@ -236,6 +241,7 @@ export function CreateMeetup() {
         err instanceof Error ? err.message : "Failed to create meetup.";
       showToast(message, "error");
     } finally {
+      release();
       setSaving(false);
     }
   };

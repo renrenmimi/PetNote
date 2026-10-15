@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { User } from "lucide-react";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import type { QueryDocumentSnapshot } from "firebase/firestore";
 import { useAuth } from "../hooks/useAuth";
 import {
@@ -9,9 +10,11 @@ import {
   getComments,
   type Comment,
 } from "../services/posts";
+import { signInReturnState } from "../utils/authNavigation";
 import { timeAgo } from "../utils/timeAgo";
 import { useToast } from "../contexts/ToastContext";
 import Avatar from "./Avatar";
+import { Capacitor } from "@capacitor/core";
 
 type CommentSectionProps = {
   postId: string;
@@ -34,6 +37,23 @@ export function CommentSection({
 }: CommentSectionProps) {
   const { user, emailVerified, isBanned } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  /*
+   * One handler for both focus and click, and it carries the destination.
+   * It used to be two copies of the same two ifs, and the navigate had no
+   * `from`, so signing in to leave a comment landed on the feed and left
+   * somebody to find the post again.
+   */
+  const goToSignInIfNeeded = () => {
+    if (!user) {
+      navigate("/login", { state: signInReturnState(location) });
+      return;
+    }
+    if (!isEmailVerified) {
+      showToast("Please verify your email first", "warning");
+    }
+  };
   const { showToast } = useToast();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const inputWrapperRef = useRef<HTMLDivElement | null>(null);
@@ -133,8 +153,35 @@ export function CommentSection({
     }
   };
 
+  /*
+   * Lifting the composer above the keyboard is a browser-only job.
+   *
+   * In a browser the layout viewport does not shrink for the keyboard, so a
+   * `sticky bottom-0` bar stays pinned to a viewport bottom that is now
+   * behind the keyboard, and the visual viewport is the only way to know by
+   * how much. On the device `KeyboardResize.Native` shrinks the web view
+   * itself, so the bar is already above the keyboard and any offset applied
+   * on top of that lifts it for nothing.
+   *
+   * Measured in the browser, the offset is 0 here, so this gate is not what
+   * closed the gap the phone showed — that was 176px of bottom padding on
+   * PostDetail for a tab bar it does not show. The gate stays because it is
+   * still the right shape: on native the plugin has already done this job,
+   * and an offset applied on top of it would lift the bar for nothing. What
+   * the offset actually reports on the device has not been measured.
+   *
+   * Worth recording while here: `stickyInput` does not pin the bar at all.
+   * A sticky element cannot leave its parent's box, and the parent section
+   * measured 503-698 against the bar's 595-686 — twelve pixels of travel.
+   * So the composer scrolls away with the comments. Not changed here.
+   */
   useEffect(() => {
-    if (!stickyInput || !window.visualViewport) return;
+    if (!stickyInput) return;
+    if (Capacitor.isNativePlatform()) {
+      setViewportOffset(0);
+      return;
+    }
+    if (!window.visualViewport) return;
     const viewport = window.visualViewport;
     const handleResize = () => {
       const offset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
@@ -435,37 +482,36 @@ export function CommentSection({
               className="h-6 w-6"
             />
           ) : (
-            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-[10px] text-slate-500 dark:bg-slate-700 dark:text-slate-300">
-              👤
+            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-slate-400 dark:bg-slate-700 dark:text-slate-400">
+              <User size={13} strokeWidth={2} aria-hidden="true" />
             </div>
           )}
           <input
             ref={inputRef}
             type="text"
+            /*
+              Order matters, and it was wrong. `isEmailVerified` is
+              `!!user && emailVerified`, so it is false for a guest too — and
+              the unverified branch came before the `user` branch, which is
+              why somebody who had never signed in was told to verify an
+              email address the app had never asked them for.
+              Banned, then signed out, then signed in but unverified, then
+              ready.
+            */
             placeholder={
               isBanned
                 ? "Account suspended"
+                : !user
+                ? "Log in to comment"
                 : !isEmailVerified
                 ? "Verify your email to comment"
-                : user
-                ? "Add a comment..."
-                : "Login to comment"
+                : "Add a comment..."
             }
             className="flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs text-slate-700 outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-200 dark:border-slate-700 dark:bg-slate-700 dark:text-white"
             value={text}
             readOnly={!user || isBanned || !isEmailVerified}
-            onFocus={() => {
-              if (!user) navigate("/login");
-              if (user && !isEmailVerified) {
-                showToast("Please verify your email first", "warning");
-              }
-            }}
-            onClick={() => {
-              if (!user) navigate("/login");
-              if (user && !isEmailVerified) {
-                showToast("Please verify your email first", "warning");
-              }
-            }}
+            onFocus={goToSignInIfNeeded}
+            onClick={goToSignInIfNeeded}
             onChange={(event) => setText(event.target.value)}
             maxLength={500}
             onKeyDown={(event) => {

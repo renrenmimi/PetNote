@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { Copy, MapPin, Search as SearchIcon } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useScrollRestoration } from "../hooks/useScrollRestoration";
 import { Navbar } from "../components/Navbar";
 import { PostCard } from "../components/PostCard";
 import { EmptyState } from "../components/EmptyState";
+import { InlineRetry } from "../components/InlineRetry";
+import { LoadFailedState } from "../components/LoadFailedState";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import Avatar from "../components/Avatar";
 import LazyImage from "../components/LazyImage";
@@ -176,6 +179,14 @@ function PetResultCard({ pet }: { pet: Pet }) {
   );
 }
 
+/**
+ * How many posts the most-used tag needs before "Popular" is a fair word.
+ *
+ * A judgement, not a measurement, and deliberately a named constant so it can
+ * be argued with rather than being an inline 5.
+ */
+const POPULAR_TAG_THRESHOLD = 5;
+
 export function Search() {
   // Come back to where you were, not to the top.
   useScrollRestoration("search");
@@ -200,6 +211,20 @@ export function Search() {
     Set<string>
   >(new Set());
   const [popularPets, setPopularPets] = useState<PopularPet[]>([]);
+  /*
+   * Which discovery modules failed, tracked one by one.
+   *
+   * These five were loaded with Promise.all and no catch at all, so any one
+   * rejection emptied the other four and surfaced an unhandled rejection.
+   * allSettled lets the parts that worked stay on screen and gives each
+   * failure its own retry, which is the difference between "search is broken"
+   * and "trending tags could not load".
+   */
+  const [exploreFailed, setExploreFailed] = useState<Set<string>>(new Set());
+  const [exploreToken, setExploreToken] = useState(0);
+  const [searchFailed, setSearchFailed] = useState(false);
+  const [tagsFailed, setTagsFailed] = useState(false);
+  const [tagsToken, setTagsToken] = useState(0);
   const [topPlaces, setTopPlaces] = useState<Location[]>([]);
   const [upcomingMeetups, setUpcomingMeetups] = useState<Meetup[]>([]);
   const [exploreLoading, setExploreLoading] = useState(false);
@@ -261,17 +286,21 @@ export function Search() {
     const loadTags = async () => {
       try {
         const tags = await getTrendingTags(12);
-        if (!ignore) setTrendingTags(tags);
+        if (!ignore) {
+          setTrendingTags(tags);
+          setTagsFailed(false);
+        }
       } catch {
-        // Trending tags are a non-critical discovery enhancement; on failure
-        // leave the section empty instead of surfacing an unhandled rejection.
+        // Still non-critical, but an empty section and a failed one are not
+        // the same thing, and only one of them is worth offering a retry for.
+        if (!ignore) setTagsFailed(true);
       }
     };
     void loadTags();
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [tagsToken]);
 
   useEffect(() => {
     if (hasQuery) return;
@@ -279,20 +308,29 @@ export function Search() {
     const loadExplore = async () => {
       setExploreLoading(true);
       try {
-        const [trending, suggested, popular, places, meetups] = await Promise.all([
+        const results = await Promise.allSettled([
           getTrendingPosts(9),
           getSuggestedPets(user?.uid ?? "", 8),
           getPopularPets(8),
           getTopRatedPlaces(5),
           getUpcomingMeetupPreview(3),
         ]);
-        if (!ignore) {
-          setTrendingPosts(trending);
-          setSuggestedPets(suggested);
-          setPopularPets(popular);
-          setTopPlaces(places);
-          setUpcomingMeetups(meetups);
-        }
+        if (ignore) return;
+        const failed = new Set<string>();
+        const take = <T,>(
+          result: PromiseSettledResult<T>,
+          key: string,
+          apply: (value: T) => void
+        ) => {
+          if (result.status === "fulfilled") apply(result.value);
+          else failed.add(key);
+        };
+        take(results[0], "trendingPosts", setTrendingPosts);
+        take(results[1], "suggestedPets", setSuggestedPets);
+        take(results[2], "popularPets", setPopularPets);
+        take(results[3], "topPlaces", setTopPlaces);
+        take(results[4], "meetups", setUpcomingMeetups);
+        setExploreFailed(failed);
       } finally {
         if (!ignore) setExploreLoading(false);
       }
@@ -301,7 +339,7 @@ export function Search() {
     return () => {
       ignore = true;
     };
-  }, [hasQuery, user]);
+  }, [hasQuery, user, exploreToken]);
 
   useEffect(() => {
     setShowAllPeople(false);
@@ -353,6 +391,7 @@ export function Search() {
             : searchByText(keyword),
         ]);
         if (ignore) return;
+        setSearchFailed(false);
         setSearchResults({
           users: userResults,
           pets: petResults,
@@ -360,8 +399,11 @@ export function Search() {
           posts: postResults,
         });
       } catch {
+        // An empty result set used to stand in for a failed query, so losing
+        // the connection mid-search read as "nothing matches".
         if (!ignore) {
           setSearchResults({ users: [], pets: [], tags: [], posts: [] });
+          setSearchFailed(true);
         }
       } finally {
         if (!ignore) {
@@ -431,8 +473,25 @@ export function Search() {
   // showing the empty state in that window flashes a false negative.
   const searchCompleted = searchResults !== null;
 
+  /*
+   * Discovery, deduplicated.
+   *
+   * The two sections do rank differently — suggested is followerCount
+   * descending minus the pets you already follow, popular is postCount
+   * descending — but with a small catalogue both lists resolve to the same
+   * animals, and the screen showed the same pet twice under two headings.
+   *
+   * So: one primary section, and the second only when it has enough pets the
+   * first does not already show. Neither is labelled "for you"; the headings
+   * say what the ordering actually is.
+   */
+  const discoverPets = suggestedPets;
+  const discoverIds = new Set(discoverPets.map((pet) => pet.id));
+  const alsoActivePets = popularPets.filter((pet) => !discoverIds.has(pet.id));
+  const showAlsoActive = alsoActivePets.length >= 3;
+
   return (
-    <div className="min-h-screen bg-slate-50 pb-20 dark:bg-slate-900">
+    <div className="min-h-screen bg-slate-50 pb-nav dark:bg-slate-900">
       <Navbar />
 
       <main className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
@@ -442,7 +501,12 @@ export function Search() {
         >
           <div className="rounded-2xl bg-white px-4 py-3 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
             <div className="flex items-center gap-2">
-              <span className="text-lg">🔍</span>
+              <SearchIcon
+                size={18}
+                strokeWidth={2}
+                className="shrink-0 text-slate-400 dark:text-slate-500"
+                aria-hidden="true"
+              />
               <input
                 type="text"
                 placeholder="Search people, pets, tags..."
@@ -465,10 +529,33 @@ export function Search() {
 
         {!hasQuery ? (
           <div className="space-y-5">
+            {tagsFailed && trendingTags.length === 0 ? (
+              <InlineRetry
+                label="Trending tags"
+                onRetry={() => setTagsToken((value) => value + 1)}
+              />
+            ) : null}
+
             {trendingTags.length > 0 ? (
               <section>
+                {/*
+                  getTrendingTags has no time window — it orders by a lifetime
+                  postCount — so "Trending" was a claim the query could not
+                  support, and on a small catalogue it sat above tags with one
+                  or two posts each. The heading is derived from what actually
+                  came back: if the most-used tag has enough behind it the word
+                  is earned, and otherwise this is simply a list of tags in use.
+                  The threshold is a judgement and not a measurement, which is
+                  why it is named and visible rather than buried.
+
+                  Nothing is padded to make the row look busier, and the count
+                  stays on every chip so the reader can see the weight of each
+                  one instead of inferring it from the heading.
+                */}
                 <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
-                  Trending Tags 🔥
+                  {(trendingTags[0]?.postCount ?? 0) >= POPULAR_TAG_THRESHOLD
+                    ? "Popular Tags"
+                    : "Tags in use"}
                 </h2>
                 <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
                   {trendingTags.map((tag) => (
@@ -476,9 +563,10 @@ export function Search() {
                       key={tag.name}
                       type="button"
                       onClick={() => handleTagClick(tag.name)}
-                      className="whitespace-nowrap rounded-full bg-gradient-to-r from-purple-100 to-pink-100 px-3 py-1 text-xs font-semibold text-purple-600 transition-all duration-200 hover:scale-105 dark:from-purple-500/20 dark:to-pink-500/20 dark:text-purple-200"
+                      className="min-h-9 whitespace-nowrap rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-700 transition-colors duration-200 hover:bg-purple-100 dark:bg-purple-500/15 dark:text-purple-200 dark:hover:bg-purple-500/25"
                     >
-                      #{tag.name} · {tag.postCount} posts
+                      #{tag.name} · {tag.postCount}{" "}
+                      {tag.postCount === 1 ? "post" : "posts"}
                     </button>
                   ))}
                 </div>
@@ -488,7 +576,7 @@ export function Search() {
             {filteredTrending.length > 0 || exploreLoading ? (
               <section>
                 <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-                  🔥 Trending Posts
+                  Trending Posts
                 </h3>
                 {exploreLoading ? (
                   <div className="mt-3 grid grid-cols-3 gap-1">
@@ -529,8 +617,11 @@ export function Search() {
                             />
                           ) : null}
                           {post.media?.length && post.media.length > 1 ? (
-                            <span className="absolute right-2 top-2 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
-                              📚
+                            <span
+                              className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white"
+                              aria-label={`${post.media.length} photos`}
+                            >
+                              <Copy size={11} strokeWidth={2.4} aria-hidden="true" />
                             </span>
                           ) : null}
                           {media?.type === "video" ? (
@@ -546,13 +637,27 @@ export function Search() {
               </section>
             ) : null}
 
-            {suggestedPets.length > 0 ? (
+            {exploreFailed.has("trendingPosts") && trendingPosts.length === 0 ? (
+              <InlineRetry
+                label="Trending posts"
+                onRetry={() => setExploreToken((value) => value + 1)}
+              />
+            ) : null}
+
+            {exploreFailed.has("suggestedPets") && discoverPets.length === 0 ? (
+              <InlineRetry
+                label="Pet suggestions"
+                onRetry={() => setExploreToken((value) => value + 1)}
+              />
+            ) : null}
+
+            {discoverPets.length > 0 ? (
               <section>
                 <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-                  🐾 Suggested Pets
+                  Discover pets
                 </h3>
                 <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
-                  {suggestedPets.map((pet) => (
+                  {discoverPets.map((pet) => (
                     <SuggestedPetCard
                       key={pet.id}
                       pet={pet}
@@ -563,13 +668,13 @@ export function Search() {
               </section>
             ) : null}
 
-            {popularPets.length > 0 ? (
+            {showAlsoActive ? (
               <section>
                 <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-                  🐾 Popular Pets
+                  Most posts
                 </h3>
                 <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
-                  {popularPets.map((pet) => (
+                  {alsoActivePets.map((pet) => (
                     <button
                       key={pet.id}
                       type="button"
@@ -592,7 +697,7 @@ export function Search() {
                         </p>
                       ) : null}
                       <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">
-                        {pet.postCount} posts
+                        {pet.postCount} {pet.postCount === 1 ? "post" : "posts"}
                       </p>
                     </button>
                   ))}
@@ -604,7 +709,7 @@ export function Search() {
               <section>
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-                    📍 Top Rated Places
+                    Top Rated Places
                   </h3>
                   <button
                     type="button"
@@ -630,8 +735,8 @@ export function Search() {
                           cloudinarySize="small"
                         />
                       ) : (
-                        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 text-white">
-                          📍
+                        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-purple-100 text-purple-500 dark:bg-purple-500/15 dark:text-purple-300">
+                          <MapPin size={20} strokeWidth={1.9} aria-hidden="true" />
                         </div>
                       )}
                       <div>
@@ -695,9 +800,19 @@ export function Search() {
               </div>
             ) : null}
 
-            {!searching && searchCompleted && !hasAnyResult ? (
+            {!searching && searchFailed ? (
+              <LoadFailedState
+                title="Search could not run"
+                description="Something went wrong reaching PetNote. Check your connection and try again."
+                retryLabel="Try again"
+                retryingLabel="Trying..."
+                onRetry={() => handleQueryChange(query)}
+              />
+            ) : null}
+
+            {!searching && !searchFailed && searchCompleted && !hasAnyResult ? (
               <EmptyState
-                icon="🔍"
+                Icon={SearchIcon}
                 title={`No results for "${normalizedQuery}"`}
                 description="Try different keywords"
               />
@@ -808,7 +923,7 @@ export function Search() {
                     >
                       <span className="font-semibold text-purple-600">#{tag.name}</span>
                       <span className="text-xs text-slate-400 dark:text-slate-500">
-                        {tag.postCount} posts
+                        {tag.postCount} {tag.postCount === 1 ? "post" : "posts"}
                       </span>
                     </button>
                   ))}

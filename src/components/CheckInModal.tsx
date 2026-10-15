@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Camera } from "lucide-react";
 import { useModalBehavior } from "../hooks/useModalBehavior";
 import { createPortal } from "react-dom";
 import {
@@ -185,7 +186,12 @@ export function CheckInModal({
               />
             ) : (
               <>
-                <div className="text-2xl">📸</div>
+                <Camera
+                  size={26}
+                  strokeWidth={1.7}
+                  className="mx-auto text-slate-400 dark:text-slate-500"
+                  aria-hidden="true"
+                />
                 <p className="mt-2 font-semibold text-slate-600 dark:text-slate-300">
                   Take a photo at this location
                 </p>

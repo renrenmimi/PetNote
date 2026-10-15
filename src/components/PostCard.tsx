@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { MoreHorizontal } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useLike } from "../hooks/useLike";
@@ -14,7 +15,8 @@ import { ReportModal } from "./ReportModal";
 import { ShareMenu } from "./ShareMenu";
 import { timeAgo } from "../utils/timeAgo";
 import { useToast } from "../contexts/ToastContext";
-import Avatar from "./Avatar";
+import { PostActions } from "./post/PostActions";
+import { PostIdentity } from "./post/PostIdentity";
 
 type PostCardProps = {
   post: Post;
@@ -122,9 +124,6 @@ function PostCardImpl({
   const timeLabel = useMemo(() => timeAgo(post.createdAt), [post.createdAt]);
   const authorName = post.authorName || "PetNote User";
   const authorAvatar = post.authorAvatar || "";
-  const hasPetContext = !!(post.petId && post.petName);
-  const primaryName = hasPetContext ? post.petName || "Pet" : authorName;
-  const primaryAvatar = hasPetContext ? post.petAvatarUrl || "" : authorAvatar;
 
   const mediaItems = useMemo(() => {
     if (post.media && post.media.length > 0) {
@@ -419,63 +418,6 @@ function PostCardImpl({
 
   if (hidden) return null;
 
-  const HeartIcon = ({ filled }: { filled: boolean }) => {
-    const gradientId = `heart-${post.id}`;
-    return (
-      <svg
-        className={`h-6 w-6 ${
-          filled ? "text-red-500" : "text-slate-500 dark:text-slate-400"
-        }`}
-        viewBox="0 0 24 24"
-        fill={filled ? `url(#${gradientId})` : "none"}
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <defs>
-          <linearGradient id={gradientId} x1="0" x2="1" y1="0" y2="1">
-            <stop offset="0%" stopColor="#a855f7" />
-            <stop offset="100%" stopColor="#ec4899" />
-          </linearGradient>
-        </defs>
-        <path d="M20.8 6.6a5.5 5.5 0 0 0-7.8 0l-1 1-1-1a5.5 5.5 0 1 0-7.8 7.8l1 1L12 21l7.8-5.6 1-1a5.5 5.5 0 0 0 0-7.8Z" />
-      </svg>
-    );
-  };
-
-  const BookmarkIcon = ({ filled }: { filled: boolean }) => {
-    return (
-      <svg
-        className={`h-6 w-6 ${
-          filled ? "text-purple-500" : "text-slate-500 dark:text-slate-400"
-        }`}
-        viewBox="0 0 24 24"
-        fill={filled ? "currentColor" : "none"}
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
-      </svg>
-    );
-  };
-
-  const ShareIcon = () => (
-    <svg
-      className="h-6 w-6 text-slate-500 dark:text-slate-400"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M22 2L11 13" />
-      <path d="M22 2L15 22l-4-9-9-4Z" />
-    </svg>
-  );
 
   return (
     <div
@@ -498,64 +440,18 @@ function PostCardImpl({
           quickMenuOpen ? "scale-95" : ""
         }`}
       >
-      <header className="flex items-center gap-3 px-4 py-3">
-        <button
-          type="button"
-          onClick={() =>
-            hasPetContext && post.petId
-              ? navigate(`/pet/${post.petId}`)
-              : navigate(`/profile/${post.authorId}`)
-          }
-          className="transition-transform duration-200 hover:scale-105"
-        >
-          <Avatar
-            src={primaryAvatar}
-            alt={primaryName}
-            userId={hasPetContext && post.petId ? post.petId : post.authorId}
-            size={40}
-            className="h-10 w-10"
-          />
-        </button>
-        {/*
-          min-w-0 on both: a flex item's default min-width is its content, so
-          one long unbroken name — or a long CJK string, which has no spaces
-          to wrap at — pushed the options button off the card instead of
-          being truncated.
-        */}
-        <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
-          <div className="min-w-0">
-            <div className="flex min-w-0 flex-wrap items-center gap-1">
-              <button
-                type="button"
-                onClick={() =>
-                  hasPetContext && post.petId
-                    ? navigate(`/pet/${post.petId}`)
-                    : navigate(`/profile/${post.authorId}`)
-                }
-                className="max-w-full truncate text-sm font-semibold text-slate-900 transition-all duration-200 hover:text-purple-600 dark:text-white"
-              >
-                {primaryName}
-              </button>
-            </div>
-            {hasPetContext ? (
-              <button
-                type="button"
-                onClick={() => navigate(`/profile/${post.authorId}`)}
-                className="block max-w-full truncate text-xs text-slate-500 transition-all duration-200 hover:text-purple-600 dark:text-slate-400"
-              >
-                by {authorName}
-              </button>
-            ) : null}
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              {timeLabel}
-              {isBirthday ? (
-                <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-500/20 dark:text-amber-200">
-                  🎂 Birthday!
-                </span>
-              ) : null}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
+      <div className="px-4 py-3">
+        <PostIdentity
+          petId={post.petId}
+          petName={post.petName}
+          petAvatarUrl={post.petAvatarUrl}
+          authorId={post.authorId}
+          authorName={authorName}
+          authorAvatarUrl={authorAvatar}
+          timeLabel={timeLabel}
+          isBirthday={isBirthday}
+          trailing={
+            <>
             {user && post.authorId !== user.uid && post.petId ? (
               <button
                 type="button"
@@ -564,7 +460,7 @@ function PostCardImpl({
                 className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-all duration-200 ${
                   isFollowingPet
                     ? "border border-slate-200 text-slate-500 hover:border-red-300 hover:text-red-500 dark:border-slate-700 dark:text-slate-300"
-                    : "bg-gradient-to-r from-purple-500 to-pink-500 text-white"
+                    : "bg-purple-600 text-white"
                 }`}
               >
                 {isFollowingPet ? "Following" : "Follow"}
@@ -574,10 +470,10 @@ function PostCardImpl({
             <button
               type="button"
               onClick={() => setMenuOpen((prev) => !prev)}
-              className="text-xl text-slate-400 transition-all duration-200 hover:text-slate-600 dark:text-slate-300 dark:hover:text-slate-100"
+              className="tap-target flex h-9 w-9 items-center justify-center text-slate-400 transition-colors duration-200 hover:text-slate-600 dark:text-slate-300 dark:hover:text-slate-100"
               aria-label="Post options"
             >
-              ⋯
+              <MoreHorizontal size={20} strokeWidth={2} aria-hidden="true" />
             </button>
             {menuOpen ? (
               <div className="absolute right-0 top-8 z-10 w-40 rounded-xl bg-white p-2 text-sm shadow-[0_12px_30px_-20px_rgba(15,23,42,0.5)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
@@ -656,9 +552,10 @@ function PostCardImpl({
               </div>
             ) : null}
             </div>
-          </div>
-        </div>
-      </header>
+            </>
+          }
+        />
+      </div>
 
       <div className="relative">
         <MediaCarousel
@@ -684,51 +581,16 @@ function PostCardImpl({
       </div>
 
       <div className="px-4 pb-4 pt-3">
-        <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
-          <div className="flex items-center gap-4">
-            <button
-              type="button"
-              onClick={handleLike}
-              className={`text-2xl transition-all duration-200 ${
-                animating ? "scale-110" : "scale-100"
-              } ${likedState ? "text-red-500" : "text-slate-500 dark:text-slate-400"}`}
-              // The filled heart is the only other signal, and colour
-              // alone is not one. aria-pressed carries the state; the
-              // label says what the tap will do.
-              aria-pressed={likedState}
-              aria-label={likedState ? "Unlike" : "Like"}
-            >
-              <HeartIcon filled={likedState} />
-            </button>
-            <button
-              type="button"
-              className="text-2xl text-slate-500 transition-all duration-200 hover:scale-105 dark:text-slate-400"
-              aria-label="Comment"
-              onClick={() => navigate(`/post/${post.id}`)}
-            >
-              💬
-            </button>
-            <button
-              type="button"
-              className="text-2xl transition-all duration-200 hover:scale-105"
-              aria-label="Share"
-              onClick={() => setShareOpen(true)}
-            >
-              <ShareIcon />
-            </button>
-          </div>
-          <button
-            type="button"
-            onClick={handleBookmark}
-            className={`transition-all duration-200 ${
-              bookmarkAnimating ? "scale-110" : "scale-100"
-            }`}
-            aria-pressed={isBookmarked}
-            aria-label={isBookmarked ? "Remove bookmark" : "Save"}
-          >
-            <BookmarkIcon filled={isBookmarked} />
-          </button>
-        </div>
+        <PostActions
+          liked={likedState}
+          onLike={handleLike}
+          onComment={() => navigate(`/post/${post.id}`)}
+          onShare={() => setShareOpen(true)}
+          bookmarked={isBookmarked}
+          onBookmark={handleBookmark}
+          likeAnimating={animating}
+          bookmarkAnimating={bookmarkAnimating}
+        />
 
         <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
           {likeTotal} likes

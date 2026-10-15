@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSubmitGuard } from "../hooks/useSubmitGuard";
 import { useNavigate } from "react-router-dom";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { useAuth } from "../hooks/useAuth";
@@ -45,6 +46,7 @@ const featureOptions: Array<{ key: PlaceFeature; label: string }> = [
 ];
 
 export function AddPlace() {
+  const { tryAcquire, release } = useSubmitGuard();
   const navigate = useNavigate();
   const { user, emailVerified, profile } = useAuth();
   const { showToast } = useToast();
@@ -105,6 +107,9 @@ export function AddPlace() {
   };
 
   const handleSubmit = async () => {
+    // Synchronous, unlike `saving`: the state update that disables the
+    // button lands a render later, and a double tap fits in the gap.
+    if (!tryAcquire()) return;
     if (!user) {
       showToast("Please login to add a place.", "error");
       return;
@@ -236,6 +241,7 @@ export function AddPlace() {
       }
       showToast("Failed to add place.", "error");
     } finally {
+      release();
       setSaving(false);
     }
   };

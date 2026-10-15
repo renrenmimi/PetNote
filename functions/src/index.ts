@@ -17,6 +17,7 @@ export {
 export { reverseGeocodeCallable, searchAddressesCallable } from "./geo";
 export {
   confirmPasswordResetCodeCallable,
+  deliverPasswordResetCodeTask,
   requestPasswordResetCodeCallable,
 } from "./passwordReset";
 export {

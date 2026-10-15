@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { isComposing } from "../hooks/useSubmitGuard";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { MediaCarousel } from "../components/MediaCarousel";
@@ -92,6 +93,11 @@ export function EditPost() {
   };
 
   const handleTagKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    // Both of these keys are how an IME is driven: Return accepts the
+    // highlighted candidate and Space pages through them. Committing a tag on
+    // either, mid-composition, turned a half-typed Chinese word into a tag and
+    // swallowed the keystroke the person meant for the candidate list.
+    if (isComposing(event.nativeEvent)) return;
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       handleTagCommit(tagInput);

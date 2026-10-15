@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 
+import { useBodyScrollLock } from "./useBodyScrollLock";
+
 /**
  * The behaviour every dialog in this app owes the person using it.
  *
@@ -37,6 +39,10 @@ export function useModalBehavior({
     onCloseRef.current = onClose;
   }, [onClose]);
 
+  // The scroll lock is shared with the full-screen onboarding, which wants
+  // that and nothing else from this hook.
+  useBodyScrollLock(open);
+
   useEffect(() => {
     if (!open) return;
 
@@ -45,28 +51,6 @@ export function useModalBehavior({
         ? document.activeElement
         : null;
 
-    /*
-     * Position-preserving scroll lock. `overflow: hidden` on its own is not
-     * enough on iOS — the page still rubber-bands, and on returning the
-     * scroll offset is gone. Pinning the body at a negative offset holds the
-     * view exactly where it was and restores it on close.
-     */
-    const scrollY = window.scrollY;
-    const { body } = document;
-    const previous = {
-      position: body.style.position,
-      top: body.style.top,
-      left: body.style.left,
-      right: body.style.right,
-      width: body.style.width,
-      overflow: body.style.overflow,
-    };
-    body.style.position = "fixed";
-    body.style.top = `-${scrollY}px`;
-    body.style.left = "0";
-    body.style.right = "0";
-    body.style.width = "100%";
-    body.style.overflow = "hidden";
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -90,13 +74,6 @@ export function useModalBehavior({
     return () => {
       window.clearTimeout(focusTimer);
       document.removeEventListener("keydown", handleKeyDown);
-      body.style.position = previous.position;
-      body.style.top = previous.top;
-      body.style.left = previous.left;
-      body.style.right = previous.right;
-      body.style.width = previous.width;
-      body.style.overflow = previous.overflow;
-      window.scrollTo(0, scrollY);
       // Back to whatever opened the dialog, so the next Tab continues from
       // there instead of restarting at the top of the document.
       previouslyFocused?.focus({ preventScroll: true });

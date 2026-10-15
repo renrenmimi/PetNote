@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { Bell, Search } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useHasUnreadNotifications } from "../hooks/useHasUnreadNotifications";
 import { useLanguage } from "../hooks/useLanguage";
@@ -41,19 +42,19 @@ export function Navbar() {
         <div className="flex items-center gap-3">
           <Link
             to="/search"
-            className="text-xl text-slate-500 transition-all duration-200 hover:scale-105 hover:text-purple-500 dark:text-slate-300"
+            className="flex min-h-11 min-w-11 items-center justify-center text-slate-500 transition-colors duration-200 hover:text-purple-500 dark:text-slate-300"
             aria-label={t("nav.search")}
           >
-            🔍
+            <Search size={22} strokeWidth={1.9} aria-hidden="true" />
           </Link>
           <Link
             to="/notifications"
-            className="relative text-xl text-slate-500 transition-all duration-200 hover:scale-105 hover:text-purple-500 dark:text-slate-300"
+            className="relative flex min-h-11 min-w-11 items-center justify-center text-slate-500 transition-colors duration-200 hover:text-purple-500 dark:text-slate-300"
             aria-label={t("nav.notifications")}
           >
-            🔔
+            <Bell size={22} strokeWidth={1.9} aria-hidden="true" />
             {hasUnread ? (
-              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-500" />
+              <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900" />
             ) : null}
           </Link>
           {!user ? (

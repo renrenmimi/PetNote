@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { PawPrint } from "lucide-react";
 import { getPopularPosts, type Post } from "../services/posts";
 import { optimizeCloudinaryUrl } from "../utils/cloudinaryUrl";
 
@@ -38,6 +39,7 @@ const PawAvatar = ({
   name: string;
   seen: boolean;
 }) => {
+  const [broken, setBroken] = useState(false);
   return (
     <div
       className="relative h-[62px] w-[62px] active:scale-95 transition-transform"
@@ -47,25 +49,36 @@ const PawAvatar = ({
         className={`absolute inset-0 ${
           seen
             ? "bg-gray-200 dark:bg-gray-700"
-            : "bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400"
+            : // Two stops, matching the brand gradient used by every other
+              // accent surface. The third, orange stop appeared nowhere else
+              // in the app and read as a different product.
+              "bg-gradient-to-br from-purple-500 to-pink-500"
         }`}
       />
       <div className="absolute inset-[2.5px] bg-white dark:bg-gray-900" />
       <div className="absolute inset-[4px]">
-        {src ? (
+        {src && !broken ? (
           <img
-            src={src ? optimizeCloudinaryUrl(src, "spotlight") : src}
+            src={optimizeCloudinaryUrl(src, "spotlight")}
             alt={name}
+            // A heart-shaped clip around the browser's broken-image glyph
+            // reads as "this app is broken", not "this pet has no photo".
+            onError={() => setBroken(true)}
             className={`h-full w-full object-cover ${
               seen ? "opacity-70" : ""
             }`}
           />
         ) : (
+          // A pet with no photo gets a flat brand tint. It used to get the
+          // same gradient as the ring, which inside a heart-shaped clip read
+          // as a broken image rather than an empty one.
           <div
-            className={`h-full w-full bg-gradient-to-br from-purple-500 to-pink-500 ${
+            className={`flex h-full w-full items-center justify-center bg-purple-100 text-purple-500 dark:bg-purple-500/20 dark:text-purple-200 ${
               seen ? "opacity-70" : ""
             }`}
-          />
+          >
+            <PawPrint size={22} strokeWidth={1.8} aria-hidden="true" />
+          </div>
         )}
       </div>
     </div>
@@ -92,8 +105,8 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
           setPosts(recent);
         }
       } catch {
-        // Spotlight is decorative — on failure show the empty state instead
-        // of leaving the skeleton pulsing forever.
+        // Decorative, and above the content somebody came for. A failure here
+        // renders nothing at all — see the note on the early return below.
         if (!ignore) setPosts([]);
       } finally {
         if (!ignore) setLoading(false);
@@ -111,7 +124,27 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
   }, []);
 
   const sortedPosts = useMemo(() => {
-    const list = posts.slice(0, limitCount);
+    /*
+     * One entry per pet, because the section is called "Popular Pets".
+     *
+     * The query returns popular *posts*, and a pet with four of the five
+     * most-liked posts filled the strip with its own name four times — which
+     * reads either as a bug or as the app having exactly one pet. Keeping the
+     * first occurrence keeps the ordering the query gave us; it just stops the
+     * same subject appearing twice under a heading that promises subjects.
+     *
+     * Posts with no pet fall back to the author for their label, so they are
+     * de-duplicated by author for the same reason.
+     */
+    const seen = new Set<string>();
+    const list: Post[] = [];
+    for (const post of posts) {
+      const subject = post.petId || post.authorId;
+      if (!subject || seen.has(subject)) continue;
+      seen.add(subject);
+      list.push(post);
+      if (list.length >= limitCount) break;
+    }
     return list.sort((a, b) => {
       const aSeen = seenPosts.includes(a.id);
       const bSeen = seenPosts.includes(b.id);
@@ -121,10 +154,34 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
     });
   }, [posts, limitCount, seenPosts]);
 
+  /*
+   * Nothing to show means nothing rendered — no heading, no card, no space.
+   *
+   * This module sits above the feed, so anything it occupies is space the
+   * photos somebody came for do not get. It used to render a full-width card
+   * whose only content was "Share your pet to get featured!", which is a
+   * pseudo-empty state: it reads as a prompt the product is making, when in
+   * fact the popularity query returned nothing or failed. On a feed that
+   * already has posts that is simply wrong — the user is not short of
+   * content, the decoration is.
+   *
+   * The loading state is included in this. A skeleton that resolves to
+   * nothing has still taken the space and still moved the feed, so there is
+   * no skeleton: the strip appears if and when it has pets. An empty result
+   * and a failed query are deliberately the same silent outcome, because
+   * neither is something to ask the reader to act on.
+   */
+  if (loading || sortedPosts.length === 0) return null;
+
   return (
-    <section className="rounded-2xl bg-white px-4 py-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 transition-all duration-200 dark:bg-slate-800 dark:ring-slate-700">
-      <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
-        ⭐ Popular Pets
+    /*
+     * A strip, not a card. Card chrome around a row of avatars put a border
+     * and a shadow between the reader and the first photo for no gain; the
+     * heading plus the row is the whole module.
+     */
+    <section aria-label="Popular pets">
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        Popular Pets
       </h2>
       <svg width="0" height="0" className="absolute">
         <defs>
@@ -134,21 +191,7 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
         </defs>
       </svg>
 
-      {loading ? (
-        <div className="mt-4 flex gap-3 overflow-x-auto overflow-y-visible pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {Array.from({ length: 5 }).map((_, index) => (
-            <div key={index} className="flex w-[72px] flex-col items-center gap-1.5">
-              <div className="h-16 w-16 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-700" />
-              <div className="h-3 w-12 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
-            </div>
-          ))}
-        </div>
-      ) : posts.length === 0 ? (
-        <p className="mt-4 text-sm text-slate-500 dark:text-slate-300">
-          Share your pet to get featured! 🐾
-        </p>
-      ) : (
-        <div className="mt-4 flex gap-3 overflow-x-auto overflow-y-visible pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="mt-2 flex gap-3 overflow-x-auto overflow-y-visible pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {sortedPosts.map((post) => {
             const isSeen = seenPosts.includes(post.id);
             const mediaUrl =
@@ -190,8 +233,7 @@ export function PetSpotlight({ limitCount = 10 }: PetSpotlightProps) {
               </button>
             );
           })}
-        </div>
-      )}
+      </div>
     </section>
   );
 }

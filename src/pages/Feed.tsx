@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useScrollRestoration } from "../hooks/useScrollRestoration";
 import { Navbar } from "../components/Navbar";
@@ -406,7 +407,7 @@ export function Feed() {
   }, [endGesture]);
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20 dark:bg-slate-900">
+    <div className="min-h-screen bg-slate-50 pb-nav dark:bg-slate-900">
       <Navbar />
 
       <main
@@ -485,7 +486,10 @@ export function Feed() {
               </button>
             ) : null}
             <span
-              className={`absolute bottom-0 h-0.5 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300 ${
+              // A solid accent, not a gradient. The brand gradient is worth
+              // one thing per screen — the primary action — and a 2px
+              // indicator competing with it left nothing dominant.
+              className={`absolute bottom-0 h-0.5 rounded-full bg-purple-500 transition-all duration-300 ${
                 user ? "w-1/2" : "w-full"
               } ${activeTab === "following" && user ? "translate-x-full" : "translate-x-0"}`}
             />
@@ -543,7 +547,7 @@ export function Feed() {
         {!loading && filteredPosts.length === 0 && !error ? (
           activeTab === "following" && user && followingCount === 0 ? (
             <EmptyState
-              icon="👥"
+              Icon={Users}
               title={t("feed.emptyFollowingTitle")}
               description={t("feed.emptyFollowingDescription")}
               actionText={t("feed.discoverPets")}
@@ -551,7 +555,7 @@ export function Feed() {
             />
           ) : (
             <div className="rounded-2xl bg-white p-6 text-center shadow-[0_18px_40px_-28px_rgba(15,23,42,0.4)] ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-purple-100 dark:bg-purple-500/20">
                 <PawIcon size={36} />
               </div>
               <p className="mt-4 text-base font-semibold text-slate-900 dark:text-white">
@@ -568,10 +572,13 @@ export function Feed() {
                 >
                   {t("feed.createPost")}
                 </button>
+                {/* The secondary action reads as secondary now. It was the
+                    same purple at the same weight as the filled button
+                    directly above it, so the card had two primary actions. */}
                 <button
                   type="button"
                   onClick={() => navigate("/search")}
-                  className="text-xs font-semibold text-purple-600"
+                  className="min-h-11 text-sm font-medium text-slate-500 underline underline-offset-4 transition-colors hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
                 >
                   {t("feed.exploreOthers")}
                 </button>

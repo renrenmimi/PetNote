@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Avatar from "../components/Avatar";
+import { LoadFailedState } from "../components/LoadFailedState";
 import { useAuth } from "../hooks/useAuth";
 import { useBlockedUsers } from "../hooks/useBlockedUsers";
 import { batchCheckFollowingPets } from "../hooks/useBatchFollowingPets";
@@ -51,6 +52,12 @@ function PetFollowButton({
 }
 
 export function UserProfile() {
+  // Swallowing the failure left an empty profile shell that looked like
+  // an account with nothing in it.
+  const [loadFailure, setLoadFailure] = useState<
+    "failed" | "denied" | null
+  >(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const navigate = useNavigate();
   const { userId } = useParams();
   const { user } = useAuth();
@@ -92,9 +99,17 @@ export function UserProfile() {
         setProfile(profileData);
         setPets(petList);
         setFollowingPets(followingResult.followingPets);
-      } catch {
-        // finally already clears loading; swallow so the failure doesn't
-        // surface as an unhandled rejection.
+        setLoadFailure(null);
+      } catch (error) {
+        const failureCode =
+          error && typeof error === "object" && "code" in error
+            ? String((error as { code?: unknown }).code ?? "")
+            : "";
+        if (!ignore) {
+          setLoadFailure(
+            failureCode.includes("permission-denied") ? "denied" : "failed"
+          );
+        }
       } finally {
         if (!ignore) {
           setLoading(false);
@@ -106,7 +121,8 @@ export function UserProfile() {
     return () => {
       ignore = true;
     };
-  }, [user?.uid, userId]);
+    // reloadToken is the retry button on the failure state.
+  }, [user?.uid, userId, reloadToken]);
 
   // Pre-fetch the viewer's follow status for every pet rendered on this
   // page in a single batched read instead of letting each PetFollowButton
@@ -274,7 +290,27 @@ export function UserProfile() {
           </section>
         ) : null}
 
-        {!blocked ? (
+        {/* The profile itself failed, so there is no shell worth showing
+            around an empty pet list. */}
+        {!blocked && !loading && loadFailure ? (
+          <LoadFailedState
+            title={
+              loadFailure === "denied"
+                ? "This profile is not visible to you"
+                : "Could not load this profile"
+            }
+            description={
+              loadFailure === "denied"
+                ? "It may be private, or the account may no longer be active."
+                : "Something went wrong reaching PetNote. Check your connection and try again."
+            }
+            retryLabel="Try again"
+            retryingLabel="Trying..."
+            onRetry={() => setReloadToken((value) => value + 1)}
+          />
+        ) : null}
+
+        {!blocked && !loadFailure ? (
           <section className="space-y-3">
             <h3 className="text-base font-semibold text-slate-900 dark:text-white">
               Pets
